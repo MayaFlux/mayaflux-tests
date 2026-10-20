@@ -22,6 +22,10 @@ namespace {
         void compute_frame() override { ++frames; }
 
         int frames { 0 };
+        int topology_changes { 0 };
+
+    protected:
+        void handle_topology_change() override { ++topology_changes; }
     };
 
     class ProbeTexture : public Nodes::GpuSync::TextureNode {
@@ -458,6 +462,21 @@ TEST_F(GeometryWriterBaseTest, VertexLayoutStoredAndReturned)
 
     node->set_vertex_layout(Kakshya::VertexLayout {});
     EXPECT_TRUE(node->get_vertex_layout().has_value());
+}
+
+TEST_F(GeometryWriterBaseTest, TopologyChangeNotifiesTheNodeOnlyWhenTheValueChanges)
+{
+    node->set_primitive_topology(Portal::Graphics::PrimitiveTopology::POINT_LIST);
+    EXPECT_EQ(node->topology_changes, 0);
+
+    node->set_primitive_topology(Portal::Graphics::PrimitiveTopology::LINE_LIST);
+    EXPECT_EQ(node->topology_changes, 1);
+
+    node->set_primitive_topology(Portal::Graphics::PrimitiveTopology::LINE_LIST);
+    EXPECT_EQ(node->topology_changes, 1);
+
+    node->set_primitive_topology(Portal::Graphics::PrimitiveTopology::TRIANGLE_LIST);
+    EXPECT_EQ(node->topology_changes, 2);
 }
 
 TEST_F(GeometryWriterBaseTest, PrimitiveTopologyRoundTrip)
