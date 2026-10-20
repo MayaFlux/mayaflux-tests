@@ -1,800 +1,1284 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
-#include "MayaFlux/MayaFlux.hpp"
+#include "MayaFlux/Nodes/Conduit/Constant.hpp"
+#include "MayaFlux/Nodes/Conduit/NodeChain.hpp"
+#include "MayaFlux/Nodes/Conduit/NodeCombine.hpp"
 #include "MayaFlux/Nodes/Filters/FIR.hpp"
-#include "MayaFlux/Nodes/Filters/IIR.hpp"
+#include "MayaFlux/Nodes/Generators/Counter.hpp"
+#include "MayaFlux/Nodes/Generators/Impulse.hpp"
+#include "MayaFlux/Nodes/Generators/Logic.hpp"
+#include "MayaFlux/Nodes/Generators/Phasor.hpp"
 #include "MayaFlux/Nodes/Generators/Random.hpp"
-
 #include "MayaFlux/Nodes/Generators/Sine.hpp"
+#include "MayaFlux/Nodes/Graphics/GpuComputeNode.hpp"
+#include "MayaFlux/Nodes/Input/InputNode.hpp"
+#include "MayaFlux/Nodes/Input/MIDINode.hpp"
+#include "MayaFlux/Nodes/Input/OSCNode.hpp"
+#include "MayaFlux/Nodes/Input/TabletNode.hpp"
 #include "MayaFlux/Nodes/NodeGraphManager.hpp"
 
 namespace MayaFlux::Test {
-class NodeTest : public ::testing::Test {
-protected:
-    void SetUp() override
+namespace {
+
+    using Nodes::Node;
+    using Nodes::NodeContext;
+    using Nodes::NodeState;
+
+    using NodeFactory = std::function<std::shared_ptr<Node>()>;
+    using ProbeHook = std::function<void(const NodeContext&)>;
+
+    constexpr int TICKS = 3;
+
+    class NodeProbeInput : public Nodes::Input::InputNode {
+    public:
+        explicit NodeProbeInput(Nodes::Input::InputConfig config = {})
+            : InputNode(config)
+        {
+        }
+
+        void save_state() override { }
+        void restore_state() override { }
+    };
+
+    std::shared_ptr<Node> make_probe_input()
     {
-        node_manager = std::make_shared<Nodes::NodeGraphManager>();
+        Nodes::Input::InputConfig config;
+        config.smoothing = Nodes::Input::SmoothingMode::NONE;
+        return std::make_shared<NodeProbeInput>(config);
     }
 
-    std::shared_ptr<Nodes::NodeGraphManager> node_manager;
-
-public:
-    MayaFlux::Nodes::ProcessingToken token = MayaFlux::Nodes::ProcessingToken::AUDIO_RATE;
-};
-
-TEST_F(NodeTest, RootNodeOperations)
-{
-    auto& root = node_manager->get_root_node(token, 0);
-    EXPECT_EQ(root.get_node_size(), 0);
-
-    auto sine = std::make_shared<Nodes::Generator::Sine>(440.0f, 0.5f);
-    root.register_node(sine);
-    EXPECT_EQ(root.get_node_size(), 1);
-
-    root.unregister_node(sine);
-    EXPECT_EQ(root.get_node_size(), 0);
-}
-
-TEST_F(NodeTest, MultiChannelRootNodes)
-{
-    auto& root0 = node_manager->get_root_node(token, 0);
-    auto& root1 = node_manager->get_root_node(token, 1);
-
-    EXPECT_NE(&root0, &root1);
-
-    auto sine0 = std::make_shared<Nodes::Generator::Sine>(440.0f, 0.5f);
-    auto sine1 = std::make_shared<Nodes::Generator::Sine>(880.0f, 0.5f);
-
-    root0.register_node(sine0);
-    root1.register_node(sine1);
-
-    EXPECT_EQ(root0.get_node_size(), 1);
-    EXPECT_EQ(root1.get_node_size(), 1);
-
-    const auto& all_roots = node_manager->get_all_root_nodes(token);
-    EXPECT_EQ(all_roots.size(), 2);
-}
-
-TEST_F(NodeTest, SingleNodeMultipleChannels)
-{
-    auto sine = std::make_shared<Nodes::Generator::Sine>(440.0f, 0.5f);
-
-    node_manager->add_to_root(sine, token, 0);
-    node_manager->add_to_root(sine, token, 1);
-    node_manager->add_to_root(sine, token, 2);
-
-    EXPECT_EQ(node_manager->get_root_node(token, 0).get_node_size(), 1);
-    EXPECT_EQ(node_manager->get_root_node(token, 1).get_node_size(), 1);
-    EXPECT_EQ(node_manager->get_root_node(token, 2).get_node_size(), 1);
-
-    EXPECT_TRUE(sine->is_used_by_channel(0));
-    EXPECT_TRUE(sine->is_used_by_channel(1));
-    EXPECT_TRUE(sine->is_used_by_channel(2));
-    EXPECT_FALSE(sine->is_used_by_channel(3));
-
-    node_manager->remove_from_root(sine, token, 1);
-    EXPECT_EQ(node_manager->get_root_node(token, 1).get_node_size(), 0);
-    EXPECT_EQ(node_manager->get_root_node(token, 0).get_node_size(), 1);
-    EXPECT_EQ(node_manager->get_root_node(token, 2).get_node_size(), 1);
-
-    EXPECT_TRUE(sine->is_used_by_channel(0));
-    EXPECT_FALSE(sine->is_used_by_channel(1));
-    EXPECT_TRUE(sine->is_used_by_channel(2));
-}
-
-TEST_F(NodeTest, ComplexMultiChannelChain)
-{
-    auto freq_mod = std::make_shared<Nodes::Generator::Sine>(5.0f, 0.1f, M_PI / 4);
-    auto carrier1 = std::make_shared<Nodes::Generator::Sine>(440.0f, 0.2f, M_PI / 6);
-    auto carrier2 = std::make_shared<Nodes::Generator::Sine>(880.0f, 0.15f, M_PI / 3);
-
-    double test_mod = freq_mod->process_sample(0.0);
-    double test_carrier1 = carrier1->process_sample(0.0);
-    double test_carrier2 = carrier2->process_sample(0.0);
-
-    EXPECT_NE(test_mod, 0.0);
-    EXPECT_NE(test_carrier1, 0.0);
-    EXPECT_NE(test_carrier2, 0.0);
-
-    EXPECT_NE(test_carrier1, test_carrier2);
-
-    node_manager->add_to_root(freq_mod, token, 0);
-    node_manager->add_to_root(freq_mod, token, 1);
-    node_manager->add_to_root(freq_mod, token, 2);
-
-    node_manager->add_to_root(carrier1, token, 0);
-    node_manager->add_to_root(carrier2, token, 1);
-
-    EXPECT_TRUE(freq_mod->is_used_by_channel(0));
-    EXPECT_TRUE(freq_mod->is_used_by_channel(1));
-    EXPECT_TRUE(freq_mod->is_used_by_channel(2));
-
-    EXPECT_TRUE(carrier1->is_used_by_channel(0));
-    EXPECT_FALSE(carrier1->is_used_by_channel(1));
-    EXPECT_TRUE(carrier2->is_used_by_channel(1));
-    EXPECT_FALSE(carrier2->is_used_by_channel(0));
-
-    EXPECT_EQ(node_manager->get_root_node(token, 0).get_node_size(), 2);
-    EXPECT_EQ(node_manager->get_root_node(token, 1).get_node_size(), 2);
-    EXPECT_EQ(node_manager->get_root_node(token, 2).get_node_size(), 1);
-
-    double output_ch0 = node_manager->process_sample(token, 0);
-    double output_ch1 = node_manager->process_sample(token, 1);
-    double output_ch2 = node_manager->process_sample(token, 2);
-
-    EXPECT_NE(output_ch0, 0.0);
-    EXPECT_NE(output_ch1, 0.0);
-    EXPECT_NE(output_ch2, 0.0);
-
-    EXPECT_GT(std::abs(output_ch0 - output_ch1), 0.01);
-}
-
-class SineNodeTest : public ::testing::Test {
-protected:
-    void SetUp() override
+    void feed_input(Node& node, double value)
     {
-        sine = std::make_shared<Nodes::Generator::Sine>(440.0f, 0.5f);
+        static_cast<Nodes::Input::InputNode&>(node).process_input(
+            Core::InputValue::make_scalar(value, 1, Core::InputType::HID));
     }
 
-    std::shared_ptr<Nodes::Generator::Sine> sine;
-};
-
-TEST_F(SineNodeTest, BasicProperties)
-{
-    EXPECT_FLOAT_EQ(sine->get_frequency(), 440.0f);
-    EXPECT_FLOAT_EQ(sine->get_amplitude(), 0.5f);
-
-    sine->set_frequency(880.0f);
-    EXPECT_FLOAT_EQ(sine->get_frequency(), 880.0f);
-
-    sine->set_amplitude(0.7f);
-    EXPECT_FLOAT_EQ(sine->get_amplitude(), 0.7f);
-
-    sine->set_params(220.0f, 0.3f, 0.0f);
-    EXPECT_FLOAT_EQ(sine->get_frequency(), 220.0f);
-    EXPECT_FLOAT_EQ(sine->get_amplitude(), 0.3f);
-}
-
-TEST_F(SineNodeTest, AudioGeneration)
-{
-    double sample = sine->process_sample(0.0);
-    EXPECT_GE(sample, -sine->get_amplitude());
-    EXPECT_LE(sample, sine->get_amplitude());
-
-    unsigned int buffer_size = 1024;
-    std::vector<double> buffer = sine->process_batch(buffer_size);
-
-    EXPECT_EQ(buffer.size(), buffer_size);
-
-    double previous = buffer[0];
-    int zero_crossings = 0;
-
-    for (size_t i = 1; i < buffer.size(); i++) {
-        if ((previous < 0 && buffer[i] >= 0) || (previous >= 0 && buffer[i] < 0)) {
-            zero_crossings++;
-        }
-        previous = buffer[i];
-    }
-
-    int expected_crossings = buffer_size / (TestConfig::SAMPLE_RATE / 440.0 / 2);
-    EXPECT_NEAR(zero_crossings, expected_crossings, 2);
-}
-
-TEST_F(SineNodeTest, Identity)
-{
-    auto sine1 = std::make_shared<Nodes::Generator::Sine>(440.0f, 0.5f);
-
-    unsigned int buffer_size = 1024;
-    std::vector<double> buffer = sine1->process_batch(buffer_size);
-
-    auto sine2 = std::make_shared<Nodes::Generator::Sine>(440.0f, 0.5f);
-    std::vector<double> unmod_buffer = sine2->process_batch(buffer_size);
-
-    bool differences_found = false;
-    for (size_t i = 0; i < buffer_size; i++) {
-        if (std::abs(buffer[i] - unmod_buffer[i]) > 0.01) {
-            differences_found = true;
-            break;
-        }
-    }
-
-    EXPECT_FALSE(differences_found);
-}
-
-TEST_F(SineNodeTest, Modulation)
-{
-    auto freq_mod = std::make_shared<Nodes::Generator::Sine>(5.0f, 50.0f);
-    sine->set_frequency_modulator(freq_mod);
-
-    unsigned int buffer_size = 1024;
-    std::vector<double> buffer = sine->process_batch(buffer_size);
-
-    auto unmod_sine = std::make_shared<Nodes::Generator::Sine>(440.0f, 0.5f);
-    std::vector<double> unmod_buffer = unmod_sine->process_batch(buffer_size);
-
-    bool differences_found = false;
-    for (size_t i = 0; i < buffer_size; i++) {
-        if (std::abs(buffer[i] - unmod_buffer[i]) > 0.01) {
-            differences_found = true;
-            break;
-        }
-    }
-
-    EXPECT_TRUE(differences_found);
-
-    sine->clear_modulators();
-    unmod_sine->reset();
-
-    std::vector<double> no_mod_buffer = sine->process_batch(100);
-    std::vector<double> check_buffer = unmod_sine->process_batch(100);
-
-    differences_found = false;
-    for (size_t i = 0; i < 100; i++) {
-        if (std::abs(no_mod_buffer[i] - check_buffer[i]) > 0.01) {
-            differences_found = true;
-            break;
-        }
-    }
-
-    EXPECT_FALSE(differences_found);
-}
-
-class FilterTest : public ::testing::Test {
-protected:
-    void SetUp() override
+    std::shared_ptr<Node> make_fir()
     {
-        sine = std::make_shared<Nodes::Generator::Sine>(440.0f, 0.5f);
-
-        fir_coeffs = { 0.2, 0.2, 0.2, 0.2, 0.2 };
-        fir = std::make_shared<Nodes::Filters::FIR>(sine, fir_coeffs);
-
-        iir_a_coeffs = { 1.0, -0.9 };
-        iir_b_coeffs = { 0.1 };
-        iir = std::make_shared<Nodes::Filters::IIR>(sine, iir_a_coeffs, iir_b_coeffs);
+        return std::make_shared<Nodes::Filters::FIR>(std::vector<double> { 0.5, 0.5 });
     }
 
-    std::shared_ptr<Nodes::Generator::Sine> sine;
-    std::vector<double> fir_coeffs;
-    std::shared_ptr<Nodes::Filters::FIR> fir;
-    std::vector<double> iir_a_coeffs;
-    std::vector<double> iir_b_coeffs;
-    std::shared_ptr<Nodes::Filters::IIR> iir;
-};
-
-TEST_F(FilterTest, FIRBasics)
-{
-    EXPECT_EQ(fir->get_order(), fir_coeffs.size() - 1);
-    EXPECT_EQ(fir->get_current_latency(), fir_coeffs.size() - 1);
-
-    fir->set_bypass(true);
-    double input_sample = 0.5;
-    double bypass_output = fir->process_sample(input_sample);
-    EXPECT_DOUBLE_EQ(bypass_output, input_sample);
-
-    fir->set_bypass(false);
-
-    fir->set_gain(2.0);
-    EXPECT_DOUBLE_EQ(fir->get_gain(), 2.0);
-}
-
-TEST_F(FilterTest, FIRFiltering)
-{
-    unsigned int num_samples = 20;
-    std::vector<double> impulse(num_samples, 0.0);
-    impulse[0] = 1.0;
-
-    auto impulse_filter = std::make_shared<Nodes::Filters::FIR>(nullptr, fir_coeffs);
-
-    std::vector<double> response;
-    for (size_t i = 0; i < num_samples; i++) {
-        response.push_back(impulse_filter->process_sample(impulse[i]));
+    template <typename Concrete>
+    Nodes::HookId add_typed_tick(Node& node, const ProbeHook& hook)
+    {
+        return static_cast<Concrete&>(node).on_tick(hook);
     }
 
-    for (size_t i = 0; i < fir_coeffs.size(); i++) {
-        if (i < response.size()) {
-            EXPECT_NEAR(response[i], fir_coeffs[i], 1e-6);
+    template <typename Concrete>
+    Nodes::HookId add_typed_tick_if(Node& node, const Nodes::NodeCondition& condition, const ProbeHook& hook)
+    {
+        return static_cast<Concrete&>(node).on_tick_if(condition, hook);
+    }
+
+    struct HookCase {
+        const char* name;
+        NodeFactory make;
+    };
+
+    const std::vector<HookCase>& hook_cases()
+    {
+        static const std::vector<HookCase> all = {
+            { "Sine", [] { return std::make_shared<Nodes::Generator::Sine>(440.0F, 0.5); } },
+            { "Random", [] { return std::make_shared<Nodes::Generator::Random>(); } },
+            { "Impulse", [] { return std::make_shared<Nodes::Generator::Impulse>(); } },
+            { "Phasor", [] { return std::make_shared<Nodes::Generator::Phasor>(); } },
+            { "Counter", [] { return std::make_shared<Nodes::Generator::Counter>(); } },
+            { "Logic", [] { return std::make_shared<Nodes::Generator::Logic>(0.5); } },
+            { "FIR", [] { return make_fir(); } },
+            { "Constant", [] { return std::make_shared<Nodes::Constant>(1.0); } },
+            { "BinaryOp", [] {
+                 return std::make_shared<Nodes::BinaryOpNode>(
+                     std::make_shared<Nodes::Constant>(1.0),
+                     std::make_shared<Nodes::Constant>(2.0),
+                     [](double a, double b) { return a + b; });
+             } },
+            { "Chain", [] {
+                 return std::make_shared<Nodes::ChainNode>(
+                     std::make_shared<Nodes::Generator::Sine>(440.0F, 0.5), make_fir());
+             } },
+            { "InputNode", [] { return make_probe_input(); } },
+        };
+        return all;
+    }
+
+    std::string hook_case_name(const ::testing::TestParamInfo<HookCase>& info)
+    {
+        return info.param.name;
+    }
+
+    class NodeHookMachineryTest : public ::testing::TestWithParam<HookCase> {
+    protected:
+        void SetUp() override { node = GetParam().make(); }
+
+        void tick(int times = TICKS)
+        {
+            for (int i = 0; i < times; ++i) {
+                node->process_sample(0.0);
+            }
+        }
+
+        std::shared_ptr<Node> node;
+        int count {};
+        bool gate {};
+    };
+
+    TEST_P(NodeHookMachineryTest, TickHookFiresOncePerProcessedSample)
+    {
+        node->on_tick([this](NodeContext&) { ++count; });
+
+        tick();
+
+        EXPECT_EQ(count, TICKS);
+    }
+
+    TEST_P(NodeHookMachineryTest, SameCallbackRegisteredTwiceIsDropped)
+    {
+        auto hook = [this](NodeContext&) { ++count; };
+        const auto first = node->on_tick(hook);
+        const auto second = node->on_tick(hook);
+
+        tick(1);
+
+        EXPECT_EQ(count, 1);
+        EXPECT_EQ(first, second);
+    }
+
+    TEST_P(NodeHookMachineryTest, UnhookRemovesExactlyOneRegistration)
+    {
+        int other = 0;
+        const auto first = node->on_tick([this](NodeContext&) { ++count; });
+        const auto second = node->on_tick([&other](NodeContext&) { ++other; });
+
+        EXPECT_NE(first, 0U);
+        EXPECT_NE(first, second);
+        EXPECT_TRUE(node->unhook(first));
+        EXPECT_FALSE(node->unhook(first));
+        tick(1);
+
+        EXPECT_EQ(count, 0);
+        EXPECT_EQ(other, 1);
+    }
+
+    TEST_P(NodeHookMachineryTest, UnhookRemovesAConditionalRegistration)
+    {
+        gate = true;
+        const auto id = node->on_tick_if(
+            [this](NodeContext&) { return gate; },
+            [this](NodeContext&) { ++count; });
+
+        EXPECT_NE(id, 0U);
+        EXPECT_TRUE(node->unhook(id));
+        tick(1);
+
+        EXPECT_EQ(count, 0);
+    }
+
+    TEST_P(NodeHookMachineryTest, DistinctCallbacksAllFire)
+    {
+        int other = 0;
+        node->on_tick([this](NodeContext&) { ++count; });
+        node->on_tick([&other](NodeContext&) { ++other; });
+
+        tick(1);
+
+        EXPECT_EQ(count, 1);
+        EXPECT_EQ(other, 1);
+    }
+
+    TEST_P(NodeHookMachineryTest, ConditionalHookFollowsItsCondition)
+    {
+        node->on_tick_if(
+            [this](NodeContext&) { return gate; },
+            [this](NodeContext&) { ++count; });
+
+        gate = false;
+        tick(1);
+        EXPECT_EQ(count, 0);
+
+        gate = true;
+        tick(1);
+        EXPECT_EQ(count, 1);
+    }
+
+    TEST_P(NodeHookMachineryTest, RemoveHookReportsAndStopsTheCallback)
+    {
+        auto hook = [this](NodeContext&) { ++count; };
+        node->on_tick(hook);
+
+        const bool removed = node->remove_hook(hook);
+        tick(1);
+
+        EXPECT_TRUE(removed);
+        EXPECT_EQ(count, 0);
+    }
+
+    TEST_P(NodeHookMachineryTest, RemoveHookOfUnknownCallbackReturnsFalse)
+    {
+        node->on_tick([this](NodeContext&) { ++count; });
+
+        EXPECT_FALSE(node->remove_hook([](NodeContext&) { }));
+    }
+
+    TEST_P(NodeHookMachineryTest, RemoveConditionalHookReportsAndStopsTheCallback)
+    {
+        auto condition = [this](NodeContext&) { return gate; };
+        node->on_tick_if(condition, [this](NodeContext&) { ++count; });
+        gate = true;
+
+        const bool removed = node->remove_conditional_hook(condition);
+        tick(1);
+
+        EXPECT_TRUE(removed);
+        EXPECT_EQ(count, 0);
+    }
+
+    TEST_P(NodeHookMachineryTest, RemoveAllHooksClearsTheBaseLists)
+    {
+        auto hook = [this](NodeContext&) { ++count; };
+        auto condition = [](NodeContext&) { return true; };
+        node->on_tick(hook);
+        node->on_tick_if(condition, hook);
+
+        node->remove_all_hooks();
+        tick(1);
+
+        EXPECT_EQ(count, 0);
+        EXPECT_FALSE(node->remove_hook(hook));
+        EXPECT_FALSE(node->remove_conditional_hook(condition));
+    }
+
+    TEST_P(NodeHookMachineryTest, HooksCanBeRegisteredAgainAfterRemoveAll)
+    {
+        auto hook = [this](NodeContext&) { ++count; };
+        node->on_tick(hook);
+        node->remove_all_hooks();
+        node->on_tick(hook);
+
+        tick(1);
+
+        EXPECT_EQ(count, 1);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Nodes,
+        NodeHookMachineryTest,
+        ::testing::ValuesIn(hook_cases()),
+        hook_case_name);
+
+    struct TypedCase {
+        const char* name;
+        NodeFactory make;
+        std::function<Nodes::HookId(Node&, const ProbeHook&)> add_tick;
+        std::function<Nodes::HookId(Node&, const Nodes::NodeCondition&, const ProbeHook&)> add_tick_if;
+    };
+
+    const std::vector<TypedCase>& typed_cases()
+    {
+        static const std::vector<TypedCase> all = {
+            { "Sine", [] { return std::make_shared<Nodes::Generator::Sine>(440.0F, 0.5); },
+                add_typed_tick<Nodes::Generator::Generator>,
+                add_typed_tick_if<Nodes::Generator::Generator> },
+            { "Phasor", [] { return std::make_shared<Nodes::Generator::Phasor>(); },
+                add_typed_tick<Nodes::Generator::Generator>,
+                add_typed_tick_if<Nodes::Generator::Generator> },
+            { "FIR", [] { return make_fir(); },
+                add_typed_tick<Nodes::Filters::Filter>,
+                add_typed_tick_if<Nodes::Filters::Filter> },
+            { "Logic", [] { return std::make_shared<Nodes::Generator::Logic>(0.5); },
+                add_typed_tick<Nodes::Generator::Logic>,
+                add_typed_tick_if<Nodes::Generator::Logic> },
+            { "InputNode", [] { return make_probe_input(); },
+                add_typed_tick<Nodes::Input::InputNode>,
+                add_typed_tick_if<Nodes::Input::InputNode> },
+        };
+        return all;
+    }
+
+    std::string typed_case_name(const ::testing::TestParamInfo<TypedCase>& info)
+    {
+        return info.param.name;
+    }
+
+    class NodeTypedHookMachineryTest : public ::testing::TestWithParam<TypedCase> {
+    protected:
+        void SetUp() override { node = GetParam().make(); }
+
+        void tick(int times = TICKS)
+        {
+            for (int i = 0; i < times; ++i) {
+                node->process_sample(0.0);
+            }
+        }
+
+        std::shared_ptr<Node> node;
+        int count {};
+        bool gate {};
+    };
+
+    TEST_P(NodeTypedHookMachineryTest, TypedTickHookFiresOncePerProcessedSample)
+    {
+        GetParam().add_tick(*node, [this](const NodeContext&) { ++count; });
+
+        tick();
+
+        EXPECT_EQ(count, TICKS);
+    }
+
+    TEST_P(NodeTypedHookMachineryTest, TypedTickHookIsNotDeduplicated)
+    {
+        const ProbeHook hook = [this](const NodeContext&) { ++count; };
+        GetParam().add_tick(*node, hook);
+        GetParam().add_tick(*node, hook);
+
+        tick(1);
+
+        EXPECT_EQ(count, 2);
+    }
+
+    TEST_P(NodeTypedHookMachineryTest, TypedConditionalHookFollowsItsCondition)
+    {
+        GetParam().add_tick_if(
+            *node,
+            [this](NodeContext&) { return gate; },
+            [this](const NodeContext&) { ++count; });
+
+        gate = false;
+        tick(1);
+        EXPECT_EQ(count, 0);
+
+        gate = true;
+        tick(1);
+        EXPECT_EQ(count, 1);
+    }
+
+    TEST_P(NodeTypedHookMachineryTest, TypedTickHookIsClearedByRemoveAllHooks)
+    {
+        GetParam().add_tick(*node, [this](const NodeContext&) { ++count; });
+
+        node->remove_all_hooks();
+        tick(1);
+
+        EXPECT_EQ(count, 0);
+    }
+
+    TEST_P(NodeTypedHookMachineryTest, TypedTickHookIsRemovableByItsCallableThroughTheBaseInterface)
+    {
+        const ProbeHook hook = [this](const NodeContext&) { ++count; };
+        GetParam().add_tick(*node, hook);
+
+        const bool removed = node->remove_hook(hook);
+        tick(1);
+
+        EXPECT_TRUE(removed);
+        EXPECT_EQ(count, 0);
+    }
+
+    TEST_P(NodeTypedHookMachineryTest, TypedTickHookIsRemovableById)
+    {
+        const auto id = GetParam().add_tick(*node, [this](const NodeContext&) { ++count; });
+
+        EXPECT_NE(id, 0U);
+        EXPECT_TRUE(node->unhook(id));
+        tick(1);
+
+        EXPECT_EQ(count, 0);
+    }
+
+    TEST_P(NodeTypedHookMachineryTest, TypedConditionalHookIsRemovableById)
+    {
+        gate = true;
+        const auto id = GetParam().add_tick_if(
+            *node,
+            [this](NodeContext&) { return gate; },
+            [this](const NodeContext&) { ++count; });
+
+        EXPECT_NE(id, 0U);
+        EXPECT_TRUE(node->unhook(id));
+        tick(1);
+
+        EXPECT_EQ(count, 0);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Nodes,
+        NodeTypedHookMachineryTest,
+        ::testing::ValuesIn(typed_cases()),
+        typed_case_name);
+
+    struct EventCase {
+        const char* name;
+        NodeFactory make;
+        std::function<Nodes::HookId(Node&, const ProbeHook&)> attach;
+        std::function<void(Node&)> drive;
+    };
+
+    void tick_times(Node& node, int times)
+    {
+        for (int i = 0; i < times; ++i) {
+            node.process_sample(0.0);
         }
     }
 
-    for (size_t i = fir_coeffs.size(); i < response.size(); i++) {
-        EXPECT_NEAR(response[i], 0.0, 1e-6);
-    }
-
-    impulse_filter->reset();
-    auto history = impulse_filter->get_input_history();
-    for (auto val : history) {
-        EXPECT_DOUBLE_EQ(val, 0.0);
-    }
-}
-
-TEST_F(FilterTest, IIRBasics)
-{
-    EXPECT_EQ(iir->get_order(), std::max(iir_a_coeffs.size(), iir_b_coeffs.size()) - 1);
-
-    iir->set_bypass(true);
-    double input_sample = 0.5;
-    double bypass_output = iir->process_sample(input_sample);
-    EXPECT_DOUBLE_EQ(bypass_output, input_sample);
-
-    iir->set_bypass(false);
-    iir->set_gain(2.0);
-    EXPECT_DOUBLE_EQ(iir->get_gain(), 2.0);
-}
-
-TEST_F(FilterTest, IIRFiltering)
-{
-    unsigned int num_samples = 50;
-    std::vector<double> step(num_samples, 1.0);
-
-    auto step_filter = std::make_shared<Nodes::Filters::IIR>(nullptr, iir_a_coeffs, iir_b_coeffs);
-
-    std::vector<double> response;
-    for (size_t i = 0; i < num_samples; i++) {
-        response.push_back(step_filter->process_sample(step[i]));
-    }
-
-    EXPECT_NEAR(response[0], iir_b_coeffs[0], 1e-6);
-
-    for (size_t i = 1; i < response.size(); i++) {
-        EXPECT_GE(response[i], response[i - 1]);
-    }
-
-    EXPECT_NEAR(response.back(), 1.0, 0.01);
-
-    double nyquist = TestConfig::SAMPLE_RATE / 2.0;
-
-    double dc_response = step_filter->get_magnitude_response(0.0, TestConfig::SAMPLE_RATE);
-    EXPECT_NEAR(dc_response, 1.0, 0.01);
-
-    double nyquist_response = step_filter->get_magnitude_response(nyquist, TestConfig::SAMPLE_RATE);
-    EXPECT_LT(nyquist_response, 0.5);
-}
-
-class NoiseGeneratorTest : public ::testing::Test {
-protected:
-    void SetUp() override
+    void drive_logic(Node& node)
     {
-        noise = std::make_shared<Nodes::Generator::Random>();
+        auto& logic = static_cast<Nodes::Generator::Logic&>(node);
+        logic.process_sample(1.0);
+        logic.process_sample(0.0);
+        logic.process_sample(1.0);
     }
 
-    std::shared_ptr<Nodes::Generator::Random> noise;
-};
-
-TEST_F(NoiseGeneratorTest, BasicNoise)
-{
-    unsigned int num_samples = 1000;
-    std::vector<double> samples = noise->process_batch(num_samples);
-
-    EXPECT_EQ(samples.size(), num_samples);
-
-    for (const auto& sample : samples) {
-        EXPECT_GE(sample, -1.0);
-        EXPECT_LE(sample, 1.0);
+    void drive_input(Node& node)
+    {
+        feed_input(node, 1.0);
+        feed_input(node, 0.0);
+        feed_input(node, 1.0);
     }
 
-    double sum = std::accumulate(samples.begin(), samples.end(), 0.0);
-    double mean = sum / num_samples;
+    void drive_tablet(Node& node)
+    {
+        auto& tablet = static_cast<Nodes::Input::TabletNode&>(node);
+        std::vector<double> frame(Core::TabletFrame::SLOT_COUNT, 0.0);
 
-    EXPECT_NEAR(mean, 0.0, 0.1);
+        frame[Core::TabletFrame::STATE] = static_cast<double>(
+            static_cast<uint32_t>(Core::TabletState::IN_PROXIMITY) | static_cast<uint32_t>(Core::TabletState::IN_CONTACT));
+        tablet.process_input(Core::InputValue::make_vector(frame, 1, Core::InputType::TABLET));
 
-    noise->set_amplitude(0.5);
-    samples = noise->process_batch(num_samples);
-
-    for (const auto& sample : samples) {
-        EXPECT_GE(sample, -0.5);
-        EXPECT_LE(sample, 0.5);
+        frame[Core::TabletFrame::STATE] = 0.0;
+        tablet.process_input(Core::InputValue::make_vector(frame, 1, Core::InputType::TABLET));
     }
-}
 
-TEST_F(NoiseGeneratorTest, DifferentDistributions)
-{
-    unsigned int num_samples = 1000;
+    void drive_midi(Node& node, uint8_t status, uint8_t data1, uint8_t data2)
+    {
+        static_cast<Nodes::Input::MIDINode&>(node).process_input(
+            Core::InputValue::make_midi(status, data1, data2, 1));
+    }
 
-    noise->set_type(Kinesis::Stochastic::Algorithm::NORMAL);
-    std::vector<double> normal_samples = noise->process_batch(num_samples);
+    void drive_osc(Node& node)
+    {
+        static_cast<Nodes::Input::OSCNode&>(node).process_input(
+            Core::InputValue::make_osc("/probe", std::vector<Core::InputValue::OSCArg> { 1.0F }, 1));
+    }
 
-    noise->set_type(Kinesis::Stochastic::Algorithm::EXPONENTIAL);
-    noise->set_range(0.0, 1.0);
-    std::vector<double> exp_samples = noise->process_batch(num_samples);
+    std::shared_ptr<Node> make_gpu_compute()
+    {
+        return std::make_shared<Nodes::GpuSync::GpuComputeNode>(
+            std::make_shared<Yantra::ShaderExecutionContext<>>(Portal::Graphics::GpuComputeConfig {}));
+    }
 
-    bool distributions_different = false;
-    for (size_t i = 0; i < num_samples; i++) {
-        if (std::abs(normal_samples[i] - exp_samples[i]) > 0.1) {
-            distributions_different = true;
-            break;
+    void drive_gpu(Node& node)
+    {
+        static_cast<Nodes::GpuSync::GpuComputeNode&>(node).notify_tick(0.0);
+    }
+
+    const std::vector<EventCase>& event_cases()
+    {
+        using Nodes::Generator::Counter;
+        using Nodes::Generator::Impulse;
+        using Nodes::Generator::Logic;
+        using Nodes::Generator::Phasor;
+        using Nodes::Input::InputNode;
+
+        static const std::vector<EventCase> all = {
+            { "CounterIncrement", [] { return std::make_shared<Counter>(3U, 1); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Counter&>(n).on_increment(h); },
+                [](Node& n) { tick_times(n, TICKS); } },
+            { "CounterWrap", [] { return std::make_shared<Counter>(3U, 1); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Counter&>(n).on_wrap(h); },
+                [](Node& n) { tick_times(n, TICKS); } },
+            { "CounterCount", [] { return std::make_shared<Counter>(3U, 1); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Counter&>(n).on_count(2U, h); },
+                [](Node& n) { tick_times(n, TICKS); } },
+            { "PhasorWrap", [] { return std::make_shared<Phasor>(24000.0F); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Phasor&>(n).on_phase_wrap(h); },
+                [](Node& n) { tick_times(n, 8); } },
+            { "PhasorThreshold", [] { return std::make_shared<Phasor>(24000.0F); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Phasor&>(n).on_threshold(h, 0.25); },
+                [](Node& n) { tick_times(n, 8); } },
+            { "ImpulseImpulse", [] { return std::make_shared<Impulse>(24000.0F); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Impulse&>(n).on_impulse(h); },
+                [](Node& n) { tick_times(n, 8); } },
+            { "LogicChange", [] { return std::make_shared<Logic>(0.5); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Logic&>(n).on_change(h); },
+                drive_logic },
+            { "LogicWhileTrue", [] { return std::make_shared<Logic>(0.5); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Logic&>(n).while_true(h); },
+                drive_logic },
+            { "LogicChangeToTrue", [] { return std::make_shared<Logic>(0.5); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Logic&>(n).on_change_to(true, h); },
+                drive_logic },
+            { "InputValueChange", [] { return make_probe_input(); },
+                [](Node& n, const ProbeHook& h) { return static_cast<InputNode&>(n).on_value_change(h); },
+                drive_input },
+            { "InputThresholdRising", [] { return make_probe_input(); },
+                [](Node& n, const ProbeHook& h) { return static_cast<InputNode&>(n).on_threshold_rising(0.5, h); },
+                drive_input },
+            { "TabletFrame", [] { return std::make_shared<Nodes::Input::TabletNode>(); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Nodes::Input::TabletNode&>(n).on_frame(h); },
+                drive_tablet },
+            { "TabletProximityEnter", [] { return std::make_shared<Nodes::Input::TabletNode>(); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Nodes::Input::TabletNode&>(n).on_proximity_enter(h); },
+                drive_tablet },
+            { "TabletProximityExit", [] { return std::make_shared<Nodes::Input::TabletNode>(); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Nodes::Input::TabletNode&>(n).on_proximity_exit(h); },
+                drive_tablet },
+            { "TabletContactBegin", [] { return std::make_shared<Nodes::Input::TabletNode>(); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Nodes::Input::TabletNode&>(n).on_contact_begin(h); },
+                drive_tablet },
+            { "TabletContactEnd", [] { return std::make_shared<Nodes::Input::TabletNode>(); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Nodes::Input::TabletNode&>(n).on_contact_end(h); },
+                drive_tablet },
+            { "MidiNote", [] { return std::make_shared<Nodes::Input::MIDINode>(); },
+                [](Node& n, const ProbeHook& h) {
+                    return static_cast<Nodes::Input::MIDINode&>(n).on_note([h, &n](uint8_t, uint8_t, bool) { h(n.get_last_context()); });
+                },
+                [](Node& n) { drive_midi(n, 0x90, 60, 100); } },
+            { "MidiCc", [] { return std::make_shared<Nodes::Input::MIDINode>(); },
+                [](Node& n, const ProbeHook& h) {
+                    return static_cast<Nodes::Input::MIDINode&>(n).on_cc([h, &n](uint8_t, uint8_t) { h(n.get_last_context()); });
+                },
+                [](Node& n) { drive_midi(n, 0xB0, 1, 64); } },
+            { "MidiPitchBend", [] { return std::make_shared<Nodes::Input::MIDINode>(); },
+                [](Node& n, const ProbeHook& h) {
+                    return static_cast<Nodes::Input::MIDINode&>(n).on_pitch_bend([h, &n](int16_t) { h(n.get_last_context()); });
+                },
+                [](Node& n) { drive_midi(n, 0xE0, 0, 64); } },
+            { "OscMessage", [] { return std::make_shared<Nodes::Input::OSCNode>(); },
+                [](Node& n, const ProbeHook& h) {
+                    return static_cast<Nodes::Input::OSCNode&>(n).on_message(
+                        [h, &n](const std::string&, const std::vector<Core::InputValue::OSCArg>&) { h(n.get_last_context()); });
+                },
+                drive_osc },
+            { "GpuComplete", [] { return make_gpu_compute(); },
+                [](Node& n, const ProbeHook& h) { return static_cast<Nodes::GpuSync::GpuComputeNode&>(n).on_complete(h); },
+                drive_gpu },
+            { "GpuBaseTick", [] { return make_gpu_compute(); },
+                [](Node& n, const ProbeHook& h) { return n.on_tick([h](NodeContext& ctx) { h(ctx); }); },
+                drive_gpu },
+            { "InputButtonPress", [] { return make_probe_input(); },
+                [](Node& n, const ProbeHook& h) { return static_cast<InputNode&>(n).on_button_press(h); },
+                drive_input },
+        };
+        return all;
+    }
+
+    std::string event_case_name(const ::testing::TestParamInfo<EventCase>& info)
+    {
+        return info.param.name;
+    }
+
+    class NodeEventChannelTest : public ::testing::TestWithParam<EventCase> {
+    protected:
+        void SetUp() override { node = GetParam().make(); }
+
+        std::shared_ptr<Node> node;
+        int count {};
+    };
+
+    TEST_P(NodeEventChannelTest, EventHookFiresForItsEvent)
+    {
+        GetParam().attach(*node, [this](const NodeContext&) { ++count; });
+
+        GetParam().drive(*node);
+
+        EXPECT_GT(count, 0);
+    }
+
+    TEST_P(NodeEventChannelTest, RemoveAllHooksReachesTheEventChannel)
+    {
+        GetParam().attach(*node, [this](const NodeContext&) { ++count; });
+
+        node->remove_all_hooks();
+        GetParam().drive(*node);
+
+        EXPECT_EQ(count, 0);
+    }
+
+    TEST_P(NodeEventChannelTest, EventHookIsRemovableById)
+    {
+        const auto id = GetParam().attach(*node, [this](const NodeContext&) { ++count; });
+
+        EXPECT_NE(id, 0U);
+        EXPECT_TRUE(node->unhook(id));
+        EXPECT_FALSE(node->unhook(id));
+        GetParam().drive(*node);
+
+        EXPECT_EQ(count, 0);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Channels,
+        NodeEventChannelTest,
+        ::testing::ValuesIn(event_cases()),
+        event_case_name);
+
+    class NodeChannelUsageTest : public ::testing::TestWithParam<uint32_t> {
+    protected:
+        Nodes::Constant node { 1.0 };
+    };
+
+    TEST_P(NodeChannelUsageTest, RegisteredChannelIsReportedAndOthersAreNot)
+    {
+        const uint32_t channel = GetParam();
+
+        node.register_channel_usage(channel);
+
+        EXPECT_TRUE(node.is_used_by_channel(channel));
+        EXPECT_EQ(node.get_channel_mask().load(), 1U << channel);
+        EXPECT_FALSE(node.is_used_by_channel((channel + 1) % 32));
+    }
+
+    TEST_P(NodeChannelUsageTest, UnregisteredChannelIsNoLongerReported)
+    {
+        const uint32_t channel = GetParam();
+        node.register_channel_usage(channel);
+
+        node.unregister_channel_usage(channel);
+
+        EXPECT_FALSE(node.is_used_by_channel(channel));
+        EXPECT_EQ(node.get_channel_mask().load(), 0U);
+    }
+
+    TEST_P(NodeChannelUsageTest, RegisteringTwiceKeepsOneBit)
+    {
+        const uint32_t channel = GetParam();
+
+        node.register_channel_usage(channel);
+        node.register_channel_usage(channel);
+
+        EXPECT_EQ(node.get_channel_mask().load(), 1U << channel);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Channels,
+        NodeChannelUsageTest,
+        ::testing::Values(0U, 1U, 7U, 16U, 31U));
+
+    class NodeChannelRangeTest : public ::testing::TestWithParam<uint32_t> {
+    protected:
+        Nodes::Constant node { 1.0 };
+    };
+
+    TEST_P(NodeChannelRangeTest, ChannelsBeyondTheMaskAreIgnored)
+    {
+        const uint32_t channel = GetParam();
+
+        node.register_channel_usage(channel);
+
+        EXPECT_FALSE(node.is_used_by_channel(channel));
+        EXPECT_EQ(node.get_channel_mask().load(), 0U);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Channels,
+        NodeChannelRangeTest,
+        ::testing::Values(32U, 33U, 1000U));
+
+    struct ResetCase {
+        const char* name;
+        std::vector<uint32_t> channels;
+    };
+
+    class NodeResetRequestTest : public ::testing::TestWithParam<ResetCase> {
+    protected:
+        void SetUp() override
+        {
+            for (const uint32_t channel : GetParam().channels) {
+                node.register_channel_usage(channel);
+            }
+        }
+
+        [[nodiscard]] bool processed() const
+        {
+            return (node.m_state.load() & NodeState::PROCESSED) != 0;
+        }
+
+        Nodes::Constant node { 1.0 };
+    };
+
+    TEST_P(NodeResetRequestTest, ProcessedStateClearsOnlyWhenEveryActiveChannelHasRequested)
+    {
+        const auto& channels = GetParam().channels;
+        Nodes::atomic_add_flag(node.m_state, NodeState::PROCESSED);
+
+        for (size_t i = 0; i + 1 < channels.size(); ++i) {
+            node.request_reset_from_channel(channels[i]);
+            EXPECT_TRUE(processed());
+        }
+
+        node.request_reset_from_channel(channels.back());
+        EXPECT_FALSE(processed());
+    }
+
+    TEST_P(NodeResetRequestTest, PendingRequestsAreConsumedByTheReset)
+    {
+        const auto& channels = GetParam().channels;
+        for (const uint32_t channel : channels) {
+            node.request_reset_from_channel(channel);
+        }
+        Nodes::atomic_add_flag(node.m_state, NodeState::PROCESSED);
+
+        node.request_reset_from_channel(channels.front());
+
+        EXPECT_EQ(processed(), channels.size() > 1);
+    }
+
+    TEST_P(NodeResetRequestTest, ResetProcessedStateIsIgnoredWhileChannelsAreActive)
+    {
+        Nodes::atomic_add_flag(node.m_state, NodeState::PROCESSED);
+
+        node.reset_processed_state();
+
+        EXPECT_TRUE(processed());
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Channels,
+        NodeResetRequestTest,
+        ::testing::Values(
+            ResetCase { "One", { 0 } },
+            ResetCase { "Two", { 0, 1 } },
+            ResetCase { "Three", { 0, 1, 2 } },
+            ResetCase { "Sparse", { 3, 7, 31 } }),
+        [](const ::testing::TestParamInfo<ResetCase>& info) { return std::string(info.param.name); });
+
+    class NodeProcessedStateTest : public ::testing::TestWithParam<bool> {
+    protected:
+        Nodes::Constant node { 1.0 };
+    };
+
+    TEST_P(NodeProcessedStateTest, ResetProcessedStateClearsOnlyWithoutActiveChannels)
+    {
+        const bool has_channel = GetParam();
+        if (has_channel) {
+            node.register_channel_usage(0);
+        }
+        Nodes::atomic_add_flag(node.m_state, NodeState::PROCESSED);
+
+        node.reset_processed_state();
+
+        EXPECT_EQ((node.m_state.load() & NodeState::PROCESSED) != 0, has_channel);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Channels,
+        NodeProcessedStateTest,
+        ::testing::Bool());
+
+    class NodeFlagsTest : public ::testing::TestWithParam<bool> {
+    protected:
+        Nodes::Constant node { 1.0 };
+    };
+
+    TEST_P(NodeFlagsTest, OutputExclusionFollowsTheRequest)
+    {
+        EXPECT_FALSE(node.is_output_excluded_from_graph());
+
+        node.exclude_output_from_graph(GetParam());
+
+        EXPECT_EQ(node.is_output_excluded_from_graph(), GetParam());
+    }
+
+    TEST_P(NodeFlagsTest, OutputExclusionCanBeRestored)
+    {
+        node.exclude_output_from_graph(true);
+
+        node.exclude_output_from_graph(!GetParam());
+
+        EXPECT_EQ(node.is_output_excluded_from_graph(), !GetParam());
+    }
+
+    TEST_P(NodeFlagsTest, GpuCompatibilityFollowsTheRequest)
+    {
+        EXPECT_FALSE(node.is_gpu_compatible());
+
+        node.set_gpu_compatible(GetParam());
+
+        EXPECT_EQ(node.is_gpu_compatible(), GetParam());
+    }
+
+    TEST_P(NodeFlagsTest, NetworkMembershipFollowsTheRequest)
+    {
+        EXPECT_FALSE(node.is_in_network());
+
+        node.set_in_network(GetParam());
+
+        EXPECT_EQ(node.is_in_network(), GetParam());
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Flags,
+        NodeFlagsTest,
+        ::testing::Bool());
+
+    struct RateCase {
+        uint32_t sample_rate;
+        uint32_t frame_rate;
+    };
+
+    class NodeRateTest : public ::testing::TestWithParam<RateCase> {
+    protected:
+        Nodes::Constant node { 1.0 };
+    };
+
+    TEST_P(NodeRateTest, DefaultsAreAudioAndDisplayRates)
+    {
+        EXPECT_EQ(node.get_sample_rate(), 48000U);
+        EXPECT_EQ(node.get_frame_rate(), 60U);
+    }
+
+    TEST_P(NodeRateTest, RatesFollowTheirSetters)
+    {
+        node.set_sample_rate(GetParam().sample_rate);
+        node.set_frame_rate(GetParam().frame_rate);
+
+        EXPECT_EQ(node.get_sample_rate(), GetParam().sample_rate);
+        EXPECT_EQ(node.get_frame_rate(), GetParam().frame_rate);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Rates,
+        NodeRateTest,
+        ::testing::Values(
+            RateCase { 44100, 30 },
+            RateCase { 48000, 60 },
+            RateCase { 96000, 144 }));
+
+    class NodeSnapshotContextTest : public ::testing::TestWithParam<uint64_t> {
+    protected:
+        Nodes::Constant node { 1.0 };
+    };
+
+    TEST_P(NodeSnapshotContextTest, StartsWithoutAnActiveSnapshot)
+    {
+        EXPECT_FALSE(node.has_active_snapshot());
+        EXPECT_EQ(node.get_active_snapshot_context(), 0U);
+        EXPECT_FALSE(node.is_in_snapshot_context(GetParam()));
+    }
+
+    TEST_P(NodeSnapshotContextTest, FirstClaimWinsAndHoldsUntilReleased)
+    {
+        const uint64_t id = GetParam();
+        const uint64_t other = id ^ 1U;
+
+        EXPECT_TRUE(node.try_claim_snapshot_context(id));
+        EXPECT_TRUE(node.has_active_snapshot());
+        EXPECT_TRUE(node.is_in_snapshot_context(id));
+        EXPECT_EQ(node.get_active_snapshot_context(), id);
+
+        EXPECT_FALSE(node.try_claim_snapshot_context(id));
+        EXPECT_FALSE(node.try_claim_snapshot_context(other));
+        EXPECT_TRUE(node.is_in_snapshot_context(id));
+    }
+
+    TEST_P(NodeSnapshotContextTest, OnlyTheOwnerCanRelease)
+    {
+        const uint64_t id = GetParam();
+        const uint64_t other = id ^ 1U;
+        node.try_claim_snapshot_context(id);
+
+        node.release_snapshot_context(other);
+        EXPECT_TRUE(node.is_in_snapshot_context(id));
+
+        node.release_snapshot_context(id);
+        EXPECT_FALSE(node.has_active_snapshot());
+        EXPECT_FALSE(node.is_in_snapshot_context(id));
+    }
+
+    TEST_P(NodeSnapshotContextTest, ReleasedNodeCanBeClaimedByAnotherContext)
+    {
+        const uint64_t id = GetParam();
+        const uint64_t other = id ^ 1U;
+        node.try_claim_snapshot_context(id);
+        node.release_snapshot_context(id);
+
+        EXPECT_TRUE(node.try_claim_snapshot_context(other));
+        EXPECT_TRUE(node.is_in_snapshot_context(other));
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Contexts,
+        NodeSnapshotContextTest,
+        ::testing::Values(uint64_t { 1 }, uint64_t { 42 }, uint64_t { 0xFFFFFFFFFFFFFFFFULL }));
+
+    class NodeBufferReferenceTest : public ::testing::TestWithParam<uint32_t> {
+    protected:
+        void SetUp() override
+        {
+            for (uint32_t i = 0; i < GetParam(); ++i) {
+                node.add_buffer_reference();
+            }
+        }
+
+        Nodes::Constant node { 1.0 };
+    };
+
+    TEST_P(NodeBufferReferenceTest, FirstMarkSucceedsOnlyWithAReference)
+    {
+        EXPECT_EQ(node.mark_buffer_processed(), GetParam() >= 1);
+    }
+
+    TEST_P(NodeBufferReferenceTest, SecondMarkSucceedsOnlyForASingleReference)
+    {
+        node.mark_buffer_processed();
+
+        EXPECT_EQ(node.mark_buffer_processed(), GetParam() == 1);
+    }
+
+    TEST_P(NodeBufferReferenceTest, SharedReferencesFlagTheNodeAsProcessed)
+    {
+        node.mark_buffer_processed();
+
+        EXPECT_EQ(node.is_buffer_processed(), GetParam() >= 2);
+    }
+
+    TEST_P(NodeBufferReferenceTest, ProcessedFlagClearsOnTheLastExpectedReset)
+    {
+        const uint32_t references = GetParam();
+        node.mark_buffer_processed();
+
+        for (uint32_t request = 1; request < references; ++request) {
+            node.request_buffer_reset();
+            EXPECT_EQ(node.is_buffer_processed(), request < references - 1);
         }
     }
 
-    EXPECT_TRUE(distributions_different);
-
-    for (const auto& sample : exp_samples) {
-        EXPECT_GE(sample, 0.0);
-    }
-}
-
-TEST_F(NoiseGeneratorTest, RangeControl)
-{
-    double min = 5.0;
-    double max = 10.0;
-    unsigned int num_samples = 1000;
-
-    noise->set_range(min, max);
-
-    std::vector<double> range_samples = noise->process_batch(num_samples);
-
-    for (const auto& sample : range_samples) {
-        EXPECT_GE(sample, min);
-        EXPECT_LE(sample, max);
-    }
-}
-
-class NodeCallbackTest : public ::testing::Test {
-protected:
-    void SetUp() override
+    TEST_P(NodeBufferReferenceTest, ActiveNodeRefusesTheMark)
     {
-        sine = std::make_shared<Nodes::Generator::Sine>(440.0f, 0.5f);
-        noise = std::make_shared<Nodes::Generator::Random>();
-        fir_coeffs = { 0.2, 0.2, 0.2, 0.2, 0.2 };
-        fir = std::make_shared<Nodes::Filters::FIR>(sine, fir_coeffs);
+        Nodes::atomic_add_flag(node.m_state, NodeState::ACTIVE);
 
-        MayaFlux::Init();
+        EXPECT_FALSE(node.mark_buffer_processed());
     }
 
-    std::shared_ptr<Nodes::Generator::Sine> sine;
-    std::shared_ptr<Nodes::Generator::Random> noise;
-    std::vector<double> fir_coeffs;
-    std::shared_ptr<Nodes::Filters::FIR> fir;
+    TEST_P(NodeBufferReferenceTest, RemovingEveryReferenceRestoresTheRefusal)
+    {
+        for (uint32_t i = 0; i < GetParam(); ++i) {
+            node.remove_buffer_reference();
+        }
 
-public:
-    MayaFlux::Nodes::ProcessingToken token = MayaFlux::Nodes::ProcessingToken::AUDIO_RATE;
-};
+        EXPECT_FALSE(node.mark_buffer_processed());
+    }
 
-TEST_F(NodeCallbackTest, BasicTickCallback)
-{
-    bool callback_called = false;
-    double callback_value = 0.0;
+    INSTANTIATE_TEST_SUITE_P(
+        References,
+        NodeBufferReferenceTest,
+        ::testing::Values(0U, 1U, 2U, 3U, 4U));
 
-    sine->on_tick([&callback_called, &callback_value](const Nodes::NodeContext& context) {
-        callback_called = true;
-        callback_value = context.value;
-    });
+    struct ModulatorCase {
+        const char* name;
+        NodeFactory make;
+        std::vector<Nodes::ModulatorRole> roles;
+        size_t tree_size;
+    };
 
-    double sample = sine->process_sample(0.0);
+    size_t tree_size(const std::vector<Nodes::ModulatorTree>& tree)
+    {
+        size_t total = 0;
+        for (const auto& entry : tree) {
+            total += 1 + tree_size(entry.modulators);
+        }
+        return total;
+    }
 
-    EXPECT_TRUE(callback_called);
-    EXPECT_DOUBLE_EQ(callback_value, sample);
-}
+    const std::vector<ModulatorCase>& modulator_cases()
+    {
+        using Nodes::ModulatorRole;
 
-TEST_F(NodeCallbackTest, ConditionalTickCallback)
-{
-    bool callback_called = false;
-    double callback_value = 0.0;
+        static const std::vector<ModulatorCase> all = {
+            { "Constant", [] { return std::make_shared<Nodes::Constant>(1.0); }, {}, 0 },
+            { "FirWithoutInput", [] { return make_fir(); }, {}, 0 },
+            { "FirWithInput", [] {
+                 return std::make_shared<Nodes::Filters::FIR>(
+                     std::make_shared<Nodes::Constant>(1.0), std::vector<double> { 0.5, 0.5 });
+             },
+                { ModulatorRole::SignalMod }, 1 },
+            { "BinaryOp", [] {
+                 return std::make_shared<Nodes::BinaryOpNode>(
+                     std::make_shared<Nodes::Constant>(1.0),
+                     std::make_shared<Nodes::Constant>(2.0),
+                     [](double a, double b) { return a + b; });
+             },
+                { ModulatorRole::Lhs, ModulatorRole::Rhs }, 2 },
+            { "ChainOfFilterWithInput", [] {
+                 return std::make_shared<Nodes::ChainNode>(
+                     std::make_shared<Nodes::Constant>(1.0),
+                     std::make_shared<Nodes::Filters::FIR>(
+                         std::make_shared<Nodes::Constant>(2.0), std::vector<double> { 0.5, 0.5 }));
+             },
+                { ModulatorRole::ChainLink, ModulatorRole::ChainLink }, 3 },
+        };
+        return all;
+    }
 
-    sine->on_tick_if(
-        [](const Nodes::NodeContext& context) {
-            return context.value > 0.0;
-        },
-        [&callback_called, &callback_value](const Nodes::NodeContext& context) {
-            callback_called = true;
-            callback_value = context.value;
+    std::string modulator_case_name(const ::testing::TestParamInfo<ModulatorCase>& info)
+    {
+        return info.param.name;
+    }
+
+    class NodeModulatorTreeTest : public ::testing::TestWithParam<ModulatorCase> { };
+
+    TEST_P(NodeModulatorTreeTest, DirectModulatorsReportTheirRoles)
+    {
+        const auto node = GetParam().make();
+
+        const auto modulators = node->get_modulators();
+
+        ASSERT_EQ(modulators.size(), GetParam().roles.size());
+        for (size_t i = 0; i < modulators.size(); ++i) {
+            EXPECT_EQ(modulators[i].first, GetParam().roles[i]);
+            EXPECT_NE(modulators[i].second, nullptr);
+        }
+    }
+
+    TEST_P(NodeModulatorTreeTest, TreeCoversEveryReachableModulator)
+    {
+        const auto node = GetParam().make();
+
+        EXPECT_EQ(tree_size(node->get_modulator_tree()), GetParam().tree_size);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Nodes,
+        NodeModulatorTreeTest,
+        ::testing::ValuesIn(modulator_cases()),
+        modulator_case_name);
+
+    struct RootCase {
+        const char* name;
+        std::vector<uint32_t> channels;
+    };
+
+    class NodeRootRegistrationTest : public ::testing::TestWithParam<RootCase> {
+    protected:
+        void SetUp() override
+        {
+            manager = std::make_shared<Nodes::NodeGraphManager>();
+            node = std::make_shared<Nodes::Generator::Sine>(440.0F, 0.5);
+        }
+
+        void commit()
+        {
+            for (const uint32_t channel : GetParam().channels) {
+                manager->get_root_node(token, channel).process_sample();
+            }
+        }
+
+        std::shared_ptr<Nodes::NodeGraphManager> manager;
+        std::shared_ptr<Nodes::Generator::Sine> node;
+        Nodes::ProcessingToken token = Nodes::ProcessingToken::AUDIO_RATE;
+    };
+
+    TEST_P(NodeRootRegistrationTest, RegistrationIsQueuedUntilTheRootProcesses)
+    {
+        const auto& channels = GetParam().channels;
+
+        for (const uint32_t channel : channels) {
+            manager->add_to_root(node, token, channel);
+        }
+
+        for (const uint32_t channel : channels) {
+            EXPECT_EQ(manager->get_root_node(token, channel).get_node_size(), 0U);
+            EXPECT_TRUE(node->is_used_by_channel(channel));
+        }
+    }
+
+    TEST_P(NodeRootRegistrationTest, NodeIsRegisteredOnEveryRequestedChannelOnceCommitted)
+    {
+        const auto& channels = GetParam().channels;
+        for (const uint32_t channel : channels) {
+            manager->add_to_root(node, token, channel);
+        }
+
+        commit();
+
+        for (const uint32_t channel : channels) {
+            EXPECT_EQ(manager->get_root_node(token, channel).get_node_size(), 1U);
+            EXPECT_TRUE(node->is_used_by_channel(channel));
+        }
+    }
+
+    TEST_P(NodeRootRegistrationTest, RemovalIsQueuedUntilTheRootProcesses)
+    {
+        const auto& channels = GetParam().channels;
+        for (const uint32_t channel : channels) {
+            manager->add_to_root(node, token, channel);
+        }
+        commit();
+
+        const uint32_t removed = channels.back();
+        manager->remove_from_root(node, token, removed);
+
+        EXPECT_EQ(manager->get_root_node(token, removed).get_node_size(), 1U);
+        EXPECT_FALSE(node->is_used_by_channel(removed));
+
+        commit();
+
+        EXPECT_EQ(manager->get_root_node(token, removed).get_node_size(), 0U);
+        for (size_t i = 0; i + 1 < channels.size(); ++i) {
+            EXPECT_EQ(manager->get_root_node(token, channels[i]).get_node_size(), 1U);
+            EXPECT_TRUE(node->is_used_by_channel(channels[i]));
+        }
+    }
+
+    TEST_P(NodeRootRegistrationTest, RootsOfDifferentChannelsAreDistinct)
+    {
+        const auto& channels = GetParam().channels;
+        if (channels.size() < 2) {
+            GTEST_SKIP() << "needs two channels";
+        }
+
+        EXPECT_NE(&manager->get_root_node(token, channels[0]), &manager->get_root_node(token, channels[1]));
+    }
+
+    TEST_P(NodeRootRegistrationTest, DirectRegisterAndUnregisterOnARoot)
+    {
+        auto& root = manager->get_root_node(token, GetParam().channels.front());
+        EXPECT_EQ(root.get_node_size(), 0U);
+
+        root.register_node(node);
+        EXPECT_EQ(root.get_node_size(), 0U);
+
+        root.process_sample();
+        EXPECT_EQ(root.get_node_size(), 1U);
+
+        root.unregister_node(node);
+        EXPECT_EQ(root.get_node_size(), 1U);
+
+        root.process_sample();
+        EXPECT_EQ(root.get_node_size(), 0U);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Channels,
+        NodeRootRegistrationTest,
+        ::testing::Values(
+            RootCase { "One", { 0 } },
+            RootCase { "Two", { 0, 1 } },
+            RootCase { "Three", { 0, 1, 2 } },
+            RootCase { "Sparse", { 2, 5 } }),
+        [](const ::testing::TestParamInfo<RootCase>& info) { return std::string(info.param.name); });
+
+    class NodeExternalHookNode : public Node {
+    public:
+        double process_sample(double /*input*/) override
+        {
+            notify_tick(1.0);
+            return 1.0;
+        }
+
+        std::vector<double> process_batch(unsigned int num_samples) override
+        {
+            return std::vector<double>(num_samples, 1.0);
+        }
+
+        void update_context(double value) override { m_context.value = value; }
+        NodeContext& get_last_context() override { return m_context; }
+        void save_state() override { }
+        void restore_state() override { }
+
+    protected:
+        void notify_tick(double value) override
+        {
+            update_context(value);
+            m_callbacks.fire(m_context);
+            m_conditional_callbacks.fire(m_context);
+        }
+
+    private:
+        struct Context : NodeContext {
+            Context()
+                : NodeContext(0.0)
+            {
+            }
+        };
+
+        Context m_context;
+    };
+
+    class NodeExternalSubclassTest : public ::testing::TestWithParam<bool> {
+    protected:
+        Nodes::HookId attach()
+        {
+            if (GetParam()) {
+                return node.on_tick_if([](NodeContext&) { return true; }, [this](NodeContext&) { ++count; });
+            }
+            return node.on_tick([this](NodeContext&) { ++count; });
+        }
+
+        NodeExternalHookNode node;
+        int count {};
+    };
+
+    TEST_P(NodeExternalSubclassTest, HooksFireThroughTheBaseLists)
+    {
+        attach();
+
+        node.process_sample(0.0);
+
+        EXPECT_EQ(count, 1);
+    }
+
+    TEST_P(NodeExternalSubclassTest, UnhookRemovesTheRegistration)
+    {
+        const auto id = attach();
+
+        EXPECT_TRUE(node.unhook(id));
+        node.process_sample(0.0);
+
+        EXPECT_EQ(count, 0);
+    }
+
+    TEST_P(NodeExternalSubclassTest, RemoveAllHooksClearsTheBaseLists)
+    {
+        attach();
+
+        node.remove_all_hooks();
+        node.process_sample(0.0);
+
+        EXPECT_EQ(count, 0);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Kinds,
+        NodeExternalSubclassTest,
+        ::testing::Bool());
+
+    class NodeInputThreadingTest : public ::testing::TestWithParam<int> { };
+
+    TEST_P(NodeInputThreadingTest, HooksCanBeAddedAndRemovedWhileInputArrives)
+    {
+        auto node = make_probe_input();
+        std::atomic<bool> stop { false };
+        std::atomic<int> fired { 0 };
+
+        std::thread feeder([&] {
+            for (int i = 0; !stop.load(); ++i) {
+                feed_input(*node, static_cast<double>(i % 2));
+            }
         });
 
-    bool positive_found = false;
-    bool negative_found = false;
-    callback_called = false;
-
-    for (int i = 0; i < 100 && (!positive_found || !negative_found); i++) {
-        double sample = sine->process_sample(0.0);
-
-        if (sample > 0.0)
-            positive_found = true;
-        if (sample < 0.0)
-            negative_found = true;
-
-        if (sample > 0.0 && !callback_called) {
-            EXPECT_TRUE(callback_called);
-            EXPECT_DOUBLE_EQ(callback_value, sample);
+        auto& input = static_cast<Nodes::Input::InputNode&>(*node);
+        for (int i = 0; i < GetParam(); ++i) {
+            const auto tick = input.on_tick([&fired](const NodeContext&) { fired.fetch_add(1); });
+            const auto change = input.on_value_change([&fired](const NodeContext&) { fired.fetch_add(1); });
+            node->unhook(tick);
+            node->unhook(change);
         }
 
-        if (sample < 0.0) {
-            EXPECT_EQ(callback_value, callback_value);
-        }
+        stop.store(true);
+        feeder.join();
+
+        node->remove_all_hooks();
+        const int after = fired.load();
+        feed_input(*node, 1.0);
+        feed_input(*node, 0.0);
+
+        EXPECT_EQ(fired.load(), after);
     }
 
-    EXPECT_TRUE(positive_found);
-    EXPECT_TRUE(negative_found);
+    INSTANTIATE_TEST_SUITE_P(
+        Cycles,
+        NodeInputThreadingTest,
+        ::testing::Values(10, 500));
+
 }
-
-TEST_F(NodeCallbackTest, MultipleCallbacks)
-{
-    int callback1_count = 0;
-    int callback2_count = 0;
-
-    sine->on_tick([&callback1_count](const Nodes::NodeContext&) {
-        callback1_count++;
-    });
-
-    sine->on_tick([&callback2_count](const Nodes::NodeContext&) {
-        callback2_count++;
-    });
-
-    const int num_samples = 10;
-    for (int i = 0; i < num_samples; i++) {
-        sine->process_sample(0.0);
-    }
-
-    EXPECT_EQ(callback1_count, num_samples);
-    EXPECT_EQ(callback2_count, num_samples);
-}
-
-TEST_F(NodeCallbackTest, NoiseEngineCallbacks)
-{
-    bool callback_called = false;
-    double callback_value = 0.0;
-
-    noise->on_tick([&callback_called, &callback_value](const Nodes::NodeContext& context) {
-        callback_called = true;
-        callback_value = context.value;
-    });
-
-    double sample = noise->process_sample(0.0);
-
-    EXPECT_TRUE(callback_called);
-    EXPECT_DOUBLE_EQ(callback_value, sample);
-}
-
-TEST_F(NodeCallbackTest, ConditionalNoiseCallbacks)
-{
-    int conditional_count = 0;
-    int total_count = 0;
-
-    noise->on_tick([&total_count](const Nodes::NodeContext&) {
-        total_count++;
-    });
-
-    noise->on_tick_if(
-        [](const Nodes::NodeContext& context) {
-            return context.value > 0.5;
-        },
-        [&conditional_count](const Nodes::NodeContext&) {
-            conditional_count++;
-        });
-
-    const int num_samples = 1000;
-    for (int i = 0; i < num_samples; i++) {
-        noise->process_sample(0.0);
-    }
-
-    EXPECT_EQ(total_count, num_samples);
-    EXPECT_GT(conditional_count, 0);
-    EXPECT_LT(conditional_count, num_samples);
-}
-
-TEST_F(NodeCallbackTest, FilterNodeCallbacks)
-{
-    bool input_callback_called = false;
-    bool output_callback_called = false;
-    double input_value = 0.0;
-    double output_value = 0.0;
-
-    sine->on_tick([&input_callback_called, &input_value](const Nodes::NodeContext& context) {
-        input_callback_called = true;
-        input_value = context.value;
-    });
-
-    fir->on_tick([&output_callback_called, &output_value](const Nodes::NodeContext& context) {
-        output_callback_called = true;
-        output_value = context.value;
-    });
-
-    double sample = fir->process_sample(0.0);
-
-    EXPECT_TRUE(input_callback_called);
-    EXPECT_TRUE(output_callback_called);
-    EXPECT_DOUBLE_EQ(output_value, sample);
-}
-
-TEST_F(NodeCallbackTest, NodeChainCallbacks)
-{
-    int sine_count = 0;
-    int filter_count = 0;
-
-    auto test_sine = std::make_shared<Nodes::Generator::Sine>(440.0f, 0.5f);
-    auto test_fir = std::make_shared<Nodes::Filters::FIR>(test_sine, fir_coeffs);
-
-    test_sine->on_tick([&sine_count](const Nodes::NodeContext&) {
-        sine_count++;
-    });
-
-    test_fir->on_tick([&filter_count](const Nodes::NodeContext&) {
-        filter_count++;
-    });
-
-    auto chain_node = test_sine >> test_fir;
-
-    const int num_samples = 10;
-    for (int i = 0; i < num_samples; i++) {
-        MayaFlux::get_audio_channel_root().process_sample();
-    }
-
-    EXPECT_EQ(sine_count, num_samples);
-    EXPECT_EQ(filter_count, num_samples);
-
-    MayaFlux::unregister_audio_node(chain_node);
-
-    chain_node->remove_all_hooks();
-    test_sine->remove_all_hooks();
-    test_fir->remove_all_hooks();
-}
-
-TEST_F(NodeCallbackTest, RemoveHooks)
-{
-    int sine_count = 0;
-
-    auto callback = [&sine_count](const Nodes::NodeContext&) {
-        sine_count++;
-    };
-
-    sine->on_tick(callback);
-
-    sine->process_sample(0.0);
-    EXPECT_EQ(sine_count, 1);
-
-    bool removed = sine->remove_hook(callback);
-    EXPECT_TRUE(removed);
-
-    for (int i = 0; i < 5; i++) {
-        sine->process_sample(0.0);
-    }
-    EXPECT_EQ(sine_count, 1);
-
-    auto nonexistent_callback = [](const Nodes::NodeContext&) { };
-    removed = sine->remove_hook(nonexistent_callback);
-    EXPECT_FALSE(removed);
-}
-
-TEST_F(NodeCallbackTest, RemoveConditionalHooks)
-{
-    int conditional_count = 0;
-
-    auto condition = [](const Nodes::NodeContext& context) {
-        return context.value > 0.0;
-    };
-
-    auto callback = [&conditional_count](const Nodes::NodeContext&) {
-        conditional_count++;
-    };
-
-    sine->on_tick_if(condition, callback);
-
-    for (int i = 0; i < 20; i++) {
-        sine->process_sample(0.0);
-    }
-
-    int initial_count = conditional_count;
-    EXPECT_GT(initial_count, 0);
-
-    bool removed = sine->remove_conditional_hook(condition);
-    EXPECT_TRUE(removed);
-
-    for (int i = 0; i < 20; i++) {
-        sine->process_sample(0.0);
-    }
-    EXPECT_EQ(conditional_count, initial_count);
-}
-
-TEST_F(NodeCallbackTest, DuplicateCallbackPrevention)
-{
-    int callback_count = 0;
-
-    auto callback = [&callback_count](const Nodes::NodeContext&) {
-        callback_count++;
-    };
-
-    sine->on_tick(callback);
-    sine->on_tick(callback);
-
-    sine->process_sample(0.0);
-
-    EXPECT_EQ(callback_count, 1);
-}
-
-TEST_F(NodeCallbackTest, ChainNodeCallbackPropagation)
-{
-    int source_count = 0;
-    int target_count = 0;
-    int chain_count = 0;
-
-    auto source = std::make_shared<Nodes::Generator::Sine>(440.0f, 0.5f);
-    auto target = std::make_shared<Nodes::Filters::FIR>(source, fir_coeffs);
-
-    source->on_tick([&source_count](const Nodes::NodeContext&) {
-        source_count++;
-    });
-
-    target->on_tick([&target_count](const Nodes::NodeContext&) {
-        target_count++;
-    });
-
-    auto chain = source >> target;
-
-    chain->on_tick([&chain_count](const Nodes::NodeContext&) {
-        chain_count++;
-    });
-
-    const int num_samples = 10;
-    for (int i = 0; i < num_samples; i++) {
-        MayaFlux::get_node_graph_manager()->get_root_node(token, 0).process_sample();
-    }
-
-    EXPECT_EQ(source_count, num_samples);
-    EXPECT_EQ(target_count, num_samples);
-    EXPECT_EQ(chain_count, num_samples);
-
-    MayaFlux::unregister_audio_node(chain);
-
-    chain->remove_all_hooks();
-    source->remove_all_hooks();
-    target->remove_all_hooks();
-
-    // chain.reset();
-    // target.reset();
-    // source.reset();
-}
-
-TEST_F(NodeCallbackTest, NodeOperatorCallbacks)
-{
-    auto sine1 = std::make_shared<MayaFlux::Nodes::Generator::Sine>(440.0f, 0.5f);
-    auto sine2 = std::make_shared<MayaFlux::Nodes::Generator::Sine>(880.0f, 0.3f);
-
-    int sine1_count = 0;
-    int sine2_count = 0;
-    int add_node_count = 0;
-
-    sine1->on_tick([&sine1_count](const Nodes::NodeContext&) {
-        sine1_count++;
-    });
-
-    sine2->on_tick([&sine2_count](const Nodes::NodeContext&) {
-        sine2_count++;
-    });
-
-    auto add_node = sine1 + sine2;
-
-    add_node->on_tick([&add_node_count](const Nodes::NodeContext&) {
-        add_node_count++;
-    });
-
-    const int num_samples = 10;
-    for (int i = 0; i < num_samples; i++) {
-        MayaFlux::get_node_graph_manager()->get_root_node(token, 0).process_sample();
-    }
-
-    EXPECT_EQ(sine1_count, num_samples);
-    EXPECT_EQ(sine2_count, num_samples);
-    EXPECT_EQ(add_node_count, num_samples);
-}
-
-TEST_F(NodeCallbackTest, ClearCallbacks)
-{
-    int callback_count = 0;
-
-    auto sine1 = std::make_shared<MayaFlux::Nodes::Generator::Sine>(440.0f, 0.5f);
-
-    sine1->on_tick([&callback_count](const MayaFlux::Nodes::NodeContext&) {
-        callback_count++;
-    });
-
-    sine1->process_sample(0.0);
-    EXPECT_EQ(callback_count, 1);
-
-    sine1->remove_all_hooks();
-
-    for (int i = 0; i < 10; i++) {
-        sine1->process_sample(0.0);
-    }
-
-    EXPECT_EQ(callback_count, 1);
-}
-
 }
