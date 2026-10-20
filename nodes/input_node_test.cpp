@@ -286,7 +286,7 @@ namespace {
         EXPECT_EQ(device, 7U);
     }
 
-    TEST(InputNodeTest, OnTickFiresForEveryInputAndEverySample)
+    TEST(InputNodeTest, OnTickFiresForEveryInputAndNotForProcessedSamples)
     {
         auto node = make_node();
         int ticks = 0;
@@ -298,8 +298,8 @@ namespace {
         feed(*node, 0.5);
         node->process_sample();
 
-        EXPECT_EQ(ticks, 3);
-        EXPECT_EQ(inputs, 3);
+        EXPECT_EQ(ticks, 2);
+        EXPECT_EQ(inputs, 2);
     }
 
     TEST(InputNodeTest, OnTickIfFiresOnlyWhileTheConditionHolds)

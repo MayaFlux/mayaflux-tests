@@ -53,6 +53,16 @@ namespace {
             Core::InputValue::make_scalar(value, 1, Core::InputType::HID));
     }
 
+    void tick_sample(Node& node)
+    {
+        node.process_sample(0.0);
+    }
+
+    void tick_input(Node& node)
+    {
+        feed_input(node, 1.0);
+    }
+
     std::shared_ptr<Node> make_fir()
     {
         return std::make_shared<Nodes::Filters::FIR>(std::vector<double> { 0.5, 0.5 });
@@ -73,6 +83,7 @@ namespace {
     struct HookCase {
         const char* name;
         NodeFactory make;
+        std::function<void(Node&)> drive = tick_sample;
     };
 
     const std::vector<HookCase>& hook_cases()
@@ -96,7 +107,7 @@ namespace {
                  return std::make_shared<Nodes::ChainNode>(
                      std::make_shared<Nodes::Generator::Sine>(440.0F, 0.5), make_fir());
              } },
-            { "InputNode", [] { return make_probe_input(); } },
+            { "InputNode", [] { return make_probe_input(); }, tick_input },
         };
         return all;
     }
@@ -113,7 +124,7 @@ namespace {
         void tick(int times = TICKS)
         {
             for (int i = 0; i < times; ++i) {
-                node->process_sample(0.0);
+                GetParam().drive(*node);
             }
         }
 
@@ -270,6 +281,7 @@ namespace {
         NodeFactory make;
         std::function<Nodes::HookId(Node&, const ProbeHook&)> add_tick;
         std::function<Nodes::HookId(Node&, const Nodes::NodeCondition&, const ProbeHook&)> add_tick_if;
+        std::function<void(Node&)> drive = tick_sample;
     };
 
     const std::vector<TypedCase>& typed_cases()
@@ -289,7 +301,8 @@ namespace {
                 add_typed_tick_if<Nodes::Generator::Logic> },
             { "InputNode", [] { return make_probe_input(); },
                 add_typed_tick<Nodes::Input::InputNode>,
-                add_typed_tick_if<Nodes::Input::InputNode> },
+                add_typed_tick_if<Nodes::Input::InputNode>,
+                tick_input },
         };
         return all;
     }
@@ -306,7 +319,7 @@ namespace {
         void tick(int times = TICKS)
         {
             for (int i = 0; i < times; ++i) {
-                node->process_sample(0.0);
+                GetParam().drive(*node);
             }
         }
 
@@ -1156,6 +1169,76 @@ namespace {
             RootCase { "Three", { 0, 1, 2 } },
             RootCase { "Sparse", { 2, 5 } }),
         [](const ::testing::TestParamInfo<RootCase>& info) { return std::string(info.param.name); });
+
+    std::vector<EventCase> input_event_cases()
+    {
+        std::vector<EventCase> selected;
+        std::ranges::copy_if(event_cases(), std::back_inserter(selected), [](const EventCase& entry) {
+            const std::string_view name = entry.name;
+            return name.starts_with("Input") || name.starts_with("Tablet") || name.starts_with("Midi") || name.starts_with("Osc");
+        });
+        return selected;
+    }
+
+    class NodeInputNotifyTest : public ::testing::TestWithParam<EventCase> {
+    protected:
+        void SetUp() override { node = GetParam().make(); }
+
+        std::shared_ptr<Node> node;
+        int count {};
+    };
+
+    TEST_P(NodeInputNotifyTest, ProcessSampleDoesNotRunInputHooks)
+    {
+        GetParam().attach(*node, [this](const NodeContext&) { ++count; });
+
+        for (int i = 0; i < 10; ++i) {
+            node->process_sample(0.0);
+        }
+
+        EXPECT_EQ(count, 0);
+    }
+
+    TEST_P(NodeInputNotifyTest, HooksRunOnlyOnTheThreadThatDeliversInput)
+    {
+        std::atomic<size_t> owner_thread { 0 };
+        std::atomic<bool> foreign { false };
+        std::atomic<int> fired { 0 };
+
+        GetParam().attach(*node, [&](const NodeContext&) {
+            const size_t me = std::hash<std::thread::id> {}(std::this_thread::get_id());
+            size_t expected = 0;
+            if (!owner_thread.compare_exchange_strong(expected, me) && expected != me) {
+                foreign.store(true);
+            }
+            fired.fetch_add(1);
+        });
+
+        std::atomic<bool> stop { false };
+        std::thread graph([&] {
+            while (!stop.load()) {
+                node->process_sample(0.0);
+            }
+        });
+        std::thread feeder([&] {
+            for (int i = 0; i < 200; ++i) {
+                GetParam().drive(*node);
+            }
+        });
+
+        feeder.join();
+        stop.store(true);
+        graph.join();
+
+        EXPECT_GT(fired.load(), 0);
+        EXPECT_FALSE(foreign.load());
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Inputs,
+        NodeInputNotifyTest,
+        ::testing::ValuesIn(input_event_cases()),
+        event_case_name);
 
     class NodeExternalHookNode : public Node {
     public:
