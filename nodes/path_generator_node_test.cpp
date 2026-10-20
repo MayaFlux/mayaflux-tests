@@ -489,6 +489,18 @@ namespace {
         }
     }
 
+    TEST_F(PathGeneratorNodeTest, RadialFanCubicReturnsNearOriginBetweenWindows)
+    {
+        PathGeneratorNode node(InterpolationMode::RADIAL_FAN_CUBIC, 3, 16);
+        add_in_order(node, collinear_points(5));
+        node.compute_frame();
+
+        const auto vertices = uploaded_vertices(node);
+        ASSERT_EQ(vertices.size(), 8U);
+        EXPECT_TRUE(near_vec(vertices[3].position, { 1.0F, 0.0F, 0.0F }));
+        EXPECT_TRUE(near_vec(vertices[4].position, { 0.5F, 0.0F, 0.0F }));
+    }
+
     TEST_F(PathGeneratorNodeTest, SamplesPerSegmentChangesTheVertexCount)
     {
         auto node = catmull(5);

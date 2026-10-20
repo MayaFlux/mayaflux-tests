@@ -130,6 +130,30 @@ namespace {
             combine({ { -1.0 / 16.0, pts[0] }, { 9.0 / 16.0, pts[1] }, { 9.0 / 16.0, pts[2] }, { -1.0 / 16.0, pts[3] } }));
     }
 
+    TEST_F(CurveEvaluatorTest, RadialFanCubicSweepsFromNearOriginToFourthControl)
+    {
+        const auto c = evaluate(InterpolationMode::RADIAL_FAN_CUBIC, 0.5, four_points(), 3);
+
+        expect_sample(c, 0, { -0.5, -1.0, -1.5 });
+        expect_sample(c, 1, { 2.0, 1.4375, 1.625 });
+        expect_sample(c, 2, { 5.0, 5.0, 5.0 });
+    }
+
+    TEST_F(CurveEvaluatorTest, RadialFanCubicSingleSampleMatchesTheSampledCurve)
+    {
+        const auto points = as_columns(four_points());
+
+        expect_vector(Kinesis::interpolate(points, 0.0,
+                          InterpolationMode::RADIAL_FAN_CUBIC),
+            { -0.5, -1.0, -1.5 });
+        expect_vector(Kinesis::interpolate(points, 0.5,
+                          InterpolationMode::RADIAL_FAN_CUBIC),
+            { 2.0, 1.4375, 1.625 });
+        expect_vector(Kinesis::interpolate(points, 1.0,
+                          InterpolationMode::RADIAL_FAN_CUBIC),
+            { 5.0, 5.0, 5.0 });
+    }
+
     TEST_F(CurveEvaluatorTest, CatmullRomTangentsAreHalfTheSpanOfTheNeighbours)
     {
         const auto pts = four_points();
