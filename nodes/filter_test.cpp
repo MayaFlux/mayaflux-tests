@@ -1,7 +1,10 @@
 #include "../test_config.h"
 
+#include "MayaFlux/Nodes/Conduit/Constant.hpp"
+#include "MayaFlux/Nodes/Conduit/StreamReaderNode.hpp"
 #include "MayaFlux/Nodes/Filters/FIR.hpp"
 #include "MayaFlux/Nodes/Filters/IIR.hpp"
+#include "MayaFlux/Nodes/Generators/Sine.hpp"
 
 namespace MayaFlux::Test {
 
@@ -656,5 +659,449 @@ TEST(FIRTest, BypassPassesInputThroughAndCachesIt)
         EXPECT_DOUBLE_EQ(filter.get_last_output(), sample);
     }
 }
+
+TEST(FilterBaseOrderTest, OrderIsTheLargerTapCountMinusOne)
+{
+    EXPECT_EQ(FIR({ 1.0 }).get_order(), 0);
+    EXPECT_EQ(FIR({ 0.5, 0.5 }).get_order(), 1);
+    EXPECT_EQ(IIR({ 1.0, -0.5, 0.25 }, { 1.0 }).get_order(), 2);
+    EXPECT_EQ(IIR({ 1.0 }, { 1.0, 2.0, 3.0, 4.0 }).get_order(), 3);
+}
+
+TEST(FilterBaseResponseTest, FirAverageHasTheCosineMagnitudeAndLinearPhase)
+{
+    const FIR filter({ 0.5, 0.5 });
+    constexpr double rate = 48000.0;
+
+    EXPECT_NEAR(filter.get_magnitude_response(0.0, rate), 1.0, 1e-12);
+    EXPECT_NEAR(filter.get_magnitude_response(rate / 4.0, rate), std::cos(std::numbers::pi / 4.0), 1e-12);
+    EXPECT_NEAR(filter.get_magnitude_response(rate / 2.0, rate), 0.0, 1e-12);
+
+    EXPECT_NEAR(filter.get_phase_response(0.0, rate), 0.0, 1e-12);
+    EXPECT_NEAR(filter.get_phase_response(rate / 4.0, rate), -std::numbers::pi / 4.0, 1e-12);
+}
+
+TEST(FilterBaseResponseTest, OnePoleLowpassHasTheExpectedDcAndNyquistGain)
+{
+    const IIR filter({ 1.0, -0.5 }, { 1.0 });
+    constexpr double rate = 48000.0;
+
+    EXPECT_NEAR(filter.get_magnitude_response(0.0, rate), 2.0, 1e-12);
+    EXPECT_NEAR(filter.get_magnitude_response(rate / 2.0, rate), 1.0 / 1.5, 1e-12);
+    EXPECT_NEAR(filter.get_phase_response(0.0, rate), 0.0, 1e-12);
+    EXPECT_NEAR(filter.get_phase_response(rate / 2.0, rate), 0.0, 1e-12);
+}
+
+TEST(FilterBaseResponseTest, MagnitudeAndPhaseAreTheModulusAndArgumentOfTheResponse)
+{
+    const IIR filter({ 1.0, -1.2, 0.5 }, { 0.3, 0.1, 0.2 });
+    constexpr double rate = 44100.0;
+
+    for (const double frequency : { 0.0, 100.0, 1000.0, 5000.0, 12000.0, 22050.0 }) {
+        const auto response = filter.get_frequency_response(frequency, rate);
+        EXPECT_DOUBLE_EQ(filter.get_magnitude_response(frequency, rate), std::abs(response));
+        EXPECT_DOUBLE_EQ(filter.get_phase_response(frequency, rate), std::arg(response));
+    }
+}
+
+TEST(FilterBaseResponseTest, GainDoesNotChangeTheDesignedResponse)
+{
+    FIR filter({ 0.5, 0.5 });
+    const double before = filter.get_magnitude_response(1000.0, 48000.0);
+
+    filter.set_gain(0.1);
+
+    EXPECT_DOUBLE_EQ(filter.get_magnitude_response(1000.0, 48000.0), before);
+}
+
+TEST(FilterBaseUpdateTest, SetOutputCoefsNormalisesAndResizesTheOutputHistory)
+{
+    IIR filter({ 1.0 }, { 1.0 });
+
+    filter.set_coefs({ 2.0, -1.0, 0.5 }, coefficients::OUTPUT);
+
+    EXPECT_EQ(filter.getACoefficients(), (std::vector<double> { 1.0, -0.5, 0.25 }));
+    EXPECT_EQ(filter.get_output_history().size(), 3U);
+    EXPECT_EQ(filter.getBCoefficients(), (std::vector<double> { 1.0 }));
+}
+
+TEST(FilterBaseUpdateTest, SetInputCoefsReplacesTheFeedforwardAndResizesTheInputHistory)
+{
+    IIR filter({ 1.0, -0.5 }, { 1.0 });
+
+    filter.set_coefs({ 1.0, 2.0, 3.0 }, coefficients::INPUT);
+
+    EXPECT_EQ(filter.getBCoefficients(), (std::vector<double> { 1.0, 2.0, 3.0 }));
+    EXPECT_EQ(filter.get_input_history().size(), 3U);
+    EXPECT_EQ(filter.getACoefficients(), (std::vector<double> { 1.0, -0.5 }));
+}
+
+TEST(FilterBaseUpdateTest, SetAllCoefsAppliesTheVectorToBothSides)
+{
+    IIR filter({ 1.0 }, { 1.0 });
+
+    filter.set_coefs({ 2.0, 4.0 });
+
+    EXPECT_EQ(filter.getACoefficients(), (std::vector<double> { 1.0, 2.0 }));
+    EXPECT_EQ(filter.getBCoefficients(), (std::vector<double> { 2.0, 4.0 }));
+}
+
+TEST(FilterBaseUpdateTest, SettingCoefficientsClearsTheHistory)
+{
+    IIR filter({ 1.0, -0.5 }, { 1.0, 0.5 });
+    run(filter, test_signal(8));
+
+    filter.set_coefs({ 1.0, 0.25 }, coefficients::INPUT);
+
+    for (const double sample : filter.get_input_history()) {
+        EXPECT_DOUBLE_EQ(sample, 0.0);
+    }
+}
+
+TEST(FilterBaseUpdateTest, InvalidCoefficientVectorsAreRejected)
+{
+    IIR filter({ 1.0, -0.5 }, { 1.0 });
+
+    EXPECT_THROW(filter.set_coefs({}, coefficients::OUTPUT), std::invalid_argument);
+    EXPECT_THROW(filter.set_coefs({ 0.0, 1.0 }, coefficients::OUTPUT), std::invalid_argument);
+    EXPECT_THROW(filter.set_coefs({}, coefficients::INPUT), std::invalid_argument);
+    EXPECT_EQ(filter.getACoefficients(), (std::vector<double> { 1.0, -0.5 }));
+    EXPECT_EQ(filter.getBCoefficients(), (std::vector<double> { 1.0 }));
+}
+
+TEST(FilterBaseUpdateTest, CoefficientsCanBeTakenFromAnotherNode)
+{
+    FIR filter({ 1.0 });
+    auto reader = std::make_shared<Nodes::StreamReaderNode>();
+    reader->set_data(std::vector<double> { 0.5, 0.25, 0.125 });
+    filter.update_coefs_from_node(3, reader, coefficients::INPUT);
+
+    EXPECT_EQ(filter.getBCoefficients(), (std::vector<double> { 0.5, 0.25, 0.125 }));
+    EXPECT_EQ(reader->remaining(), 0U);
+    expect_sequences_near(run(filter, impulse(5)), { 0.5, 0.25, 0.125, 0.0, 0.0 }, 1e-12);
+}
+
+TEST(FilterBaseUpdateTest, FeedbackCoefficientsCanBeTakenFromAnotherNode)
+{
+    IIR filter({ 1.0 }, { 1.0 });
+    auto reader = std::make_shared<Nodes::StreamReaderNode>();
+    reader->set_data(std::vector<double> { 2.0, -1.0 });
+
+    filter.update_coefs_from_node(2, reader, coefficients::OUTPUT);
+
+    EXPECT_EQ(filter.getACoefficients(), (std::vector<double> { 1.0, -0.5 }));
+}
+
+TEST(FilterBaseUpdateTest, CoefficientsCanBeTakenFromTheInputNode)
+{
+    auto reader = std::make_shared<Nodes::StreamReaderNode>();
+    reader->set_data(std::vector<double> { 0.5, 0.25, 0.125 });
+    FIR filter(reader, { 1.0 });
+
+    filter.update_coef_from_input(3, coefficients::INPUT);
+
+    EXPECT_EQ(filter.getBCoefficients(), (std::vector<double> { 0.5, 0.25, 0.125 }));
+    EXPECT_EQ(reader->remaining(), 0U);
+}
+
+TEST(FilterBaseUpdateTest, UpdatingFromAMissingInputNodeLeavesTheCoefficients)
+{
+    FIR filter({ 0.5, 0.5 });
+
+    filter.update_coef_from_input(4, coefficients::INPUT);
+
+    EXPECT_EQ(filter.getBCoefficients(), (std::vector<double> { 0.5, 0.5 }));
+}
+
+TEST(FilterBaseNormalizeTest, InputCoefficientsScaleToAUnitPeak)
+{
+    FIR filter({ 2.0, -4.0, 1.0 });
+
+    filter.normalize_coefficients(coefficients::INPUT);
+
+    EXPECT_EQ(filter.getBCoefficients(), (std::vector<double> { 0.5, -1.0, 0.25 }));
+}
+
+TEST(FilterBaseNormalizeTest, OutputNormalisationLeavesTheFeedforwardAlone)
+{
+    IIR filter({ 1.0, -0.5 }, { 2.0, 4.0 });
+
+    filter.normalize_coefficients(coefficients::OUTPUT);
+
+    EXPECT_EQ(filter.getBCoefficients(), (std::vector<double> { 2.0, 4.0 }));
+    EXPECT_EQ(filter.getACoefficients(), (std::vector<double> { 1.0, -0.5 }));
+}
+
+TEST(FilterBaseNormalizeTest, NormalisingEverythingScalesTheFeedforwardOnly)
+{
+    IIR filter({ 1.0, -0.5 }, { 2.0, 4.0 });
+
+    filter.normalize_coefficients();
+
+    EXPECT_EQ(filter.getBCoefficients(), (std::vector<double> { 0.5, 1.0 }));
+    EXPECT_EQ(filter.getACoefficients(), (std::vector<double> { 1.0, -0.5 }));
+}
+
+TEST(FilterBaseNormalizeTest, AllZeroInputCoefficientsStayZero)
+{
+    FIR filter({ 0.0, 0.0 });
+
+    filter.normalize_coefficients(coefficients::INPUT);
+
+    EXPECT_EQ(filter.getBCoefficients(), (std::vector<double> { 0.0, 0.0 }));
+}
+
+using InputFilterFactory = std::function<std::shared_ptr<Nodes::Filters::Filter>(const std::shared_ptr<Nodes::Node>&)>;
+
+struct InputFilterCase {
+    const char* name;
+    InputFilterFactory make;
+};
+
+class FilterBaseInputNodeTest : public ::testing::TestWithParam<InputFilterCase> {
+protected:
+    std::shared_ptr<Nodes::Constant> source { std::make_shared<Nodes::Constant>(2.0) };
+    std::shared_ptr<Nodes::Filters::Filter> filter { GetParam().make(source) };
+};
+
+TEST_P(FilterBaseInputNodeTest, NodeOutputIsAddedToTheCallersInput)
+{
+    EXPECT_DOUBLE_EQ(filter->process_sample(3.0), 5.0);
+    EXPECT_DOUBLE_EQ(filter->process_sample(0.0), 2.0);
+}
+
+TEST_P(FilterBaseInputNodeTest, NodeIsProcessedOncePerSampleAndLeftBalanced)
+{
+    int ticks = 0;
+    source->on_tick([&ticks](Nodes::NodeContext&) { ++ticks; });
+
+    for (int i = 0; i < 4; ++i) {
+        filter->process_sample(0.0);
+    }
+
+    EXPECT_EQ(ticks, 4);
+    EXPECT_EQ(source->m_modulator_count.load(), 0U);
+    EXPECT_FALSE((source->m_state.load() & Nodes::NodeState::PROCESSED) != 0);
+}
+
+TEST_P(FilterBaseInputNodeTest, AlreadyProcessedNodeContributesItsLastOutputWithoutRunning)
+{
+    int ticks = 0;
+    source->on_tick([&ticks](Nodes::NodeContext&) { ++ticks; });
+    Nodes::atomic_add_flag(source->m_state, Nodes::NodeState::PROCESSED);
+
+    EXPECT_DOUBLE_EQ(filter->process_sample(1.0), 3.0);
+    EXPECT_EQ(ticks, 0);
+}
+
+TEST_P(FilterBaseInputNodeTest, BypassNeverRunsTheInputNode)
+{
+    int ticks = 0;
+    source->on_tick([&ticks](Nodes::NodeContext&) { ++ticks; });
+    filter->set_bypass(true);
+
+    EXPECT_DOUBLE_EQ(filter->process_sample(7.0), 7.0);
+    EXPECT_EQ(ticks, 0);
+}
+
+TEST_P(FilterBaseInputNodeTest, InputNodeIsReportedAsTheSignalModulator)
+{
+    EXPECT_EQ(filter->get_input_node(), source);
+
+    const auto modulators = filter->get_modulators();
+
+    ASSERT_EQ(modulators.size(), 1U);
+    EXPECT_EQ(modulators[0].first, Nodes::ModulatorRole::SignalMod);
+    EXPECT_EQ(modulators[0].second, source);
+}
+
+TEST_P(FilterBaseInputNodeTest, InputNodeCanBeSetAndRemovedLater)
+{
+    filter->set_input_node(nullptr);
+    EXPECT_TRUE(filter->get_modulators().empty());
+    EXPECT_DOUBLE_EQ(filter->process_sample(3.0), 3.0);
+
+    filter->set_input_node(source);
+    EXPECT_DOUBLE_EQ(filter->process_sample(3.0), 5.0);
+}
+
+TEST_P(FilterBaseInputNodeTest, BatchRunsWithZeroInputAndTheNodeOutput)
+{
+    const auto batch = filter->process_batch(4);
+
+    ASSERT_EQ(batch.size(), 4U);
+    for (const double sample : batch) {
+        EXPECT_DOUBLE_EQ(sample, 2.0);
+    }
+}
+
+TEST_P(FilterBaseInputNodeTest, SaveAndRestoreCascadeToTheInputNode)
+{
+    auto make_filter = [this] {
+        return GetParam().make(std::make_shared<Nodes::Generator::Sine>(12000.0F, 1.0));
+    };
+    auto a = make_filter();
+    auto b = make_filter();
+    run(*a, std::vector<double>(3, 0.0));
+    run(*b, std::vector<double>(3, 0.0));
+    const auto reference = run(*b, std::vector<double>(5, 0.0));
+
+    a->save_state();
+    run(*a, std::vector<double>(5, 0.0));
+    a->restore_state();
+
+    EXPECT_EQ(run(*a, std::vector<double>(5, 0.0)), reference);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Filters,
+    FilterBaseInputNodeTest,
+    ::testing::Values(
+        InputFilterCase { "Fir", [](const std::shared_ptr<Nodes::Node>& input) -> std::shared_ptr<Nodes::Filters::Filter> {
+                             return std::make_shared<FIR>(input, std::vector<double> { 1.0 });
+                         } },
+        InputFilterCase { "Iir", [](const std::shared_ptr<Nodes::Node>& input) -> std::shared_ptr<Nodes::Filters::Filter> {
+                             return std::make_shared<IIR>(input, std::vector<double> { 1.0 }, std::vector<double> { 1.0 });
+                         } }),
+    [](const ::testing::TestParamInfo<InputFilterCase>& info) { return std::string(info.param.name); });
+
+TEST(FilterBaseBatchTest, FirBatchFeedsTheInputNodeThroughTheTaps)
+{
+    FIR filter(std::make_shared<Nodes::Constant>(1.0), { 0.5, 0.5 });
+
+    EXPECT_EQ(filter.process_batch(4), (std::vector<double> { 0.5, 1.0, 1.0, 1.0 }));
+}
+
+TEST(FilterBaseBatchTest, IirBatchFeedsTheInputNodeThroughTheRecursion)
+{
+    IIR filter(std::make_shared<Nodes::Constant>(1.0), { 1.0, -0.5 }, { 1.0 });
+
+    expect_sequences_near(filter.process_batch(4), { 1.0, 1.5, 1.75, 1.875 }, 1e-12);
+}
+
+TEST(FilterBaseContextTest, TickHookSeesTheUngainedOutputAndTheFilterState)
+{
+    FIR filter({ 1.0, 1.0 });
+    filter.set_gain(0.5);
+    double value = 0.0;
+    std::vector<double> inputs;
+    std::vector<double> outputs;
+    std::vector<double> feedback;
+    std::vector<double> feedforward;
+    filter.on_tick([&](Nodes::Filters::FilterContext& ctx) {
+        value = ctx.value;
+        inputs = ctx.input_history;
+        outputs = ctx.output_history;
+        feedback = ctx.coefs_a;
+        feedforward = ctx.coefs_b;
+    });
+
+    const double returned = filter.process_sample(1.0);
+
+    EXPECT_DOUBLE_EQ(returned, 0.5);
+    EXPECT_DOUBLE_EQ(value, 1.0);
+    EXPECT_EQ(inputs, (std::vector<double> { 1.0, 0.0 }));
+    EXPECT_DOUBLE_EQ(outputs.front(), 1.0);
+    EXPECT_EQ(feedback, (std::vector<double> { 1.0 }));
+    EXPECT_EQ(feedforward, (std::vector<double> { 1.0, 1.0 }));
+}
+
+TEST(FilterBaseContextTest, ConditionalTickHookFollowsItsCondition)
+{
+    IIR filter({ 1.0 }, { 1.0 });
+    int fired = 0;
+    filter.on_tick_if(
+        [](Nodes::NodeContext& ctx) { return ctx.value > 1.5; },
+        [&fired](Nodes::Filters::FilterContext&) { ++fired; });
+
+    for (const double sample : { 1.0, 2.0, 1.0, 3.0 }) {
+        filter.process_sample(sample);
+    }
+
+    EXPECT_EQ(fired, 2);
+}
+
+TEST(FilterBaseContextTest, GpuCompatibleFilterReportsItsInputHistoryAsFloats)
+{
+    FIR filter({ 1.0, 1.0 });
+    filter.set_gpu_compatible(true);
+    std::vector<float> buffer;
+    bool is_gpu_context = false;
+    filter.on_tick([&](Nodes::Filters::FilterContext& ctx) {
+        const auto* gpu = dynamic_cast<const Nodes::Filters::FilterContextGpu*>(&ctx);
+        is_gpu_context = gpu != nullptr;
+        if (gpu) {
+            buffer = gpu->gpu_float_buffer;
+        }
+    });
+
+    filter.process_sample(1.0);
+
+    EXPECT_TRUE(is_gpu_context);
+    EXPECT_EQ(buffer, (std::vector<float> { 1.0F, 0.0F }));
+}
+
+TEST(FilterBaseContextTest, TicksStopWhileSavedAndForNetworkedFilters)
+{
+    FIR filter({ 0.5, 0.5 });
+    int ticks = 0;
+    filter.on_tick([&ticks](Nodes::Filters::FilterContext&) { ++ticks; });
+
+    filter.process_sample(1.0);
+    EXPECT_EQ(ticks, 1);
+
+    filter.save_state();
+    filter.process_sample(1.0);
+    EXPECT_EQ(ticks, 1);
+    filter.restore_state();
+
+    filter.set_in_network(true);
+    filter.process_sample(1.0);
+    EXPECT_EQ(ticks, 1);
+}
+
+TEST(FilterBaseExternalContextTest, FlagFollowsSetAndClear)
+{
+    FIR filter({ 1.0, 1.0 });
+    std::vector<double> context { 1.0, 2.0 };
+
+    EXPECT_FALSE(filter.using_external_input_context());
+
+    filter.set_input_context(context);
+    EXPECT_TRUE(filter.using_external_input_context());
+
+    filter.clear_input_context();
+    EXPECT_FALSE(filter.using_external_input_context());
+}
+
+TEST(FilterBaseExternalContextTest, OlderSamplesComeFromTheContextNewestFirst)
+{
+    FIR filter({ 1.0, 1.0, 1.0 });
+    std::vector<double> context { 10.0, 20.0 };
+    filter.set_input_context(context);
+
+    EXPECT_DOUBLE_EQ(filter.process_sample(1.0), 1.0 + 20.0 + 10.0);
+    EXPECT_DOUBLE_EQ(filter.process_sample(2.0), 2.0 + 20.0 + 10.0);
+}
+
+TEST(FilterBaseExternalContextTest, ShortContextFillsOnlyWhatItHas)
+{
+    FIR filter({ 1.0, 1.0, 1.0 });
+    std::vector<double> context { 10.0 };
+    filter.set_input_context(context);
+
+    EXPECT_DOUBLE_EQ(filter.process_sample(1.0), 1.0 + 10.0 + 0.0);
+}
+
+TEST(FilterBaseExternalContextTest, EmptyContextFallsBackToTheInternalHistory)
+{
+    FIR filter({ 1.0, 1.0 });
+    std::vector<double> context;
+    filter.set_input_context(context);
+
+    EXPECT_DOUBLE_EQ(filter.process_sample(1.0), 1.0);
+    EXPECT_DOUBLE_EQ(filter.process_sample(2.0), 3.0);
+}
+
 
 }
