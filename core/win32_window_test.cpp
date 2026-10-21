@@ -277,6 +277,37 @@ namespace {
         EXPECT_EQ(harness.events_of(WindowEventType::WINDOW_FOCUS_LOST).size(), 1U);
     }
 
+    TEST(Win32WindowTest, RequestCloseFlagsWindowAndLeavesDestructionToOwner)
+    {
+        WindowHarness harness;
+        const auto hwnd = harness.hwnd();
+        EXPECT_FALSE(harness.window().should_close());
+
+        harness.window().request_close();
+        harness.window().request_close();
+        EXPECT_TRUE(harness.window().should_close());
+        EXPECT_TRUE(IsWindow(hwnd));
+
+        harness.poll();
+        EXPECT_EQ(harness.events_of(WindowEventType::WINDOW_CLOSED).size(), 1U);
+        harness.poll();
+        EXPECT_EQ(harness.events_of(WindowEventType::WINDOW_CLOSED).size(), 1U);
+        EXPECT_NO_THROW(harness.window().destroy());
+    }
+
+    TEST(Win32WindowTest, RequestCloseFromAnotherThreadIsDeliveredByPoll)
+    {
+        WindowHarness harness;
+
+        std::thread other([&harness] { harness.window().request_close(); });
+        other.join();
+        EXPECT_TRUE(harness.window().should_close());
+
+        harness.poll();
+        EXPECT_EQ(harness.events_of(WindowEventType::WINDOW_CLOSED).size(), 1U);
+        EXPECT_NO_THROW(harness.window().destroy());
+    }
+
     TEST(Win32WindowTest, CloseMessageRequestsCloseAndDestroysNativeWindow)
     {
         WindowHarness harness;

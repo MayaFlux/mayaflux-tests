@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -15,6 +16,10 @@
 
 #include "MayaFlux/Core/Backends/Windowing/Wayland/KeyMapping.hpp"
 #include "MayaFlux/Core/Backends/Windowing/Wayland/WaylandWindow.hpp"
+#include "MayaFlux/Kriya/Awaiters/EventAwaiter.hpp"
+#include "MayaFlux/Kriya/Awaiters/GetPromise.hpp"
+#include "MayaFlux/Vruta/EventManager.hpp"
+#include "MayaFlux/Vruta/WindowEventSource.hpp"
 
 namespace MayaFlux::Test {
 
@@ -188,6 +193,114 @@ namespace {
 
         EXPECT_FALSE(window->should_close());
         EXPECT_NE(window->get_native_handle(), nullptr);
+    }
+
+    TEST(WaylandWindowTest, RequestCloseFlagsWindowAndDeliversClosedOnce)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+        std::vector<WindowEvent> events;
+        window->set_event_callback([&events](const WindowEvent& event) { events.push_back(event); });
+        EXPECT_FALSE(window->should_close());
+
+        window->request_close();
+        window->request_close();
+        pump(*window);
+
+        EXPECT_TRUE(window->should_close());
+        EXPECT_NE(window->get_native_handle(), nullptr);
+
+        size_t closed = 0;
+        for (const auto& event : events) {
+            if (event.type == WindowEventType::WINDOW_CLOSED)
+                ++closed;
+        }
+        EXPECT_EQ(closed, 1U);
+        EXPECT_NO_THROW(window->destroy());
+    }
+
+    struct CloseProbe {
+        int resumes {};
+        bool closed_inside_first_dispatch {};
+    };
+
+    Vruta::Event close_on_first_event(
+        Core::Window* window,
+        Vruta::WindowEventSource* source,
+        CloseProbe* probe)
+    {
+        auto& promise = co_await Kriya::GetEventPromise {};
+        while (!promise.should_terminate) {
+            co_await Kriya::WindowEventAwaiter(*source);
+            if (++probe->resumes == 1) {
+                window->request_close();
+                probe->closed_inside_first_dispatch = window->should_close();
+            }
+        }
+    }
+
+    TEST(WaylandWindowTest, RequestCloseFromInsideDispatchIsDeferredUntilDispatchEnds)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+        std::vector<WindowEvent> events;
+        window->set_event_callback([&events](const WindowEvent& event) { events.push_back(event); });
+
+        CloseProbe probe;
+        Vruta::EventManager manager;
+        auto& source = window->get_event_source();
+        manager.add_event(
+            std::make_shared<Vruta::Event>(close_on_first_event(window.get(), &source, &probe)),
+            "close_on_first_event");
+
+        WindowEvent press;
+        press.type = WindowEventType::MOUSE_BUTTON_PRESSED;
+        source.signal(press);
+
+        EXPECT_FALSE(probe.closed_inside_first_dispatch);
+        EXPECT_TRUE(window->should_close());
+
+        size_t closed = 0;
+        for (const auto& event : events) {
+            if (event.type == WindowEventType::WINDOW_CLOSED) {
+                ++closed;
+            }
+        }
+        EXPECT_EQ(closed, 1U);
+    }
+
+    TEST(WaylandWindowTest, RequestCloseFromAnotherThreadWithNoDispatchRunningDeliversOnce)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+        std::vector<WindowEvent> events;
+        window->set_event_callback([&events](const WindowEvent& event) { events.push_back(event); });
+
+        std::thread other([&window] { window->request_close(); });
+        other.join();
+
+        EXPECT_TRUE(window->should_close());
+        size_t closed = 0;
+        for (const auto& event : events) {
+            if (event.type == WindowEventType::WINDOW_CLOSED) {
+                ++closed;
+            }
+        }
+        EXPECT_EQ(closed, 1U);
+    }
+
+    TEST(WaylandWindowTest, RequestCloseAfterDestroyIsSafe)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+        window->destroy();
+
+        EXPECT_NO_THROW(window->request_close());
+        EXPECT_TRUE(window->should_close());
     }
 
     TEST(WaylandWindowTest, SetTitleUpdatesCreateInfo)

@@ -357,6 +357,39 @@ namespace {
         EXPECT_EQ(harness.events_of(WindowEventType::WINDOW_FOCUS_LOST).size(), 1U);
     }
 
+    TEST(CocoaWindowTest, RequestCloseFlagsWindowAndDeliversClosedOnce)
+    {
+        REQUIRE_DISPLAY();
+        WindowHarness harness;
+        EXPECT_FALSE(harness.window().should_close());
+
+        harness.window().request_close();
+        harness.window().request_close();
+        EXPECT_TRUE(harness.window().should_close());
+        EXPECT_NE(harness.native(), nullptr);
+
+        harness.poll();
+        EXPECT_EQ(harness.events_of(WindowEventType::WINDOW_CLOSED).size(), 1U);
+        harness.poll();
+        EXPECT_EQ(harness.events_of(WindowEventType::WINDOW_CLOSED).size(), 1U);
+        EXPECT_NO_THROW(harness.window().destroy());
+        EXPECT_EQ(harness.native(), nullptr);
+    }
+
+    TEST(CocoaWindowTest, RequestCloseFromAnotherThreadIsDeliveredByPoll)
+    {
+        REQUIRE_DISPLAY();
+        WindowHarness harness;
+
+        std::thread other([&harness] { harness.window().request_close(); });
+        other.join();
+        EXPECT_TRUE(harness.window().should_close());
+
+        harness.poll();
+        EXPECT_EQ(harness.events_of(WindowEventType::WINDOW_CLOSED).size(), 1U);
+        EXPECT_NO_THROW(harness.window().destroy());
+    }
+
     TEST(CocoaWindowTest, CloseRequestFlagsWindowAndLeavesDestructionToOwner)
     {
         REQUIRE_DISPLAY();
