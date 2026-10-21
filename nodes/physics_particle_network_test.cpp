@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 
 #include "MayaFlux/Nodes/Generators/Impulse.hpp"
+#include "MayaFlux/Nodes/NodeGraphManager.hpp"
 #include "MayaFlux/Nodes/Network/Operators/FieldOperator.hpp"
 #include "MayaFlux/Nodes/Network/Operators/PathOperator.hpp"
 #include "MayaFlux/Nodes/Network/Operators/PhysicsOperator.hpp"
@@ -840,6 +841,7 @@ namespace {
     {
         auto slow = make_swarm();
         auto fast = make_swarm();
+        slow.set_timestep(0.016F);
         fast.set_timestep(0.032F);
         slow.initialize();
         fast.initialize();
@@ -852,6 +854,57 @@ namespace {
         const float slow_drop = slow_start - points_of(slow)[0].position.y;
         const float fast_drop = fast_start - points_of(fast)[0].position.y;
         EXPECT_NEAR(fast_drop / slow_drop, 4.0F, 0.05F);
+    }
+
+    TEST(ParticleNetworkTest, DefaultTimestepIsTheFramePeriod)
+    {
+        ParticleNetwork net(4);
+        EXPECT_NEAR(net.get_timestep(), 1.0F / 60.0F, 1e-6F);
+
+        net.set_frame_rate(120);
+        EXPECT_NEAR(net.get_timestep(), 1.0F / 120.0F, 1e-6F);
+    }
+
+    TEST(ParticleNetworkTest, ATimestepOverridesTheFramePeriodUntilCleared)
+    {
+        ParticleNetwork net(4);
+
+        net.set_timestep(0.25F);
+        net.set_frame_rate(120);
+        EXPECT_FLOAT_EQ(net.get_timestep(), 0.25F);
+
+        net.clear_timestep();
+        EXPECT_NEAR(net.get_timestep(), 1.0F / 120.0F, 1e-6F);
+    }
+
+    TEST(ParticleNetworkTest, FrameRateScalesTheStep)
+    {
+        auto slow = make_swarm();
+        auto fast = make_swarm();
+        slow.set_frame_rate(60);
+        fast.set_frame_rate(30);
+        slow.initialize();
+        fast.initialize();
+        const auto slow_start = points_of(slow)[0].position.y;
+        const auto fast_start = points_of(fast)[0].position.y;
+
+        slow.process_batch(1);
+        fast.process_batch(1);
+
+        const float slow_drop = slow_start - points_of(slow)[0].position.y;
+        const float fast_drop = fast_start - points_of(fast)[0].position.y;
+        EXPECT_NEAR(fast_drop / slow_drop, 4.0F, 0.05F);
+    }
+
+    TEST(ParticleNetworkTest, ARegisteredNetworkTakesTheManagersFrameRate)
+    {
+        Nodes::NodeGraphManager manager(48000, 512, 144);
+        auto net = std::make_shared<ParticleNetwork>(4);
+
+        manager.register_network_global(net);
+
+        EXPECT_EQ(net->get_frame_rate(), 144U);
+        EXPECT_NEAR(net->get_timestep(), 1.0F / 144.0F, 1e-6F);
     }
 
     TEST(ParticleNetworkTest, DisabledNetworkDoesNotMove)
