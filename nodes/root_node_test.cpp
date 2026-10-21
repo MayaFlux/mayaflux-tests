@@ -685,5 +685,81 @@ namespace {
             ConcurrentCase { "EightProducers", 8, 200 }),
         [](const ::testing::TestParamInfo<ConcurrentCase>& info) { return std::string(info.param.name); });
 
+    struct TokenCase {
+        const char* name;
+        Nodes::ProcessingToken token;
+    };
+
+    class RootNodeTokenTest : public ::testing::TestWithParam<TokenCase> {
+    protected:
+        std::shared_ptr<Constant> make_member(RootNode& root, double value, int* ticks = nullptr)
+        {
+            auto entry = std::make_shared<Constant>(value);
+            if (ticks != nullptr) {
+                entry->on_tick([ticks](Nodes::NodeContext&) { ++*ticks; });
+            }
+            entry->register_channel_usage(root.get_channel());
+            root.register_node(entry);
+            return entry;
+        }
+    };
+
+    TEST_P(RootNodeTokenTest, ARegisterProcessAndRemoveCycleIsTheSameUnderEveryToken)
+    {
+        RootNode root(GetParam().token, 0);
+        const auto first = make_member(root, 1.0);
+        make_member(root, 2.0);
+
+        EXPECT_EQ(root.get_token(), GetParam().token);
+        EXPECT_DOUBLE_EQ(root.process_sample(), 3.0);
+        EXPECT_EQ(root.get_node_size(), 2U);
+
+        root.unregister_node(first);
+        EXPECT_DOUBLE_EQ(root.process_sample(), 2.0);
+        EXPECT_EQ(root.get_node_size(), 1U);
+
+        root.terminate_all_nodes();
+        EXPECT_EQ(root.get_node_size(), 0U);
+        EXPECT_DOUBLE_EQ(root.process_sample(), 0.0);
+    }
+
+    TEST_P(RootNodeTokenTest, FrameAndBatchProcessingRunEveryNodeUnderEveryToken)
+    {
+        RootNode root(GetParam().token, 0);
+        int ticks = 0;
+        make_member(root, 1.0, &ticks);
+
+        root.process_frame();
+        EXPECT_EQ(ticks, 1);
+
+        root.process_batch_frame(4);
+        EXPECT_EQ(ticks, 5);
+
+        EXPECT_EQ(root.process_batch(3).size(), 3U);
+        EXPECT_EQ(ticks, 8);
+    }
+
+    TEST_P(RootNodeTokenTest, AnOutputExcludedNodeStillRunsUnderEveryToken)
+    {
+        RootNode root(GetParam().token, 0);
+        int ticks = 0;
+        make_member(root, 1.0);
+        const auto hidden = make_member(root, 5.0, &ticks);
+        Nodes::atomic_add_flag(hidden->m_state, NodeState::OUTPUT_EXCLUDED);
+
+        EXPECT_DOUBLE_EQ(root.process_sample(), 1.0);
+        EXPECT_EQ(ticks, 1);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Tokens,
+        RootNodeTokenTest,
+        ::testing::Values(
+            TokenCase { "Audio", Nodes::ProcessingToken::AUDIO_RATE },
+            TokenCase { "Visual", Nodes::ProcessingToken::VISUAL_RATE },
+            TokenCase { "Event", Nodes::ProcessingToken::EVENT_RATE },
+            TokenCase { "Custom", Nodes::ProcessingToken::CUSTOM_RATE }),
+        [](const ::testing::TestParamInfo<TokenCase>& info) { return std::string(info.param.name); });
+
 }
 }
