@@ -566,34 +566,63 @@ TEST(FormaLayerRelationTest, RelationsAreDirectional)
     EXPECT_TRUE(layer.related_ids(child).empty());
 }
 
-TEST(FormaLayerRelationTest, RelateRefusesAnyEdgeThatClosesACycle)
+TEST(FormaLayerRelationTest, ElementsMayBeRelatedBothWaysToFormOneGroup)
 {
     Layer layer;
     const uint32_t a = layer.add(whole());
     const uint32_t b = layer.add(whole());
     const uint32_t c = layer.add(whole());
-    ASSERT_TRUE(layer.relate(a, b));
-    ASSERT_TRUE(layer.relate(b, c));
 
-    EXPECT_FALSE(layer.relate(b, a));
-    EXPECT_FALSE(layer.relate(c, a));
-    EXPECT_FALSE(layer.relate(c, b));
-    EXPECT_TRUE(layer.related_ids(c).empty());
-    EXPECT_EQ(layer.related_ids(b), std::vector<uint32_t> { c });
+    EXPECT_TRUE(layer.relate(a, b));
+    EXPECT_TRUE(layer.relate(b, a));
+    EXPECT_TRUE(layer.relate(b, c));
+    EXPECT_TRUE(layer.relate(c, a));
+
+    for (uint32_t id : { a, b, c }) {
+        const auto ids = layer.closure(id);
+        EXPECT_EQ(ids.size(), 3U) << id;
+        EXPECT_EQ(ids.front(), id);
+    }
 }
 
-TEST(FormaLayerRelationTest, RelatedGroupsStillTerminateWhenVisibilityAndOrderCascade)
+TEST(FormaLayerRelationTest, EveryCascadeTerminatesOnARelationCycle)
 {
     Layer layer;
     const uint32_t a = layer.add(whole());
     const uint32_t b = layer.add(whole());
-    EXPECT_TRUE(layer.relate(a, b));
-    EXPECT_FALSE(layer.relate(b, a));
+    const uint32_t other = layer.add(whole());
+    ASSERT_TRUE(layer.relate(a, b));
+    ASSERT_TRUE(layer.relate(b, a));
 
     EXPECT_TRUE(layer.set_visible(a, false));
+    EXPECT_FALSE(layer.get(b)->visible);
+    EXPECT_TRUE(layer.get(other)->visible);
+    EXPECT_TRUE(layer.set_visible(b, true));
+    EXPECT_TRUE(layer.get(a)->visible);
+
     EXPECT_TRUE(layer.send_to_back(a));
+    EXPECT_LT(position(layer, a), position(layer, other));
+    EXPECT_LT(position(layer, b), position(layer, other));
+
     EXPECT_TRUE(layer.bring_to_front(b));
+    EXPECT_GT(position(layer, a), position(layer, other));
+    EXPECT_EQ(position(layer, b), layer.size() - 1);
+
     EXPECT_TRUE(layer.remove(a));
+    EXPECT_EQ(order(layer), std::vector<uint32_t> { other });
+}
+
+TEST(FormaLayerRelationTest, AMutuallyRelatedPairVanishesTogetherFromEitherSide)
+{
+    Layer layer;
+    const uint32_t field = layer.add(whole());
+    const uint32_t viewport = layer.add(whole());
+    ASSERT_TRUE(layer.relate(viewport, field));
+    ASSERT_TRUE(layer.relate(field, viewport));
+
+    ASSERT_TRUE(layer.remove(field));
+
+    EXPECT_TRUE(layer.empty());
 }
 
 TEST(FormaLayerRelationTest, DiamondsAreAllowed)
