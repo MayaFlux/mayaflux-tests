@@ -93,6 +93,7 @@ protected:
         windows.clear();
     }
 
+    static bool available() { return s_backend != nullptr; }
     static Core::VulkanBackend& backend() { return *s_backend; }
     static Core::WindowManager& manager() { return *s_manager; }
 
