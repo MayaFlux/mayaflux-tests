@@ -1,9 +1,14 @@
 #include "../test_config.h"
 
+#include <atomic>
+#include <thread>
+
+#include "MayaFlux/Kakshya/DataProcessingChain.hpp"
 #include "MayaFlux/Kakshya/NDData/DataAccess.hpp"
 #include "MayaFlux/Kakshya/Processors/PlotProcessor.hpp"
 #include "MayaFlux/Kakshya/Region/Region.hpp"
 #include "MayaFlux/Kakshya/Region/RegionGroup.hpp"
+#include "MayaFlux/Kakshya/Region/RegionSegment.hpp"
 #include "MayaFlux/Kakshya/Source/PlotContainer.hpp"
 
 namespace MayaFlux::Test {
@@ -222,6 +227,28 @@ TEST(PlotContainerTest, ResizeSeriesGrowsWithZerosAndShrinksToThePrefix)
     EXPECT_EQ(values(container, 0), (std::vector<double> { 1.0, 2.0 }));
     EXPECT_EQ(container->get_dimensions()[0].size, 2U);
     EXPECT_EQ(processed(container, 0).size(), 2U);
+}
+
+TEST(PlotContainerTest, RegionReadsStayConsistentWhileTheSeriesIsResized)
+{
+    auto container = make_container({ 64 });
+    fill(container, 0, std::vector<double>(64, 7.0));
+
+    std::atomic<bool> done { false };
+    std::thread writer([&] {
+        for (int i = 0; i < 2000; ++i)
+            container->resize_series(0, (i % 2) ? 64 : 4096);
+        done = true;
+    });
+
+    while (!done) {
+        const auto slice = slice_of(container->get_region_data(span_of(0, 0, 3)));
+        if (slice.empty())
+            continue;
+        ASSERT_EQ(slice.size(), 4U);
+        EXPECT_DOUBLE_EQ(slice[0], 7.0);
+    }
+    writer.join();
 }
 
 TEST(PlotContainerTest, ResizingAnUnknownSeriesChangesNothing)
@@ -511,6 +538,190 @@ TEST(PlotContainerTest, ReplacingTheDefaultProcessorDetachesTheOldOne)
 
     EXPECT_FALSE(old_processor->has_binding(0));
     EXPECT_NE(container->get_default_processor(), old_processor);
+}
+
+// =============================================================================
+// Frame and value access
+// =============================================================================
+
+TEST(PlotContainerTest, GetFramesConcatenatesTheSeriesFromTheStartFrame)
+{
+    auto container = make_container({ 3, 2 });
+    fill(container, 0, { 1.0, 2.0, 3.0 });
+    fill(container, 1, { 4.0, 5.0 });
+
+    std::vector<double> all(5, -1.0);
+    container->get_frames_as(all, 0, 2);
+    EXPECT_EQ(all, (std::vector<double> { 1.0, 2.0, 3.0, 4.0, 5.0 }));
+
+    std::vector<double> second(2, -1.0);
+    container->get_frames_as(second, 1, 1);
+    EXPECT_EQ(second, (std::vector<double> { 4.0, 5.0 }));
+}
+
+TEST(PlotContainerTest, GetFramesStopsAtTheOutputSizeAndTheLastSeries)
+{
+    auto container = make_container({ 3, 2 });
+    fill(container, 0, { 1.0, 2.0, 3.0 });
+    fill(container, 1, { 4.0, 5.0 });
+
+    std::vector<double> short_out(2, -1.0);
+    container->get_frames_as(short_out, 0, 2);
+    EXPECT_EQ(short_out, (std::vector<double> { 1.0, 2.0 }));
+
+    std::vector<double> long_out(8, -1.0);
+    container->get_frames_as(long_out, 0, 9);
+    EXPECT_EQ(long_out, (std::vector<double> { 1.0, 2.0, 3.0, 4.0, 5.0, -1.0, -1.0, -1.0 }));
+}
+
+TEST(PlotContainerTest, GetFramesOfAnotherElementTypeThrows)
+{
+    auto container = make_container({ 3 });
+    std::vector<float> out(3, 0.F);
+
+    EXPECT_THROW(container->get_frames_as(out, 0, 1), std::runtime_error);
+}
+
+TEST(PlotContainerTest, GetFrameOfAnUnknownOrEmptySeriesIsEmpty)
+{
+    auto container = make_container({ 3, 0 });
+    fill(container, 0, { 1.0, 2.0, 3.0 });
+
+    EXPECT_EQ(container->get_frame(0).size(), 3U);
+    EXPECT_TRUE(container->get_frame(1).empty());
+    EXPECT_TRUE(container->get_frame(7).empty());
+}
+
+TEST(PlotContainerTest, GetValueAtReadsBySeriesAndSampleIndex)
+{
+    auto container = make_container({ 3, 2 });
+    fill(container, 0, { 1.0, 2.0, 3.0 });
+    fill(container, 1, { 4.0, 5.0 });
+
+    EXPECT_DOUBLE_EQ(container->get_value_at<double>({ 0, 2 }), 3.0);
+    EXPECT_DOUBLE_EQ(container->get_value_at<double>({ 1, 0 }), 4.0);
+}
+
+TEST(PlotContainerTest, GetValueAtGivesZeroForBadCoordinatesOrAnotherElementType)
+{
+    auto container = make_container({ 3 });
+    fill(container, 0, { 1.0, 2.0, 3.0 });
+
+    EXPECT_DOUBLE_EQ(container->get_value_at<double>({ 5, 0 }), 0.0);
+    EXPECT_DOUBLE_EQ(container->get_value_at<double>({ 0, 99 }), 0.0);
+    EXPECT_DOUBLE_EQ(container->get_value_at<double>({ 0 }), 0.0);
+    EXPECT_FLOAT_EQ(container->get_value_at<float>({ 0, 1 }), 0.F);
+}
+
+TEST(PlotContainerTest, SetValueAtWritesOneSample)
+{
+    auto container = make_container({ 3, 2 });
+
+    container->set_value_at<double>({ 1, 1 }, 8.0);
+
+    EXPECT_EQ(values(container, 1), (std::vector<double> { 0.0, 8.0 }));
+    EXPECT_EQ(values(container, 0), (std::vector<double> { 0.0, 0.0, 0.0 }));
+}
+
+TEST(PlotContainerTest, SetValueAtIgnoresBadCoordinatesAndAnotherElementType)
+{
+    auto container = make_container({ 3 });
+    fill(container, 0, { 1.0, 2.0, 3.0 });
+
+    container->set_value_at<double>({ 5, 0 }, 9.0);
+    container->set_value_at<double>({ 0, 99 }, 9.0);
+    container->set_value_at<double>({ 0 }, 9.0);
+    container->set_value_at<float>({ 0, 0 }, 9.F);
+
+    EXPECT_EQ(values(container, 0), (std::vector<double> { 1.0, 2.0, 3.0 }));
+}
+
+// =============================================================================
+// Container plumbing
+// =============================================================================
+
+TEST(PlotContainerTest, SegmentsDataReturnsTheProcessedCopyOfEverySeries)
+{
+    auto container = make_container({ 2, 2 });
+    container->bind(0, [](std::vector<double>& out) { out = { 1.0, 2.0 }; });
+    container->process_default();
+
+    const auto segments = container->get_segments_data({});
+
+    ASSERT_EQ(segments.size(), 2U);
+    EXPECT_EQ(std::get<std::vector<double>>(segments[0]), (std::vector<double> { 1.0, 2.0 }));
+    EXPECT_EQ(std::get<std::vector<double>>(segments[1]), (std::vector<double> { 0.0, 0.0 }));
+}
+
+TEST(PlotContainerTest, GetDataExposesTheSeriesStorage)
+{
+    auto container = make_container({ 2, 3 });
+    fill(container, 1, { 1.0, 2.0, 3.0 });
+
+    const auto& data = container->get_data();
+
+    ASSERT_EQ(data.size(), 2U);
+    EXPECT_EQ(std::get<std::vector<double>>(data[1]), (std::vector<double> { 1.0, 2.0, 3.0 }));
+}
+
+TEST(PlotContainerTest, TheProcessingChainIsCreatedOnceAndCanBeReplaced)
+{
+    auto container = make_container({ 2 });
+
+    const auto chain = container->get_processing_chain();
+    ASSERT_NE(chain, nullptr);
+    EXPECT_EQ(container->get_processing_chain(), chain);
+
+    const auto replacement = std::make_shared<Kakshya::DataProcessingChain>();
+    container->set_processing_chain(replacement);
+    EXPECT_EQ(container->get_processing_chain(), replacement);
+}
+
+TEST(PlotContainerTest, RegionsAreAlwaysLoadedAndDimensionReadersAreInert)
+{
+    auto container = make_container({ 2 });
+    const Region region = span_of(0, 0, 1);
+
+    container->load_region(region);
+    container->unload_region(region);
+    EXPECT_TRUE(container->is_region_loaded(region));
+
+    EXPECT_EQ(container->register_dimension_reader(0), 0U);
+    container->mark_dimension_consumed(0, 0);
+    EXPECT_FALSE(container->has_active_readers());
+    EXPECT_TRUE(container->all_dimensions_consumed());
+    container->unregister_dimension_reader(0);
+}
+
+TEST(PlotContainerTest, ASeriesCanBeAddedAndWrittenAfterClear)
+{
+    auto container = make_container({ 3, 3 });
+    container->clear();
+
+    const uint32_t index = container->add_series("fresh", 2, Role::SPATIAL_Y);
+    container->write_series(index, std::vector<double> { 6.0, 7.0 });
+
+    EXPECT_EQ(index, 0U);
+    EXPECT_EQ(container->series_count(), 1U);
+    EXPECT_EQ(values(container, 0), (std::vector<double> { 6.0, 7.0 }));
+}
+
+TEST(PlotContainerTest, ConcurrentWritesAndReadsOfASeriesStayWithinTheWrittenValues)
+{
+    auto container = make_container({ 64 });
+    std::atomic<bool> done { false };
+
+    std::thread writer([&] {
+        for (int i = 0; i < 2000; ++i)
+            container->write_series(0, std::vector<double>(64, (i % 2) ? 1.0 : 2.0));
+        done = true;
+    });
+
+    while (!done) {
+        const double v = container->get_value_at<double>({ 0, 10 });
+        EXPECT_TRUE(v == 0.0 || v == 1.0 || v == 2.0);
+    }
+    writer.join();
 }
 
 }
