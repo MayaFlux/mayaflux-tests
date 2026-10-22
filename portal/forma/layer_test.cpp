@@ -165,6 +165,40 @@ TEST(FormaLayerRegistrationTest, ManyElementsRemainAddressableById)
         EXPECT_EQ(layer.get(ids[i]) != nullptr, i % 2 == 1);
 }
 
+TEST(FormaLayerRegistrationTest, LookupFollowsReorderingRemovalAndLaterAdds)
+{
+    Layer layer;
+    std::vector<uint32_t> ids;
+    for (int i = 0; i < 6; ++i)
+        ids.push_back(layer.add(whole()));
+
+    ASSERT_TRUE(layer.bring_to_front(ids[1]));
+    ASSERT_TRUE(layer.send_to_back(ids[4]));
+    EXPECT_EQ(layer.elements().front().id, ids[4]);
+    EXPECT_EQ(layer.elements().back().id, ids[1]);
+    for (uint32_t id : ids) {
+        ASSERT_NE(layer.get(id), nullptr);
+        EXPECT_EQ(layer.get(id)->id, id);
+    }
+
+    ASSERT_TRUE(layer.remove(ids[2]));
+    const uint32_t added = layer.add(whole());
+    EXPECT_EQ(layer.get(ids[2]), nullptr);
+    ASSERT_NE(layer.get(added), nullptr);
+    EXPECT_EQ(layer.get(added)->id, added);
+    EXPECT_EQ(layer.elements().back().id, added);
+    for (uint32_t id : ids) {
+        if (id != ids[2])
+            EXPECT_EQ(layer.get(id)->id, id);
+    }
+
+    layer.clear();
+    EXPECT_EQ(layer.get(added), nullptr);
+    const uint32_t fresh = layer.add(whole());
+    ASSERT_NE(layer.get(fresh), nullptr);
+    EXPECT_EQ(layer.get(fresh)->id, fresh);
+}
+
 // =============================================================================
 // Mutation
 // =============================================================================
