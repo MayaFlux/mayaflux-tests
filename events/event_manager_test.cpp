@@ -70,6 +70,19 @@ namespace {
         }
     }
 
+    Vruta::Event ordered_listener(
+        std::shared_ptr<Vruta::WindowEventSource> source,
+        Vruta::WindowEventFilter filter,
+        std::shared_ptr<std::vector<int>> order,
+        int tag)
+    {
+        auto& promise = co_await Kriya::GetEventPromise {};
+        while (!promise.should_terminate) {
+            co_await Kriya::WindowEventAwaiter(*source, filter);
+            order->push_back(tag);
+        }
+    }
+
     Vruta::Event broadcast_listener(
         std::shared_ptr<Vruta::BroadcastSource<int>> source,
         Count count,
@@ -667,7 +680,7 @@ TEST_F(WindowSourceTest, ListenersOnDifferentKeysEachSeeTheirOwnKey)
     EXPECT_EQ(count_b->load(), 2);
 }
 
-TEST_F(WindowSourceTest, DISABLED_TwoListenersForTheSameEventBothFire)
+TEST_F(WindowSourceTest, TwoListenersForTheSameEventBothFire)
 {
     auto count_a = make_count();
     auto count_b = make_count();
@@ -678,6 +691,56 @@ TEST_F(WindowSourceTest, DISABLED_TwoListenersForTheSameEventBothFire)
 
     EXPECT_EQ(count_a->load(), 1);
     EXPECT_EQ(count_b->load(), 1);
+}
+
+TEST_F(WindowSourceTest, EveryListenerOnOneEventFiresInRegistrationOrder)
+{
+    auto order = std::make_shared<std::vector<int>>();
+    for (int tag = 1; tag <= 3; ++tag) {
+        manager.add_event(std::make_shared<Vruta::Event>(ordered_listener(
+                              source, Vruta::WindowEventFilter { IO::Keys::A }, order, tag)),
+            "ordered_" + std::to_string(tag));
+    }
+
+    source->signal(key_event(Core::WindowEventType::KEY_PRESSED, IO::Keys::A));
+    source->signal(key_event(Core::WindowEventType::KEY_PRESSED, IO::Keys::A));
+
+    EXPECT_EQ(*order, (std::vector<int> { 1, 2, 3, 1, 2, 3 }));
+}
+
+TEST_F(WindowSourceTest, ABroadAndANarrowFilterBothSeeAMatchingEvent)
+{
+    auto broad = make_count();
+    auto narrow = make_count();
+    listen("broad", Vruta::WindowEventFilter { Core::WindowEventType::KEY_PRESSED }, broad);
+    listen("narrow", Vruta::WindowEventFilter { IO::Keys::A }, narrow);
+
+    source->signal(key_event(Core::WindowEventType::KEY_PRESSED, IO::Keys::A));
+    source->signal(key_event(Core::WindowEventType::KEY_PRESSED, IO::Keys::B));
+
+    EXPECT_EQ(broad->load(), 2);
+    EXPECT_EQ(narrow->load(), 1);
+}
+
+TEST_F(WindowSourceTest, AnEventTakenByListenersIsNotQueued)
+{
+    listen("a", Vruta::WindowEventFilter { IO::Keys::A }, make_count());
+    listen("b", Vruta::WindowEventFilter { IO::Keys::A }, make_count());
+
+    source->signal(key_event(Core::WindowEventType::KEY_PRESSED, IO::Keys::A));
+
+    EXPECT_FALSE(source->has_pending());
+}
+
+TEST_F(WindowSourceTest, AnEventNoListenerMatchesIsStillQueued)
+{
+    auto count = make_count();
+    listen("b", Vruta::WindowEventFilter { IO::Keys::B }, count);
+
+    source->signal(key_event(Core::WindowEventType::KEY_PRESSED, IO::Keys::A));
+
+    EXPECT_EQ(count->load(), 0);
+    EXPECT_EQ(source->pending_count(), 1U);
 }
 
 TEST_F(WindowSourceTest, ListenerCancelledDuringDispatchIsNotResumed)

@@ -520,6 +520,41 @@ TEST_F(FormaContextTest, PressAndHoldFiresOncePerPhysicalPress)
     EXPECT_EQ(hits, 1);
 }
 
+TEST_F(FormaContextTest, APressAndAHeldHandlerOnTheSameKeyEachSeeThePress)
+{
+    const uint32_t id = whole();
+    int pressed = 0;
+    int held = 0;
+    ctx->on_press(id, Keys::A, [&](uint32_t) { ++pressed; });
+    ctx->on_held(id, Keys::A, [&](uint32_t) { ++held; });
+    focus(id, k_left);
+
+    window->key_down(Keys::A);
+
+    EXPECT_EQ(pressed, 1);
+    EXPECT_EQ(held, 1);
+}
+
+TEST_F(FormaContextTest, TwoContextsOnOneWindowBothReceiveAPress)
+{
+    const uint32_t first_id = whole();
+    int first_presses = 0;
+    ctx->on_press(first_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++first_presses; });
+
+    auto second_layer = std::make_shared<Forma::Layer>();
+    Forma::Context second(second_layer, window, manager, "ctx_second");
+    const uint32_t second_id = second_layer->add(Forma::Element {}.with_rect({ -1.F, -1.F }, { 1.F, 1.F }));
+    int second_presses = 0;
+    second.on_press(second_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++second_presses; });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+    window->release(MouseButtons::Left);
+
+    EXPECT_EQ(first_presses, 1);
+    EXPECT_EQ(second_presses, 1);
+}
+
 TEST_F(FormaContextTest, KeyStepMovesTheStateByDeltaAndClamps)
 {
     const uint32_t id = whole();
