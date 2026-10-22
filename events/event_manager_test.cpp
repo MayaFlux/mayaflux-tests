@@ -788,11 +788,25 @@ TEST_F(WindowSourceTest, UnconsumedEventsQueueUntilAListenerArrives)
     EXPECT_FALSE(source->has_pending());
 }
 
-TEST_F(WindowSourceTest, TheQueueIsCappedAndDropsTheOldestEvent)
+TEST_F(WindowSourceTest, AFloodOfOneEventTypeNeverEvictsAnotherType)
+{
+    source->signal(key_event(Core::WindowEventType::KEY_PRESSED, IO::Keys::A));
+    for (size_t i = 0; i < Vruta::WindowEventSource::k_max_pending_events * 2; ++i)
+        source->signal(motion_event(static_cast<double>(i), 0.0));
+
+    EXPECT_EQ(source->pending_count(), Vruta::WindowEventSource::k_max_pending_events + 1);
+
+    auto count = make_count();
+    listen(TARGET, Vruta::WindowEventFilter { IO::Keys::A }, count);
+
+    EXPECT_EQ(count->load(), 1);
+}
+
+TEST_F(WindowSourceTest, EachEventTypeIsCappedAndDropsItsOldestEvent)
 {
     source->signal(key_event(Core::WindowEventType::KEY_PRESSED, IO::Keys::A));
     for (size_t i = 0; i < Vruta::WindowEventSource::k_max_pending_events; ++i)
-        source->signal(motion_event(static_cast<double>(i), 0.0));
+        source->signal(key_event(Core::WindowEventType::KEY_PRESSED, IO::Keys::B));
 
     EXPECT_EQ(source->pending_count(), Vruta::WindowEventSource::k_max_pending_events);
 

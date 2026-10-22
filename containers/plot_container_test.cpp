@@ -1,8 +1,5 @@
 #include "../test_config.h"
 
-#include <atomic>
-#include <thread>
-
 #include "MayaFlux/Kakshya/DataProcessingChain.hpp"
 #include "MayaFlux/Kakshya/NDData/DataAccess.hpp"
 #include "MayaFlux/Kakshya/Processors/PlotProcessor.hpp"
