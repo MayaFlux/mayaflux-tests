@@ -282,6 +282,51 @@ TEST_F(BackendWindowHandlerTest, ExternallyRecordedFramesAcquireAndPresentThroug
     }
 }
 
+TEST_F(BackendWindowHandlerTest, FrameCountersTrackSubmissionsAndCompletion)
+{
+    auto window = registered_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+    EXPECT_EQ(display->get_submitted_frame_count(window), 0U);
+    EXPECT_EQ(display->get_completed_frame_count(window), 0U);
+
+    constexpr uint64_t frames = 7;
+    for (uint64_t i = 0; i < frames; ++i) {
+        ASSERT_TRUE(present_external_frame(window, { 0.0F, 1.0F, 0.0F, 1.0F })) << "frame " << i;
+    }
+
+    EXPECT_EQ(display->get_submitted_frame_count(window), frames);
+    EXPECT_EQ(display->get_completed_frame_count(window), frames);
+}
+
+TEST_F(BackendWindowHandlerTest, CompletedFramesNeverExceedSubmittedAndCatchUpWhenIdle)
+{
+    auto window = registered_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+
+    for (uint32_t i = 0; i < 12; ++i) {
+        backend().render_window(window);
+        EXPECT_LE(display->get_completed_frame_count(window), display->get_submitted_frame_count(window)) << "frame " << i;
+    }
+
+    backend().wait_idle();
+    EXPECT_EQ(display->get_completed_frame_count(window), display->get_submitted_frame_count(window));
+}
+
+TEST_F(BackendWindowHandlerTest, FrameCountersAreZeroForAnUnregisteredWindow)
+{
+    auto window = make_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+
+    EXPECT_EQ(display->get_submitted_frame_count(window), 0U);
+    EXPECT_EQ(display->get_completed_frame_count(window), 0U);
+}
+
 TEST_F(BackendWindowHandlerTest, AcquiredImageAndViewAgreeWithTheCurrentSwapchainImage)
 {
     auto window = registered_window();
