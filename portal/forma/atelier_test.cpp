@@ -222,6 +222,39 @@ TEST_F(FormaAtelierLifecycleTest, CreateSurfaceUsesASuppliedLayerAndContextAsIs)
     EXPECT_EQ(surface.ctx_ptr(), ctx);
 }
 
+TEST_F(FormaAtelierLifecycleTest, CreateSurfaceBuildsAContextAroundASuppliedLayer)
+{
+    ASSERT_TRUE(harness.up());
+
+    auto layer = std::make_shared<Forma::Layer>();
+    Forma::SurfaceConfig config;
+    config.window = window;
+    config.name = "atelier-lone-layer";
+    config.layer = layer;
+    config.detach_on_close = false;
+    auto surface = Forma::internal::atelier().create_surface(std::move(config));
+
+    EXPECT_EQ(surface.layer_ptr(), layer);
+    ASSERT_NE(surface.ctx_ptr(), nullptr);
+    EXPECT_EQ(surface.ctx_ptr()->layer(), layer);
+}
+
+TEST_F(FormaAtelierLifecycleTest, CreateSurfaceTakesTheLayerOfASuppliedContext)
+{
+    ASSERT_TRUE(harness.up());
+
+    auto layer = std::make_shared<Forma::Layer>();
+    auto ctx = std::make_shared<Forma::Context>(layer, window, *harness.events, "atelier-lone-ctx");
+    Forma::SurfaceConfig config;
+    config.window = window;
+    config.ctx = ctx;
+    config.detach_on_close = false;
+    auto surface = Forma::internal::atelier().create_surface(std::move(config));
+
+    EXPECT_EQ(surface.ctx_ptr(), ctx);
+    EXPECT_EQ(surface.layer_ptr(), layer);
+}
+
 TEST_F(FormaAtelierLifecycleTest, PlacingAnEmptySeriesSpecAddsNoAdornments)
 {
     ASSERT_TRUE(harness.up());

@@ -238,9 +238,18 @@ TEST_F(FormaInspectorTest, AllAudioRootNodesExpandOneResultPerRegisteredChannel)
 
     auto result = inspector.root_node(Nodes::ProcessingToken::AUDIO_RATE, surface, cursor);
 
+    EXPECT_EQ(result.group.rows.size(), 1U);
     ASSERT_EQ(result.children.size(), 2U);
     EXPECT_EQ(result.children[0].children.size(), 1U);
     EXPECT_EQ(result.children[1].children.size(), 1U);
+}
+
+TEST_F(FormaInspectorTest, ANullBufferYieldsAnEmptyResult)
+{
+    auto result = inspector.buffer(nullptr, surface, cursor);
+
+    EXPECT_TRUE(result.children.empty());
+    EXPECT_TRUE(result.group.rows.empty());
 }
 
 TEST_F(FormaInspectorTest, ANonAudioRootNodeDelegatesToChannelZero)
