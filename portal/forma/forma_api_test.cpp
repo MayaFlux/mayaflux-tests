@@ -176,6 +176,58 @@ TEST_F(FormaApiTest, TendPlacesTheFormAndKeepsTheSurfaceAndResult)
     EXPECT_EQ(surface.layer().hit_test({ 0.F, 0.F }), tend.result->element.id);
 }
 
+TEST_F(FormaApiTest, CreateOnABatchDrawsTheElementAsASliceAndWiresTheForm)
+{
+    auto surface = make_surface("api-create-batch");
+    auto batch = Forma::create_batch(surface.window());
+    auto calls = std::make_shared<int>(0);
+    int wired = 0;
+    Forma::Geometry::Form<float> form { counting_geometry(calls, k_origin_hint) };
+    form.wire = [&](Forma::Context&, uint32_t, std::shared_ptr<Forma::MappedState<float>>) { ++wired; };
+
+    auto mapped = Forma::create<float>(surface, batch, std::move(form), 0.25F);
+
+    EXPECT_EQ(wired, 1);
+    EXPECT_GE(*calls, 1);
+    EXPECT_EQ(mapped.element.buffer.buffer(), batch);
+    EXPECT_NE(mapped.element.buffer.slice(), 0U);
+    EXPECT_EQ(batch->slice_count(), 1U);
+    EXPECT_EQ(surface.layer().hit_test({ 0.F, 0.F }), mapped.element.id);
+}
+
+TEST_F(FormaApiTest, FormsCreatedOnOneBatchShareItsBuffer)
+{
+    auto surface = make_surface("api-batch-shared");
+    auto batch = Forma::create_batch(surface.window());
+    Forma::Geometry::Form<float> first { counting_geometry(std::make_shared<int>(0)) };
+    Forma::Geometry::Form<float> second { counting_geometry(std::make_shared<int>(0)) };
+    second.topology = PrimitiveTopology::TRIANGLE_LIST;
+
+    auto a = Forma::create<float>(surface, batch, std::move(first), 0.F);
+    auto b = Forma::create<float>(surface, batch, std::move(second), 0.F);
+
+    EXPECT_EQ(a.element.buffer.buffer(), b.element.buffer.buffer());
+    EXPECT_NE(a.element.buffer.slice(), b.element.buffer.slice());
+    EXPECT_EQ(batch->slice_count(), 2U);
+}
+
+TEST_F(FormaApiTest, TendWithABatchPlacesItsElementAsASliceOfIt)
+{
+    auto surface = make_surface("api-tend-batch");
+    auto batch = Forma::create_batch(surface.window());
+    Forma::Tend<float> tend;
+    tend.form = Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    tend.initial = 0.5F;
+    tend.batch = batch;
+
+    tend.place(surface);
+
+    ASSERT_TRUE(tend.result.has_value());
+    EXPECT_EQ(tend.result->element.buffer.buffer(), batch);
+    EXPECT_NE(tend.result->element.buffer.slice(), 0U);
+    EXPECT_EQ(surface.layer().hit_test({ 0.F, 0.F }), tend.result->element.id);
+}
+
 TEST_F(FormaApiTest, TendBridgeReturnsTheHandleOfItsElement)
 {
     auto surface = make_surface("api-tend-bridge");
