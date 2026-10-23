@@ -196,6 +196,51 @@ namespace {
         EXPECT_TRUE(GpuFormatElement<glm::mat4>);
     }
 
+    TEST(GpuValueTest, ActiveAlternativeIsTheFormat)
+    {
+        using Kakshya::GpuValue;
+        using Kakshya::gpu_value_format;
+
+        EXPECT_EQ(gpu_value_format(GpuValue { 1.0F }), GpuDataFormat::FLOAT32);
+        EXPECT_EQ(gpu_value_format(GpuValue { glm::vec3 {} }), GpuDataFormat::VEC3_F32);
+        EXPECT_EQ(gpu_value_format(GpuValue { 1.0 }), GpuDataFormat::FLOAT64);
+        EXPECT_EQ(gpu_value_format(GpuValue { glm::dvec4 {} }), GpuDataFormat::VEC4_F64);
+        EXPECT_EQ(gpu_value_format(GpuValue { int32_t { 1 } }), GpuDataFormat::INT32);
+        EXPECT_EQ(gpu_value_format(GpuValue { uint32_t { 1 } }), GpuDataFormat::UINT32);
+        EXPECT_EQ(gpu_value_format(GpuValue { uint8_t { 1 } }), GpuDataFormat::UINT8);
+        EXPECT_EQ(gpu_value_format(GpuValue { uint16_t { 1 } }), GpuDataFormat::UINT16);
+        EXPECT_EQ(gpu_value_format(GpuValue { glm::mat4 { 1.0F } }), GpuDataFormat::MAT4_F32);
+    }
+
+    TEST(GpuValueTest, WriteCopiesTheHeldBytesUnconverted)
+    {
+        std::vector<std::byte> out(16);
+
+        EXPECT_EQ(Kakshya::gpu_value_write(Kakshya::GpuValue { uint32_t { 0xDEADBEEF } }, out), 4U);
+        EXPECT_EQ(read_as<uint32_t>(out), 0xDEADBEEFU);
+
+        EXPECT_EQ(Kakshya::gpu_value_write(Kakshya::GpuValue { glm::vec3 { 1.0F, 2.0F, 3.0F } }, out), 12U);
+        EXPECT_EQ(read_as<float>(out, 2), 3.0F);
+    }
+
+    TEST(GpuValueTest, WriteReportsTheFormatByteSize)
+    {
+        std::vector<std::byte> out(64);
+
+        EXPECT_EQ(Kakshya::gpu_value_write(Kakshya::GpuValue { glm::dvec3 {} }, out),
+            gpu_data_format_bytes(GpuDataFormat::VEC3_F64));
+        EXPECT_EQ(Kakshya::gpu_value_write(Kakshya::GpuValue { glm::mat4 { 1.0F } }, out),
+            gpu_data_format_bytes(GpuDataFormat::MAT4_F32));
+    }
+
+    TEST(GpuValueTest, WriteRefusesAnUndersizedDestinationAndLeavesItUntouched)
+    {
+        std::vector<std::byte> out(11, std::byte { 0xAB });
+
+        EXPECT_EQ(Kakshya::gpu_value_write(Kakshya::GpuValue { glm::vec3 {} }, out), 0U);
+        EXPECT_TRUE(std::ranges::all_of(out, [](std::byte b) { return b == std::byte { 0xAB }; }));
+    }
+
     TEST(GpuDataFormatPackTest, FloatIntoFloat32IsBitExact)
     {
         std::vector<std::byte> out(4);

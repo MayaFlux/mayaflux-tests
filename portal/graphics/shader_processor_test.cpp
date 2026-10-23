@@ -298,6 +298,66 @@ namespace {
         EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 0), 3.0F);
     }
 
+    TEST(ShaderProcessorTest, TypedFeedWritesItsOwnFormatAtTheOffset)
+    {
+        ShaderProcessorProbe processor(config_with_binding());
+        processor.feed("direction", [] {
+            return ShaderProcessor::FeedValue { Kakshya::GpuValue { glm::vec3 { 1.0F, 2.0F, 3.0F } } };
+        }, 4);
+
+        processor.pull_feeds();
+
+        EXPECT_EQ(processor.get_push_constant_data().size(), 16U);
+        EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 4), 1.0F);
+        EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 8), 2.0F);
+        EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 12), 3.0F);
+    }
+
+    TEST(ShaderProcessorTest, TypedFeedKeepsIntegerBitsUnconverted)
+    {
+        ShaderProcessorProbe processor(config_with_binding());
+        processor.feed("count", [] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { uint32_t { 0xDEADBEEF } } }; }, 0);
+
+        processor.pull_feeds();
+
+        EXPECT_EQ(read_bytes<uint32_t>(processor.get_push_constant_data(), 0), 0xDEADBEEFU);
+    }
+
+    TEST(ShaderProcessorTest, TypedFeedWritesAMatrix)
+    {
+        ShaderProcessorProbe processor(config_with_binding());
+        glm::mat4 value(1.0F);
+        value[3][0] = 5.0F;
+        processor.feed("transform", [value] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { value } }; }, 0);
+
+        processor.pull_feeds();
+
+        EXPECT_EQ(processor.get_push_constant_data().size(), 64U);
+        EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 12 * sizeof(float)), 5.0F);
+    }
+
+    TEST(ShaderProcessorTest, TypedFeedFollowsTheValueEachCycle)
+    {
+        ShaderProcessorProbe processor(config_with_binding());
+        int32_t counter = 0;
+        processor.feed("tick", [&counter] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { counter++ } }; }, 0);
+
+        processor.pull_feeds();
+        processor.pull_feeds();
+
+        EXPECT_EQ(read_bytes<int32_t>(processor.get_push_constant_data(), 0), 1);
+    }
+
+    TEST(ShaderProcessorTest, TypedFeedIsRefusedByAStorageDescriptor)
+    {
+        ShaderProcessorProbe processor(config_with_binding());
+        processor.feed("data", [] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { 1.0F } }; });
+
+        processor.pull_feeds();
+
+        EXPECT_EQ(processor.get_bound_buffer("data"), nullptr);
+    }
+
     TEST(ShaderProcessorTest, StorageFeedRejectsAScalarValue)
     {
         ShaderProcessorProbe processor(config_with_binding());
