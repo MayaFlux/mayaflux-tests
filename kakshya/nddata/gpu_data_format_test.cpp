@@ -196,6 +196,102 @@ namespace {
         EXPECT_TRUE(GpuFormatElement<glm::mat4>);
     }
 
+    std::vector<uint32_t> offsets_of(std::vector<GpuDataFormat> fields)
+    {
+        return Kakshya::gpu_block_layout(fields).offsets;
+    }
+
+    TEST(GpuBlockLayoutTest, AnEmptyBlockHasNoOffsetsAndNoSize)
+    {
+        const auto layout = Kakshya::gpu_block_layout({});
+
+        EXPECT_TRUE(layout.offsets.empty());
+        EXPECT_EQ(layout.size, 0U);
+    }
+
+    TEST(GpuBlockLayoutTest, ScalarsPackTightly)
+    {
+        const auto layout = Kakshya::gpu_block_layout(std::vector<GpuDataFormat> {
+            GpuDataFormat::FLOAT32, GpuDataFormat::UINT32, GpuDataFormat::INT32 });
+
+        EXPECT_EQ(layout.offsets, (std::vector<uint32_t> { 0, 4, 8 }));
+        EXPECT_EQ(layout.size, 12U);
+    }
+
+    TEST(GpuBlockLayoutTest, AVec4AlignsToSixteen)
+    {
+        const auto layout = Kakshya::gpu_block_layout(std::vector<GpuDataFormat> {
+            GpuDataFormat::FLOAT32, GpuDataFormat::UINT32, GpuDataFormat::VEC4_F32 });
+
+        EXPECT_EQ(layout.offsets, (std::vector<uint32_t> { 0, 4, 16 }));
+        EXPECT_EQ(layout.size, 32U);
+    }
+
+    TEST(GpuBlockLayoutTest, AScalarMayFollowAVec3InItsPadding)
+    {
+        const auto layout = Kakshya::gpu_block_layout(std::vector<GpuDataFormat> {
+            GpuDataFormat::VEC3_F32, GpuDataFormat::FLOAT32 });
+
+        EXPECT_EQ(layout.offsets, (std::vector<uint32_t> { 0, 12 }));
+        EXPECT_EQ(layout.size, 16U);
+    }
+
+    TEST(GpuBlockLayoutTest, ADoubleAlignsToEight)
+    {
+        EXPECT_EQ(offsets_of({ GpuDataFormat::FLOAT32, GpuDataFormat::FLOAT64 }), (std::vector<uint32_t> { 0, 8 }));
+    }
+
+    TEST(GpuBlockLayoutTest, ADvec3AlignsToThirtyTwo)
+    {
+        const auto layout = Kakshya::gpu_block_layout(std::vector<GpuDataFormat> {
+            GpuDataFormat::FLOAT32, GpuDataFormat::VEC3_F64 });
+
+        EXPECT_EQ(layout.offsets, (std::vector<uint32_t> { 0, 32 }));
+        EXPECT_EQ(layout.size, 64U);
+    }
+
+    TEST(GpuBlockLayoutTest, AMatrixAlignsToSixteen)
+    {
+        const auto layout = Kakshya::gpu_block_layout(std::vector<GpuDataFormat> {
+            GpuDataFormat::FLOAT32, GpuDataFormat::MAT4_F32 });
+
+        EXPECT_EQ(layout.offsets, (std::vector<uint32_t> { 0, 16 }));
+        EXPECT_EQ(layout.size, 80U);
+    }
+
+    TEST(GpuBlockLayoutTest, SmallIntegersPackByTheirOwnSizeAndTheBlockPadsToFour)
+    {
+        const auto layout = Kakshya::gpu_block_layout(std::vector<GpuDataFormat> {
+            GpuDataFormat::UINT8, GpuDataFormat::UINT8, GpuDataFormat::UINT16 });
+
+        EXPECT_EQ(layout.offsets, (std::vector<uint32_t> { 0, 1, 2 }));
+        EXPECT_EQ(layout.size, 4U);
+    }
+
+    TEST(GpuBlockLayoutTest, UnrecognisedFormatsTakeNoSpace)
+    {
+        const auto layout = Kakshya::gpu_block_layout(std::vector<GpuDataFormat> {
+            GpuDataFormat::FLOAT32, static_cast<GpuDataFormat>(200), GpuDataFormat::FLOAT32 });
+
+        EXPECT_EQ(layout.offsets, (std::vector<uint32_t> { 0, 4, 4 }));
+        EXPECT_EQ(layout.size, 8U);
+    }
+
+    TEST(GpuBlockLayoutTest, EveryOffsetIsAlignedAndEveryFieldFitsForAnyFormatBehindASmallOne)
+    {
+        for (const auto& c : format_cases()) {
+            const std::vector<GpuDataFormat> fields { GpuDataFormat::UINT8, c.format, GpuDataFormat::FLOAT32, c.format };
+            const auto layout = Kakshya::gpu_block_layout(fields);
+
+            ASSERT_EQ(layout.offsets.size(), fields.size()) << c.name;
+            for (size_t i = 0; i < fields.size(); ++i) {
+                EXPECT_EQ(layout.offsets[i] % gpu_data_format_align(fields[i]), 0U) << c.name << " " << i;
+                EXPECT_LE(layout.offsets[i] + gpu_data_format_bytes(fields[i]), layout.size) << c.name << " " << i;
+            }
+            EXPECT_EQ(layout.size % gpu_data_format_align(c.format), 0U) << c.name;
+        }
+    }
+
     TEST(GpuValueTest, ActiveAlternativeIsTheFormat)
     {
         using Kakshya::GpuValue;

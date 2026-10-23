@@ -15,6 +15,7 @@ namespace {
     using Portal::Graphics::KernelSource;
     using Portal::Graphics::KernelTemplate;
     using Portal::Graphics::ShaderSpec;
+    using Portal::Graphics::push_constant_layout;
 
     // ------------------------------------------------------------------
     // ShaderSpec::Assemble
@@ -159,12 +160,32 @@ namespace {
                                     .pc("tint", GpuDataFormat::VEC4_F32)
                                     .build();
 
-        const auto expected = static_cast<uint32_t>(
-            Kakshya::gpu_data_format_bytes(GpuDataFormat::FLOAT32)
-            + Kakshya::gpu_data_format_bytes(GpuDataFormat::UINT32)
-            + Kakshya::gpu_data_format_bytes(GpuDataFormat::VEC4_F32));
-        EXPECT_EQ(spec.push_constant_bytes, expected);
-        EXPECT_GT(spec.push_constant_bytes, 0U);
+        EXPECT_EQ(spec.push_constant_bytes, 32U);
+    }
+
+    TEST(ShaderSpecAssembleTest, PushConstantBytesFollowStd430AlignmentWithMixedFormats)
+    {
+        const ShaderSpec spec = ShaderSpec::Assemble {}
+                                    .pc("gain")
+                                    .pc("dir", GpuDataFormat::VEC3_F32)
+                                    .pc("tail")
+                                    .pc("wide", GpuDataFormat::FLOAT64)
+                                    .build();
+
+        EXPECT_EQ(push_constant_layout(spec.pc_fields).offsets, (std::vector<uint32_t> { 0, 16, 28, 32 }));
+        EXPECT_EQ(spec.push_constant_bytes, 48U);
+    }
+
+    TEST(ShaderSpecAssembleTest, FloatOnlyPushConstantsStayPacked)
+    {
+        const ShaderSpec spec = ShaderSpec::Assemble {}
+                                    .pc("a")
+                                    .pc("b")
+                                    .pc("c", GpuDataFormat::UINT32)
+                                    .build();
+
+        EXPECT_EQ(push_constant_layout(spec.pc_fields).offsets, (std::vector<uint32_t> { 0, 4, 8 }));
+        EXPECT_EQ(spec.push_constant_bytes, 12U);
     }
 
     TEST(ShaderSpecAssembleTest, FunctionsKeepDeclarationOrderAndAllFourParts)

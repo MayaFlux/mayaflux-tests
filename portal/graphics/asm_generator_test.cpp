@@ -100,6 +100,30 @@ namespace {
                 { "OpExecutionMode %main LocalSize 64 2 1", "workgroup size from the spec" } }));
     }
 
+    TEST(AsmGeneratorTest, PushConstantMembersAreDecoratedWithStd430Offsets)
+    {
+        const ShaderSpec spec = ShaderSpec::Assemble {}
+                                    .ssbo("sig", BindingDirection::InOut, GpuDataFormat::FLOAT32)
+                                    .pc("a")
+                                    .pc("b", GpuDataFormat::UINT32)
+                                    .pc("tint", GpuDataFormat::VEC4_F32)
+                                    .build();
+
+        EXPECT_TRUE(contains_all(emit_spirv_asm(spec),
+            { { "OpMemberDecorate %pc_blk 0 Offset 0", "first member at the start" },
+                { "OpMemberDecorate %pc_blk 1 Offset 4", "scalar follows scalar" },
+                { "OpMemberDecorate %pc_blk 2 Offset 16", "vec4 aligns to sixteen" } }));
+    }
+
+    TEST(AsmGeneratorTest, FloatOnlyPushConstantsKeepPackedOffsets)
+    {
+        const std::string text = emit_spirv_asm(ssbo_spec(KernelOp::Scale, 2));
+
+        EXPECT_TRUE(contains_all(text,
+            { { "OpMemberDecorate %pc_blk 0 Offset 0", "first" },
+                { "OpMemberDecorate %pc_blk 1 Offset 4", "second" } }));
+    }
+
     TEST(AsmGeneratorTest, InterfaceOmitsPushConstantsWhenNoneAreDeclared)
     {
         const std::string text = emit_spirv_asm(ssbo_spec(KernelOp::Abs, 0));

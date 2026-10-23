@@ -264,16 +264,16 @@ namespace {
         ShaderProcessorProbe processor(config);
         processor.feed("offset", [] { return ShaderProcessor::FeedValue { 4.5 }; });
         processor.feed("gain", [] { return ShaderProcessor::FeedValue { 2.25 }; });
-        processor.feed("late", [] { return ShaderProcessor::FeedValue { 8.0 }; }, 12, sizeof(float), false);
+        processor.feed("late", [] { return ShaderProcessor::FeedValue { 8.0 }; }, 16, sizeof(float), false);
 
         EXPECT_EQ(processor.get_feed_names().size(), 3U);
         processor.pull_feeds();
         EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 0), 2.25F);
-        EXPECT_DOUBLE_EQ(read_bytes<double>(processor.get_push_constant_data(), 4), 4.5);
-        EXPECT_EQ(processor.get_push_constant_data().size(), 12U);
+        EXPECT_DOUBLE_EQ(read_bytes<double>(processor.get_push_constant_data(), 8), 4.5);
+        EXPECT_EQ(processor.get_push_constant_data().size(), 16U);
 
         processor.pull_feeds(false);
-        EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 12), 8.0F);
+        EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 16), 8.0F);
         processor.remove_feed("offset");
         EXPECT_FALSE(processor.has_feed("offset"));
         EXPECT_TRUE(processor.has_feed("gain"));
@@ -311,6 +311,67 @@ namespace {
         EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 4), 1.0F);
         EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 8), 2.0F);
         EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 12), 3.0F);
+    }
+
+    TEST(ShaderProcessorTest, NamedFeedsAfterAVec3SitAtTheirAlignedOffsets)
+    {
+        auto config = config_with_binding();
+        config.pc_fields = {
+            { "gain", Kakshya::GpuDataFormat::FLOAT32 },
+            { "dir", Kakshya::GpuDataFormat::VEC3_F32 },
+            { "tail", Kakshya::GpuDataFormat::FLOAT32 }
+        };
+        ShaderProcessorProbe processor(config);
+        processor.feed("gain", [] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { 1.0F } }; });
+        processor.feed("dir", [] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { glm::vec3 { 2.0F, 3.0F, 4.0F } } }; });
+        processor.feed("tail", [] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { 5.0F } }; });
+
+        processor.pull_feeds();
+
+        EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 0), 1.0F);
+        EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 16), 2.0F);
+        EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 24), 4.0F);
+        EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 28), 5.0F);
+    }
+
+    TEST(ShaderProcessorTest, NamedFeedRefusesAValueOfADifferentFormatThanItsField)
+    {
+        auto config = config_with_binding();
+        config.pc_fields = {
+            { "gain", Kakshya::GpuDataFormat::FLOAT32 },
+            { "next", Kakshya::GpuDataFormat::FLOAT32 }
+        };
+        ShaderProcessorProbe processor(config);
+        processor.feed("next", [] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { 7.0F } }; });
+        processor.pull_feeds();
+
+        processor.feed("gain", [] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { glm::vec3 { 1.0F, 2.0F, 3.0F } } }; });
+        processor.pull_feeds();
+
+        EXPECT_EQ(processor.get_push_constant_data().size(), 8U);
+        EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 4), 7.0F);
+    }
+
+    TEST(ShaderProcessorTest, NamedFeedAcceptsAValueOfItsOwnFormat)
+    {
+        auto config = config_with_binding();
+        config.pc_fields = { { "count", Kakshya::GpuDataFormat::UINT32 } };
+        ShaderProcessorProbe processor(config);
+        processor.feed("count", [] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { uint32_t { 12 } } }; });
+
+        processor.pull_feeds();
+
+        EXPECT_EQ(read_bytes<uint32_t>(processor.get_push_constant_data(), 0), 12U);
+    }
+
+    TEST(ShaderProcessorTest, ExplicitOffsetFeedsAcceptAnyFormat)
+    {
+        ShaderProcessorProbe processor(config_with_binding());
+        processor.feed("loose", [] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { glm::vec2 { 1.0F, 2.0F } } }; }, 8);
+
+        processor.pull_feeds();
+
+        EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 12), 2.0F);
     }
 
     TEST(ShaderProcessorTest, TypedFeedKeepsIntegerBitsUnconverted)
