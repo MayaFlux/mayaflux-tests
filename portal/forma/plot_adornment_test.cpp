@@ -115,6 +115,32 @@ TEST_F(FormaPlotAdornmentTest, ALegendAddsASwatchAndALabelPerEntry)
     EXPECT_EQ(flat, 2U);
 }
 
+TEST_F(FormaPlotAdornmentTest, LegendSwatchesDrawAsSlicesOfAGivenBatchAndLabelsKeepTheirOwnBuffers)
+{
+    Forma::Plot::LegendSpec legend;
+    legend.origin = { -0.9F, 0.9F };
+    legend.entries = { { "first", { 1.F, 0.F, 0.F } }, { "second", { 0.F, 1.F, 0.F } } };
+    Forma::Plot::SeriesSpec spec;
+    spec.legend = legend;
+    auto batch = Forma::internal::atelier().create_batch(surface->window());
+
+    Forma::internal::atelier().place_adornments(*surface, spec, parent, batch);
+
+    EXPECT_EQ(batch->slice_count(), 2U);
+    size_t in_batch = 0;
+    for (const auto id : surface->layer().related_ids(parent)) {
+        const auto* element = surface->layer().get(id);
+        ASSERT_NE(element, nullptr);
+        if (element->texture) {
+            EXPECT_NE(element->buffer.buffer(), batch);
+        } else {
+            EXPECT_EQ(element->buffer.buffer(), batch);
+            ++in_batch;
+        }
+    }
+    EXPECT_EQ(in_batch, 2U);
+}
+
 TEST_F(FormaPlotAdornmentTest, EveryDeclaredKindIsPlacedTogether)
 {
     Forma::Plot::TickLabelsSpec ticks;

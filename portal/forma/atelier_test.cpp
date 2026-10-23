@@ -104,6 +104,7 @@ TEST_F(FormaAtelierLifecycleTest, UninitializedAtelierRefusesEveryConstructionPa
     EXPECT_THROW((void)Forma::internal::atelier().create_window({}), std::runtime_error);
     EXPECT_THROW((void)Forma::internal::atelier().create_buffer(window, 256, PrimitiveTopology::POINT_LIST),
         std::runtime_error);
+    EXPECT_THROW((void)Forma::internal::atelier().create_batch(window), std::runtime_error);
 }
 
 TEST_F(FormaAtelierLifecycleTest, InitializeExposesAStableBridgeAndInspector)
@@ -436,6 +437,82 @@ TEST_F(FormaAtelierBufferTest, CreateElementOnASurfaceSyncsOnceBeforeTheFirstFra
     EXPECT_EQ(*calls, 1);
     EXPECT_EQ(surface.layer().hit_test({ 0.0F, 0.0F }), mapped.element.id);
     EXPECT_FALSE(surface.layer().hit_test({ 0.9F, 0.9F }).has_value());
+}
+
+TEST_F(FormaAtelierBufferTest, CreateBatchRegistersATriangulatingBufferThatTakesSlices)
+{
+    auto batch = Forma::internal::atelier().create_batch(window);
+    created.push_back(batch);
+
+    ASSERT_NE(batch, nullptr);
+    EXPECT_EQ(batch->topology(), PrimitiveTopology::TRIANGLE_LIST);
+    ASSERT_NE(batch->get_render_processor(), nullptr);
+    EXPECT_TRUE(batch->get_render_processor()->is_triangulate());
+
+    const auto& registered = harness.buffers->get_graphics_buffers(Buffers::ProcessingToken::GRAPHICS_BACKEND);
+    EXPECT_NE(std::ranges::find(registered, batch), registered.end());
+
+    const auto first = Forma::FormaTarget::slice_of(batch);
+    const auto second = Forma::FormaTarget::slice_of(batch, PrimitiveTopology::TRIANGLE_STRIP);
+    EXPECT_TRUE(first);
+    EXPECT_TRUE(second);
+    EXPECT_EQ(batch->slice_count(), 2U);
+}
+
+TEST_F(FormaAtelierBufferTest, ElementsCreatedOnSlicesOfOneBatchShareItsBuffer)
+{
+    Forma::SurfaceConfig config;
+    config.window = window;
+    config.name = "atelier-shared-batch";
+    config.detach_on_close = false;
+    auto surface = Forma::internal::atelier().create_surface(std::move(config));
+    auto batch = Forma::internal::atelier().create_batch(window);
+    created.push_back(batch);
+    auto calls = std::make_shared<int>(0);
+
+    auto first = Forma::internal::atelier().create_element<int>(
+        surface, Forma::FormaTarget::slice_of(batch, PrimitiveTopology::TRIANGLE_STRIP),
+        counting_geometry(calls, k_hint), 1);
+    auto second = Forma::internal::atelier().create_element<int>(
+        surface, Forma::FormaTarget::slice_of(batch, PrimitiveTopology::TRIANGLE_STRIP),
+        counting_geometry(calls, k_hint), 2);
+
+    EXPECT_EQ(*calls, 2);
+    EXPECT_EQ(first.element.buffer.buffer(), batch);
+    EXPECT_EQ(second.element.buffer.buffer(), batch);
+    EXPECT_NE(first.element.buffer.slice(), second.element.buffer.slice());
+    EXPECT_EQ(batch->slice_count(), 2U);
+    EXPECT_EQ(surface.layer().size(), 2U);
+
+    batch->process_default();
+    const auto layout = batch->get_vertex_layout();
+    ASSERT_TRUE(layout.has_value());
+    EXPECT_EQ(layout->vertex_count, 8U);
+}
+
+TEST_F(FormaAtelierBufferTest, RemovingSharedElementsRetiresTheBatchWithTheLastOne)
+{
+    Forma::SurfaceConfig config;
+    config.window = window;
+    config.name = "atelier-shared-retire";
+    config.detach_on_close = false;
+    auto surface = Forma::internal::atelier().create_surface(std::move(config));
+    auto batch = Forma::internal::atelier().create_batch(window);
+    created.push_back(batch);
+    auto calls = std::make_shared<int>(0);
+
+    auto first = Forma::internal::atelier().create_element<int>(
+        surface, Forma::FormaTarget::slice_of(batch), counting_geometry(calls), 1);
+    auto second = Forma::internal::atelier().create_element<int>(
+        surface, Forma::FormaTarget::slice_of(batch), counting_geometry(calls), 2);
+
+    ASSERT_TRUE(surface.layer().remove(first.element.id));
+    EXPECT_EQ(batch->slice_count(), 1U);
+    EXPECT_FALSE(batch->needs_removal());
+
+    ASSERT_TRUE(surface.layer().remove(second.element.id));
+    EXPECT_EQ(batch->slice_count(), 0U);
+    EXPECT_TRUE(batch->needs_removal());
 }
 
 TEST_F(FormaAtelierBufferTest, TrackReflowsTheMappedGeometryOnEveryScroll)

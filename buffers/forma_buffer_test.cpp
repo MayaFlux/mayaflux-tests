@@ -22,6 +22,7 @@
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexLayout.hpp"
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
+#include "MayaFlux/Portal/Graphics/ComputePress.hpp"
 #include "MayaFlux/Portal/Graphics/RenderFlow.hpp"
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 #include "MayaFlux/Portal/Forma/Element.hpp"
@@ -883,6 +884,151 @@ void main()
     EXPECT_LT(dark[0], 32U);
     EXPECT_LT(dark[1], 32U);
     EXPECT_LT(dark[2], 32U);
+}
+
+class FormaTriangulatedBatchPresentationTest : public FormaBufferPresentationTest {
+protected:
+    void SetUp() override
+    {
+        FormaBufferPresentationTest::SetUp();
+        if (IsSkipped())
+            return;
+        Portal::Graphics::get_compute_press().shutdown();
+        ASSERT_TRUE(Portal::Graphics::get_compute_press().initialize());
+        compute_ready = true;
+    }
+
+    void TearDown() override
+    {
+        if (buffer) {
+            if (auto render = buffer->get_render_processor())
+                buffer->get_processing_chain()->remove_processor_anywhere(render, buffer);
+            buffer->set_default_processor(nullptr);
+        }
+        if (compute_ready)
+            Portal::Graphics::get_compute_press().shutdown();
+        compute_ready = false;
+        FormaBufferPresentationTest::TearDown();
+    }
+
+    bool compute_ready {};
+
+    void prepare_batch()
+    {
+        buffer = std::make_shared<FormaBuffer>(sizeof(Kakshya::MeshVertex) * 10,
+            PrimitiveTopology::TRIANGLE_LIST);
+        auto* service = Registry::BackendRegistry::instance()
+                            .get_service<Registry::Service::BufferService>();
+        ASSERT_NE(service, nullptr);
+        service->initialize_buffer(buffer);
+        ASSERT_TRUE(buffer->is_initialized());
+        buffer->setup_processors(ProcessingToken::GRAPHICS_BACKEND);
+
+        FormaBuffer::RenderConfig config;
+        config.target_window = window;
+        config.triangulate = true;
+        buffer->setup_rendering(config);
+
+        root = std::make_shared<Buffers::RootGraphicsBuffer>();
+        root->initialize();
+        root->add_child_buffer(buffer);
+    }
+
+    static std::vector<uint8_t> bytes_of(const std::vector<Kakshya::MeshVertex>& vertices)
+    {
+        std::vector<uint8_t> bytes(vertices.size() * sizeof(Kakshya::MeshVertex));
+        std::memcpy(bytes.data(), vertices.data(), bytes.size());
+        return bytes;
+    }
+
+    static std::vector<Kakshya::MeshVertex> left_half_as_list(glm::vec3 color)
+    {
+        auto vertex = [&](float x, float y) {
+            return Kakshya::MeshVertex { .position = { x, y, 0.0F }, .color = color };
+        };
+        return { vertex(-1.0F, -1.0F), vertex(-1.0F, 1.0F), vertex(0.0F, -1.0F),
+            vertex(0.0F, -1.0F), vertex(-1.0F, 1.0F), vertex(0.0F, 1.0F) };
+    }
+
+    static std::vector<Kakshya::MeshVertex> right_half_as_strip(glm::vec3 color)
+    {
+        auto vertex = [&](float x, float y) {
+            return Kakshya::MeshVertex { .position = { x, y, 0.0F }, .color = color };
+        };
+        return { vertex(0.0F, -1.0F), vertex(0.0F, 1.0F), vertex(1.0F, -1.0F), vertex(1.0F, 1.0F) };
+    }
+
+    [[nodiscard]] std::array<uint8_t, 4> pixel_at(float fraction_x) const
+    {
+        auto* display = Registry::BackendRegistry::instance()
+                            .get_service<Registry::Service::DisplayService>();
+        EXPECT_NE(display, nullptr);
+        if (!display)
+            return {};
+        uint32_t width = 0;
+        uint32_t height = 0;
+        display->get_swapchain_extent(window, width, height);
+        EXPECT_GT(width, 0U);
+        EXPECT_GT(height, 0U);
+        std::vector<uint8_t> pixels(static_cast<size_t>(width) * height * 4);
+        if (pixels.empty())
+            return {};
+        const bool read = display->readback_swapchain_region(
+            window, pixels.data(), 0, 0, width, height, pixels.size());
+        EXPECT_TRUE(read);
+        if (!read)
+            return {};
+        const auto column = static_cast<size_t>(fraction_x * static_cast<float>(width));
+        const size_t index = (static_cast<size_t>(height / 2) * width + column) * 4;
+        return { pixels[index], pixels[index + 1], pixels[index + 2], pixels[index + 3] };
+    }
+};
+
+TEST_F(FormaTriangulatedBatchPresentationTest, MixedTopologySlicesDrawThroughOneMilledBatch)
+{
+    prepare_batch();
+    ASSERT_NE(root, nullptr);
+    buffer->add_slice(bytes_of(left_half_as_list({ 1.0F, 0.0F, 0.0F })));
+    buffer->add_slice(bytes_of(right_half_as_strip({ 0.0F, 1.0F, 0.0F })),
+        PrimitiveTopology::TRIANGLE_STRIP);
+    present();
+
+    const auto left = pixel_at(0.25F);
+    EXPECT_GT(left[2], 200U);
+    EXPECT_LT(left[1], 32U);
+    EXPECT_LT(left[0], 32U);
+
+    const auto right = pixel_at(0.75F);
+    EXPECT_LT(right[2], 32U);
+    EXPECT_GT(right[1], 200U);
+    EXPECT_LT(right[0], 32U);
+}
+
+TEST_F(FormaTriangulatedBatchPresentationTest, HidingASliceRemovesOnlyItsPixelsAndShowingRestoresThem)
+{
+    prepare_batch();
+    ASSERT_NE(root, nullptr);
+    const auto list_slice = buffer->add_slice(bytes_of(left_half_as_list({ 1.0F, 0.0F, 0.0F })));
+    const auto strip_slice = buffer->add_slice(bytes_of(right_half_as_strip({ 0.0F, 1.0F, 0.0F })),
+        PrimitiveTopology::TRIANGLE_STRIP);
+    ASSERT_NE(list_slice, strip_slice);
+    present();
+
+    buffer->set_slice_visible(strip_slice, false);
+    present();
+    EXPECT_GT(pixel_at(0.25F)[2], 200U);
+    EXPECT_LT(pixel_at(0.75F)[1], 32U);
+
+    buffer->set_slice_visible(strip_slice, true);
+    buffer->set_slice_visible(list_slice, false);
+    present();
+    EXPECT_LT(pixel_at(0.25F)[2], 32U);
+    EXPECT_GT(pixel_at(0.75F)[1], 200U);
+
+    buffer->set_slice_visible(list_slice, true);
+    present();
+    EXPECT_GT(pixel_at(0.25F)[2], 200U);
+    EXPECT_GT(pixel_at(0.75F)[1], 200U);
 }
 
 #endif

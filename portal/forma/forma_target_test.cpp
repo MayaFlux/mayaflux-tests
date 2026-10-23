@@ -105,6 +105,18 @@ namespace {
         EXPECT_EQ(first.slice(), 1U);
     }
 
+    TEST(FormaTargetTest, SliceOfANullBufferIsAnEmptyHandle)
+    {
+        EXPECT_FALSE(FormaTarget::slice_of(nullptr));
+    }
+
+    TEST(FormaTargetTest, SliceOfABufferWithoutProcessorsIsAnEmptyHandle)
+    {
+        auto buffer = std::make_shared<FormaBuffer>(240, PrimitiveTopology::TRIANGLE_LIST);
+
+        EXPECT_FALSE(FormaTarget::slice_of(buffer));
+    }
+
     class FormaTargetDeviceTest : public VulkanDeviceTest {
     protected:
         static void SetUpTestSuite()
@@ -192,6 +204,66 @@ namespace {
     private:
         static inline bool s_foundry_ready {};
     };
+
+    TEST_F(FormaTargetDeviceTest, SliceOfAddsAnEmptySliceDrawnAfterTheExistingOnes)
+    {
+        ASSERT_TRUE(ready());
+        const auto existing = buffer->add_slice(target_vertices(2, 1));
+
+        const auto target = FormaTarget::slice_of(buffer);
+
+        ASSERT_TRUE(target);
+        EXPECT_EQ(target.buffer(), buffer);
+        EXPECT_NE(target.slice(), 0U);
+        EXPECT_NE(target.slice(), existing);
+        EXPECT_EQ(buffer->slice_count(), 2U);
+
+        target.submit(target_vertices(1, 7));
+        buffer->process_default();
+
+        EXPECT_EQ(vertex_count(), 3U);
+        EXPECT_EQ(read_bytes(3 * k_target_stride), target_concat({ target_vertices(2, 1), target_vertices(1, 7) }));
+    }
+
+    TEST_F(FormaTargetDeviceTest, SlicesOfOneBufferAreWrittenAndHiddenIndependently)
+    {
+        ASSERT_TRUE(ready());
+        const auto first = FormaTarget::slice_of(buffer);
+        const auto middle = FormaTarget::slice_of(buffer);
+        const auto last = FormaTarget::slice_of(buffer);
+        first.submit(target_vertices(2, 1));
+        middle.submit(target_vertices(3, 2));
+        last.submit(target_vertices(1, 3));
+        buffer->process_default();
+
+        EXPECT_EQ(vertex_count(), 6U);
+        EXPECT_EQ(read_bytes(6 * k_target_stride),
+            target_concat({ target_vertices(2, 1), target_vertices(3, 2), target_vertices(1, 3) }));
+
+        middle.set_visible(false);
+        buffer->process_default();
+
+        ASSERT_EQ(runs().size(), 2U);
+        EXPECT_EQ(runs()[0].vertex_offset, 0U);
+        EXPECT_EQ(runs()[0].vertex_count, 2U);
+        EXPECT_EQ(runs()[1].vertex_offset, 5U);
+        EXPECT_EQ(runs()[1].vertex_count, 1U);
+    }
+
+    TEST_F(FormaTargetDeviceTest, RetiringTheLastSliceRetiresTheBuffer)
+    {
+        ASSERT_TRUE(ready());
+        const auto first = FormaTarget::slice_of(buffer);
+        const auto second = FormaTarget::slice_of(buffer);
+
+        first.retire();
+        EXPECT_FALSE(buffer->needs_removal());
+        EXPECT_EQ(buffer->slice_count(), 1U);
+
+        second.retire();
+        EXPECT_TRUE(buffer->needs_removal());
+        EXPECT_EQ(buffer->slice_count(), 0U);
+    }
 
     TEST_F(FormaTargetDeviceTest, ASubmitOnAWholeBufferHandleWritesTheDefaultSlice)
     {

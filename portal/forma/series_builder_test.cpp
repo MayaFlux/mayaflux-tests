@@ -428,7 +428,48 @@ TEST(FormaPlotFilledWaveformTest, TheBaselineCanBeMovedInDataCoordinates)
     EXPECT_FLOAT_EQ(verts[3].position.y, -1.F);
 }
 
-TEST(FormaPlotFilledWaveformTest, SeriesAreStitchedByRepeatingTheLastVertexOnce)
+TEST(FormaPlotBoundsTest, EveryEncodingMapsItsGeometryIntoThePlotBounds)
+{
+    const AABB2D bounds { .min = { -0.5F, 0.25F }, .max = { 0.5F, 0.75F } };
+    auto container = make_container({ { Role::SPATIAL_Y, { 1.0, 0.0, -1.0, 0.5 } } });
+    auto base = [&] { return Plot::Series {}.y(Role::SPATIAL_Y, fixed(-1.F, 1.F)).bounds(bounds); };
+
+    const std::array<Plot::SeriesSpec, 4> specs {
+        base().as_waveform().done(),
+        base().as_scatter().done(),
+        base().as_bars().done(),
+        base().as_filled_waveform().done(),
+    };
+
+    for (const auto& spec : specs) {
+        const auto verts = run(spec, container);
+        ASSERT_FALSE(verts.empty());
+        for (const auto& vertex : verts) {
+            EXPECT_GE(vertex.position.x, bounds.min.x - 1e-5F);
+            EXPECT_LE(vertex.position.x, bounds.max.x + 1e-5F);
+            EXPECT_GE(vertex.position.y, bounds.min.y - 1e-5F);
+            EXPECT_LE(vertex.position.y, bounds.max.y + 1e-5F);
+        }
+    }
+}
+
+TEST(FormaPlotBoundsTest, TheBoundsCornersAreWhereTheNdcCornersWere)
+{
+    const AABB2D bounds { .min = { -0.5F, 0.25F }, .max = { 0.5F, 0.75F } };
+    auto container = make_container({ { Role::SPATIAL_Y, { 1.0, 0.0, -1.0 } } });
+    const auto spec = Plot::Series {}.y(Role::SPATIAL_Y, fixed(-1.F, 1.F)).bounds(bounds).as_filled_waveform().done();
+
+    const auto verts = run(spec, container);
+
+    ASSERT_EQ(verts.size(), 6U);
+    EXPECT_FLOAT_EQ(verts[0].position.x, bounds.min.x);
+    EXPECT_FLOAT_EQ(verts[0].position.y, bounds.max.y);
+    EXPECT_FLOAT_EQ(verts[4].position.x, bounds.max.x);
+    EXPECT_FLOAT_EQ(verts[4].position.y, bounds.min.y);
+    EXPECT_FLOAT_EQ(verts[2].position.y, 0.5F);
+}
+
+TEST(FormaPlotFilledWaveformTest, SeriesAreStitchedByRepeatingTheLastVertexAndTheNextFirstVertex)
 {
     auto container = make_container({ { Role::SPATIAL_Y, { 1.0, 0.0 } },
         { Role::SPATIAL_Y, { 0.0, 1.0 } } });
@@ -436,10 +477,13 @@ TEST(FormaPlotFilledWaveformTest, SeriesAreStitchedByRepeatingTheLastVertexOnce)
 
     const auto verts = run(spec, container);
 
-    ASSERT_EQ(verts.size(), 4U + 1U + 4U);
+    ASSERT_EQ(verts.size(), 4U + 2U + 4U);
     EXPECT_EQ(verts[4].position, verts[3].position);
     EXPECT_FLOAT_EQ(verts[4].weight, verts[3].weight);
     EXPECT_EQ(verts[4].color, verts[3].color);
+    EXPECT_EQ(verts[5].position, verts[6].position);
+    EXPECT_FLOAT_EQ(verts[5].weight, verts[6].weight);
+    EXPECT_EQ(verts[5].color, verts[6].color);
 }
 
 TEST(FormaPlotFilledWaveformTest, StitchingSurvivesAManySeriesRebuild)
@@ -452,10 +496,11 @@ TEST(FormaPlotFilledWaveformTest, StitchingSurvivesAManySeriesRebuild)
 
     const auto verts = run(spec, container);
 
-    ASSERT_EQ(verts.size(), 12U * 128U + 11U);
+    ASSERT_EQ(verts.size(), 12U * 128U + 22U);
     for (size_t s = 0; s + 1 < 12; ++s) {
-        const size_t end = (s + 1) * 128 + s;
-        EXPECT_EQ(verts[end].position, verts[end - 1].position) << "series " << s;
+        const size_t tail = (s + 1) * 128 + 2 * s;
+        EXPECT_EQ(verts[tail].position, verts[tail - 1].position) << "series " << s;
+        EXPECT_EQ(verts[tail + 1].position, verts[tail + 2].position) << "series " << s;
     }
 }
 
