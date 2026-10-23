@@ -114,6 +114,29 @@ namespace {
         }
     }
 
+    TEST(SliceSetTest, SliceTopologyDefaultsToTheSetsAndDifferingNeighboursStaySeparate)
+    {
+        SliceSet set(k_stride, PrimitiveTopology::TRIANGLE_LIST);
+        set.add(vertices(3, 1));
+        set.add(vertices(4, 2), PrimitiveTopology::TRIANGLE_STRIP);
+        set.add(vertices(3, 3));
+        set.add(vertices(3, 4), PrimitiveTopology::TRIANGLE_LIST);
+        set.add(vertices(2, 5), PrimitiveTopology::LINE_LIST);
+
+        const auto runs = set.take_runs();
+
+        ASSERT_TRUE(runs.has_value());
+        ASSERT_EQ(runs->size(), 4U);
+        EXPECT_TRUE(same_run((*runs)[0], 0, 3));
+        EXPECT_EQ((*runs)[1].topology, PrimitiveTopology::TRIANGLE_STRIP);
+        EXPECT_EQ((*runs)[1].vertex_offset, 3U);
+        EXPECT_EQ((*runs)[1].vertex_count, 4U);
+        EXPECT_TRUE(same_run((*runs)[2], 7, 6));
+        EXPECT_EQ((*runs)[3].topology, PrimitiveTopology::LINE_LIST);
+        EXPECT_EQ((*runs)[3].vertex_offset, 13U);
+        EXPECT_EQ((*runs)[3].vertex_count, 2U);
+    }
+
     TEST(SliceSetTest, HidingTheMiddleSliceSplitsTheRun)
     {
         SliceSet set(k_stride, k_topology);

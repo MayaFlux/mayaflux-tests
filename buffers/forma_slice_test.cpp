@@ -372,6 +372,29 @@ namespace {
         EXPECT_EQ(vertex_count(), 7U);
     }
 
+    TEST_F(FormaSliceDeviceTest, TriangulatingBufferKeepsSlicesOfMixedTopologyAsSeparateRuns)
+    {
+        ASSERT_TRUE(ready());
+        window = std::make_shared<ScriptedWindow>(128, 128);
+        Portal::Graphics::RenderConfig config;
+        config.target_window = window;
+        config.triangulate = true;
+        buffer->setup_rendering(config);
+
+        buffer->add_slice(vertices(3, 1));
+        buffer->add_slice(vertices(4, 2), PrimitiveTopology::TRIANGLE_STRIP);
+        buffer->add_slice(vertices(2, 3), PrimitiveTopology::LINE_LIST);
+        buffer->process_default();
+
+        ASSERT_EQ(runs().size(), 3U);
+        EXPECT_TRUE(is_run(runs()[0], PrimitiveTopology::TRIANGLE_LIST, 0, 3));
+        EXPECT_TRUE(is_run(runs()[1], PrimitiveTopology::TRIANGLE_STRIP, 3, 4));
+        EXPECT_TRUE(is_run(runs()[2], PrimitiveTopology::LINE_LIST, 7, 2));
+        EXPECT_EQ(vertex_count(), 9U);
+        EXPECT_EQ(read_bytes(9 * k_stride),
+            concat({ vertices(3, 1), vertices(4, 2), vertices(2, 3) }));
+    }
+
     TEST_F(FormaSliceDeviceTest, RunsWaitForARenderProcessorAndAreAppliedWhenItAppears)
     {
         ASSERT_TRUE(ready());
