@@ -283,7 +283,7 @@ TEST_F(FormaBufferDeviceTest, TypedSingleVertexAndContiguousRangePreserveAllFiel
     EXPECT_EQ(read_bytes(expected_range.size()), expected_range);
 }
 
-TEST_F(FormaBufferDeviceTest, APartialVertexIsUploadedButCannotAddADrawableVertex)
+TEST_F(FormaBufferDeviceTest, ATrailingPartialVertexIsDroppedAndCannotAddADrawableVertex)
 {
     const auto stride = Kakshya::VertexLayout::for_lines().stride_bytes;
     ASSERT_TRUE(make_buffer(stride * 2, PrimitiveTopology::LINE_STRIP));
@@ -294,7 +294,7 @@ TEST_F(FormaBufferDeviceTest, APartialVertexIsUploadedButCannotAddADrawableVerte
     buffer->process_default();
 
     EXPECT_EQ(vertex_count(), 1U);
-    EXPECT_EQ(read_bytes(partial.size()), partial);
+    EXPECT_EQ(read_bytes(stride), std::vector<uint8_t>(partial.begin(), partial.begin() + stride));
 }
 
 TEST_F(FormaBufferDeviceTest, IdleTickKeepsTheLastGeometryAndShorterSubmissionReplacesIt)

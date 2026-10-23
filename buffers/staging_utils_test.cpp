@@ -95,6 +95,25 @@ namespace {
         EXPECT_FALSE(set.take_runs().has_value());
     }
 
+    TEST(SliceSetTest, StripAndFanTopologiesNeverCoalesceAdjacentSlices)
+    {
+        for (const auto topology : { PrimitiveTopology::LINE_STRIP, PrimitiveTopology::TRIANGLE_STRIP, PrimitiveTopology::TRIANGLE_FAN }) {
+            SliceSet set(k_stride, topology);
+            set.add(vertices(3, 1));
+            set.add(vertices(4, 2));
+
+            const auto runs = set.take_runs();
+
+            ASSERT_TRUE(runs.has_value());
+            ASSERT_EQ(runs->size(), 2U);
+            EXPECT_EQ((*runs)[0].topology, topology);
+            EXPECT_EQ((*runs)[0].vertex_offset, 0U);
+            EXPECT_EQ((*runs)[0].vertex_count, 3U);
+            EXPECT_EQ((*runs)[1].vertex_offset, 3U);
+            EXPECT_EQ((*runs)[1].vertex_count, 4U);
+        }
+    }
+
     TEST(SliceSetTest, HidingTheMiddleSliceSplitsTheRun)
     {
         SliceSet set(k_stride, k_topology);
