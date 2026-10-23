@@ -405,7 +405,7 @@ TEST_F(FormaAtelierBufferTest, CreateElementOnALayerRegistersItAndSyncsOnTheFram
 
     auto mapped = Forma::internal::atelier().create_element<int>(
         layer, window, counting_geometry(calls), 1);
-    created.push_back(mapped.element.buffer);
+    created.push_back(mapped.element.buffer.buffer());
 
     EXPECT_EQ(layer.size(), 1U);
     EXPECT_NE(layer.get(mapped.element.id), nullptr);
@@ -431,7 +431,7 @@ TEST_F(FormaAtelierBufferTest, CreateElementOnASurfaceSyncsOnceBeforeTheFirstFra
 
     auto mapped = Forma::internal::atelier().create_element<int>(
         surface, counting_geometry(calls, k_hint), 3);
-    created.push_back(mapped.element.buffer);
+    created.push_back(mapped.element.buffer.buffer());
 
     EXPECT_EQ(*calls, 1);
     EXPECT_EQ(surface.layer().hit_test({ 0.0F, 0.0F }), mapped.element.id);
@@ -453,7 +453,7 @@ TEST_F(FormaAtelierBufferTest, TrackReflowsTheMappedGeometryOnEveryScroll)
     auto calls = std::make_shared<int>(0);
     auto mapped = Forma::internal::atelier().create_element<int>(
         surface, counting_geometry(calls, content), 0);
-    created.push_back(mapped.element.buffer);
+    created.push_back(mapped.element.buffer.buffer());
     ASSERT_EQ(*calls, 1);
 
     Forma::internal::atelier().track(panel, surface.layer(), mapped, content);

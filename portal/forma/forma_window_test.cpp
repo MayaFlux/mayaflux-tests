@@ -330,7 +330,7 @@ TEST_F(FormaCollapsiblePresentationTest, PressingALabelledHeaderRepaintsItsBackg
 
     root = std::make_shared<Buffers::RootGraphicsBuffer>();
     root->initialize();
-    root->add_child_buffer(header.buf);
+    root->add_child_buffer(header.buf.buffer());
 
     present();
     const auto closed = corner_pixel();

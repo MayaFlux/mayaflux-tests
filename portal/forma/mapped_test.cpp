@@ -105,7 +105,7 @@ TEST(FormaMappedTest, SyncIsANoOpWithoutStateGeometryOrBuffer)
     EXPECT_FALSE(no_geometry.element.bounds_hint.has_value());
 
     auto no_buffer = rig.mapped;
-    no_buffer.element.buffer.reset();
+    no_buffer.element.buffer = nullptr;
     no_buffer.sync();
     EXPECT_FALSE(no_buffer.element.bounds_hint.has_value());
 }
