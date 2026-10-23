@@ -284,6 +284,25 @@ TEST_F(FormaBridgeTest, ASinkReceivesTheWholeVectorOfAVectorState)
     EXPECT_EQ(from_doubles, (std::vector<float> { 4.F, 5.F }));
 }
 
+TEST_F(FormaBridgeTest, ASinkReceivesTheComponentsOfAGlmVectorState)
+{
+    auto position = rig.add<glm::vec2>(30, glm::vec2(0.25F, 0.75F));
+    auto colour = rig.add<glm::vec3>(31, glm::vec3(0.1F, 0.2F, 0.3F));
+    std::vector<float> from_position;
+    std::vector<float> from_colour;
+    rig.bridge.write(rig.ref(30), std::function<void(std::span<const float>)>([&](std::span<const float> values) {
+        from_position.assign(values.begin(), values.end());
+    }));
+    rig.bridge.write(rig.ref(31), std::function<void(std::span<const float>)>([&](std::span<const float> values) {
+        from_colour.assign(values.begin(), values.end());
+    }));
+
+    rig.frames.tick();
+
+    EXPECT_EQ(from_position, (std::vector<float> { 0.25F, 0.75F }));
+    EXPECT_EQ(from_colour, (std::vector<float> { 0.1F, 0.2F, 0.3F }));
+}
+
 TEST_F(FormaBridgeTest, AConstantNodeFollowsTheStateEveryFrame)
 {
     auto state = rig.add<float>(13, 0.75F);
