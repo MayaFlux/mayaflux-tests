@@ -195,7 +195,7 @@ TEST_P(FormaFaderValueTest, HorizontalGeometryFitsDeclaredCapacity)
 
     const Rendered r = render(form, GetParam());
 
-    EXPECT_EQ(r.bytes.size(), 8 * sizeof(MeshVertex));
+    EXPECT_EQ(r.bytes.size(), 16 * sizeof(MeshVertex));
     EXPECT_LE(r.bytes.size(), form.capacity);
 }
 
@@ -217,13 +217,13 @@ TEST_P(FormaFaderValueTest, HorizontalTrackIsTheCentreBandOfTheBounds)
 
     const auto verts = decode<MeshVertex>(render(form, GetParam()).bytes);
 
-    ASSERT_EQ(verts.size(), 8U);
+    ASSERT_EQ(verts.size(), 16U);
     EXPECT_NEAR(verts[0].position.x, k_bounds.min.x, k_eps);
     EXPECT_NEAR(verts[3].position.x, k_bounds.max.x, k_eps);
     EXPECT_NEAR(verts[0].position.y, k_bounds.min.y + 0.35F * k_bounds.height(), k_eps);
     EXPECT_NEAR(verts[3].position.y, k_bounds.min.y + 0.65F * k_bounds.height(), k_eps);
     EXPECT_EQ(verts[0].color, glm::vec3(0.3F));
-    EXPECT_EQ(verts[4].color, glm::vec3(0.9F));
+    EXPECT_EQ(verts[12].color, glm::vec3(0.9F));
 }
 
 TEST_P(FormaFaderValueTest, VerticalHandleTravelsTrackMinusOneHandle)
@@ -250,7 +250,7 @@ TEST_P(FormaFaderValueTest, VerticalProjectionInvertsHandlePlacement)
     const Rendered r = render(form, v);
 
     EXPECT_NEAR(project(r.element.bounds_hint->center()), v, 1e-4F);
-    EXPECT_EQ(r.bytes.size(), 8 * sizeof(MeshVertex));
+    EXPECT_EQ(r.bytes.size(), 16 * sizeof(MeshVertex));
     EXPECT_LE(r.bytes.size(), form.capacity);
 }
 
