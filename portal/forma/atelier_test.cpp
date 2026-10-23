@@ -400,7 +400,8 @@ TEST_F(FormaAtelierBufferTest, CreateBufferWithAdditionalTexturesDeclaresOneArra
 TEST_F(FormaAtelierBufferTest, CreateElementOnALayerRegistersItAndSyncsOnTheFrameTick)
 {
     auto calls = std::make_shared<int>(0);
-    Forma::Layer layer;
+    auto owner = std::make_shared<Forma::Layer>();
+    Forma::Layer& layer = *owner;
 
     auto mapped = Forma::internal::atelier().create_element<int>(
         layer, window, counting_geometry(calls), 1);

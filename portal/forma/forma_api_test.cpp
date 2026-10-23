@@ -109,7 +109,7 @@ TEST_F(FormaApiTest, DestroyRemovesTheElementItsRelatedElementsAndTheirBindings)
     int presses = 0;
     surface.ctx().on_press(mapped.element.id, IO::MouseButtons::Left, [&](uint32_t, glm::vec2) { ++presses; });
     int sampled = 0;
-    Forma::bridge().bind(mapped.element.id, std::function<float()>([&] {
+    Forma::bridge().bind({ surface.layer_ptr(), mapped.element.id }, std::function<float()>([&] {
         ++sampled;
         return 1.F;
     }));

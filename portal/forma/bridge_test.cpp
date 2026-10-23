@@ -25,13 +25,16 @@ namespace {
         FrameScheduler frames;
         std::shared_ptr<Buffers::BufferManager> buffers = std::make_shared<Buffers::BufferManager>();
         Forma::Bridge bridge { *frames.scheduler, *buffers };
+        std::shared_ptr<Forma::Layer> layer = std::make_shared<Forma::Layer>();
+
+        [[nodiscard]] Forma::ElementRef ref(uint32_t id) const { return { layer, id }; }
 
         template <typename T>
         std::shared_ptr<Forma::MappedState<T>> add(uint32_t id, T initial = {}, std::function<float(T)> project = {})
         {
             auto state = std::make_shared<Forma::MappedState<T>>();
             state->write(std::move(initial));
-            bridge.register_element<T>(state, id, std::shared_ptr<Buffers::FormaBuffer> {}, std::move(project));
+            bridge.register_element<T>(ref(id), state, std::shared_ptr<Buffers::FormaBuffer> {}, std::move(project));
             return state;
         }
     };
@@ -59,7 +62,7 @@ namespace {
 class FormaBridgeTest : public ::testing::Test {
 protected:
     BridgeRig rig;
-    Forma::Layer layer;
+    Forma::Layer& layer { *rig.layer };
 };
 
 // =============================================================================
@@ -70,7 +73,7 @@ TEST_F(FormaBridgeTest, BindingACallableWritesIntoTheStateEveryFrame)
 {
     auto state = rig.add<float>(1, 0.F);
     float source = 0.25F;
-    rig.bridge.bind(1, std::function<float()>([&] { return source; }));
+    rig.bridge.bind(rig.ref(1), std::function<float()>([&] { return source; }));
 
     rig.frames.tick();
     EXPECT_FLOAT_EQ(state->value, 0.25F);
@@ -83,7 +86,7 @@ TEST_F(FormaBridgeTest, BindingACallableWritesIntoTheStateEveryFrame)
 TEST_F(FormaBridgeTest, BindingAnIntegerStateCastsTheFloat)
 {
     auto state = rig.add<int>(2, 0);
-    rig.bridge.bind(2, std::function<float()>([] { return 3.7F; }));
+    rig.bridge.bind(rig.ref(2), std::function<float()>([] { return 3.7F; }));
 
     rig.frames.tick();
 
@@ -97,8 +100,8 @@ TEST_F(FormaBridgeTest, BindingANodeReadsItsLastOutputAndAppliesTheProjection)
     auto node = std::make_shared<Nodes::Constant>(2.0);
     node->process_sample(0.0);
 
-    rig.bridge.bind(3, node);
-    rig.bridge.bind(4, node, [](double value) { return static_cast<float>(value * 2.0); });
+    rig.bridge.bind(rig.ref(3), node);
+    rig.bridge.bind(rig.ref(4), node, [](double value) { return static_cast<float>(value * 2.0); });
     rig.frames.tick();
 
     EXPECT_FLOAT_EQ(plain->value, 2.0F);
@@ -109,14 +112,14 @@ TEST_F(FormaBridgeTest, ABindingReplacesTheElementsPreviousInboundBinding)
 {
     auto state = rig.add<float>(5, 0.F);
     int first_calls = 0;
-    rig.bridge.bind(5, std::function<float()>([&] {
+    rig.bridge.bind(rig.ref(5), std::function<float()>([&] {
         ++first_calls;
         return 1.F;
     }));
     rig.frames.tick();
     ASSERT_EQ(first_calls, 1);
 
-    rig.bridge.bind(5, std::function<float()>([] { return 2.F; }));
+    rig.bridge.bind(rig.ref(5), std::function<float()>([] { return 2.F; }));
     rig.frames.tick(3);
 
     EXPECT_EQ(first_calls, 1);
@@ -127,14 +130,14 @@ TEST_F(FormaBridgeTest, UnbindStopsTheInboundBinding)
 {
     auto state = rig.add<float>(6, 0.F);
     int calls = 0;
-    rig.bridge.bind(6, std::function<float()>([&] {
+    rig.bridge.bind(rig.ref(6), std::function<float()>([&] {
         ++calls;
         return 1.F;
     }));
     rig.frames.tick();
     ASSERT_EQ(calls, 1);
 
-    rig.bridge.unbind(6);
+    rig.bridge.unbind(rig.ref(6));
     rig.frames.tick(3);
 
     EXPECT_EQ(calls, 1);
@@ -144,11 +147,11 @@ TEST_F(FormaBridgeTest, UnknownIdsAreIgnoredAcrossBindAndUnbind)
 {
     int calls = 0;
 
-    rig.bridge.bind(99, std::function<float()>([&] {
+    rig.bridge.bind(rig.ref(99), std::function<float()>([&] {
         ++calls;
         return 1.F;
     }));
-    rig.bridge.unbind(99);
+    rig.bridge.unbind(rig.ref(99));
     rig.frames.tick(2);
 
     EXPECT_EQ(calls, 0);
@@ -157,7 +160,7 @@ TEST_F(FormaBridgeTest, UnknownIdsAreIgnoredAcrossBindAndUnbind)
 TEST_F(FormaBridgeTest, AStateWithNoFloatConversionIgnoresInboundWrites)
 {
     auto state = rig.add<std::string>(7, "keep");
-    rig.bridge.bind(7, std::function<float()>([] { return 1.F; }));
+    rig.bridge.bind(rig.ref(7), std::function<float()>([] { return 1.F; }));
 
     rig.frames.tick(2);
 
@@ -191,7 +194,7 @@ TEST_F(FormaBridgeTest, UnbindStopsThePresentationSync)
     rig.frames.tick(2);
     ASSERT_EQ(*calls, 1);
 
-    rig.bridge.unbind(mapped.element.id);
+    rig.bridge.unbind(rig.ref(mapped.element.id));
     mapped.state->write(0.5F);
     rig.frames.tick(3);
 
@@ -222,11 +225,11 @@ TEST_F(FormaBridgeTest, StopSyncCancelsEveryTaskOwnedByTheLayer)
 
 TEST_F(FormaBridgeTest, StopSyncLeavesOtherLayersRunning)
 {
-    Forma::Layer other;
+    auto other = std::make_shared<Forma::Layer>();
     auto first_calls = std::make_shared<int>(0);
     auto second_calls = std::make_shared<int>(0);
     auto first = add_slider(rig, layer, first_calls, 0.F);
-    auto second = add_slider(rig, other, second_calls, 0.F);
+    auto second = add_slider(rig, *other, second_calls, 0.F);
     rig.frames.tick(2);
 
     rig.bridge.stop_sync(layer);
@@ -253,7 +256,7 @@ TEST_F(FormaBridgeTest, ASinkReceivesTheScalarValueAsOneElement)
 {
     auto state = rig.add<float>(10, 0.5F);
     std::vector<float> received;
-    rig.bridge.write(10, std::function<void(std::span<const float>)>([&](std::span<const float> values) {
+    rig.bridge.write(rig.ref(10), std::function<void(std::span<const float>)>([&](std::span<const float> values) {
         received.assign(values.begin(), values.end());
     }));
 
@@ -268,10 +271,10 @@ TEST_F(FormaBridgeTest, ASinkReceivesTheWholeVectorOfAVectorState)
     auto doubles = rig.add<std::vector<double>>(12, std::vector<double> { 4.0, 5.0 });
     std::vector<float> from_floats;
     std::vector<float> from_doubles;
-    rig.bridge.write(11, std::function<void(std::span<const float>)>([&](std::span<const float> values) {
+    rig.bridge.write(rig.ref(11), std::function<void(std::span<const float>)>([&](std::span<const float> values) {
         from_floats.assign(values.begin(), values.end());
     }));
-    rig.bridge.write(12, std::function<void(std::span<const float>)>([&](std::span<const float> values) {
+    rig.bridge.write(rig.ref(12), std::function<void(std::span<const float>)>([&](std::span<const float> values) {
         from_doubles.assign(values.begin(), values.end());
     }));
 
@@ -285,7 +288,7 @@ TEST_F(FormaBridgeTest, AConstantNodeFollowsTheStateEveryFrame)
 {
     auto state = rig.add<float>(13, 0.75F);
     auto node = std::make_shared<Nodes::Constant>(0.0);
-    rig.bridge.write(13, node);
+    rig.bridge.write(rig.ref(13), node);
 
     rig.frames.tick();
     EXPECT_DOUBLE_EQ(node->get_constant(), 0.75);
@@ -300,12 +303,12 @@ TEST_F(FormaBridgeTest, UnbindStopsOutboundSinksAndConstants)
     auto state = rig.add<float>(14, 1.F);
     auto node = std::make_shared<Nodes::Constant>(0.0);
     int sink_calls = 0;
-    rig.bridge.write(14, node);
-    rig.bridge.write(14, std::function<void(std::span<const float>)>([&](std::span<const float>) { ++sink_calls; }));
+    rig.bridge.write(rig.ref(14), node);
+    rig.bridge.write(rig.ref(14), std::function<void(std::span<const float>)>([&](std::span<const float>) { ++sink_calls; }));
     rig.frames.tick();
     ASSERT_EQ(sink_calls, 1);
 
-    rig.bridge.unbind(14);
+    rig.bridge.unbind(rig.ref(14));
     state->write(9.F);
     rig.frames.tick(3);
 
@@ -339,7 +342,7 @@ TEST_F(FormaBridgeTest, AnAggregateRouteSurvivesUnbindingAnElement)
     rig.frames.tick();
     ASSERT_EQ(sink_calls, 1);
 
-    rig.bridge.unbind(15);
+    rig.bridge.unbind(rig.ref(15));
     rig.frames.tick(2);
 
     EXPECT_EQ(sink_calls, 3);
@@ -488,7 +491,7 @@ TEST_F(FormaBridgeDeviceTest, APushConstantWriteStagesTheElementValueEveryTick)
 {
     auto buffer = make_buffer();
     auto state = rig.add<float>(20, 0.5F);
-    rig.bridge.write(20, buffer, "point.vert.spv", 8);
+    rig.bridge.write(rig.ref(20), buffer, "point.vert.spv", 8);
 
     tick(buffer);
     EXPECT_EQ(staged_push(buffer, 8), 0.5F);
@@ -502,8 +505,8 @@ TEST_F(FormaBridgeDeviceTest, SeveralWritesOfOneElementShareOneBindingsProcessor
 {
     auto buffer = make_buffer();
     auto state = rig.add<float>(21, 0.75F);
-    rig.bridge.write(21, buffer, "point.vert.spv", 8);
-    rig.bridge.write(21, buffer, "point.vert.spv", 16);
+    rig.bridge.write(rig.ref(21), buffer, "point.vert.spv", 8);
+    rig.bridge.write(rig.ref(21), buffer, "point.vert.spv", 16);
 
     tick(buffer);
 
@@ -515,7 +518,7 @@ TEST_F(FormaBridgeDeviceTest, ADescriptorWriteStagesItsSlotOnTheTargetBuffer)
 {
     auto buffer = make_buffer();
     auto state = rig.add<float>(22, 0.5F);
-    rig.bridge.write(22, buffer, "point.vert.spv", "gain", 2, 1);
+    rig.bridge.write(rig.ref(22), buffer, "point.vert.spv", "gain", 2, 1);
 
     tick(buffer);
 
@@ -530,7 +533,7 @@ TEST_F(FormaBridgeDeviceTest, AShaderWriteForAnUnknownIdStagesNothing)
 {
     auto buffer = make_buffer();
 
-    rig.bridge.write(77, buffer, "point.vert.spv", 0);
+    rig.bridge.write(rig.ref(77), buffer, "point.vert.spv", 0);
     tick(buffer);
 
     EXPECT_TRUE(buffer->get_pipeline_context().push_constant_bindings.empty());
@@ -541,8 +544,8 @@ TEST_F(FormaBridgeDeviceTest, ASecondTargetBufferIsNeverAttached)
     auto first = make_buffer();
     auto second = make_buffer();
     auto state = rig.add<float>(23, 0.5F);
-    rig.bridge.write(23, first, "point.vert.spv", 8);
-    rig.bridge.write(23, second, "point.vert.spv", 16);
+    rig.bridge.write(rig.ref(23), first, "point.vert.spv", 8);
+    rig.bridge.write(rig.ref(23), second, "point.vert.spv", 16);
 
     tick(first);
     tick(second);
@@ -556,11 +559,11 @@ TEST_F(FormaBridgeDeviceTest, UnbindRemovesTheStagedPushConstantAndStopsFollowin
 {
     auto buffer = make_buffer();
     auto state = rig.add<float>(24, 0.5F);
-    rig.bridge.write(24, buffer, "point.vert.spv", 8);
+    rig.bridge.write(rig.ref(24), buffer, "point.vert.spv", 8);
     tick(buffer);
     ASSERT_EQ(staged_push(buffer, 8), 0.5F);
 
-    rig.bridge.unbind(24);
+    rig.bridge.unbind(rig.ref(24));
     state->write(0.9F);
     tick(buffer);
 
