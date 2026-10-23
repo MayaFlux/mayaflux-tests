@@ -102,6 +102,14 @@ private:
     static inline bool s_foundry_ready {};
 };
 
+TEST_F(FormaBindingsProcessorDeviceTest, TheTargetsSharedShaderIsNeverKeptForDestruction)
+{
+    bindings->bind_push_constant("gain", [] { return 1.F; }, 0);
+    tick();
+
+    EXPECT_FALSE(bindings->is_shader_loaded());
+}
+
 TEST_F(FormaBindingsProcessorDeviceTest, SetupProcessorsConfiguresTheGraphicsChain)
 {
     auto other = std::make_shared<Buffers::FormaBuffer>(
