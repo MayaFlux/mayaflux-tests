@@ -228,6 +228,44 @@ TEST_F(FormaApiTest, TendWithABatchPlacesItsElementAsASliceOfIt)
     EXPECT_EQ(surface.layer().hit_test({ 0.F, 0.F }), tend.result->element.id);
 }
 
+TEST_F(FormaApiTest, ScrollableOnABatchScissorsTheBatchOnceForEveryTrackedSlice)
+{
+    const AABB2D viewport { .min = { -0.5F, -0.5F }, .max = { 0.5F, 0.5F } };
+    auto surface = make_surface("api-scroll-batch");
+    auto batch = Forma::create_batch(surface.window());
+    auto panel = Forma::make_scrollable(
+        Forma::FormaTarget::slice_of(batch, PrimitiveTopology::TRIANGLE_STRIP), surface, viewport);
+    ASSERT_NE(batch->get_render_processor(), nullptr);
+    EXPECT_EQ(batch->get_render_processor()->get_scissor(), Kinesis::Scissor::from(viewport));
+
+    Forma::Geometry::Form<float> form { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    auto child = Forma::create<float>(surface, batch, std::move(form), 0.F);
+    Forma::internal::atelier().track<float>(panel, surface.layer(), child, viewport);
+
+    EXPECT_EQ(child.element.buffer.buffer(), batch);
+    EXPECT_EQ(batch->get_render_processor()->get_scissor(), Kinesis::Scissor::from(viewport));
+    EXPECT_EQ(batch->slice_count(), 2U);
+    const auto related = surface.layer().related_ids(panel.viewport_id);
+    EXPECT_NE(std::ranges::find(related, child.element.id), related.end());
+}
+
+TEST_F(FormaApiTest, ScrollableStillScissorsATrackedElementThatHasABufferOfItsOwn)
+{
+    const AABB2D viewport { .min = { -0.5F, -0.5F }, .max = { 0.5F, 0.5F } };
+    auto surface = make_surface("api-scroll-own-buffer");
+    auto batch = Forma::create_batch(surface.window());
+    auto panel = Forma::make_scrollable(
+        Forma::FormaTarget::slice_of(batch, PrimitiveTopology::TRIANGLE_STRIP), surface, viewport);
+
+    Forma::Geometry::Form<float> form { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    auto child = Forma::create<float>(surface, std::move(form), 0.F);
+    Forma::internal::atelier().track<float>(panel, surface.layer(), child, viewport);
+
+    EXPECT_NE(child.element.buffer.buffer(), batch);
+    ASSERT_NE(child.element.buffer->get_render_processor(), nullptr);
+    EXPECT_EQ(child.element.buffer->get_render_processor()->get_scissor(), Kinesis::Scissor::from(viewport));
+}
+
 TEST_F(FormaApiTest, TendBridgeReturnsTheHandleOfItsElement)
 {
     auto surface = make_surface("api-tend-bridge");
