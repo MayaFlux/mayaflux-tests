@@ -499,6 +499,19 @@ protected:
         return std::nullopt;
     }
 
+    template <typename T>
+    static std::optional<T> staged_as(const std::shared_ptr<Buffers::FormaBuffer>& buffer, uint32_t offset)
+    {
+        for (const auto& entry : buffer->get_pipeline_context().push_constant_bindings) {
+            if (entry.offset == offset && entry.data.size() == sizeof(T)) {
+                T value {};
+                std::memcpy(&value, entry.data.data(), sizeof(value));
+                return value;
+            }
+        }
+        return std::nullopt;
+    }
+
     BridgeRig rig;
     std::vector<std::shared_ptr<Buffers::FormaBuffer>> created;
 
@@ -572,6 +585,191 @@ TEST_F(FormaBridgeDeviceTest, ASecondTargetBufferIsNeverAttached)
     EXPECT_EQ(staged_push(first, 8), 0.5F);
     EXPECT_EQ(staged_push(first, 16), 0.5F);
     EXPECT_TRUE(second->get_pipeline_context().push_constant_bindings.empty());
+}
+
+TEST_F(FormaBridgeDeviceTest, AFormatWriteStagesTheConvertedValueEveryTick)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<float>(40, 3.9F);
+    rig.bridge.write(rig.ref(40), buffer, "point.vert.spv", 8, Kakshya::GpuDataFormat::UINT32);
+
+    tick(buffer);
+    EXPECT_EQ(staged_as<uint32_t>(buffer, 8), 3U);
+
+    state->write(5.2F);
+    tick(buffer);
+    EXPECT_EQ(staged_as<uint32_t>(buffer, 8), 5U);
+}
+
+TEST_F(FormaBridgeDeviceTest, AFormatWriteKeepsTheFormatsWidth)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<float>(41, 2.5F);
+    rig.bridge.write(rig.ref(41), buffer, "point.vert.spv", 8, Kakshya::GpuDataFormat::FLOAT64);
+
+    tick(buffer);
+
+    EXPECT_EQ(staged_as<double>(buffer, 8), 2.5);
+    EXPECT_FALSE(staged_as<float>(buffer, 8).has_value());
+}
+
+TEST_F(FormaBridgeDeviceTest, AFormatWriteSaturatesIntegerFormats)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<float>(42, -1.0F);
+    rig.bridge.write(rig.ref(42), buffer, "point.vert.spv", 8, Kakshya::GpuDataFormat::UINT16);
+
+    tick(buffer);
+    EXPECT_EQ(staged_as<uint16_t>(buffer, 8), 0U);
+
+    state->write(100000.0F);
+    tick(buffer);
+    EXPECT_EQ(staged_as<uint16_t>(buffer, 8), 65535U);
+}
+
+TEST_F(FormaBridgeDeviceTest, AMappedStateFormatWriteFollowsTheState)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<float>(43, 7.0F);
+    rig.bridge.write(state, buffer, "point.vert.spv", 12, Kakshya::GpuDataFormat::INT32);
+
+    tick(buffer);
+
+    EXPECT_EQ(staged_as<int32_t>(buffer, 12), 7);
+}
+
+TEST_F(FormaBridgeDeviceTest, ABindingHandleForwardsAFormatWrite)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<float>(44, 9.0F);
+    rig.bridge.at(rig.ref(44)).write(buffer, "point.vert.spv", 8, Kakshya::GpuDataFormat::UINT32);
+
+    tick(buffer);
+
+    EXPECT_EQ(staged_as<uint32_t>(buffer, 8), 9U);
+}
+
+TEST_F(FormaBridgeDeviceTest, FormatAndWidthWritesOfOneElementShareOneBindingsProcessor)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<float>(45, 1.5F);
+    rig.bridge.write(rig.ref(45), buffer, "point.vert.spv", 8);
+    rig.bridge.write(rig.ref(45), buffer, "point.vert.spv", 16, Kakshya::GpuDataFormat::UINT32);
+
+    tick(buffer);
+
+    EXPECT_EQ(staged_as<float>(buffer, 8), 1.5F);
+    EXPECT_EQ(staged_as<uint32_t>(buffer, 16), 1U);
+}
+
+TEST_F(FormaBridgeDeviceTest, AMultiComponentFormatWriteStagesNothing)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<float>(46, 1.0F);
+    rig.bridge.write(rig.ref(46), buffer, "point.vert.spv", 8, Kakshya::GpuDataFormat::VEC3_F32);
+
+    tick(buffer);
+
+    EXPECT_TRUE(buffer->get_pipeline_context().push_constant_bindings.empty());
+}
+
+TEST_F(FormaBridgeDeviceTest, AFormatWriteMatchingAVec3StateKeepsEveryComponent)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<glm::vec3>(60, glm::vec3 { 1.0F, 2.0F, 3.0F });
+    rig.bridge.write(state, buffer, "point.vert.spv", 16, Kakshya::GpuDataFormat::VEC3_F32);
+
+    tick(buffer);
+    EXPECT_EQ(staged_as<glm::vec3>(buffer, 16), (glm::vec3 { 1.0F, 2.0F, 3.0F }));
+
+    state->write(glm::vec3 { -4.0F, 5.0F, 6.0F });
+    tick(buffer);
+    EXPECT_EQ(staged_as<glm::vec3>(buffer, 16), (glm::vec3 { -4.0F, 5.0F, 6.0F }));
+}
+
+TEST_F(FormaBridgeDeviceTest, AFormatWriteMatchingAMatrixStateKeepsTheWholeMatrix)
+{
+    auto buffer = make_buffer();
+    glm::mat4 value(1.0F);
+    value[3][0] = 7.0F;
+    auto state = rig.add<glm::mat4>(61, value);
+    rig.bridge.write(rig.ref(61), buffer, "point.vert.spv", 0, Kakshya::GpuDataFormat::MAT4_F32);
+
+    tick(buffer);
+
+    EXPECT_EQ(staged_as<glm::mat4>(buffer, 0), value);
+}
+
+TEST_F(FormaBridgeDeviceTest, AFormatWriteMatchingAnIntegerStateIsExactBeyondFloatPrecision)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<int32_t>(62, 16777217);
+    rig.bridge.write(rig.ref(62), buffer, "point.vert.spv", 8, Kakshya::GpuDataFormat::INT32);
+
+    tick(buffer);
+
+    EXPECT_EQ(staged_as<int32_t>(buffer, 8), 16777217);
+}
+
+TEST_F(FormaBridgeDeviceTest, AFormatWriteDifferingFromTheStatesTypeStillConvertsItsFloat)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<int32_t>(63, 7);
+    rig.bridge.write(rig.ref(63), buffer, "point.vert.spv", 8, Kakshya::GpuDataFormat::UINT32);
+
+    tick(buffer);
+
+    EXPECT_EQ(staged_as<uint32_t>(buffer, 8), 7U);
+}
+
+TEST_F(FormaBridgeDeviceTest, AMultiComponentFormatForAStateOfAnotherTypeStagesNothing)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<glm::vec3>(64, glm::vec3 { 1.0F });
+    rig.bridge.write(rig.ref(64), buffer, "point.vert.spv", 8, Kakshya::GpuDataFormat::VEC4_F32);
+
+    tick(buffer);
+
+    EXPECT_TRUE(buffer->get_pipeline_context().push_constant_bindings.empty());
+}
+
+TEST_F(FormaBridgeDeviceTest, UnbindRemovesAStagedTypedWrite)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<glm::vec3>(65, glm::vec3 { 1.0F, 2.0F, 3.0F });
+    rig.bridge.write(state, buffer, "point.vert.spv", 8, Kakshya::GpuDataFormat::VEC3_F32);
+    tick(buffer);
+    ASSERT_TRUE(staged_as<glm::vec3>(buffer, 8).has_value());
+
+    rig.bridge.unbind(rig.ref(65));
+    tick(buffer);
+
+    EXPECT_FALSE(staged_as<glm::vec3>(buffer, 8).has_value());
+}
+
+TEST_F(FormaBridgeDeviceTest, AFormatWriteForAnUnknownIdStagesNothing)
+{
+    auto buffer = make_buffer();
+    rig.bridge.write(rig.ref(78), buffer, "point.vert.spv", 0, Kakshya::GpuDataFormat::UINT32);
+
+    tick(buffer);
+
+    EXPECT_TRUE(buffer->get_pipeline_context().push_constant_bindings.empty());
+}
+
+TEST_F(FormaBridgeDeviceTest, UnbindRemovesAStagedFormatWrite)
+{
+    auto buffer = make_buffer();
+    auto state = rig.add<float>(47, 4.0F);
+    rig.bridge.write(rig.ref(47), buffer, "point.vert.spv", 8, Kakshya::GpuDataFormat::UINT32);
+    tick(buffer);
+    ASSERT_EQ(staged_as<uint32_t>(buffer, 8), 4U);
+
+    rig.bridge.unbind(rig.ref(47));
+    state->write(8.0F);
+    tick(buffer);
+
+    EXPECT_FALSE(staged_as<uint32_t>(buffer, 8).has_value());
 }
 
 TEST_F(FormaBridgeDeviceTest, UnbindRemovesTheStagedPushConstantAndStopsFollowingTheState)

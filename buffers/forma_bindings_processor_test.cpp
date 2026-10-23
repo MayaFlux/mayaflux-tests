@@ -172,6 +172,235 @@ TEST_F(FormaBindingsProcessorDeviceTest, RawPushConstantsWriteAtTheirOffsetsAndT
     EXPECT_DOUBLE_EQ(written_second, static_cast<double>(second));
 }
 
+template <typename T>
+std::optional<T> staged_value(const Buffers::FormaBuffer& buffer, uint32_t offset)
+{
+    for (const auto& entry : buffer.get_pipeline_context().push_constant_bindings) {
+        if (entry.offset == offset && entry.data.size() == sizeof(T)) {
+            T value {};
+            std::memcpy(&value, entry.data.data(), sizeof(value));
+            return value;
+        }
+    }
+    return std::nullopt;
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, ATypedBindingWritesAVec3WithEveryComponentAndTracksChanges)
+{
+    glm::vec3 value { 1.0F, -2.0F, 3.5F };
+    bindings->bind_typed_push_constant("direction", [&] { return Kakshya::GpuValue { value }; }, 16);
+
+    tick();
+    EXPECT_EQ(staged_value<glm::vec3>(*buffer, 16), (glm::vec3 { 1.0F, -2.0F, 3.5F }));
+
+    value = glm::vec3 { 9.0F, 8.0F, 7.0F };
+    tick();
+    EXPECT_EQ(staged_value<glm::vec3>(*buffer, 16), (glm::vec3 { 9.0F, 8.0F, 7.0F }));
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, ATypedBindingWritesAMatrix)
+{
+    glm::mat4 value(1.0F);
+    value[3][1] = 4.0F;
+    bindings->bind_typed_push_constant("transform", [&] { return Kakshya::GpuValue { value }; }, 0);
+
+    tick();
+
+    EXPECT_EQ(staged_value<glm::mat4>(*buffer, 0), value);
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, ATypedBindingKeepsIntegersExactBeyondFloatPrecision)
+{
+    bindings->bind_typed_push_constant("big", [] { return Kakshya::GpuValue { int32_t { 16777217 } }; }, 0);
+
+    tick();
+
+    EXPECT_EQ(staged_value<int32_t>(*buffer, 0), 16777217);
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, ATypedBindingResizesItsSlotWhenTheFormatChanges)
+{
+    bool wide = false;
+    bindings->bind_typed_push_constant("shape", [&] {
+        return wide ? Kakshya::GpuValue { glm::vec4 { 1.0F } } : Kakshya::GpuValue { 2.0F };
+    }, 0);
+
+    tick();
+    ASSERT_EQ(staged_value<float>(*buffer, 0), 2.0F);
+
+    wide = true;
+    tick();
+    EXPECT_EQ(staged_value<glm::vec4>(*buffer, 0), glm::vec4 { 1.0F });
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, ATypedBindingRejectsANullReader)
+{
+    bindings->bind_typed_push_constant("gain", std::function<Kakshya::GpuValue()> {}, 0);
+
+    EXPECT_FALSE(bindings->has_binding("gain"));
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, TypedAndFloatBindingsCoexist)
+{
+    bindings->bind_push_constant("scalar", [] { return 1.5F; }, 0);
+    bindings->bind_typed_push_constant("vector", [] { return Kakshya::GpuValue { glm::vec2 { 3.0F, 4.0F } }; }, 8);
+
+    tick();
+
+    EXPECT_EQ(staged_value<float>(*buffer, 0), 1.5F);
+    EXPECT_EQ(staged_value<glm::vec2>(*buffer, 8), (glm::vec2 { 3.0F, 4.0F }));
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, RebindingATypedNameToAFloatReaderDropsTheTypedValue)
+{
+    bindings->bind_typed_push_constant("slot", [] { return Kakshya::GpuValue { glm::vec3 { 1.0F } }; }, 0);
+    tick();
+    ASSERT_TRUE(staged_value<glm::vec3>(*buffer, 0).has_value());
+
+    bindings->bind_push_constant("slot", [] { return 6.5F; }, 0);
+    tick();
+
+    EXPECT_EQ(staged_value<float>(*buffer, 0), 6.5F);
+    EXPECT_FALSE(staged_value<glm::vec3>(*buffer, 0).has_value());
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, UnbindingATypedBindingRemovesItsStagedEntry)
+{
+    bindings->bind_typed_push_constant("direction", [] { return Kakshya::GpuValue { glm::vec3 { 1.0F } }; }, 0);
+    tick();
+    ASSERT_TRUE(staged_value<glm::vec3>(*buffer, 0).has_value());
+
+    EXPECT_TRUE(bindings->unbind("direction"));
+    tick();
+
+    EXPECT_FALSE(staged_value<glm::vec3>(*buffer, 0).has_value());
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, AFormatBindingConvertsTheReaderToItsFormat)
+{
+    float value = 7.9F;
+    bindings->bind_push_constant("count", [&] { return value; }, 4, Kakshya::GpuDataFormat::UINT32);
+
+    tick();
+
+    EXPECT_EQ(staged_value<uint32_t>(*buffer, 4), 7U);
+    value = 12.2F;
+    tick();
+    EXPECT_EQ(staged_value<uint32_t>(*buffer, 4), 12U);
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, AFormatBindingKeepsTheFormatsWidth)
+{
+    bindings->bind_push_constant("small", [] { return 3.0F; }, 0, Kakshya::GpuDataFormat::UINT8);
+    bindings->bind_push_constant("mid", [] { return 4.0F; }, 4, Kakshya::GpuDataFormat::UINT16);
+    bindings->bind_push_constant("wide", [] { return 2.5F; }, 8, Kakshya::GpuDataFormat::FLOAT64);
+
+    tick();
+
+    EXPECT_EQ(staged_value<uint8_t>(*buffer, 0), 3U);
+    EXPECT_EQ(staged_value<uint16_t>(*buffer, 4), 4U);
+    EXPECT_EQ(staged_value<double>(*buffer, 8), 2.5);
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, AFormatBindingSaturatesIntegerFormats)
+{
+    float value = -5.0F;
+    bindings->bind_push_constant("clamped", [&] { return value; }, 0, Kakshya::GpuDataFormat::UINT8);
+
+    tick();
+    EXPECT_EQ(staged_value<uint8_t>(*buffer, 0), 0U);
+
+    value = 300.0F;
+    tick();
+    EXPECT_EQ(staged_value<uint8_t>(*buffer, 0), 255U);
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, AFormatBindingAcceptsSignedIntegers)
+{
+    bindings->bind_push_constant("signed", [] { return -3.7F; }, 0, Kakshya::GpuDataFormat::INT32);
+
+    tick();
+
+    EXPECT_EQ(staged_value<int32_t>(*buffer, 0), -3);
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, AMultiComponentFormatCannotBeBoundToASingleReader)
+{
+    bindings->bind_push_constant("direction", [] { return 1.0F; }, 0, Kakshya::GpuDataFormat::VEC3_F32);
+
+    tick();
+
+    EXPECT_FALSE(bindings->has_binding("direction"));
+    EXPECT_TRUE(buffer->get_pipeline_context().push_constant_bindings.empty());
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, AFormatBindingRejectsANullReader)
+{
+    bindings->bind_push_constant("gain", std::function<float()> {}, 0, Kakshya::GpuDataFormat::UINT32);
+
+    EXPECT_FALSE(bindings->has_binding("gain"));
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, FormatAndWidthBindingsCoexistAtDifferentOffsets)
+{
+    bindings->bind_push_constant("by_width", [] { return 1.5F; }, 0);
+    bindings->bind_push_constant("by_format", [] { return 9.0F; }, 4, Kakshya::GpuDataFormat::UINT32);
+
+    tick();
+
+    EXPECT_EQ(staged_value<float>(*buffer, 0), 1.5F);
+    EXPECT_EQ(staged_value<uint32_t>(*buffer, 4), 9U);
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, RebindingANameSwitchesBetweenWidthAndFormat)
+{
+    bindings->bind_push_constant("gain", [] { return 6.0F; }, 0, Kakshya::GpuDataFormat::UINT32);
+    tick();
+    ASSERT_EQ(staged_value<uint32_t>(*buffer, 0), 6U);
+
+    bindings->bind_push_constant("gain", [] { return 6.5F; }, 0);
+    tick();
+
+    EXPECT_EQ(staged_value<float>(*buffer, 0), 6.5F);
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, AMappedStateFormatBindingProjectsThenConverts)
+{
+    auto state = std::make_shared<Portal::Forma::MappedState<float>>();
+    state->write(-4.0F);
+    bindings->bind_push_constant<float>("projected", state,
+        std::function<float(float)>([](float value) { return value * 3.0F; }), 0,
+        Kakshya::GpuDataFormat::INT32);
+
+    tick();
+    EXPECT_EQ(staged_value<int32_t>(*buffer, 0), -12);
+
+    state->write(2.0F);
+    tick();
+    EXPECT_EQ(staged_value<int32_t>(*buffer, 0), 6);
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, AMappedStateFormatBindingRejectsANullState)
+{
+    bindings->bind_push_constant<float>("projected", nullptr,
+        std::function<float(float)>([](float value) { return value; }), 0,
+        Kakshya::GpuDataFormat::UINT32);
+
+    EXPECT_FALSE(bindings->has_binding("projected"));
+}
+
+TEST_F(FormaBindingsProcessorDeviceTest, UnbindingAFormatBindingRemovesItsStagedEntry)
+{
+    bindings->bind_push_constant("count", [] { return 5.0F; }, 0, Kakshya::GpuDataFormat::UINT32);
+    tick();
+    ASSERT_EQ(staged_value<uint32_t>(*buffer, 0), 5U);
+
+    EXPECT_TRUE(bindings->unbind("count"));
+    tick();
+
+    EXPECT_FALSE(staged_value<uint32_t>(*buffer, 0).has_value());
+}
+
 TEST_F(FormaBindingsProcessorDeviceTest, MappedStateProjectionIsSampledOnEveryTick)
 {
     auto state = std::make_shared<Portal::Forma::MappedState<float>>();
