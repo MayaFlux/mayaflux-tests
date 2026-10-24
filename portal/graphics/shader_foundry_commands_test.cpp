@@ -321,11 +321,11 @@ namespace {
         const auto semaphore = foundry().submit_with_signal(producer);
         ASSERT_NE(semaphore, INVALID_SEMAPHORE);
 
-        EXPECT_EQ(foundry().begin_commands_with_wait(CommandType::COMPUTE, 9999, vk::PipelineStageFlagBits::eTransfer),
+        EXPECT_EQ(foundry().begin_commands_with_wait(CommandType::COMPUTE, 9999, vk::PipelineStageFlagBits2::eTransfer),
             INVALID_COMMAND_BUFFER);
 
         const auto consumer = foundry().begin_commands_with_wait(
-            CommandType::COMPUTE, semaphore, vk::PipelineStageFlagBits::eTransfer);
+            CommandType::COMPUTE, semaphore, vk::PipelineStageFlagBits2::eTransfer);
         EXPECT_NE(consumer, INVALID_COMMAND_BUFFER);
         foundry().submit_and_wait(consumer);
         device().waitIdle();
@@ -375,8 +375,8 @@ namespace {
         cmd.fillBuffer(source->buffer(), 0, k_bytes, k_pattern);
 
         foundry().buffer_barrier(id, source->buffer(),
-            vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eTransferRead,
-            vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer);
+            vk::AccessFlagBits2::eTransferWrite, vk::AccessFlagBits2::eTransferRead,
+            vk::PipelineStageFlagBits2::eTransfer, vk::PipelineStageFlagBits2::eTransfer);
 
         const vk::BufferCopy region(0, 0, k_bytes);
         cmd.copyBuffer(source->buffer(), target->buffer(), region);
@@ -390,12 +390,12 @@ namespace {
         const auto buffer = host_buffer();
 
         EXPECT_NO_THROW(foundry().buffer_barrier(9999, buffer->buffer(),
-            vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eTransferRead,
-            vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer));
+            vk::AccessFlagBits2::eTransferWrite, vk::AccessFlagBits2::eTransferRead,
+            vk::PipelineStageFlagBits2::eTransfer, vk::PipelineStageFlagBits2::eTransfer));
         EXPECT_NO_THROW(foundry().image_barrier(9999, vk::Image {},
             vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
-            vk::AccessFlags {}, vk::AccessFlagBits::eShaderRead,
-            vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eComputeShader));
+            vk::AccessFlags2 {}, vk::AccessFlagBits2::eShaderRead,
+            vk::PipelineStageFlagBits2::eNone, vk::PipelineStageFlagBits2::eComputeShader));
     }
 
     TEST_F(ShaderFoundryDeviceTest, TimestampsOfASubmittedBufferGiveAValidDuration)
