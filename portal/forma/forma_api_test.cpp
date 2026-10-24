@@ -76,7 +76,7 @@ TEST_F(FormaApiTest, CreateLayerAndSurfaceDelegateToTheWorkshop)
 
 TEST_F(FormaApiTest, CreateBufferWithATextureBindingUsesTheDefaultCapacity)
 {
-    auto buffer = Forma::create_buffer(window, PrimitiveTopology::TRIANGLE_STRIP, "texSampler");
+    auto buffer = Forma::create_buffer({ .target_window = window, .default_texture_binding = "texSampler" });
 
     ASSERT_NE(buffer, nullptr);
     EXPECT_EQ(buffer->get_size_bytes(), Forma::internal::k_capacity_bytes);
@@ -85,8 +85,7 @@ TEST_F(FormaApiTest, CreateBufferWithATextureBindingUsesTheDefaultCapacity)
 
 TEST_F(FormaApiTest, CreateBufferWithAdditionalTexturesDeclaresTheArrayBinding)
 {
-    auto buffer = Forma::create_buffer(window, PrimitiveTopology::TRIANGLE_LIST,
-        std::vector<std::pair<std::string, std::shared_ptr<Core::VKImage>>> { { "a", nullptr }, { "b", nullptr } });
+    auto buffer = Forma::create_buffer({ .target_window = window, .additional_textures = { { "a", nullptr }, { "b", nullptr } } });
 
     ASSERT_NE(buffer, nullptr);
     const auto& bindings = buffer->get_render_processor()->get_config().bindings;
@@ -179,7 +178,7 @@ TEST_F(FormaApiTest, TendPlacesTheFormAndKeepsTheSurfaceAndResult)
 TEST_F(FormaApiTest, CreateOnABatchDrawsTheElementAsASliceAndWiresTheForm)
 {
     auto surface = make_surface("api-create-batch");
-    auto batch = Forma::create_batch(surface.window());
+    auto batch = Forma::create_buffer(surface.render_config());
     auto calls = std::make_shared<int>(0);
     int wired = 0;
     Forma::Geometry::Form<float> form { counting_geometry(calls, k_origin_hint) };
@@ -198,7 +197,7 @@ TEST_F(FormaApiTest, CreateOnABatchDrawsTheElementAsASliceAndWiresTheForm)
 TEST_F(FormaApiTest, FormsCreatedOnOneBatchShareItsBuffer)
 {
     auto surface = make_surface("api-batch-shared");
-    auto batch = Forma::create_batch(surface.window());
+    auto batch = Forma::create_buffer(surface.render_config());
     Forma::Geometry::Form<float> first { counting_geometry(std::make_shared<int>(0)) };
     Forma::Geometry::Form<float> second { counting_geometry(std::make_shared<int>(0)) };
     second.topology = PrimitiveTopology::TRIANGLE_LIST;
@@ -214,7 +213,7 @@ TEST_F(FormaApiTest, FormsCreatedOnOneBatchShareItsBuffer)
 TEST_F(FormaApiTest, TendWithABatchPlacesItsElementAsASliceOfIt)
 {
     auto surface = make_surface("api-tend-batch");
-    auto batch = Forma::create_batch(surface.window());
+    auto batch = Forma::create_buffer(surface.render_config());
     Forma::Tend<float> tend;
     tend.form = Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
     tend.initial = 0.5F;
@@ -232,7 +231,7 @@ TEST_F(FormaApiTest, ScrollableOnABatchScissorsTheBatchOnceForEveryTrackedSlice)
 {
     const AABB2D viewport { .min = { -0.5F, -0.5F }, .max = { 0.5F, 0.5F } };
     auto surface = make_surface("api-scroll-batch");
-    auto batch = Forma::create_batch(surface.window());
+    auto batch = Forma::create_buffer(surface.render_config());
     auto panel = Forma::make_scrollable(
         Forma::FormaTarget::slice_of(batch, PrimitiveTopology::TRIANGLE_STRIP), surface, viewport);
     ASSERT_NE(batch->get_render_processor(), nullptr);
@@ -253,7 +252,7 @@ TEST_F(FormaApiTest, ScrollableStillScissorsATrackedElementThatHasABufferOfItsOw
 {
     const AABB2D viewport { .min = { -0.5F, -0.5F }, .max = { 0.5F, 0.5F } };
     auto surface = make_surface("api-scroll-own-buffer");
-    auto batch = Forma::create_batch(surface.window());
+    auto batch = Forma::create_buffer(surface.render_config());
     auto panel = Forma::make_scrollable(
         Forma::FormaTarget::slice_of(batch, PrimitiveTopology::TRIANGLE_STRIP), surface, viewport);
 

@@ -122,7 +122,7 @@ TEST_F(FormaPlotAdornmentTest, LegendSwatchesDrawAsSlicesOfAGivenBatchAndLabelsK
     legend.entries = { { "first", { 1.F, 0.F, 0.F } }, { "second", { 0.F, 1.F, 0.F } } };
     Forma::Plot::SeriesSpec spec;
     spec.legend = legend;
-    auto batch = Forma::internal::atelier().create_batch(surface->window());
+    auto batch = Forma::internal::atelier().create_buffer(surface->render_config());
 
     Forma::internal::atelier().place_adornments(*surface, spec, parent, batch);
 
@@ -175,8 +175,7 @@ TEST_F(FormaPlotAdornmentTest, RemovingTheSeriesElementRemovesItsAdornments)
 
 TEST_F(FormaPlotAdornmentTest, ALabelWithoutRenderBoundsIsRepressedWhenTheWindowResizes)
 {
-    auto buffer = Forma::create_buffer(window, PrimitiveTopology::TRIANGLE_LIST,
-        std::vector<std::pair<std::string, std::shared_ptr<Core::VKImage>>> { { "text", nullptr } });
+    auto buffer = Forma::create_buffer(surface->render_config({ .additional_textures = { { "text", nullptr } } }));
     const uint32_t id = Forma::Plot::place_label(*surface, buffer, label("resizable", -0.9F), parent);
     const auto before = surface->layer().get(id)->texture;
     ASSERT_NE(before, nullptr);
@@ -190,8 +189,7 @@ TEST_F(FormaPlotAdornmentTest, ALabelWithoutRenderBoundsIsRepressedWhenTheWindow
 
 TEST_F(FormaPlotAdornmentTest, ALabelWithExplicitRenderBoundsIgnoresResizes)
 {
-    auto buffer = Forma::create_buffer(window, PrimitiveTopology::TRIANGLE_LIST,
-        std::vector<std::pair<std::string, std::shared_ptr<Core::VKImage>>> { { "text", nullptr } });
+    auto buffer = Forma::create_buffer(surface->render_config({ .additional_textures = { { "text", nullptr } } }));
     auto spec = label("fixed", -0.9F);
     spec.render_bounds = { 96, 24 };
     const uint32_t id = Forma::Plot::place_label(*surface, buffer, spec, parent);
@@ -205,8 +203,7 @@ TEST_F(FormaPlotAdornmentTest, ALabelWithExplicitRenderBoundsIgnoresResizes)
 
 TEST_F(FormaPlotAdornmentTest, ALabelCarriesItsNameBoundsAndInteractivity)
 {
-    auto buffer = Forma::create_buffer(window, PrimitiveTopology::TRIANGLE_LIST,
-        std::vector<std::pair<std::string, std::shared_ptr<Core::VKImage>>> { { "text", nullptr } });
+    auto buffer = Forma::create_buffer(surface->render_config({ .additional_textures = { { "text", nullptr } } }));
     auto spec = label("named", -0.5F);
     spec.name = "axis_title";
     spec.interactive = true;
@@ -228,7 +225,8 @@ TEST_F(FormaPlotAdornmentTest, ALabelCarriesItsNameBoundsAndInteractivity)
 
 TEST_F(FormaPlotAdornmentTest, ARectIsAPassiveElementRelatedToItsParentWhenAsked)
 {
-    auto buffer = Forma::create_buffer(window, PrimitiveTopology::TRIANGLE_STRIP);
+    auto buffer = Forma::FormaTarget::slice_of(
+        Forma::create_buffer(surface->render_config()), PrimitiveTopology::TRIANGLE_STRIP);
     Forma::Plot::RectSpec spec;
     spec.bounds = AABB2D { .min = { -0.2F, -0.2F }, .max = { 0.2F, 0.2F } };
     spec.name = "swatch";
@@ -245,7 +243,8 @@ TEST_F(FormaPlotAdornmentTest, ARectIsAPassiveElementRelatedToItsParentWhenAsked
 
 TEST_F(FormaPlotAdornmentTest, AnInteractiveRectIsHitTestable)
 {
-    auto buffer = Forma::create_buffer(window, PrimitiveTopology::TRIANGLE_STRIP);
+    auto buffer = Forma::FormaTarget::slice_of(
+        Forma::create_buffer(surface->render_config()), PrimitiveTopology::TRIANGLE_STRIP);
     Forma::Plot::RectSpec spec;
     spec.bounds = AABB2D { .min = { 0.3F, 0.3F }, .max = { 0.6F, 0.6F } };
     spec.interactive = true;

@@ -21,6 +21,7 @@
 #include "MayaFlux/Nodes/NodeGraphManager.hpp"
 #include "MayaFlux/Portal/Forma/Forma.hpp"
 #include "MayaFlux/Portal/Forma/Primitives/Collapsible.hpp"
+#include "MayaFlux/Portal/Graphics/ComputePress.hpp"
 #include "MayaFlux/Portal/Graphics/RenderFlow.hpp"
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
@@ -256,6 +257,10 @@ protected:
         ASSERT_TRUE(Portal::Graphics::get_render_flow().initialize());
         flow_ready = true;
 
+        Portal::Graphics::get_compute_press().shutdown();
+        ASSERT_TRUE(Portal::Graphics::get_compute_press().initialize());
+        compute_ready = true;
+
         native = make_window();
         ASSERT_NE(native, nullptr);
         ASSERT_TRUE(backend().register_window(native));
@@ -267,6 +272,9 @@ protected:
             root->set_default_processor(nullptr);
         root.reset();
         FormaWindowApiTest::TearDown();
+        if (compute_ready)
+            Portal::Graphics::get_compute_press().shutdown();
+        compute_ready = false;
         if (flow_ready)
             Portal::Graphics::get_render_flow().shutdown();
         flow_ready = false;
@@ -306,6 +314,7 @@ protected:
     std::shared_ptr<Core::Window> native;
     std::shared_ptr<Buffers::RootGraphicsBuffer> root;
     bool flow_ready {};
+    bool compute_ready {};
 };
 
 TEST_F(FormaCollapsiblePresentationTest, PressingALabelledHeaderRepaintsItsBackgroundColour)
@@ -323,8 +332,7 @@ TEST_F(FormaCollapsiblePresentationTest, PressingALabelledHeaderRepaintsItsBackg
                       .closed_color({ 0.1F, 0.1F, 0.1F })
                       .open_color({ 0.8F, 0.8F, 0.8F })
                       .label("section")
-                      .place(Forma::create_buffer(native, Portal::Graphics::PrimitiveTopology::TRIANGLE_LIST,
-                                 std::vector<std::pair<std::string, std::shared_ptr<Core::VKImage>>> { { "text", nullptr } }),
+                      .place(Forma::create_buffer({ .target_window = native, .additional_textures = { { "text", nullptr } } }),
                           surface, cursor, -1.F, 1.F, 2.F);
     ASSERT_NE(header.buf, nullptr);
 

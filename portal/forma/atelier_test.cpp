@@ -102,9 +102,8 @@ TEST_F(FormaAtelierLifecycleTest, UninitializedAtelierRefusesEveryConstructionPa
     EXPECT_THROW((void)Forma::internal::atelier().bridge(), std::runtime_error);
     EXPECT_THROW((void)Forma::internal::atelier().inspector(), std::runtime_error);
     EXPECT_THROW((void)Forma::internal::atelier().create_window({}), std::runtime_error);
-    EXPECT_THROW((void)Forma::internal::atelier().create_buffer(window, 256, PrimitiveTopology::POINT_LIST),
+    EXPECT_THROW((void)Forma::internal::atelier().create_buffer({ .target_window = window }),
         std::runtime_error);
-    EXPECT_THROW((void)Forma::internal::atelier().create_batch(window), std::runtime_error);
 }
 
 TEST_F(FormaAtelierLifecycleTest, InitializeExposesAStableBridgeAndInspector)
@@ -323,14 +322,10 @@ protected:
         created.clear();
     }
 
-    std::shared_ptr<Buffers::FormaBuffer> make_buffer(
-        size_t capacity,
-        PrimitiveTopology topology,
-        const std::string& texture_binding = {},
-        std::vector<std::pair<std::string, std::shared_ptr<Core::VKImage>>> additional = {})
+    std::shared_ptr<Buffers::FormaBuffer> make_buffer(Portal::Graphics::RenderConfig render = {})
     {
-        auto buffer = Forma::internal::atelier().create_buffer(
-            window, capacity, topology, texture_binding, std::move(additional));
+        render.target_window = window;
+        auto buffer = Forma::internal::atelier().create_buffer(std::move(render));
         created.push_back(buffer);
         return buffer;
     }
@@ -345,12 +340,12 @@ private:
 
 TEST_F(FormaAtelierBufferTest, CreateBufferRegistersWithTheGraphicsUnit)
 {
-    auto buffer = make_buffer(4096, PrimitiveTopology::TRIANGLE_STRIP);
+    auto buffer = make_buffer();
 
     ASSERT_NE(buffer, nullptr);
     EXPECT_TRUE(buffer->is_initialized());
-    EXPECT_EQ(buffer->get_size_bytes(), 4096U);
-    EXPECT_EQ(buffer->topology(), PrimitiveTopology::TRIANGLE_STRIP);
+    EXPECT_EQ(buffer->get_size_bytes(), Forma::internal::k_capacity_bytes);
+    EXPECT_EQ(buffer->topology(), PrimitiveTopology::TRIANGLE_LIST);
 
     const auto& registered = harness.buffers->get_graphics_buffers(Buffers::ProcessingToken::GRAPHICS_BACKEND);
     EXPECT_NE(std::ranges::find(registered, buffer), registered.end());
@@ -358,7 +353,7 @@ TEST_F(FormaAtelierBufferTest, CreateBufferRegistersWithTheGraphicsUnit)
 
 TEST_F(FormaAtelierBufferTest, CreateBufferInstallsTheFormaProcessorAndTheRenderProcessor)
 {
-    auto buffer = make_buffer(4096, PrimitiveTopology::TRIANGLE_LIST);
+    auto buffer = make_buffer();
 
     ASSERT_NE(buffer, nullptr);
     EXPECT_NE(std::dynamic_pointer_cast<Buffers::FormaProcessor>(buffer->get_default_processor()), nullptr);
@@ -371,7 +366,7 @@ TEST_F(FormaAtelierBufferTest, CreateBufferInstallsTheFormaProcessorAndTheRender
 
 TEST_F(FormaAtelierBufferTest, CreateBufferWithoutTexturesBindsNoTextureSlot)
 {
-    auto buffer = make_buffer(4096, PrimitiveTopology::TRIANGLE_STRIP);
+    auto buffer = make_buffer();
 
     ASSERT_NE(buffer->get_render_processor(), nullptr);
     EXPECT_TRUE(buffer->get_render_processor()->get_config().bindings.empty());
@@ -379,7 +374,7 @@ TEST_F(FormaAtelierBufferTest, CreateBufferWithoutTexturesBindsNoTextureSlot)
 
 TEST_F(FormaAtelierBufferTest, CreateBufferWithATextureBindingDeclaresIt)
 {
-    auto buffer = make_buffer(4096, PrimitiveTopology::TRIANGLE_STRIP, "texSampler");
+    auto buffer = make_buffer({ .default_texture_binding = "texSampler" });
 
     ASSERT_NE(buffer->get_render_processor(), nullptr);
     const auto& bindings = buffer->get_render_processor()->get_config().bindings;
@@ -389,36 +384,12 @@ TEST_F(FormaAtelierBufferTest, CreateBufferWithATextureBindingDeclaresIt)
 
 TEST_F(FormaAtelierBufferTest, CreateBufferWithAdditionalTexturesDeclaresOneArrayBinding)
 {
-    auto buffer = make_buffer(4096, PrimitiveTopology::TRIANGLE_LIST, {},
-        { { "first", nullptr }, { "second", nullptr } });
+    auto buffer = make_buffer({ .additional_textures = { { "first", nullptr }, { "second", nullptr } } });
 
     ASSERT_NE(buffer->get_render_processor(), nullptr);
     const auto& bindings = buffer->get_render_processor()->get_config().bindings;
     ASSERT_TRUE(bindings.contains("textures"));
     EXPECT_EQ(bindings.at("textures").count, 2U);
-}
-
-TEST_F(FormaAtelierBufferTest, CreateElementOnALayerRegistersItAndSyncsOnTheFrameTick)
-{
-    auto calls = std::make_shared<int>(0);
-    auto owner = std::make_shared<Forma::Layer>();
-    Forma::Layer& layer = *owner;
-
-    auto mapped = Forma::internal::atelier().create_element<int>(
-        layer, window, counting_geometry(calls), 1);
-    created.push_back(mapped.element.buffer.buffer());
-
-    EXPECT_EQ(layer.size(), 1U);
-    EXPECT_NE(layer.get(mapped.element.id), nullptr);
-    EXPECT_EQ(mapped.state->value, 1);
-    EXPECT_EQ(*calls, 0);
-
-    harness.tick_frames(2);
-    EXPECT_EQ(*calls, 1);
-
-    mapped.state->write(7);
-    harness.tick_frames(2);
-    EXPECT_EQ(*calls, 2);
 }
 
 TEST_F(FormaAtelierBufferTest, CreateElementOnASurfaceSyncsOnceBeforeTheFirstFrame)
@@ -439,10 +410,9 @@ TEST_F(FormaAtelierBufferTest, CreateElementOnASurfaceSyncsOnceBeforeTheFirstFra
     EXPECT_FALSE(surface.layer().hit_test({ 0.9F, 0.9F }).has_value());
 }
 
-TEST_F(FormaAtelierBufferTest, CreateBatchRegistersATriangulatingBufferThatTakesSlices)
+TEST_F(FormaAtelierBufferTest, CreateBufferRegistersATriangulatingBufferThatTakesSlices)
 {
-    auto batch = Forma::internal::atelier().create_batch(window);
-    created.push_back(batch);
+    auto batch = make_buffer();
 
     ASSERT_NE(batch, nullptr);
     EXPECT_EQ(batch->topology(), PrimitiveTopology::TRIANGLE_LIST);
@@ -466,8 +436,7 @@ TEST_F(FormaAtelierBufferTest, ElementsCreatedOnSlicesOfOneBatchShareItsBuffer)
     config.name = "atelier-shared-batch";
     config.detach_on_close = false;
     auto surface = Forma::internal::atelier().create_surface(std::move(config));
-    auto batch = Forma::internal::atelier().create_batch(window);
-    created.push_back(batch);
+    auto batch = make_buffer();
     auto calls = std::make_shared<int>(0);
 
     auto first = Forma::internal::atelier().create_element<int>(
@@ -497,8 +466,7 @@ TEST_F(FormaAtelierBufferTest, RemovingSharedElementsRetiresTheBatchWithTheLastO
     config.name = "atelier-shared-retire";
     config.detach_on_close = false;
     auto surface = Forma::internal::atelier().create_surface(std::move(config));
-    auto batch = Forma::internal::atelier().create_batch(window);
-    created.push_back(batch);
+    auto batch = make_buffer();
     auto calls = std::make_shared<int>(0);
 
     auto first = Forma::internal::atelier().create_element<int>(

@@ -29,8 +29,7 @@ protected:
         return Forma::Collapsible {}
             .initially_open(initially_open)
             .label("section")
-            .place(Forma::create_buffer(window, PrimitiveTopology::TRIANGLE_LIST,
-                       std::vector<std::pair<std::string, std::shared_ptr<Core::VKImage>>> { { "text", nullptr } }),
+            .place(Forma::create_buffer(surface->render_config({ .additional_textures = { { "text", nullptr } } })),
                 *surface, cursor, -1.F, 1.F, 0.2F);
     }
 
