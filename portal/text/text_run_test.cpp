@@ -118,6 +118,34 @@ namespace {
         EXPECT_FLOAT_EQ(v[6].weight, coverage_weight(0));
     }
 
+    TEST_F(TextRunTest, ExtentIsTheRenderBoundsAtLeastOneLineHigh)
+    {
+        TextRun tall(params(400, 200));
+        TextRun short_run(params(400, 4));
+
+        EXPECT_FLOAT_EQ(tall.extent().x, 400.F);
+        EXPECT_FLOAT_EQ(tall.extent().y, 200.F);
+        EXPECT_FLOAT_EQ(short_run.extent().x, 400.F);
+        EXPECT_FLOAT_EQ(short_run.extent().y, line());
+    }
+
+    TEST_F(TextRunTest, ABackgroundCoversTheWholeRegionWhenTheBoundsAreShorterThanALine)
+    {
+        auto p = params(400, 4);
+        p.background = { 0.2F, 0.4F, 0.6F, 1.F };
+        TextRun run(p);
+        run.set("ab");
+
+        const auto map = GlyphMap::fit({ .min = { -1.F, -1.F }, .max = { 1.F, 1.F } }, run.extent());
+        const auto v = run.vertices(map, 0);
+
+        ASSERT_GE(v.size(), 6U);
+        float min_y = 1.F;
+        for (size_t i = 0; i < 6; ++i)
+            min_y = std::min(min_y, v[i].position.y);
+        EXPECT_FLOAT_EQ(min_y, -1.F);
+    }
+
     TEST_F(TextRunTest, ATransparentBackgroundAddsNoQuad)
     {
         TextRun run(params(400, 100));

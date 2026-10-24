@@ -1,5 +1,6 @@
 #include "../../support/forma_rig.hpp"
 
+#include "MayaFlux/Portal/Forma/Internal/TextSlice.hpp"
 #include "MayaFlux/Portal/Forma/Plot/Plot.hpp"
 #include "MayaFlux/Portal/Forma/Plot/SeriesBuilder.hpp"
 
@@ -58,7 +59,7 @@ protected:
 // place_adornments
 // =============================================================================
 
-TEST_F(FormaPlotAdornmentTest, ExplicitLabelsBecomePassiveTexturedElementsRelatedToTheSeries)
+TEST_F(FormaPlotAdornmentTest, ExplicitLabelsBecomePassiveTextElementsRelatedToTheSeries)
 {
     Forma::Plot::SeriesSpec spec;
     spec.labels = { label("x axis", -0.9F), label("y axis", -0.4F) };
@@ -71,7 +72,7 @@ TEST_F(FormaPlotAdornmentTest, ExplicitLabelsBecomePassiveTexturedElementsRelate
         const auto* element = surface->layer().get(id);
         ASSERT_NE(element, nullptr);
         EXPECT_FALSE(element->interactive);
-        EXPECT_NE(element->texture, nullptr);
+        EXPECT_NE(element->text_slice, nullptr);
         EXPECT_NE(element->buffer, nullptr);
     }
 }
@@ -109,13 +110,13 @@ TEST_F(FormaPlotAdornmentTest, ALegendAddsASwatchAndALabelPerEntry)
         const auto* element = surface->layer().get(id);
         ASSERT_NE(element, nullptr);
         EXPECT_FALSE(element->interactive);
-        (element->texture ? textured : flat)++;
+        (element->text_slice ? textured : flat)++;
     }
     EXPECT_EQ(textured, 2U);
     EXPECT_EQ(flat, 2U);
 }
 
-TEST_F(FormaPlotAdornmentTest, LegendSwatchesDrawAsSlicesOfAGivenBatchAndLabelsKeepTheirOwnBuffers)
+TEST_F(FormaPlotAdornmentTest, LegendSwatchesDrawAsSlicesOfAGivenBatchAndLabelsShareOneTextBuffer)
 {
     Forma::Plot::LegendSpec legend;
     legend.origin = { -0.9F, 0.9F };
@@ -127,18 +128,25 @@ TEST_F(FormaPlotAdornmentTest, LegendSwatchesDrawAsSlicesOfAGivenBatchAndLabelsK
     Forma::internal::atelier().place_adornments(*surface, spec, parent, batch);
 
     EXPECT_EQ(batch->slice_count(), 2U);
+    std::shared_ptr<Buffers::FormaBuffer> text_buffer;
     size_t in_batch = 0;
+    size_t labels = 0;
     for (const auto id : surface->layer().related_ids(parent)) {
         const auto* element = surface->layer().get(id);
         ASSERT_NE(element, nullptr);
-        if (element->texture) {
+        if (element->text_slice) {
             EXPECT_NE(element->buffer.buffer(), batch);
+            if (!text_buffer)
+                text_buffer = element->buffer.buffer();
+            EXPECT_EQ(element->buffer.buffer(), text_buffer);
+            ++labels;
         } else {
             EXPECT_EQ(element->buffer.buffer(), batch);
             ++in_batch;
         }
     }
     EXPECT_EQ(in_batch, 2U);
+    EXPECT_EQ(labels, 2U);
 }
 
 TEST_F(FormaPlotAdornmentTest, EveryDeclaredKindIsPlacedTogether)
@@ -173,18 +181,17 @@ TEST_F(FormaPlotAdornmentTest, RemovingTheSeriesElementRemovesItsAdornments)
 // place_label
 // =============================================================================
 
-TEST_F(FormaPlotAdornmentTest, ALabelWithoutRenderBoundsIsRepressedWhenTheWindowResizes)
+TEST_F(FormaPlotAdornmentTest, ALabelWithoutRenderBoundsIsLaidOutAgainWhenTheWindowResizes)
 {
     auto buffer = Forma::create_buffer(surface->render_config({ .additional_textures = { { "text", nullptr } } }));
     const uint32_t id = Forma::Plot::place_label(*surface, buffer, label("resizable", -0.9F), parent);
-    const auto before = surface->layer().get(id)->texture;
-    ASSERT_NE(before, nullptr);
+    const auto slice = surface->layer().get(id)->text_slice;
+    ASSERT_NE(slice, nullptr);
+    const auto before = slice->run().params().render_bounds;
 
     window->resize(600, 400);
 
-    const auto after = surface->layer().get(id)->texture;
-    ASSERT_NE(after, nullptr);
-    EXPECT_NE(after, before);
+    EXPECT_NE(slice->run().params().render_bounds, before);
 }
 
 TEST_F(FormaPlotAdornmentTest, ALabelWithExplicitRenderBoundsIgnoresResizes)
@@ -193,12 +200,12 @@ TEST_F(FormaPlotAdornmentTest, ALabelWithExplicitRenderBoundsIgnoresResizes)
     auto spec = label("fixed", -0.9F);
     spec.render_bounds = { 96, 24 };
     const uint32_t id = Forma::Plot::place_label(*surface, buffer, spec, parent);
-    const auto before = surface->layer().get(id)->texture;
-    ASSERT_NE(before, nullptr);
+    const auto slice = surface->layer().get(id)->text_slice;
+    ASSERT_NE(slice, nullptr);
 
     window->resize(600, 400);
 
-    EXPECT_EQ(surface->layer().get(id)->texture, before);
+    EXPECT_EQ(slice->run().params().render_bounds, glm::uvec2(96, 24));
 }
 
 TEST_F(FormaPlotAdornmentTest, ALabelCarriesItsNameBoundsAndInteractivity)

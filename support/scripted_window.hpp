@@ -78,6 +78,14 @@ public:
         signal(Core::WindowEventType::WINDOW_RESIZED, Core::WindowEvent::ResizeData { width, height });
     }
 
+    /// @brief Change the reported size without signalling a resize, as a
+    ///        compositor that answers the requested size with another can.
+    void change_size_silently(uint32_t width, uint32_t height)
+    {
+        m_state.current_width = width;
+        m_state.current_height = height;
+    }
+
     void close()
     {
         signal(Core::WindowEventType::WINDOW_CLOSED, std::monostate {});

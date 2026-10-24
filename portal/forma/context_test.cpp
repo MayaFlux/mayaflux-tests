@@ -608,6 +608,34 @@ TEST_F(FormaContextTest, ResizeReachesEveryBoundElementWithTheNewSize)
     EXPECT_EQ(sizes_b, (std::vector<std::pair<uint32_t, uint32_t>> { { 400, 300 } }));
 }
 
+TEST_F(FormaContextTest, SyncSizeRunsTheResizeCallbacksOnlyWhenTheSizeChangedWithoutAnEvent)
+{
+    const uint32_t a = left_half();
+    std::vector<std::pair<uint32_t, uint32_t>> sizes;
+    ctx->on_resize(a, [&](uint32_t w, uint32_t h) { sizes.emplace_back(w, h); });
+
+    ctx->sync_size();
+    EXPECT_TRUE(sizes.empty());
+
+    window->change_size_silently(400, 300);
+    ctx->sync_size();
+    ctx->sync_size();
+
+    EXPECT_EQ(sizes, (std::vector<std::pair<uint32_t, uint32_t>> { { 400, 300 } }));
+}
+
+TEST_F(FormaContextTest, AnInputEventCatchesTheResizeCallbacksUpWithAMissedSize)
+{
+    const uint32_t a = left_half();
+    std::vector<std::pair<uint32_t, uint32_t>> sizes;
+    ctx->on_resize(a, [&](uint32_t w, uint32_t h) { sizes.emplace_back(w, h); });
+    window->change_size_silently(400, 300);
+
+    window->move_to_ndc({ -0.5F, 0.F });
+
+    EXPECT_EQ(sizes, (std::vector<std::pair<uint32_t, uint32_t>> { { 400, 300 } }));
+}
+
 TEST_F(FormaContextTest, PixelRectsConvertToNdcFromTheLiveWindowSize)
 {
     const auto full = ctx->to_ndc_rect(0.0, 0.0, 200.0, 100.0);
