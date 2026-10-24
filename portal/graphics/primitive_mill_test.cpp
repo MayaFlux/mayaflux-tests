@@ -28,6 +28,7 @@ namespace {
     using Portal::Graphics::MillSpec;
     using Portal::Graphics::MillView;
     using Portal::Graphics::PrimitiveMill;
+    using Portal::Graphics::PolygonMode;
     using Portal::Graphics::PrimitiveTopology;
     using Portal::Graphics::VertexLayoutTranslator;
 
@@ -408,6 +409,151 @@ namespace {
         EXPECT_EQ(VertexLayoutTranslator::describe_modality(DataModality::VERTICES_3D), "unknown");
     }
 
+
+    // ------------------------------------------------------------------
+    // Fill emulation and indexed spans, host path
+    // ------------------------------------------------------------------
+
+    TEST(PrimitiveMillTest, PointFillCountsSixMilledVerticesPerSourceVertex)
+    {
+        using Portal::Graphics::triangle_vertex_count;
+
+        EXPECT_EQ(triangle_vertex_count(PrimitiveTopology::TRIANGLE_LIST, 7, PolygonMode::POINT), 36U);
+        EXPECT_EQ(triangle_vertex_count(PrimitiveTopology::TRIANGLE_STRIP, 5, PolygonMode::POINT), 30U);
+        EXPECT_EQ(triangle_vertex_count(PrimitiveTopology::TRIANGLE_FAN, 2, PolygonMode::POINT), 0U);
+        EXPECT_EQ(triangle_vertex_count(PrimitiveTopology::TRIANGLE_LIST, 7, PolygonMode::LINE),
+            triangle_vertex_count(PrimitiveTopology::TRIANGLE_LIST, 7));
+        EXPECT_EQ(triangle_vertex_count(PrimitiveTopology::LINE_LIST, 4, PolygonMode::POINT),
+            triangle_vertex_count(PrimitiveTopology::LINE_LIST, 4));
+    }
+
+    TEST(PrimitiveMillTest, MilledVertexCountHonoursEachRunsFill)
+    {
+        const std::vector<DrawRun> runs {
+            { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::POINT },
+            { PrimitiveTopology::TRIANGLE_LIST, 3, 3, PolygonMode::LINE },
+            { PrimitiveTopology::TRIANGLE_LIST, 6, 3 }
+        };
+
+        EXPECT_EQ(PrimitiveMill::milled_vertex_count(runs), 18U + 3U + 3U);
+    }
+
+    TEST(MillOnHostTest, TriangleListsFetchTheirVerticesThroughTheIndices)
+    {
+        const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) });
+        const std::vector<uint32_t> indices { 3, 0, 2, 1, 2, 3 };
+        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 6 } };
+        std::vector<uint8_t> dst;
+
+        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(4), runs, plane_spec(), {}, dst, indices);
+
+        ASSERT_EQ(result.vertex_count, 6U);
+        const std::array<float, 6> expected { 3, 0, 2, 1, 2, 3 };
+        for (size_t i = 0; i < expected.size(); ++i) {
+            EXPECT_EQ(at(dst, i).color[0], expected[i]) << "output vertex " << i;
+        }
+    }
+
+    TEST(MillOnHostTest, StripsAndFansWalkTheIndicesNotTheVertices)
+    {
+        const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) });
+        const std::vector<uint32_t> indices { 3, 2, 1, 0 };
+        std::vector<uint8_t> dst;
+
+        Portal::Graphics::mill_on_host(src, vertex_layout(4),
+            Runs { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4 } }, plane_spec(), {}, dst, indices);
+        const std::array<float, 6> strip { 3, 2, 1, 1, 2, 0 };
+        ASSERT_EQ(dst.size(), strip.size() * sizeof(Vertex));
+        for (size_t i = 0; i < strip.size(); ++i) {
+            EXPECT_EQ(at(dst, i).color[0], strip[i]) << "strip vertex " << i;
+        }
+
+        Portal::Graphics::mill_on_host(src, vertex_layout(4),
+            Runs { { PrimitiveTopology::TRIANGLE_FAN, 0, 4 } }, plane_spec(), {}, dst, indices);
+        const std::array<float, 6> fan { 3, 2, 1, 3, 1, 0 };
+        ASSERT_EQ(dst.size(), fan.size() * sizeof(Vertex));
+        for (size_t i = 0; i < fan.size(); ++i) {
+            EXPECT_EQ(at(dst, i).color[0], fan[i]) << "fan vertex " << i;
+        }
+    }
+
+    TEST(MillOnHostTest, PointFillDrawsEveryVertexOfATriangleSpanAsAQuad)
+    {
+        const auto src = bytes_of({ vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) });
+        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::POINT } };
+        std::vector<uint8_t> dst;
+
+        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(3), runs, plane_spec(), {}, dst);
+
+        ASSERT_EQ(result.vertex_count, 18U);
+        EXPECT_TRUE(position_is(at(dst, 0), -1, -1));
+        EXPECT_TRUE(position_is(at(dst, 6), 9, -1));
+        EXPECT_TRUE(position_is(at(dst, 12), -1, 9));
+        EXPECT_EQ(at(dst, 6).color[0], 1.0F);
+        EXPECT_EQ(at(dst, 12).color[0], 2.0F);
+    }
+
+    TEST(MillOnHostTest, PointFillOnAnIndexedSpanQuadsTheIndexedVertices)
+    {
+        const auto src = bytes_of({ vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) });
+        const std::vector<uint32_t> indices { 2, 2, 0 };
+        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::POINT } };
+        std::vector<uint8_t> dst;
+
+        Portal::Graphics::mill_on_host(src, vertex_layout(3), runs, plane_spec(), {}, dst, indices);
+
+        ASSERT_EQ(dst.size(), 18 * sizeof(Vertex));
+        EXPECT_EQ(at(dst, 0).color[0], 2.0F);
+        EXPECT_EQ(at(dst, 6).color[0], 2.0F);
+        EXPECT_EQ(at(dst, 12).color[0], 0.0F);
+    }
+
+    TEST(MillOnHostTest, LineFillKeepsTheTrianglesAndMarksEachCornerWithItsBarycentricWeights)
+    {
+        const std::vector<Vertex> source { vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) };
+        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::LINE } };
+        std::vector<uint8_t> dst;
+
+        const auto result = Portal::Graphics::mill_on_host(
+            bytes_of(source), vertex_layout(3), runs, plane_spec(), {}, dst);
+
+        ASSERT_EQ(result.vertex_count, 3U);
+        EXPECT_TRUE(uv_is(at(dst, 0), 21.0F, 0.0F));
+        EXPECT_TRUE(uv_is(at(dst, 1), 20.0F, 1.0F));
+        EXPECT_TRUE(uv_is(at(dst, 2), 20.0F, 0.0F));
+        for (size_t i = 0; i < source.size(); ++i) {
+            EXPECT_TRUE(position_is(at(dst, i), source[i].position[0], source[i].position[1])) << "vertex " << i;
+            EXPECT_EQ(at(dst, i).color[0], source[i].color[0]) << "vertex " << i;
+        }
+    }
+
+    TEST(MillOnHostTest, LineFillOnALayoutWithoutUvsLeavesTheTrianglesUntouched)
+    {
+        const auto src = bytes_of({ vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) });
+        auto layout = vertex_layout(3);
+        layout.attributes.pop_back();
+        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::LINE } };
+        std::vector<uint8_t> dst;
+
+        Portal::Graphics::mill_on_host(src, layout, runs, plane_spec(), {}, dst);
+
+        EXPECT_EQ(dst, src);
+    }
+
+    TEST(MillOnHostTest, FillIsIgnoredBySpansThatAreNotTriangles)
+    {
+        const auto src = bytes_of({ vertex(0, 0, 0), vertex(2, 0, 1) });
+        std::vector<uint8_t> plain;
+        std::vector<uint8_t> filled;
+
+        Portal::Graphics::mill_on_host(src, vertex_layout(2),
+            Runs { { PrimitiveTopology::LINE_LIST, 0, 2 } }, plane_spec(), {}, plain);
+        Portal::Graphics::mill_on_host(src, vertex_layout(2),
+            Runs { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::POINT } }, plane_spec(), {}, filled);
+
+        EXPECT_EQ(filled, plain);
+    }
+
     // ------------------------------------------------------------------
     // Device path
     // ------------------------------------------------------------------
@@ -442,6 +588,7 @@ namespace {
 
         void TearDown() override
         {
+            s_attached.clear();
             teardown_portal();
         }
 
@@ -466,6 +613,23 @@ namespace {
             return buffer;
         }
 
+        static std::shared_ptr<VKBuffer> indexed_source_buffer(
+            const std::vector<Vertex>& vertices,
+            const std::vector<uint32_t>& indices)
+        {
+            auto source = source_buffer(vertices);
+            auto index_buffer = std::make_shared<VKBuffer>(
+                indices.size() * sizeof(uint32_t), VKBuffer::Usage::HOST_STORAGE, DataModality::UNKNOWN);
+            service().initialize_buffer(index_buffer);
+            std::memcpy(index_buffer->get_mapped_ptr(), indices.data(), indices.size() * sizeof(uint32_t));
+            source->set_index_resources(
+                index_buffer->get_buffer(),
+                index_buffer->get_buffer_resources().memory,
+                index_buffer->get_size_bytes());
+            s_attached.push_back(index_buffer);
+            return source;
+        }
+
         static std::vector<uint8_t> read_back(const std::shared_ptr<VKBuffer>& buffer, size_t bytes)
         {
             Portal::Graphics::get_shader_foundry().get_graphics_queue().waitIdle();
@@ -485,17 +649,18 @@ namespace {
             const std::vector<Vertex>& source,
             const std::vector<DrawRun>& runs,
             const MillSpec& spec,
-            bool compare_uv)
+            bool compare_uv,
+            const std::vector<uint32_t>& indices = {})
         {
             PrimitiveMill mill(spec);
-            const auto buffer = source_buffer(source);
+            const auto buffer = indices.empty() ? source_buffer(source) : indexed_source_buffer(source, indices);
             const uint32_t milled = mill.mill(buffer, runs, MillView {});
             ASSERT_GT(milled, 0U);
             ASSERT_NE(mill.output(), nullptr);
 
             std::vector<uint8_t> expected;
             Portal::Graphics::mill_on_host(
-                bytes_of(source), vertex_layout(static_cast<uint32_t>(source.size())), runs, spec, MillView {}, expected);
+                bytes_of(source), vertex_layout(static_cast<uint32_t>(source.size())), runs, spec, MillView {}, expected, indices);
             const auto actual = read_back(mill.output(), static_cast<size_t>(milled) * sizeof(Vertex));
 
             ASSERT_EQ(actual.size(), expected.size());
@@ -515,6 +680,7 @@ namespace {
 
     private:
         static inline std::shared_ptr<Core::VulkanBackend> s_backend;
+        static inline std::vector<std::shared_ptr<VKBuffer>> s_attached;
     };
 
     TEST_F(PrimitiveMillDeviceTest, OutputIsNullBeforeTheFirstMill)
@@ -646,6 +812,82 @@ namespace {
         EXPECT_NEAR(narrow.position[1], 1.0F, 1e-4F);
         EXPECT_NEAR(wide.position[1], 3.0F, 1e-4F);
         EXPECT_EQ(mill.spec().width_scale, 3.0F);
+    }
+
+
+    TEST_F(PrimitiveMillDeviceTest, IndexedTriangleSpansMatchTheHostPath)
+    {
+        const std::vector<Vertex> source { vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) };
+
+        expect_matches_host(source, { { PrimitiveTopology::TRIANGLE_LIST, 0, 6 } }, plane_spec(), true, { 3, 0, 2, 1, 2, 3 });
+        expect_matches_host(source, { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4 } }, plane_spec(), true, { 3, 2, 1, 0 });
+        expect_matches_host(source, { { PrimitiveTopology::TRIANGLE_FAN, 0, 4 } }, plane_spec(), true, { 3, 2, 1, 0 });
+    }
+
+    TEST_F(PrimitiveMillDeviceTest, IndexedTriangleRunsAreBoundedByTheIndexCountAndOtherRunsByTheVertexCount)
+    {
+        PrimitiveMill mill(plane_spec());
+        const auto buffer = indexed_source_buffer(
+            { vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3), vertex(2, 1, 4), vertex(2, 2, 5) },
+            { 0, 1, 2 });
+
+        EXPECT_EQ(mill.mill(buffer, Runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 6 } }, MillView {}), 0U);
+        EXPECT_EQ(mill.mill(buffer, Runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } }, MillView {}), 3U);
+        EXPECT_EQ(mill.mill(buffer, Runs { { PrimitiveTopology::LINE_LIST, 0, 6 } }, MillView {}), 18U);
+    }
+
+    TEST_F(PrimitiveMillDeviceTest, PointFillOfTriangleSpansMatchesTheHostPath)
+    {
+        const std::vector<Vertex> source { vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) };
+        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::POINT } };
+
+        expect_matches_host(source, runs, plane_spec(), true);
+        expect_matches_host(source, runs, plane_spec(), true, { 2, 2, 0 });
+    }
+
+    TEST_F(PrimitiveMillDeviceTest, LineFillOfTriangleSpansMatchesTheHostPath)
+    {
+        const std::vector<Vertex> source { vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) };
+
+        expect_matches_host(source,
+            { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::LINE } }, plane_spec(), true);
+        expect_matches_host(source,
+            { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4, PolygonMode::LINE } }, plane_spec(), true);
+        expect_matches_host(source,
+            { { PrimitiveTopology::TRIANGLE_LIST, 0, 6, PolygonMode::LINE } }, plane_spec(), true, { 3, 0, 2, 1, 2, 3 });
+    }
+
+    TEST_F(PrimitiveMillDeviceTest, LineFillWritesTheBarycentricMarkersIntoTheUvSlot)
+    {
+        PrimitiveMill mill(plane_spec());
+        const auto buffer = source_buffer({ vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) });
+        const uint32_t milled = mill.mill(
+            buffer, Runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::LINE } }, MillView {});
+        ASSERT_EQ(milled, 3U);
+
+        const auto data = read_back(mill.output(), 3 * sizeof(Vertex));
+
+        EXPECT_TRUE(uv_is(at(data, 0), 21.0F, 0.0F));
+        EXPECT_TRUE(uv_is(at(data, 1), 20.0F, 1.0F));
+        EXPECT_TRUE(uv_is(at(data, 2), 20.0F, 0.0F));
+    }
+
+    TEST_F(PrimitiveMillDeviceTest, LineFillOnALayoutWithoutUvsFallsBackToPlainTriangles)
+    {
+        PrimitiveMill mill(plane_spec());
+        const auto buffer = source_buffer({ vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) });
+        auto layout = *buffer->get_vertex_layout();
+        layout.attributes.pop_back();
+        buffer->set_vertex_layout(layout);
+        const uint32_t milled = mill.mill(
+            buffer, Runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::LINE } }, MillView {});
+        ASSERT_EQ(milled, 3U);
+
+        const auto data = read_back(mill.output(), 3 * sizeof(Vertex));
+
+        for (size_t i = 0; i < 3; ++i) {
+            EXPECT_TRUE(uv_is(at(data, i), 0.125F, 0.875F)) << "vertex " << i;
+        }
     }
 
 } // namespace

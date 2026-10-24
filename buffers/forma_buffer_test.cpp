@@ -913,7 +913,10 @@ protected:
 
     bool compute_ready {};
 
-    void prepare_batch()
+    void prepare_batch(
+        Portal::Graphics::PolygonMode mode = Portal::Graphics::PolygonMode::FILL,
+        const std::string& vertex_shader = {},
+        const std::string& fragment_shader = {})
     {
         buffer = std::make_shared<FormaBuffer>(sizeof(Kakshya::MeshVertex) * 10,
             PrimitiveTopology::TRIANGLE_LIST);
@@ -927,11 +930,26 @@ protected:
         FormaBuffer::RenderConfig config;
         config.target_window = window;
         config.triangulate = true;
+        config.polygon_mode = mode;
+        config.vertex_shader = vertex_shader;
+        config.fragment_shader = fragment_shader;
         buffer->setup_rendering(config);
 
         root = std::make_shared<Buffers::RootGraphicsBuffer>();
         root->initialize();
         root->add_child_buffer(buffer);
+    }
+
+    void hold_view_still()
+    {
+        Portal::Graphics::MillSpec spec;
+        spec.ribbon = Portal::Graphics::MillSpec::Ribbon::WorldPlane;
+        buffer->get_render_processor()->set_mill_spec(spec);
+    }
+
+    [[nodiscard]] uint32_t mill_passes() const
+    {
+        return buffer->get_render_processor()->mill_passes();
     }
 
     static std::vector<uint8_t> bytes_of(const std::vector<Kakshya::MeshVertex>& vertices)
@@ -1029,6 +1047,109 @@ TEST_F(FormaTriangulatedBatchPresentationTest, HidingASliceRemovesOnlyItsPixelsA
     present();
     EXPECT_GT(pixel_at(0.25F)[2], 200U);
     EXPECT_GT(pixel_at(0.75F)[1], 200U);
+}
+
+TEST_F(FormaTriangulatedBatchPresentationTest, AStaticBatchIsMilledOnceHoweverManyFramesPresent)
+{
+    prepare_batch();
+    ASSERT_NE(root, nullptr);
+    hold_view_still();
+    buffer->add_slice(bytes_of(left_half_as_list({ 1.0F, 0.0F, 0.0F })));
+    present();
+    const uint32_t settled = mill_passes();
+    EXPECT_GE(settled, 1U);
+
+    present();
+    present();
+    present();
+
+    EXPECT_EQ(mill_passes(), settled);
+    EXPECT_GT(pixel_at(0.25F)[2], 200U);
+}
+
+TEST_F(FormaTriangulatedBatchPresentationTest, ASliceUpdateMillsAgainAndTheNewPixelsShow)
+{
+    prepare_batch();
+    ASSERT_NE(root, nullptr);
+    hold_view_still();
+    const auto slice = buffer->add_slice(bytes_of(left_half_as_list({ 1.0F, 0.0F, 0.0F })));
+    present();
+    present();
+    const uint32_t settled = mill_passes();
+
+    buffer->update_slice(slice, bytes_of(left_half_as_list({ 0.0F, 1.0F, 0.0F })));
+    present();
+
+    EXPECT_GT(mill_passes(), settled);
+    EXPECT_GT(pixel_at(0.25F)[1], 200U);
+    EXPECT_LT(pixel_at(0.25F)[2], 32U);
+}
+
+TEST_F(FormaTriangulatedBatchPresentationTest, HidingAndShowingASliceMillsAgainAndSkippedFramesStayCorrect)
+{
+    prepare_batch();
+    ASSERT_NE(root, nullptr);
+    hold_view_still();
+    const auto slice = buffer->add_slice(bytes_of(left_half_as_list({ 1.0F, 0.0F, 0.0F })));
+    present();
+    const uint32_t visible = mill_passes();
+
+    buffer->set_slice_visible(slice, false);
+    present();
+    present();
+    EXPECT_LT(pixel_at(0.25F)[2], 32U);
+
+    buffer->set_slice_visible(slice, true);
+    present();
+    present();
+    EXPECT_GT(mill_passes(), visible);
+    EXPECT_GT(pixel_at(0.25F)[2], 200U);
+}
+
+TEST_F(FormaTriangulatedBatchPresentationTest, ANewMillSpecMillsAgain)
+{
+    prepare_batch();
+    ASSERT_NE(root, nullptr);
+    hold_view_still();
+    buffer->add_slice(bytes_of(left_half_as_list({ 1.0F, 0.0F, 0.0F })));
+    present();
+    present();
+    const uint32_t settled = mill_passes();
+
+    Portal::Graphics::MillSpec spec;
+    spec.ribbon = Portal::Graphics::MillSpec::Ribbon::WorldPlane;
+    spec.width_scale = 0.5F;
+    buffer->get_render_processor()->set_mill_spec(spec);
+    present();
+
+    EXPECT_EQ(mill_passes(), settled + 1U);
+}
+
+TEST_F(FormaTriangulatedBatchPresentationTest, AViewFollowingBatchIsMilledEveryFrame)
+{
+    prepare_batch();
+    ASSERT_NE(root, nullptr);
+    buffer->add_slice(bytes_of(left_half_as_list({ 1.0F, 0.0F, 0.0F })));
+    present();
+    const uint32_t settled = mill_passes();
+
+    present();
+    present();
+    present();
+
+    EXPECT_EQ(mill_passes(), settled + 3U);
+}
+
+TEST_F(FormaTriangulatedBatchPresentationTest, LineFillDrawsTheEdgesOfATriangleBatchAndLeavesTheInteriorEmpty)
+{
+    prepare_batch(Portal::Graphics::PolygonMode::LINE, "milled_shape.vert.spv", "milled_shape.frag.spv");
+    ASSERT_NE(root, nullptr);
+    hold_view_still();
+    buffer->add_slice(bytes_of(left_half_as_list({ 1.0F, 0.0F, 0.0F })));
+    present();
+
+    EXPECT_GT(pixel_at(0.25F)[2], 64U);
+    EXPECT_LT(pixel_at(0.1F)[2], 32U);
 }
 
 #endif
