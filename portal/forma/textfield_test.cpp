@@ -309,6 +309,24 @@ TEST_F(FormaTextFieldTest, UpAndDownMoveBetweenLines)
     EXPECT_LE(field.state->value.cursor, 2U);
 }
 
+TEST_F(FormaTextFieldTest, UpAndDownMoveThroughAnEmptyLine)
+{
+    params->render_bounds.y = atlas->line_height() * 4;
+    auto field = make_field("a\n\nb");
+    click({ k_field.min.x + 0.01F, k_field.max.y - k_field.height() * 2.5F / 4.F });
+    ASSERT_EQ(field.state->value.cursor, 3U);
+
+    tap(Keys::Up);
+    EXPECT_EQ(field.state->value.cursor, 2U);
+    tap(Keys::Up);
+    EXPECT_EQ(field.state->value.cursor, 0U);
+
+    tap(Keys::Down);
+    EXPECT_EQ(field.state->value.cursor, 2U);
+    tap(Keys::Down);
+    EXPECT_EQ(field.state->value.cursor, 3U);
+}
+
 TEST_F(FormaTextFieldTest, UpOnTheFirstLineAndDownOnTheLastStayOnThatLine)
 {
     auto field = focused_field("one line");
@@ -351,6 +369,18 @@ TEST_F(FormaTextFieldTest, ClickingThenTypingEditsAtTheClickedPosition)
     window->type('>');
 
     EXPECT_EQ(field.state->value.text, ">hello");
+}
+
+TEST_F(FormaTextFieldTest, ClickingAnEmptyLinePlacesTheCursorThere)
+{
+    params->render_bounds.y = atlas->line_height() * 4;
+    auto field = make_field("a\n\nb");
+
+    click({ k_field.min.x + 0.01F, k_field.max.y - k_field.height() * 1.5F / 4.F });
+    ASSERT_EQ(field.state->value.cursor, 2U);
+
+    window->type('x');
+    EXPECT_EQ(field.state->value.text, "a\nx\nb");
 }
 
 TEST_F(FormaTextFieldTest, RepositionUpdatesTheReportedBounds)
