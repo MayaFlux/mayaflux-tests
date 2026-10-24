@@ -423,8 +423,7 @@ namespace {
         EXPECT_EQ(triangle_vertex_count(PrimitiveTopology::TRIANGLE_FAN, 2, PolygonMode::POINT), 0U);
         EXPECT_EQ(triangle_vertex_count(PrimitiveTopology::TRIANGLE_LIST, 7, PolygonMode::LINE),
             triangle_vertex_count(PrimitiveTopology::TRIANGLE_LIST, 7));
-        EXPECT_EQ(triangle_vertex_count(PrimitiveTopology::LINE_LIST, 4, PolygonMode::POINT),
-            triangle_vertex_count(PrimitiveTopology::LINE_LIST, 4));
+        EXPECT_EQ(triangle_vertex_count(PrimitiveTopology::LINE_LIST, 4, PolygonMode::POINT), 24U);
     }
 
     TEST(PrimitiveMillTest, MilledVertexCountHonoursEachRunsFill)
@@ -698,6 +697,32 @@ namespace {
         expect_matches_host(source, { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } }, plane_spec(), true);
         expect_matches_host(source, { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4 } }, plane_spec(), true);
         expect_matches_host(source, { { PrimitiveTopology::TRIANGLE_FAN, 0, 4 } }, plane_spec(), true);
+    }
+
+    TEST_F(PrimitiveMillDeviceTest, ExplicitLayoutOverridesTheSourceBuffersLayout)
+    {
+        PrimitiveMill mill(plane_spec());
+        const std::vector<Vertex> source { vertex(2, 3, 7), vertex(5, 3, 8), vertex(2, 6, 9) };
+        const auto buffer = source_buffer(source);
+
+        auto conflicting_layout = vertex_layout(static_cast<uint32_t>(source.size()));
+        std::swap(conflicting_layout.attributes[0].offset_in_vertex,
+            conflicting_layout.attributes[1].offset_in_vertex);
+        buffer->set_vertex_layout(conflicting_layout);
+
+        const auto layout = vertex_layout(static_cast<uint32_t>(source.size()));
+        const uint32_t milled = mill.mill(
+            buffer,
+            Runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } },
+            MillView {},
+            layout);
+        ASSERT_EQ(milled, 3U);
+
+        const auto data = read_back(mill.output(), static_cast<size_t>(milled) * sizeof(Vertex));
+        for (size_t i = 0; i < source.size(); ++i) {
+            EXPECT_TRUE(position_is(at(data, i), source[i].position[0], source[i].position[1]));
+            EXPECT_EQ(at(data, i).color[0], source[i].color[0]);
+        }
     }
 
     TEST_F(PrimitiveMillDeviceTest, PointQuadsMatchTheHostPathInPositionAndAttributes)
