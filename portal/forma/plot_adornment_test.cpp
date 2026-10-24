@@ -104,48 +104,52 @@ TEST_F(FormaPlotAdornmentTest, ALegendAddsASwatchAndALabelPerEntry)
 
     EXPECT_EQ(adorn(spec), 4U);
 
+    std::shared_ptr<Buffers::FormaBuffer> batch;
     size_t textured = 0;
     size_t flat = 0;
     for (const auto id : surface->layer().related_ids(parent)) {
         const auto* element = surface->layer().get(id);
         ASSERT_NE(element, nullptr);
         EXPECT_FALSE(element->interactive);
+        if (!batch)
+            batch = element->buffer.buffer();
+        EXPECT_EQ(element->buffer.buffer(), batch);
         (element->text_slice ? textured : flat)++;
     }
     EXPECT_EQ(textured, 2U);
     EXPECT_EQ(flat, 2U);
+    ASSERT_NE(batch, nullptr);
+    EXPECT_EQ(batch->slice_count(), 4U);
 }
 
-TEST_F(FormaPlotAdornmentTest, LegendSwatchesDrawAsSlicesOfAGivenBatchAndLabelsShareOneTextBuffer)
+TEST_F(FormaPlotAdornmentTest, LegendSwatchesAndLabelsShareTheGivenBatch)
 {
     Forma::Plot::LegendSpec legend;
     legend.origin = { -0.9F, 0.9F };
     legend.entries = { { "first", { 1.F, 0.F, 0.F } }, { "second", { 0.F, 1.F, 0.F } } };
     Forma::Plot::SeriesSpec spec;
     spec.legend = legend;
-    auto batch = Forma::internal::atelier().create_buffer(surface->render_config());
+    auto batch = Forma::internal::atelier().create_buffer(surface->render_config({
+        .fragment_shader = "forma_plot.frag.spv",
+        .additional_textures = { { "text", nullptr } },
+    }));
 
     Forma::internal::atelier().place_adornments(*surface, spec, parent, batch);
 
-    EXPECT_EQ(batch->slice_count(), 2U);
-    std::shared_ptr<Buffers::FormaBuffer> text_buffer;
-    size_t in_batch = 0;
+    EXPECT_EQ(batch->slice_count(), 4U);
+    std::vector<Forma::FormaTarget::SliceId> slices;
     size_t labels = 0;
     for (const auto id : surface->layer().related_ids(parent)) {
         const auto* element = surface->layer().get(id);
         ASSERT_NE(element, nullptr);
-        if (element->text_slice) {
-            EXPECT_NE(element->buffer.buffer(), batch);
-            if (!text_buffer)
-                text_buffer = element->buffer.buffer();
-            EXPECT_EQ(element->buffer.buffer(), text_buffer);
+        EXPECT_EQ(element->buffer.buffer(), batch);
+        EXPECT_NE(element->buffer.slice(), 0U);
+        slices.push_back(element->buffer.slice());
+        if (element->text_slice)
             ++labels;
-        } else {
-            EXPECT_EQ(element->buffer.buffer(), batch);
-            ++in_batch;
-        }
     }
-    EXPECT_EQ(in_batch, 2U);
+    std::ranges::sort(slices);
+    EXPECT_EQ(std::ranges::unique(slices).begin(), slices.end());
     EXPECT_EQ(labels, 2U);
 }
 
