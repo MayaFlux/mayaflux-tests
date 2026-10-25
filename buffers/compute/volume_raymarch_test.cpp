@@ -9,6 +9,7 @@
 
 #include "volume_grid_fixture.hpp"
 
+#include "MayaFlux/Buffers/Shaders/RenderProcessor.hpp"
 #include "MayaFlux/Buffers/State/RaymarchBuffer.hpp"
 #include "MayaFlux/Buffers/State/RaymarchProcessor.hpp"
 
@@ -51,12 +52,12 @@ namespace {
         }
 
         static std::shared_ptr<RaymarchProcessor> processor_for(
-            const std::shared_ptr<VolumeGridBuffer>& field, uint32_t set = 1U)
+            const std::shared_ptr<VolumeGridBuffer>& field, uint32_t binding = 1U)
         {
             const size_t bytes = field->get_field_bytes("density");
             return std::make_shared<RaymarchProcessor>(
                 [field] { return field->read_handle("density"); },
-                bytes, unit_cell_lattice(), set, 0U);
+                bytes, unit_cell_lattice(), binding);
         }
 
         static const Portal::Graphics::PushConstantBindingInfo* fragment(
@@ -72,7 +73,7 @@ namespace {
         static const Portal::Graphics::DescriptorBindingInfo* descriptor(
             const std::shared_ptr<VolumeGridBuffer>& canvas, uint32_t set, uint32_t binding)
         {
-            const auto& staged = canvas->get_pipeline_context().descriptor_buffer_bindings;
+            const auto& staged = canvas->get_engine_context().ssbo_bindings;
             const auto it = std::ranges::find_if(staged, [&](const auto& entry) {
                 return entry.set == set && entry.binding == binding;
             });
@@ -82,7 +83,7 @@ namespace {
         std::vector<std::shared_ptr<RaymarchBuffer>> marchers;
     };
 
-    TEST_F(VolumeRaymarchDeviceTest, AttachStagesTheFieldDescriptorAndTheParameterFragment)
+    TEST_F(VolumeRaymarchDeviceTest, AttachStagesTheFieldAsAnEngineSsboAndTheParameterFragment)
     {
         auto field = field_volume();
         auto canvas = attach_empty();
@@ -90,7 +91,8 @@ namespace {
 
         march->on_attach(canvas);
 
-        const auto* staged = descriptor(canvas, 1U, 0U);
+        EXPECT_TRUE(canvas->get_pipeline_context().descriptor_buffer_bindings.empty());
+        const auto* staged = descriptor(canvas, 0U, 1U);
         ASSERT_NE(staged, nullptr);
         EXPECT_EQ(staged->type, vk::DescriptorType::eStorageBuffer);
         EXPECT_EQ(staged->buffer_info.buffer, field->read_handle("density"));
@@ -130,7 +132,7 @@ namespace {
         EXPECT_EQ(constant_at<float>(bytes, 80U), 0.02F);
     }
 
-    TEST_F(VolumeRaymarchDeviceTest, SetZeroFallsBackToSetOne)
+    TEST_F(VolumeRaymarchDeviceTest, BindingZeroFallsBackToBindingOne)
     {
         auto field = field_volume();
         auto canvas = attach_empty();
@@ -138,7 +140,26 @@ namespace {
         processor_for(field, 0U)->on_attach(canvas);
 
         EXPECT_EQ(descriptor(canvas, 0U, 0U), nullptr);
-        EXPECT_NE(descriptor(canvas, 1U, 0U), nullptr);
+        EXPECT_NE(descriptor(canvas, 0U, 1U), nullptr);
+    }
+
+    TEST_F(VolumeRaymarchDeviceTest, ANullHandleStagesNothingUntilTheSourceResolves)
+    {
+        auto field = field_volume();
+        auto canvas = attach_empty();
+        bool resolve = false;
+        auto march = std::make_shared<RaymarchProcessor>(
+            [&] { return resolve ? field->read_handle("density") : vk::Buffer {}; },
+            field->get_field_bytes("density"), unit_cell_lattice());
+
+        march->on_attach(canvas);
+        EXPECT_EQ(descriptor(canvas, 0U, 1U), nullptr);
+        EXPECT_NE(fragment(canvas), nullptr);
+
+        resolve = true;
+        march->processing_function(canvas);
+        ASSERT_NE(descriptor(canvas, 0U, 1U), nullptr);
+        EXPECT_EQ(descriptor(canvas, 0U, 1U)->buffer_info.buffer, field->read_handle("density"));
     }
 
     TEST_F(VolumeRaymarchDeviceTest, ProcessingRestagesTheHandleAndSettingsWithoutDuplicates)
@@ -160,11 +181,11 @@ namespace {
         march->set_emission_ramp(glm::vec3(0.1F, 0.2F, 0.3F), glm::vec3(0.4F, 0.5F, 0.6F));
         march->processing_function(canvas);
 
-        const auto& staged = canvas->get_pipeline_context().descriptor_buffer_bindings;
+        const auto& staged = canvas->get_engine_context().ssbo_bindings;
         const auto& fragments = canvas->get_pipeline_context().push_constant_bindings;
         EXPECT_EQ(staged.size(), 1U);
         EXPECT_EQ(fragments.size(), 1U);
-        EXPECT_EQ(descriptor(canvas, 1U, 0U)->buffer_info.buffer, second->read_handle("density"));
+        EXPECT_EQ(descriptor(canvas, 0U, 1U)->buffer_info.buffer, second->read_handle("density"));
 
         const auto& bytes = fragment(canvas)->data;
         EXPECT_EQ(constant_at<float>(bytes, 44U), 3.0F);
@@ -193,7 +214,7 @@ namespace {
         resolve = false;
         march->processing_function(canvas);
 
-        EXPECT_EQ(descriptor(canvas, 1U, 0U)->buffer_info.buffer, field->read_handle("density"));
+        EXPECT_EQ(descriptor(canvas, 0U, 1U)->buffer_info.buffer, field->read_handle("density"));
         EXPECT_EQ(constant_at<float>(fragment(canvas)->data, 44U), 1.0F);
     }
 
@@ -278,7 +299,13 @@ namespace {
         auto window = std::make_shared<ScriptedWindow>(320, 240);
         windows.push_back(window);
         marcher->setup_rendering({ .target_window = window });
-        EXPECT_NE(marcher->get_render_processor(), nullptr);
+        ASSERT_NE(marcher->get_render_processor(), nullptr);
+
+        const auto& bindings = marcher->get_render_processor()->get_config().bindings;
+        ASSERT_TRUE(bindings.contains("volume_field"));
+        EXPECT_EQ(bindings.at("volume_field").set, 0U);
+        EXPECT_EQ(bindings.at("volume_field").binding, RaymarchProcessor::k_field_binding);
+        EXPECT_EQ(bindings.at("volume_field").type, vk::DescriptorType::eStorageBuffer);
     }
 
 } // namespace
