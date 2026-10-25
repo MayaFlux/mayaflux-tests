@@ -220,6 +220,28 @@ namespace {
         EXPECT_FALSE(primary()->is_vertex_data_dirty());
     }
 
+    TEST_F(NetworkUploadTest, ATopologyChangeOnTheIncrementalPathReachesTheRenderRuns)
+    {
+        attach_assembly(std::make_shared<AssemblyNetwork>());
+        auto item = assembly->add_geometry(positions(3));
+        render(RenderConfig { .triangulate = true });
+        settle();
+        const auto uploaded = uploaded_bytes();
+        const auto& runs = buffer->get_render_processor()->get_runs();
+        ASSERT_EQ(runs.size(), 1U);
+        ASSERT_EQ(runs[0].topology, PrimitiveTopology::POINT_LIST);
+
+        item->set_primitive_topology(PrimitiveTopology::TRIANGLE_LIST);
+        assembly->process_batch(1);
+        buffer->process_default();
+
+        ASSERT_EQ(primary()->topology_runs().at(0).topology, PrimitiveTopology::TRIANGLE_LIST);
+        EXPECT_EQ(uploaded_bytes(), uploaded);
+        ASSERT_EQ(runs.size(), 1U);
+        EXPECT_EQ(runs[0].topology, PrimitiveTopology::TRIANGLE_LIST);
+        EXPECT_EQ(runs[0].vertex_count, 3U);
+    }
+
     TEST_F(NetworkUploadTest, NothingDirtyUploadsNothing)
     {
         attach_assembly(std::make_shared<AssemblyNetwork>());
