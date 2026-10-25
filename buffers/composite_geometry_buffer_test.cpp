@@ -356,8 +356,8 @@ TEST_F(CompositeGeometryBufferDeviceTest, PerCollectionRenderConfigSelectsIndepe
     const auto renders = buffer->get_render_processors();
     ASSERT_EQ(renders.size(), 3U);
     size_t point_shaders = 0;
-    size_t wire_shaders = 0;
-    size_t milled_shaders = 0;
+    size_t line_shaders = 0;
+    size_t triangle_shaders = 0;
     for (const auto& render : renders) {
         ASSERT_NE(render, nullptr);
         EXPECT_EQ(render->get_target_window(), window);
@@ -365,17 +365,17 @@ TEST_F(CompositeGeometryBufferDeviceTest, PerCollectionRenderConfigSelectsIndepe
         if (shader == "point.vert.spv") {
             ++point_shaders;
             EXPECT_FALSE(render->is_triangulate());
-        } else if (shader == "milled_wireframe.vert.spv") {
-            ++wire_shaders;
+        } else if (shader == "line.vert.spv") {
+            ++line_shaders;
             EXPECT_TRUE(render->is_triangulate());
-        } else if (shader == "milled_shape.vert.spv") {
-            ++milled_shaders;
+        } else if (shader == "triangle.vert.spv") {
+            ++triangle_shaders;
             EXPECT_TRUE(render->is_triangulate());
         }
     }
     EXPECT_EQ(point_shaders, 1U);
-    EXPECT_EQ(wire_shaders, 1U);
-    EXPECT_EQ(milled_shaders, 1U);
+    EXPECT_EQ(line_shaders, 1U);
+    EXPECT_EQ(triangle_shaders, 1U);
 }
 
 #if defined(MAYAFLUX_TEST_NATIVE_WINDOWS)

@@ -477,12 +477,21 @@ TEST_P(FormaBufferShaderTest, RenderingSelectsShadersForTopologyAndTextureMode)
     buffer->setup_rendering(config);
 
     const auto chosen = buffer->get_render_config();
+    const bool line_topology = c.topology == PrimitiveTopology::LINE_LIST
+        || c.topology == PrimitiveTopology::LINE_STRIP;
+    const auto features = Portal::Graphics::get_shader_foundry()
+                              .get_physical_device()
+                              .getFeatures();
+    const bool expected_triangulate = c.triangulate
+        || (line_topology && !features.geometryShader);
     EXPECT_EQ(chosen.topology, c.topology);
+    EXPECT_EQ(chosen.triangulate, expected_triangulate);
     EXPECT_EQ(chosen.vertex_shader, c.vertex_shader);
     EXPECT_EQ(chosen.fragment_shader, c.fragment_shader);
-    EXPECT_EQ(chosen.geometry_shader, c.geometry_shader);
+    EXPECT_EQ(chosen.geometry_shader, expected_triangulate ? "" : c.geometry_shader);
     ASSERT_NE(buffer->get_render_processor(), nullptr);
     const auto render = buffer->get_render_processor();
+    EXPECT_EQ(render->is_triangulate(), expected_triangulate);
     EXPECT_TRUE(render->is_alpha_blending_enabled());
     EXPECT_FALSE(buffer->needs_depth_attachment());
 
@@ -504,20 +513,15 @@ INSTANTIATE_TEST_SUITE_P(
         FormaShaderCase { "Points", PrimitiveTopology::POINT_LIST, false, false, false,
             "point.vert.spv", "point.frag.spv", "" },
         FormaShaderCase { "PointsTextured", PrimitiveTopology::POINT_LIST, false, true, false,
-            "point.vert.spv", "point.frag.spv", "" },
+            "point.vert.spv", "point_textured.frag.spv", "" },
         FormaShaderCase { "PointsMilled", PrimitiveTopology::POINT_LIST, true, false, false,
-            "milled_shape.vert.spv", "milled_shape.frag.spv", "" },
+            "point.vert.spv", "point.frag.spv", "" },
         FormaShaderCase { "PointsMilledTextured", PrimitiveTopology::POINT_LIST, true, true, false,
-            "milled_shape.vert.spv", "milled_shape_textured.frag.spv", "" },
+            "point.vert.spv", "point_textured.frag.spv", "" },
         FormaShaderCase { "PointsMilledMulti", PrimitiveTopology::POINT_LIST, true, false, true,
-            "milled_shape.vert.spv", "milled_shape_multi.frag.spv", "" },
+            "point.vert.spv", "point_multi.frag.spv", "" },
         FormaShaderCase { "LineList", PrimitiveTopology::LINE_LIST, false, false, false,
-            "line.vert.spv", "line.frag.spv",
-#ifdef MAYAFLUX_PLATFORM_MACOS
-            "" },
-#else
-            "line.geom.spv" },
-#endif
+            "line.vert.spv", "line.frag.spv", "line.geom.spv" },
         FormaShaderCase { "LineListTriangulated", PrimitiveTopology::LINE_LIST, true, false, false,
             "line.vert.spv", "line.frag.spv", "" },
         FormaShaderCase { "LineStripMilled", PrimitiveTopology::LINE_STRIP, true, false, false,
@@ -1142,7 +1146,7 @@ TEST_F(FormaTriangulatedBatchPresentationTest, AViewFollowingBatchIsMilledEveryF
 
 TEST_F(FormaTriangulatedBatchPresentationTest, LineFillDrawsTheEdgesOfATriangleBatchAndLeavesTheInteriorEmpty)
 {
-    prepare_batch(Portal::Graphics::PolygonMode::LINE, "milled_shape.vert.spv", "milled_shape.frag.spv");
+    prepare_batch(Portal::Graphics::PolygonMode::LINE);
     ASSERT_NE(root, nullptr);
     hold_view_still();
     buffer->add_slice(bytes_of(left_half_as_list({ 1.0F, 0.0F, 0.0F })));

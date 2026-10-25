@@ -440,10 +440,14 @@ namespace {
         const auto render = buffer->get_render_processor();
         ASSERT_NE(render, nullptr);
         EXPECT_TRUE(render->is_triangulate());
-        EXPECT_EQ(render->get_config().shader_path, "mesh_network_milled.vert.spv");
+        EXPECT_EQ(render->get_config().shader_path, "mesh_network.vert.spv");
         const auto& bindings = render->get_config().bindings;
         EXPECT_NE(bindings.find("modelMatrices"), bindings.end());
-        EXPECT_EQ(bindings.find("slotIndices"), bindings.end());
+        const auto slot = bindings.find("slotIndices");
+        ASSERT_NE(slot, bindings.end());
+        EXPECT_EQ(slot->second.set, 0U);
+        EXPECT_EQ(slot->second.binding, 2U);
+        EXPECT_EQ(slot->second.type, vk::DescriptorType::eStorageBuffer);
 
         const auto layout = buffer->get_vertex_layout();
         ASSERT_TRUE(layout.has_value());
@@ -635,7 +639,7 @@ namespace {
             .triangulate = true });
         auto render = buffer->get_render_processor();
         ASSERT_NE(render, nullptr);
-        EXPECT_EQ(render->get_config().shader_path, "mesh_network_milled.vert.spv");
+        EXPECT_EQ(render->get_config().shader_path, "mesh_network.vert.spv");
 
         root->process_default();
         Buffers::PresentProcessor presenter;
@@ -657,7 +661,7 @@ namespace {
             .triangulate = true });
         auto render = buffer->get_render_processor();
         ASSERT_NE(render, nullptr);
-        EXPECT_EQ(render->get_config().shader_path, "mesh_network_milled.vert.spv");
+        EXPECT_EQ(render->get_config().shader_path, "mesh_network.vert.spv");
         auto mill_spec = render->get_mill_spec();
         mill_spec.point_scale = 0.12F;
         mill_spec.use_vertex_extent = false;
