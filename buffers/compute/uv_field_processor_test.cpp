@@ -26,7 +26,7 @@ namespace {
     using Buffers::UVProjectionMode;
     using Kakshya::MeshVertex;
 
-    TEST(UVFieldProcessorConfigTest, DeclaresTheVertexAndSamplerBindings)
+    TEST(UVFieldProcessorConfigTest, DeclaresOnlyTheVertexBindingByDefault)
     {
         UVFieldProcessor processor;
         const auto& config = processor.get_config();
@@ -35,9 +35,8 @@ namespace {
         EXPECT_EQ(config.shader_path, "uv_field.comp.spv");
         EXPECT_EQ(config.push_constant_size, 48U);
         ASSERT_TRUE(config.bindings.contains("vertices"));
-        ASSERT_TRUE(config.bindings.contains("tex_sampler"));
         EXPECT_EQ(config.bindings.at("vertices").binding, 0U);
-        EXPECT_EQ(config.bindings.at("tex_sampler").binding, 1U);
+        EXPECT_FALSE(config.bindings.contains("tex_sampler"));
     }
 
     class UVFieldProcessorDeviceTest : public VulkanDeviceTest {
@@ -248,6 +247,9 @@ namespace {
         ASSERT_NE(texture, nullptr);
 
         processor->set_texture(texture);
+        EXPECT_EQ(processor->get_config().shader_path, "uv_field_colour.comp.spv");
+        ASSERT_TRUE(processor->get_config().bindings.contains("tex_sampler"));
+        EXPECT_EQ(processor->get_config().bindings.at("tex_sampler").binding, 1U);
         project();
         const auto sampled = read_vertex();
         EXPECT_NEAR(sampled.color.r, 1.0F, 1e-5F);
@@ -266,6 +268,8 @@ namespace {
         EXPECT_NEAR(replaced.color.b, 0.0F, 1e-5F);
 
         processor->clear_texture();
+        EXPECT_EQ(processor->get_config().shader_path, "uv_field.comp.spv");
+        EXPECT_FALSE(processor->get_config().bindings.contains("tex_sampler"));
         seed({ input });
         project();
         const auto uv_only = read_vertex();
