@@ -8,9 +8,9 @@
 #include <span>
 #include <vector>
 
-#include "../support/native_window_test_support.hpp"
-#include "../support/scripted_window.hpp"
-#include "../support/vulkan_test_support.hpp"
+#include "../../support/native_window_test_support.hpp"
+#include "../../support/scripted_window.hpp"
+#include "../../support/vulkan_test_support.hpp"
 
 #include "MayaFlux/Buffers/BufferProcessingChain.hpp"
 #include "MayaFlux/Buffers/Network/MeshNetworkBuffer.hpp"
