@@ -40,6 +40,15 @@ void main()
 }
 )";
 
+    constexpr std::string_view k_transform_vertex_source = R"(#version 450
+layout(set = 0, binding = 0) uniform Transform { vec4 offset; } transform;
+void main()
+{
+    vec2 p = vec2(float((gl_VertexIndex << 1) & 2), float(gl_VertexIndex & 2));
+    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0) + transform.offset;
+}
+)";
+
     constexpr std::string_view k_fragment_source = R"(#version 450
 layout(location = 0) out vec4 color;
 layout(push_constant) uniform Params { vec4 value; } params;
@@ -305,6 +314,35 @@ void main() { color = params.value; }
         EXPECT_NO_THROW(flow().push_descriptors(9999, pushable, writes));
 
         foundry().submit_and_wait(cmd);
+    }
+
+    TEST_F(RenderFlowTest, TheFirstUnwrittenPushBindingNamesAUsedBindingNobodyWrites)
+    {
+        RenderPipelineConfig config = basic_config();
+        config.vertex_shader = foundry().load_shader(std::string(k_transform_vertex_source), ShaderStage::VERTEX);
+        const auto pushable = flow().create_pipeline(config, { k_color_format }, vk::Format::eUndefined, 0U);
+        const auto plain = flow().create_pipeline(config, { k_color_format });
+        ASSERT_NE(pushable, INVALID_RENDER_PIPELINE);
+        ASSERT_NE(plain, INVALID_RENDER_PIPELINE);
+
+        std::vector<vk::WriteDescriptorSet> writes;
+        EXPECT_EQ(flow().first_unwritten_push_binding(pushable, writes), std::optional<uint32_t> { 0U });
+
+        vk::WriteDescriptorSet transform {};
+        transform.dstBinding = 0;
+        writes.push_back(transform);
+        EXPECT_FALSE(flow().first_unwritten_push_binding(pushable, writes).has_value());
+
+        EXPECT_FALSE(flow().first_unwritten_push_binding(plain, {}).has_value());
+        EXPECT_FALSE(flow().first_unwritten_push_binding(9999, {}).has_value());
+    }
+
+    TEST_F(RenderFlowTest, APushPipelineWhoseShadersUseNoPushBindingsHasNothingUnwritten)
+    {
+        const auto pipeline = flow().create_pipeline(basic_config(), { k_color_format }, vk::Format::eUndefined, 0U);
+        ASSERT_NE(pipeline, INVALID_RENDER_PIPELINE);
+
+        EXPECT_FALSE(flow().first_unwritten_push_binding(pipeline, {}).has_value());
     }
 
     TEST_F(RenderFlowTest, BindPushAndDrawFillATargetWithThePushedColor)
