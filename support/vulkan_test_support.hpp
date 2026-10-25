@@ -16,6 +16,7 @@ inline Core::GlobalGraphicsConfig headless_graphics_config()
     Core::GlobalGraphicsConfig config;
     config.windowing_backend = Core::GlobalGraphicsConfig::WindowingBackend::NONE;
     config.backend_info.require_presentation = false;
+    config.backend_info.enable_validation = true;
     return config;
 }
 
