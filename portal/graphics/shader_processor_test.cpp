@@ -65,7 +65,7 @@ namespace {
             m_needs_pipeline_rebuild = false;
             m_needs_descriptor_rebuild = false;
         }
-        void reserve_engine_set_zero(bool enabled) { m_engine_owns_set_zero = enabled; }
+        void push_set_zero(bool enabled) { m_set_zero_is_push = enabled; }
         std::optional<uint32_t> descriptor_index(uint32_t set) const { return resolve_ds_index(set); }
         void set_descriptor_count(size_t count) { m_descriptor_set_ids.resize(count); }
 
@@ -459,7 +459,7 @@ namespace {
         EXPECT_FALSE(processor.needs_pipeline_rebuild());
     }
 
-    TEST(ShaderProcessorTest, DescriptorSetIndexRespectsEngineReservation)
+    TEST(ShaderProcessorTest, DescriptorSetIndexSkipsAPushedSetZero)
     {
         ShaderProcessorProbe processor(config_with_binding());
         processor.set_descriptor_count(2);
@@ -467,7 +467,7 @@ namespace {
         EXPECT_EQ(processor.descriptor_index(1), 1U);
         EXPECT_FALSE(processor.descriptor_index(2).has_value());
 
-        processor.reserve_engine_set_zero(true);
+        processor.push_set_zero(true);
         EXPECT_FALSE(processor.descriptor_index(0).has_value());
         EXPECT_EQ(processor.descriptor_index(1), 0U);
         EXPECT_EQ(processor.descriptor_index(2), 1U);

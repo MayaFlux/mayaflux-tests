@@ -5,6 +5,7 @@
 #include <cstring>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -48,6 +49,27 @@ layout(push_constant) uniform PC { uint scale; uint bias; } pc;
 void main()
 {
     values[gl_GlobalInvocationID.x] = values[gl_GlobalInvocationID.x] * pc.scale + pc.bias;
+}
+)";
+
+    constexpr std::string_view k_scale_copy_source = R"(#version 450
+layout(local_size_x = 16) in;
+layout(set = 0, binding = 0, std430) readonly buffer In { uint in_values[]; };
+layout(set = 0, binding = 1, std430) buffer Out { uint out_values[]; };
+layout(push_constant) uniform PC { uint factor; } pc;
+void main()
+{
+    out_values[gl_GlobalInvocationID.x] = in_values[gl_GlobalInvocationID.x] * pc.factor;
+}
+)";
+
+    constexpr std::string_view k_two_set_add_source = R"(#version 450
+layout(local_size_x = 16) in;
+layout(set = 0, binding = 0, std430) buffer Data { uint values[]; };
+layout(set = 1, binding = 0, std430) readonly buffer Extra { uint extra[]; };
+void main()
+{
+    values[gl_GlobalInvocationID.x] += extra[gl_GlobalInvocationID.x];
 }
 )";
 
@@ -143,6 +165,41 @@ void main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }
                 value *= factor;
             }
             return expected;
+        }
+
+        static ShaderID shader_from(std::string_view source)
+        {
+            return foundry().load_shader(std::string(source), ShaderStage::COMPUTE);
+        }
+
+        static void zero(const RawVulkanBuffer& buffer)
+        {
+            std::memset(buffer.mapped(), 0, k_bytes);
+        }
+
+        static Portal::Graphics::PushDescriptorWrite storage_write(
+            uint32_t binding, const RawVulkanBuffer& buffer)
+        {
+            Portal::Graphics::PushDescriptorWrite write;
+            write.binding = binding;
+            write.buffer = vk::DescriptorBufferInfo(buffer.buffer(), 0, k_bytes);
+            return write;
+        }
+
+        static std::vector<std::vector<DescriptorBindingInfo>> in_out_bindings()
+        {
+            return { {
+                DescriptorBindingInfo { .set = 0, .binding = 0, .type = vk::DescriptorType::eStorageBuffer },
+                DescriptorBindingInfo { .set = 0, .binding = 1, .type = vk::DescriptorType::eStorageBuffer },
+            } };
+        }
+
+        static std::vector<std::vector<DescriptorBindingInfo>> two_single_binding_sets()
+        {
+            return {
+                { DescriptorBindingInfo { .set = 0, .binding = 0, .type = vk::DescriptorType::eStorageBuffer } },
+                { DescriptorBindingInfo { .set = 1, .binding = 0, .type = vk::DescriptorType::eStorageBuffer } },
+            };
         }
 
     private:
@@ -259,6 +316,138 @@ void main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }
         foundry().submit_and_wait(cmd);
 
         EXPECT_EQ(words(*buffer), ascending_times(3));
+    }
+
+    // ------------------------------------------------------------------
+    // Push descriptors
+    // ------------------------------------------------------------------
+
+    TEST_F(ComputePressTest, PushSetCarriesItsBindingsWithoutAllocatingASet)
+    {
+        const auto id = press().create_pipeline(shader_from(k_scale_copy_source), in_out_bindings(),
+            sizeof(uint32_t), std::optional<size_t> { 0 });
+        ASSERT_NE(id, INVALID_COMPUTE_PIPELINE);
+        EXPECT_TRUE(press().allocate_pipeline_descriptors(id).empty());
+        const auto in = storage_buffer();
+        const auto out = storage_buffer();
+        fill_ascending(*in);
+        zero(*out);
+        const uint32_t factor = 3;
+
+        const auto cmd = foundry().begin_commands(CommandType::COMPUTE);
+        press().bind_pipeline(cmd, id);
+        press().push_descriptors(cmd, id, { storage_write(0, *in), storage_write(1, *out) });
+        press().push_constants(cmd, id, &factor, sizeof(factor));
+        press().dispatch(cmd, 1, 1, 1);
+        foundry().submit_and_wait(cmd);
+
+        EXPECT_EQ(words(*out), ascending_times(3));
+        EXPECT_EQ(words(*in), ascending_times(1));
+    }
+
+    TEST_F(ComputePressTest, RepushingBetweenDispatchesReadsTheNewBindings)
+    {
+        const auto id = press().create_pipeline(shader_from(k_scale_copy_source), in_out_bindings(),
+            sizeof(uint32_t), std::optional<size_t> { 0 });
+        ASSERT_NE(id, INVALID_COMPUTE_PIPELINE);
+        const auto in = storage_buffer();
+        const auto first = storage_buffer();
+        const auto second = storage_buffer();
+        fill_ascending(*in);
+        zero(*first);
+        zero(*second);
+        const uint32_t twice = 2;
+        const uint32_t five_times = 5;
+
+        const auto cmd = foundry().begin_commands(CommandType::COMPUTE);
+        press().bind_pipeline(cmd, id);
+        press().push_descriptors(cmd, id, { storage_write(0, *in), storage_write(1, *first) });
+        press().push_constants(cmd, id, &twice, sizeof(twice));
+        press().dispatch(cmd, 1, 1, 1);
+        press().push_descriptors(cmd, id, { storage_write(0, *in), storage_write(1, *second) });
+        press().push_constants(cmd, id, &five_times, sizeof(five_times));
+        press().dispatch(cmd, 1, 1, 1);
+        foundry().submit_and_wait(cmd);
+
+        EXPECT_EQ(words(*first), ascending_times(2));
+        EXPECT_EQ(words(*second), ascending_times(5));
+    }
+
+    TEST_F(ComputePressTest, PushSetFirstLeavesLaterSetsOnPooledDescriptors)
+    {
+        const auto id = press().create_pipeline(shader_from(k_two_set_add_source),
+            two_single_binding_sets(), 0, std::optional<size_t> { 0 });
+        ASSERT_NE(id, INVALID_COMPUTE_PIPELINE);
+        const auto sets = press().allocate_pipeline_descriptors(id);
+        ASSERT_EQ(sets.size(), 1U);
+        const auto data = storage_buffer();
+        const auto extra = storage_buffer();
+        fill_ascending(*data);
+        fill_ascending(*extra);
+        foundry().update_descriptor_buffer(sets[0], 0, vk::DescriptorType::eStorageBuffer,
+            extra->buffer(), 0, k_bytes);
+
+        const auto cmd = foundry().begin_commands(CommandType::COMPUTE);
+        press().bind_pipeline(cmd, id);
+        press().bind_descriptor_sets(cmd, id, sets);
+        press().push_descriptors(cmd, id, { storage_write(0, *data) });
+        press().dispatch(cmd, 1, 1, 1);
+        foundry().submit_and_wait(cmd);
+
+        EXPECT_EQ(words(*data), ascending_times(2));
+    }
+
+    TEST_F(ComputePressTest, PushSetLastLeavesEarlierSetsOnPooledDescriptors)
+    {
+        const auto id = press().create_pipeline(shader_from(k_two_set_add_source),
+            two_single_binding_sets(), 0, std::optional<size_t> { 1 });
+        ASSERT_NE(id, INVALID_COMPUTE_PIPELINE);
+        const auto sets = press().allocate_pipeline_descriptors(id);
+        ASSERT_EQ(sets.size(), 1U);
+        const auto data = storage_buffer();
+        const auto extra = storage_buffer();
+        fill_ascending(*data);
+        fill_ascending(*extra);
+        foundry().update_descriptor_buffer(sets[0], 0, vk::DescriptorType::eStorageBuffer,
+            data->buffer(), 0, k_bytes);
+
+        const auto cmd = foundry().begin_commands(CommandType::COMPUTE);
+        press().bind_pipeline(cmd, id);
+        press().bind_descriptor_sets(cmd, id, sets);
+        press().push_descriptors(cmd, id, { storage_write(0, *extra) });
+        press().dispatch(cmd, 1, 1, 1);
+        foundry().submit_and_wait(cmd);
+
+        EXPECT_EQ(words(*data), ascending_times(2));
+    }
+
+    TEST_F(ComputePressTest, PushSetMustBeTheFirstOrLastOfTheSets)
+    {
+        const std::vector<std::vector<DescriptorBindingInfo>> three_sets(3,
+            std::vector<DescriptorBindingInfo> {
+                DescriptorBindingInfo { .set = 0, .binding = 0, .type = vk::DescriptorType::eStorageBuffer } });
+        const ShaderID shader = compute_shader();
+
+        EXPECT_EQ(press().create_pipeline(shader, three_sets, 0, std::optional<size_t> { 1 }),
+            INVALID_COMPUTE_PIPELINE);
+        EXPECT_EQ(press().create_pipeline(shader, three_sets, 0, std::optional<size_t> { 3 }),
+            INVALID_COMPUTE_PIPELINE);
+    }
+
+    TEST_F(ComputePressTest, PushingWithoutAPushSetOrWithUnknownIdsIsIgnored)
+    {
+        const auto plain = press().create_pipeline(compute_shader(), one_storage_binding(), sizeof(uint32_t));
+        const auto pushed = press().create_pipeline(shader_from(k_scale_copy_source), in_out_bindings(),
+            sizeof(uint32_t), std::optional<size_t> { 0 });
+        ASSERT_NE(plain, INVALID_COMPUTE_PIPELINE);
+        ASSERT_NE(pushed, INVALID_COMPUTE_PIPELINE);
+        const auto buffer = storage_buffer();
+
+        const auto cmd = foundry().begin_commands(CommandType::COMPUTE);
+        EXPECT_NO_THROW(press().push_descriptors(cmd, plain, { storage_write(0, *buffer) }));
+        EXPECT_NO_THROW(press().push_descriptors(cmd, 9999, { storage_write(0, *buffer) }));
+        EXPECT_NO_THROW(press().push_descriptors(9999, pushed, { storage_write(0, *buffer) }));
+        foundry().submit_and_wait(cmd);
     }
 
     TEST_F(ComputePressTest, IndirectDispatchReadsItsGroupCountFromABuffer)

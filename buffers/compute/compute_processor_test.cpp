@@ -155,7 +155,7 @@ void main() {
 
         static bool pipeline_alive(ComputePipelineID id)
         {
-            return !Portal::Graphics::get_compute_press().allocate_pipeline_descriptors(id).empty();
+            return Portal::Graphics::get_compute_press().has_pipeline(id);
         }
 
         std::vector<std::shared_ptr<VKBuffer>> buffers;
