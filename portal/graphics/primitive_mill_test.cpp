@@ -539,7 +539,7 @@ namespace {
         EXPECT_EQ(dst, src);
     }
 
-    TEST(MillOnHostTest, LineFillIsIgnoredBySpansThatAreNotTriangles)
+    TEST(MillOnHostTest, LineFillKeepsTheRibbonGeometryOfLineSpansAndOnlyMarksTheUv)
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(2, 0, 1) });
         std::vector<uint8_t> plain;
@@ -550,7 +550,13 @@ namespace {
         Portal::Graphics::mill_on_host(src, vertex_layout(2),
             Runs { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::LINE } }, plane_spec(), {}, filled);
 
-        EXPECT_EQ(filled, plain);
+        ASSERT_EQ(filled.size(), plain.size());
+        for (size_t i = 0; i < 6; ++i) {
+            const auto a = at(plain, i);
+            const auto b = at(filled, i);
+            EXPECT_TRUE(position_is(b, a.position[0], a.position[1], a.position[2])) << "vertex " << i;
+            EXPECT_GE(b.uv[0], 20.0F) << "vertex " << i;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -913,6 +919,247 @@ namespace {
         for (size_t i = 0; i < 3; ++i) {
             EXPECT_TRUE(uv_is(at(data, i), 0.125F, 0.875F)) << "vertex " << i;
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Line wire and point emulation, instance billboards
+    // ------------------------------------------------------------------
+
+    struct TangentVertex {
+        float position[3];
+        float color[3];
+        float size;
+        float uv[2];
+        float tangent[4];
+    };
+
+    static_assert(sizeof(TangentVertex) == 52);
+
+    constexpr std::array<float, 4> k_source_tangent { 0.5F, 0.25F, 0.125F, 1.0F };
+
+    VertexLayout tangent_layout(uint32_t count)
+    {
+        auto layout = vertex_layout(count);
+        layout.stride_bytes = sizeof(TangentVertex);
+        layout.attributes.push_back(VertexAttributeLayout {
+            .component_modality = DataModality::VERTEX_TANGENTS_4D, .offset_in_vertex = 36, .name = "tangent" });
+        return layout;
+    }
+
+    std::vector<uint8_t> tangent_bytes(std::initializer_list<std::array<float, 3>> positions)
+    {
+        std::vector<uint8_t> out;
+        for (const auto& position : positions) {
+            TangentVertex v {};
+            std::memcpy(v.position, position.data(), sizeof(v.position));
+            v.size = 1.0F;
+            v.uv[0] = 0.125F;
+            v.uv[1] = 0.875F;
+            std::memcpy(v.tangent, k_source_tangent.data(), sizeof(v.tangent));
+            const auto* raw = reinterpret_cast<const uint8_t*>(&v);
+            out.insert(out.end(), raw, raw + sizeof(v));
+        }
+        return out;
+    }
+
+    TangentVertex tangent_at(const std::vector<uint8_t>& data, size_t index)
+    {
+        TangentVertex v {};
+        std::memcpy(&v, data.data() + index * sizeof(TangentVertex), sizeof(TangentVertex));
+        return v;
+    }
+
+    MillSpec billboard_spec()
+    {
+        auto spec = plane_spec();
+        spec.ribbon = MillSpec::Ribbon::WorldFacing;
+        spec.billboard_instances = true;
+        return spec;
+    }
+
+    ::testing::AssertionResult tangent_is(const TangentVertex& v, float x, float y, float z, float w)
+    {
+        if (std::abs(v.tangent[0] - x) < 1e-4F && std::abs(v.tangent[1] - y) < 1e-4F
+            && std::abs(v.tangent[2] - z) < 1e-4F && std::abs(v.tangent[3] - w) < 1e-4F) {
+            return ::testing::AssertionSuccess();
+        }
+        return ::testing::AssertionFailure() << "tangent (" << v.tangent[0] << ", " << v.tangent[1] << ", "
+                                             << v.tangent[2] << ", " << v.tangent[3] << ") expected (" << x << ", "
+                                             << y << ", " << z << ", " << w << ")";
+    }
+
+    TEST(MillOnHostTest, LineRibbonInLineFillCarriesTheWireMarkerPerTriangle)
+    {
+        const auto src = bytes_of({ vertex(0, 0, 0), vertex(4, 0, 1) });
+        std::vector<uint8_t> dst;
+        const Runs runs { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::LINE } };
+        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(2), runs, plane_spec(), {}, dst);
+
+        ASSERT_EQ(result.vertex_count, 6U);
+        const std::array<std::pair<float, float>, 3> corners { { { 21.0F, 0.0F }, { 20.0F, 1.0F }, { 20.0F, 0.0F } } };
+        for (size_t i = 0; i < 6; ++i) {
+            EXPECT_TRUE(uv_is(at(dst, i), corners[i % 3].first, corners[i % 3].second)) << "vertex " << i;
+        }
+    }
+
+    TEST(MillOnHostTest, LineRibbonInFillKeepsItsRibbonUv)
+    {
+        const auto src = bytes_of({ vertex(0, 0, 0), vertex(4, 0, 1) });
+        std::vector<uint8_t> dst;
+        const Runs runs { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::FILL } };
+        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(2), runs, plane_spec(), {}, dst);
+
+        ASSERT_EQ(result.vertex_count, 6U);
+        for (size_t i = 0; i < 6; ++i) {
+            EXPECT_LT(at(dst, i).uv[0], 2.0F) << "vertex " << i;
+        }
+    }
+
+    TEST(MillOnHostTest, LineRunInPointFillBecomesOnePointQuadPerVertex)
+    {
+        const auto src = bytes_of({ vertex(0, 0, 0), vertex(4, 0, 1) });
+        std::vector<uint8_t> dst;
+        const Runs runs { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::POINT } };
+        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(2), runs, plane_spec(), {}, dst);
+
+        ASSERT_EQ(result.vertex_count, 12U);
+        for (size_t i = 0; i < 12; ++i) {
+            const auto v = at(dst, i);
+            EXPECT_GE(v.uv[0], 10.0F) << "vertex " << i;
+            EXPECT_LT(v.uv[0], 20.0F) << "vertex " << i;
+        }
+    }
+
+    TEST(MillOnHostTest, BillboardPointKeepsTheCenterAndStoresTheCornerOffsetInTheTangent)
+    {
+        const auto src = tangent_bytes({ { 3.0F, 2.0F, 0.0F } });
+        std::vector<uint8_t> dst;
+        const Runs runs { { PrimitiveTopology::POINT_LIST, 0, 1 } };
+        const auto result = Portal::Graphics::mill_on_host(
+            src, tangent_layout(1), runs, billboard_spec(), {}, dst);
+
+        ASSERT_EQ(result.vertex_count, 6U);
+        const std::array<std::pair<float, float>, 6> offsets { {
+            { -1.0F, -1.0F }, { 1.0F, -1.0F }, { 1.0F, 1.0F },
+            { -1.0F, -1.0F }, { 1.0F, 1.0F }, { -1.0F, 1.0F } } };
+        for (size_t i = 0; i < 6; ++i) {
+            const auto v = tangent_at(dst, i);
+            EXPECT_NEAR(v.position[0], 3.0F, 1e-4F) << "vertex " << i;
+            EXPECT_NEAR(v.position[1], 2.0F, 1e-4F) << "vertex " << i;
+            EXPECT_TRUE(tangent_is(v, offsets[i].first, offsets[i].second, 0.0F, 0.0F)) << "vertex " << i;
+            EXPECT_NEAR(v.uv[0], 10.0F + (offsets[i].first + 1.0F) * 0.5F, 1e-4F) << "vertex " << i;
+            EXPECT_NEAR(v.uv[1], 10.0F + (offsets[i].second + 1.0F) * 0.5F, 1e-4F) << "vertex " << i;
+        }
+    }
+
+    TEST(MillOnHostTest, BillboardRibbonKeepsItsEndpointsAndStoresDirectionAndSignedHalfWidth)
+    {
+        const auto src = tangent_bytes({ { 0.0F, 0.0F, 0.0F }, { 4.0F, 0.0F, 0.0F } });
+        std::vector<uint8_t> dst;
+        const Runs runs { { PrimitiveTopology::LINE_LIST, 0, 2 } };
+        const auto result = Portal::Graphics::mill_on_host(
+            src, tangent_layout(2), runs, billboard_spec(), {}, dst);
+
+        ASSERT_EQ(result.vertex_count, 6U);
+        const std::array<float, 6> x { 0.0F, 0.0F, 4.0F, 0.0F, 4.0F, 4.0F };
+        const std::array<float, 6> half_width { -1.0F, 1.0F, 1.0F, -1.0F, 1.0F, -1.0F };
+        for (size_t i = 0; i < 6; ++i) {
+            const auto v = tangent_at(dst, i);
+            EXPECT_TRUE(position_is(*reinterpret_cast<const Vertex*>(&v), x[i], 0.0F)) << "vertex " << i;
+            EXPECT_TRUE(tangent_is(v, 1.0F, 0.0F, 0.0F, half_width[i])) << "vertex " << i;
+        }
+    }
+
+    TEST(MillOnHostTest, BillboardDegenerateRibbonSegmentClearsTheTangent)
+    {
+        const auto src = tangent_bytes({ { 1.0F, 1.0F, 0.0F }, { 1.0F, 1.0F, 0.0F } });
+        std::vector<uint8_t> dst;
+        const Runs runs { { PrimitiveTopology::LINE_LIST, 0, 2 } };
+        Portal::Graphics::mill_on_host(src, tangent_layout(2), runs, billboard_spec(), {}, dst);
+
+        for (size_t i = 0; i < 6; ++i)
+            EXPECT_TRUE(tangent_is(tangent_at(dst, i), 0.0F, 0.0F, 0.0F, 0.0F)) << "vertex " << i;
+    }
+
+    TEST(MillOnHostTest, BillboardLeavesTrianglePassthroughTangentsAlone)
+    {
+        const auto src = tangent_bytes({ { 0.0F, 0.0F, 0.0F }, { 4.0F, 0.0F, 0.0F }, { 0.0F, 4.0F, 0.0F } });
+        std::vector<uint8_t> dst;
+        const Runs runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } };
+        const auto result = Portal::Graphics::mill_on_host(
+            src, tangent_layout(3), runs, billboard_spec(), {}, dst);
+
+        ASSERT_EQ(result.vertex_count, 3U);
+        for (size_t i = 0; i < 3; ++i) {
+            EXPECT_TRUE(tangent_is(tangent_at(dst, i), k_source_tangent[0], k_source_tangent[1],
+                k_source_tangent[2], k_source_tangent[3]))
+                << "vertex " << i;
+        }
+    }
+
+    TEST(MillOnHostTest, WithoutTheBillboardFlagPointQuadsAreExpandedAndTheTangentIsKept)
+    {
+        auto spec = billboard_spec();
+        spec.billboard_instances = false;
+        spec.ribbon = MillSpec::Ribbon::WorldPlane;
+        const auto src = tangent_bytes({ { 3.0F, 2.0F, 0.0F } });
+        std::vector<uint8_t> dst;
+        const Runs runs { { PrimitiveTopology::POINT_LIST, 0, 1 } };
+        Portal::Graphics::mill_on_host(src, tangent_layout(1), runs, spec, {}, dst);
+
+        EXPECT_NEAR(tangent_at(dst, 0).position[0], 2.0F, 1e-4F);
+        EXPECT_NEAR(tangent_at(dst, 0).position[1], 1.0F, 1e-4F);
+        EXPECT_NEAR(tangent_at(dst, 2).position[0], 4.0F, 1e-4F);
+        EXPECT_NEAR(tangent_at(dst, 2).position[1], 3.0F, 1e-4F);
+        EXPECT_TRUE(tangent_is(tangent_at(dst, 1), k_source_tangent[0], k_source_tangent[1],
+            k_source_tangent[2], k_source_tangent[3]));
+    }
+
+    TEST(MillOnHostTest, WorldPlaneIgnoresTheBillboardFlag)
+    {
+        auto spec = billboard_spec();
+        spec.ribbon = MillSpec::Ribbon::WorldPlane;
+        const auto src = tangent_bytes({ { 3.0F, 2.0F, 0.0F } });
+        std::vector<uint8_t> dst;
+        const Runs runs { { PrimitiveTopology::POINT_LIST, 0, 1 } };
+        Portal::Graphics::mill_on_host(src, tangent_layout(1), runs, spec, {}, dst);
+
+        EXPECT_NEAR(tangent_at(dst, 0).position[0], 2.0F, 1e-4F);
+        EXPECT_TRUE(tangent_is(tangent_at(dst, 0), k_source_tangent[0], k_source_tangent[1],
+            k_source_tangent[2], k_source_tangent[3]));
+    }
+
+    TEST(MillOnHostTest, BillboardOnALayoutWithoutATangentFallsBackToExpandedGeometry)
+    {
+        auto spec = billboard_spec();
+        spec.ribbon = MillSpec::Ribbon::WorldFacing;
+        const auto src = bytes_of({ vertex(3, 2, 0) });
+        std::vector<uint8_t> dst;
+        const Runs runs { { PrimitiveTopology::POINT_LIST, 0, 1 } };
+        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(1), runs, spec, {}, dst);
+
+        ASSERT_EQ(result.vertex_count, 6U);
+        EXPECT_FALSE(position_is(at(dst, 0), 3.0F, 2.0F));
+    }
+
+    TEST_F(PrimitiveMillDeviceTest, BillboardPointsAndRibbonsMatchTheHostPath)
+    {
+        const auto src = tangent_bytes({ { 3.0F, 2.0F, 0.0F }, { 7.0F, 2.0F, 0.0F }, { 0.0F, 0.0F, 0.0F }, { 4.0F, 0.0F, 0.0F } });
+        auto buffer = std::make_shared<VKBuffer>(src.size(), VKBuffer::Usage::HOST_STORAGE, DataModality::VERTEX_POSITIONS_3D);
+        service().initialize_buffer(buffer);
+        std::memcpy(buffer->get_mapped_ptr(), src.data(), src.size());
+        buffer->set_vertex_layout(tangent_layout(4));
+
+        const Runs runs { { PrimitiveTopology::POINT_LIST, 0, 2 }, { PrimitiveTopology::LINE_LIST, 2, 2 } };
+        PrimitiveMill mill(billboard_spec());
+        const uint32_t milled = mill.mill(buffer, runs, MillView {});
+        ASSERT_EQ(milled, 18U);
+
+        std::vector<uint8_t> host;
+        Portal::Graphics::mill_on_host(src, tangent_layout(4), runs, billboard_spec(), MillView {}, host);
+
+        const auto device = read_back(mill.output(), static_cast<size_t>(milled) * sizeof(TangentVertex));
+        EXPECT_EQ(device, host);
     }
 
 } // namespace
