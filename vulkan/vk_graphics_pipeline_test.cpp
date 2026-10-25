@@ -1,5 +1,11 @@
 #include "gtest/gtest.h"
 
+#include <array>
+#include <cstdint>
+#include <memory>
+#include <unordered_map>
+#include <vector>
+
 #include "../support/vulkan_test_support.hpp"
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKGraphicsPipeline.hpp"
@@ -28,6 +34,14 @@ void main()
 layout(location = 0) out vec4 color;
 layout(push_constant) uniform Params { vec4 value; } params;
 void main() { color = params.value; }
+)";
+
+    constexpr const char* k_specialized_fragment = R"(#version 450
+layout(constant_id = 3) const uint selected = 2u;
+layout(constant_id = 4) const uint enabled = 0u;
+layout(location = 0) out vec4 color;
+void main() { color = vec4(float(enabled == 7u && selected == 0u),
+    float(enabled == 7u && selected == 1u), float(enabled != 7u), 1.0); }
 )";
 
     constexpr const char* k_compute_source = R"(#version 450
@@ -72,11 +86,13 @@ void main() { }
             return config;
         }
 
-        std::shared_ptr<VKGraphicsPipeline> create(const GraphicsPipelineConfig& config, bool expect_success = true)
+        std::shared_ptr<VKGraphicsPipeline> create(const GraphicsPipelineConfig& config,
+            bool expect_success = true,
+            const std::unordered_map<uint32_t, uint32_t>& specialization_constants = {})
         {
             auto pipeline = std::make_shared<VKGraphicsPipeline>();
             pipelines.push_back(pipeline);
-            const bool created = pipeline->create(device(), config);
+            const bool created = pipeline->create(device(), config, specialization_constants);
             EXPECT_EQ(created, expect_success);
             return pipeline;
         }
@@ -251,6 +267,61 @@ TEST_F(VKGraphicsPipelineTest, DrawsAFullTriangleIntoAnOffscreenImage)
         ASSERT_EQ(pixels[i + 3], 255U) << "pixel " << i / 4;
     }
     resources.cleanup_image(image);
+}
+
+TEST_F(VKGraphicsPipelineTest, PerPipelineSpecializationPreservesExistingShaderConstants)
+{
+    auto config = color_config();
+    config.fragment_shader = compile(k_specialized_fragment, vk::ShaderStageFlagBits::eFragment);
+    ASSERT_NE(config.fragment_shader, nullptr);
+    config.fragment_shader->set_specialization_constants({ { 4U, 7U } });
+    config.push_constant_ranges.clear();
+
+    auto red = create(config, true, { { 3U, 0U } });
+    auto green = create(config, true, { { 3U, 1U } });
+    ASSERT_TRUE(red->is_valid());
+    ASSERT_TRUE(green->is_valid());
+
+    auto& resources = backend().get_resource_manager();
+    const auto draw_and_check = [&](const std::shared_ptr<VKGraphicsPipeline>& pipeline,
+                                    const std::array<uint8_t, 4>& expected) {
+        auto image = std::make_shared<VKImage>(k_extent, k_extent, 1, k_color_format, VKImage::Usage::RENDER_TARGET);
+        resources.initialize_image(image);
+        resources.transition_image_layout(image->get_image(),
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
+
+        resources.execute_immediate_commands([&](vk::CommandBuffer cmd) {
+            vk::RenderingAttachmentInfo attachment {};
+            attachment.imageView = image->get_image_view();
+            attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            attachment.loadOp = vk::AttachmentLoadOp::eClear;
+            attachment.storeOp = vk::AttachmentStoreOp::eStore;
+            attachment.clearValue.color = vk::ClearColorValue { std::array<float, 4> { 0.0F, 0.0F, 0.0F, 0.0F } };
+
+            vk::RenderingInfo info {};
+            info.renderArea = vk::Rect2D { { 0, 0 }, { k_extent, k_extent } };
+            info.layerCount = 1;
+            info.colorAttachmentCount = 1;
+            info.pColorAttachments = &attachment;
+
+            cmd.beginRendering(info);
+            pipeline->bind(cmd);
+            pipeline->set_viewport(cmd, vk::Viewport { 0.0F, 0.0F, static_cast<float>(k_extent), static_cast<float>(k_extent), 0.0F, 1.0F });
+            pipeline->set_scissor(cmd, vk::Rect2D { { 0, 0 }, { k_extent, k_extent } });
+            pipeline->draw(cmd, 3);
+            cmd.endRendering();
+        });
+        image->set_current_layout(vk::ImageLayout::eColorAttachmentOptimal);
+
+        std::vector<uint8_t> pixels(static_cast<size_t>(k_extent) * k_extent * 4, 0);
+        resources.download_image_data(image, pixels.data(), pixels.size());
+        const std::array<uint8_t, 4> actual { pixels[0], pixels[1], pixels[2], pixels[3] };
+        resources.cleanup_image(image);
+        EXPECT_EQ(actual, expected);
+    };
+
+    draw_and_check(red, { 255, 0, 0, 255 });
+    draw_and_check(green, { 0, 255, 0, 255 });
 }
 
 }

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -53,6 +54,12 @@ void main()
 layout(location = 0) out vec4 color;
 layout(push_constant) uniform Params { vec4 value; } params;
 void main() { color = params.value; }
+)";
+
+    constexpr std::string_view k_specialized_fragment_source = R"(#version 450
+layout(constant_id = 3) const uint selected = 2u;
+layout(location = 0) out vec4 color;
+void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.0); }
 )";
 
     RenderFlow& flow()
@@ -194,6 +201,65 @@ void main() { color = params.value; }
         EXPECT_NE(first, INVALID_RENDER_PIPELINE);
         EXPECT_NE(second, INVALID_RENDER_PIPELINE);
         EXPECT_NE(first, second);
+    }
+
+    TEST_F(RenderFlowTest, SpecializationValuesProduceDistinctResultsFromOneShaderModule)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        RenderPipelineConfig config = basic_config();
+        config.fragment_shader = foundry().load_shader(
+            std::string(k_specialized_fragment_source), ShaderStage::FRAGMENT);
+        config.push_constant_size = 0;
+        ASSERT_NE(config.fragment_shader, INVALID_SHADER);
+
+        const auto red = flow().create_pipeline(config, { k_color_format },
+            vk::Format::eUndefined, std::nullopt, { { 3U, 0U } });
+        const auto green = flow().create_pipeline(config, { k_color_format },
+            vk::Format::eUndefined, std::nullopt, { { 3U, 1U } });
+        ASSERT_NE(red, INVALID_RENDER_PIPELINE);
+        ASSERT_NE(green, INVALID_RENDER_PIPELINE);
+
+        const auto draw_and_check = [&](auto pipeline, const std::array<uint8_t, 4>& expected) {
+            const auto target = loom().create_render_target(k_extent, k_extent, ImageFormat::RGBA8);
+            ASSERT_NE(target, nullptr);
+            const auto id = foundry().begin_commands(Portal::Graphics::ShaderFoundry::CommandBufferType::GRAPHICS);
+            auto cmd = foundry().get_command_buffer(id);
+
+            vk::RenderingAttachmentInfo attachment {};
+            attachment.imageView = target->get_image_view();
+            attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            attachment.loadOp = vk::AttachmentLoadOp::eClear;
+            attachment.storeOp = vk::AttachmentStoreOp::eStore;
+            attachment.clearValue.color = vk::ClearColorValue { std::array<float, 4> { 0.0F, 0.0F, 0.0F, 0.0F } };
+
+            vk::RenderingInfo info {};
+            info.renderArea = vk::Rect2D { { 0, 0 }, { k_extent, k_extent } };
+            info.layerCount = 1;
+            info.colorAttachmentCount = 1;
+            info.pColorAttachments = &attachment;
+
+            cmd.beginRendering(info);
+            flow().bind_pipeline(id, pipeline);
+            cmd.setViewport(0, vk::Viewport { 0.0F, 0.0F, static_cast<float>(k_extent), static_cast<float>(k_extent), 0.0F, 1.0F });
+            cmd.setScissor(0, vk::Rect2D { { 0, 0 }, { k_extent, k_extent } });
+            flow().draw(id, 3);
+            cmd.endRendering();
+            foundry().submit_and_wait(id);
+
+            const auto downloaded = loom().download_image(target);
+            ASSERT_TRUE(downloaded.has_value());
+            ASSERT_EQ(downloaded->byte_size(), static_cast<size_t>(k_extent) * k_extent * sizeof(uint32_t));
+            const auto* pixels = static_cast<const uint8_t*>(downloaded->data());
+            for (size_t i = 0; i < static_cast<size_t>(k_extent) * k_extent; ++i) {
+                const std::array<uint8_t, 4> actual {
+                    pixels[i * 4], pixels[i * 4 + 1], pixels[i * 4 + 2], pixels[i * 4 + 3]
+                };
+                ASSERT_EQ(actual, expected) << "pixel " << i;
+            }
+        };
+
+        draw_and_check(red, { 255, 0, 0, 255 });
+        draw_and_check(green, { 0, 255, 0, 255 });
     }
 
     TEST_F(RenderFlowTest, ViewTransformLayoutExistsForAPipelineAndNotForAnUnknownId)

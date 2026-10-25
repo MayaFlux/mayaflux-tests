@@ -1,8 +1,11 @@
 #include "gtest/gtest.h"
 
 #include <array>
+#include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,11 +17,14 @@
 #include "MayaFlux/Buffers/Root/RootGraphicsBuffer.hpp"
 #include "MayaFlux/Buffers/Shaders/RenderProcessor.hpp"
 #include "MayaFlux/Buffers/VKBuffer.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexLayout.hpp"
 #include "MayaFlux/Kinesis/Viewport/ViewTransform.hpp"
 #include "MayaFlux/Portal/Graphics/RenderFlow.hpp"
+#include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
+#include "MayaFlux/Registry/Service/DisplayService.hpp"
 
 namespace MayaFlux::Test {
 namespace {
@@ -50,6 +56,12 @@ void main() {
     constexpr const char* k_red_fragment = R"(#version 460
 layout(location = 0) out vec4 color;
 void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
+)";
+
+    constexpr const char* k_specialized_fragment = R"(#version 460
+layout(constant_id = 0) const bool mill_active = true;
+layout(location = 0) out vec4 color;
+void main() { color = vec4(float(!mill_active), float(mill_active), 0.0, 1.0); }
 )";
 
     constexpr const char* k_storage_fragment = R"(#version 460
@@ -103,6 +115,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
             }
             child.reset();
 
+            Portal::Graphics::get_texture_manager().shutdown();
             if (flow_ready)
                 Portal::Graphics::get_render_flow().shutdown();
             if (foundry_ready)
@@ -119,13 +132,13 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         }
 
         void prepare_draw(const char* vertex_source, bool with_layout = true, size_t push_constant_size = 0,
-            const char* fragment_source = k_red_fragment)
+            const char* fragment_source = k_red_fragment, size_t buffer_size = 64)
         {
             window = make_window();
             ASSERT_NE(window, nullptr);
             ASSERT_TRUE(backend().register_window(window));
 
-            child = std::make_shared<VKBuffer>(64, VKBuffer::Usage::VERTEX,
+            child = std::make_shared<VKBuffer>(buffer_size, VKBuffer::Usage::VERTEX,
                 Kakshya::DataModality::VERTEX_POSITIONS_3D);
             auto* service = Registry::BackendRegistry::instance()
                                 .get_service<Registry::Service::BufferService>();
@@ -222,6 +235,105 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         EXPECT_EQ(render->get_render_pipeline_id(), id);
         EXPECT_EQ(child->get_render_pipelines().size(), 1U);
         EXPECT_EQ(root->get_renderable_buffers().size(), 1U);
+    }
+
+    TEST_F(RenderProcessorPresentationTest, TriangulationStateSpecializesEachCreatedPipeline)
+    {
+        prepare_draw(k_plain_vertex, true, 0, k_specialized_fragment, 3 * 68);
+        auto layout = Kakshya::VertexLayout::for_points();
+        layout.vertex_count = 3;
+        child->set_vertex_layout(layout);
+        render->set_cull_mode(Portal::Graphics::CullMode::NONE);
+        auto* display = Registry::BackendRegistry::instance()
+                            .get_service<Registry::Service::DisplayService>();
+        ASSERT_NE(display, nullptr);
+
+        const auto color_format = static_cast<vk::Format>(display->get_swapchain_format(window));
+        Kakshya::ImageFormat image_format = Kakshya::ImageFormat::RGBA8;
+        bool bgra = false;
+        switch (color_format) {
+        case vk::Format::eR8G8B8A8Unorm:
+            image_format = Kakshya::ImageFormat::RGBA8;
+            break;
+        case vk::Format::eR8G8B8A8Srgb:
+            image_format = Kakshya::ImageFormat::RGBA8_SRGB;
+            break;
+        case vk::Format::eB8G8R8A8Unorm:
+            image_format = Kakshya::ImageFormat::BGRA8;
+            bgra = true;
+            break;
+        case vk::Format::eB8G8R8A8Srgb:
+            image_format = Kakshya::ImageFormat::BGRA8_SRGB;
+            bgra = true;
+            break;
+        default:
+            GTEST_SKIP() << "Unsupported swapchain format for specialization readback";
+        }
+
+        auto borrowed_backend = std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) {});
+        auto& loom = Portal::Graphics::get_texture_manager();
+        ASSERT_TRUE(loom.initialize(borrowed_backend));
+
+        const auto draw_pixel = [&](RenderPipelineID pipeline) -> std::optional<std::array<uint8_t, 4>> {
+            constexpr uint32_t extent = 8;
+            const auto target = loom.create_render_target(extent, extent, image_format);
+            if (!target)
+                return std::nullopt;
+
+            auto& foundry = Portal::Graphics::get_shader_foundry();
+            auto& flow = Portal::Graphics::get_render_flow();
+            const auto id = foundry.begin_commands(Portal::Graphics::ShaderFoundry::CommandBufferType::GRAPHICS);
+            auto cmd = foundry.get_command_buffer(id);
+
+            vk::RenderingAttachmentInfo attachment {};
+            attachment.imageView = target->get_image_view();
+            attachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            attachment.loadOp = vk::AttachmentLoadOp::eClear;
+            attachment.storeOp = vk::AttachmentStoreOp::eStore;
+            attachment.clearValue.color = vk::ClearColorValue { std::array<float, 4> { 0.0F, 0.0F, 0.0F, 0.0F } };
+
+            vk::RenderingInfo info {};
+            info.renderArea = vk::Rect2D { { 0, 0 }, { extent, extent } };
+            info.layerCount = 1;
+            info.colorAttachmentCount = 1;
+            info.pColorAttachments = &attachment;
+
+            cmd.beginRendering(info);
+            flow.bind_pipeline(id, pipeline);
+            cmd.setViewport(0, vk::Viewport { 0.0F, 0.0F, static_cast<float>(extent), static_cast<float>(extent), 0.0F, 1.0F });
+            cmd.setScissor(0, vk::Rect2D { { 0, 0 }, { extent, extent } });
+            flow.draw(id, 3);
+            cmd.endRendering();
+            foundry.submit_and_wait(id);
+
+            const auto downloaded = loom.download_image(target);
+            if (!downloaded || downloaded->byte_size() < 4)
+                return std::nullopt;
+            std::array<uint8_t, 4> pixel {};
+            std::memcpy(pixel.data(), downloaded->data(), pixel.size());
+            return pixel;
+        };
+
+        tick();
+        ASSERT_TRUE(render->is_pipeline_ready());
+        const auto native = render->get_render_pipeline_id();
+        const auto native_pixel = draw_pixel(native);
+        ASSERT_TRUE(native_pixel.has_value());
+        const std::array<uint8_t, 4> expected_native {
+            bgra ? uint8_t { 0 } : uint8_t { 255 }, 0,
+            bgra ? uint8_t { 255 } : uint8_t { 0 }, 255
+        };
+        EXPECT_EQ(*native_pixel, expected_native);
+
+        render->set_vertex_range(0, 0);
+        render->set_triangulate(true);
+        tick();
+        ASSERT_TRUE(render->is_pipeline_ready());
+        const auto milled = render->get_render_pipeline_id();
+        ASSERT_NE(milled, native);
+        const auto milled_pixel = draw_pixel(milled);
+        ASSERT_TRUE(milled_pixel.has_value());
+        EXPECT_EQ(*milled_pixel, (std::array<uint8_t, 4> { 0, 255, 0, 255 }));
     }
 
     TEST_F(RenderProcessorPresentationTest, ReplacingThePipelineLeavesOneAssociationAndRetiresTheOldPipeline)
