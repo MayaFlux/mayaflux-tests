@@ -123,7 +123,7 @@ namespace {
         const auto verts = uploaded(node);
         ASSERT_FALSE(verts.empty());
         for (const auto& v : verts) {
-            EXPECT_EQ(v.color, glm::vec3(1.F));
+            EXPECT_EQ(v.color, glm::vec4(glm::vec3(1.F), 1.F));
             EXPECT_FLOAT_EQ(v.thickness, 1.F);
         }
     }
@@ -209,14 +209,14 @@ namespace {
     TEST_F(GlyphGeometryNodeTest, SetColourAndThicknessApplyOnTheNextFrame)
     {
         GlyphGeometryNode node(face, k_pixel_size, "I");
-        node.set_color({ 0.25F, 0.5F, 0.75F });
+        node.set_color({ 0.25F, 0.5F, 0.75F, 1.0F });
         node.set_thickness(3.5F);
         node.compute_frame();
 
         const auto verts = uploaded(node);
         ASSERT_FALSE(verts.empty());
         for (const auto& v : verts) {
-            EXPECT_EQ(v.color, glm::vec3(0.25F, 0.5F, 0.75F));
+            EXPECT_EQ(v.color, glm::vec4(glm::vec3(0.25F, 0.5F, 0.75F), 1.F));
             EXPECT_FLOAT_EQ(v.thickness, 3.5F);
         }
     }

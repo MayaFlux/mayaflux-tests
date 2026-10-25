@@ -45,11 +45,11 @@ namespace {
     {
         MeshVertex result;
         result.position = position;
-        result.color = color;
+        result.color = glm::vec4(color, 1.0F);
         result.weight = weight;
         result.uv = uv;
         result.normal = normal;
-        result.tangent = tangent;
+        result.tangent = glm::vec4(tangent, 1.0F);
         return result;
     }
 

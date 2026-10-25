@@ -253,7 +253,7 @@ TEST_F(FormaBufferDeviceTest, TypedSingleVertexAndContiguousRangePreserveAllFiel
 
     const Kakshya::PointVertex point {
         .position = { -0.75F, 0.25F, 0.5F },
-        .color = { 0.1F, 0.4F, 0.9F },
+        .color = { 0.1F, 0.4F, 0.9F, 1.0F },
         .size = 17.0F,
         .uv = { 0.2F, 0.8F }
     };
@@ -270,7 +270,7 @@ TEST_F(FormaBufferDeviceTest, TypedSingleVertexAndContiguousRangePreserveAllFiel
         point,
         Kakshya::PointVertex {
             .position = { 0.5F, -0.5F, 0.0F },
-            .color = { 0.9F, 0.2F, 0.3F },
+            .color = { 0.9F, 0.2F, 0.3F, 1.0F },
             .size = 4.0F,
             .uv = { 0.75F, 0.25F }
         }
@@ -962,7 +962,7 @@ protected:
     static std::vector<Kakshya::MeshVertex> left_half_as_list(glm::vec3 color)
     {
         auto vertex = [&](float x, float y) {
-            return Kakshya::MeshVertex { .position = { x, y, 0.0F }, .color = color };
+            return Kakshya::MeshVertex { .position = { x, y, 0.0F }, .color = glm::vec4(color, 1.0F) };
         };
         return { vertex(-1.0F, -1.0F), vertex(-1.0F, 1.0F), vertex(0.0F, -1.0F),
             vertex(0.0F, -1.0F), vertex(-1.0F, 1.0F), vertex(0.0F, 1.0F) };
@@ -971,7 +971,7 @@ protected:
     static std::vector<Kakshya::MeshVertex> right_half_as_strip(glm::vec3 color)
     {
         auto vertex = [&](float x, float y) {
-            return Kakshya::MeshVertex { .position = { x, y, 0.0F }, .color = color };
+            return Kakshya::MeshVertex { .position = { x, y, 0.0F }, .color = glm::vec4(color, 1.0F) };
         };
         return { vertex(0.0F, -1.0F), vertex(0.0F, 1.0F), vertex(1.0F, -1.0F), vertex(1.0F, 1.0F) };
     }

@@ -681,7 +681,7 @@ namespace {
         op.apply_one_to_one("mass", index_source(2));
         op.apply_global_impulse({ 1.0F, 0.0F, 0.0F });
 
-        EXPECT_TRUE(near_vec(op.extract_vertices()[0].color, glm::vec3(1.0F)));
+        EXPECT_TRUE(near_vec(op.extract_vertices()[0].color, glm::vec4(glm::vec3(1.0F), 1.F)));
         EXPECT_NEAR(op.extract_vertex_velocities()[0].x, 1.0F, k_eps);
     }
 

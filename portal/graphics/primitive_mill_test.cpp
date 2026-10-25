@@ -398,7 +398,7 @@ namespace {
         EXPECT_EQ(VertexLayoutTranslator::get_modality_size_bytes(DataModality::TEXTURE_COORDS_2D), 8U);
         EXPECT_EQ(VertexLayoutTranslator::get_modality_size_bytes(DataModality::SCALAR_F32), 4U);
         EXPECT_EQ(VertexLayoutTranslator::get_modality_size_bytes(DataModality::AUDIO_1D), 8U);
-        EXPECT_EQ(VertexLayoutTranslator::get_modality_size_bytes(DataModality::VERTICES_3D), 60U);
+        EXPECT_EQ(VertexLayoutTranslator::get_modality_size_bytes(DataModality::VERTICES_3D), 68U);
     }
 
     TEST(VertexLayoutTranslatorTest, DescriptionsNameTheAttributeShape)
@@ -539,7 +539,7 @@ namespace {
         EXPECT_EQ(dst, src);
     }
 
-    TEST(MillOnHostTest, FillIsIgnoredBySpansThatAreNotTriangles)
+    TEST(MillOnHostTest, LineFillIsIgnoredBySpansThatAreNotTriangles)
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(2, 0, 1) });
         std::vector<uint8_t> plain;
@@ -548,7 +548,7 @@ namespace {
         Portal::Graphics::mill_on_host(src, vertex_layout(2),
             Runs { { PrimitiveTopology::LINE_LIST, 0, 2 } }, plane_spec(), {}, plain);
         Portal::Graphics::mill_on_host(src, vertex_layout(2),
-            Runs { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::POINT } }, plane_spec(), {}, filled);
+            Runs { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::LINE } }, plane_spec(), {}, filled);
 
         EXPECT_EQ(filled, plain);
     }

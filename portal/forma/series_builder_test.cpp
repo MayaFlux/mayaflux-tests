@@ -107,7 +107,7 @@ TEST(FormaPlotWaveformTest, SingleSeriesUsesUniformXAndRangeMappedY)
         EXPECT_FLOAT_EQ(verts[i].position.x, xs[i]);
         EXPECT_FLOAT_EQ(verts[i].position.y, ys[i]);
         EXPECT_FLOAT_EQ(verts[i].position.z, 0.F);
-        EXPECT_EQ(verts[i].color, glm::vec3(1.F));
+        EXPECT_EQ(verts[i].color, glm::vec4(glm::vec3(1.F), 1.F));
         EXPECT_FLOAT_EQ(verts[i].weight, 1.5F);
     }
 }
@@ -126,7 +126,7 @@ TEST(FormaPlotWaveformTest, SpecDeclaresALineStripAndItsCapacityArithmetic)
     const auto spec = Plot::Series {}.y(Role::SPATIAL_Y).as_waveform().done();
 
     EXPECT_EQ(spec.topology, Portal::Graphics::PrimitiveTopology::LINE_STRIP);
-    EXPECT_EQ(spec.capacity_for(10), 12U * 60U);
+    EXPECT_EQ(spec.capacity_for(10), 12U * 68U);
 }
 
 TEST(FormaPlotWaveformTest, AnExplicitXSeriesProvidesTheSamplePositions)
@@ -208,16 +208,16 @@ TEST(FormaPlotWaveformTest, MappingPaletteBeatsGlobalPaletteWhichBeatsWhite)
                                   .as_waveform()
                                   .done();
     const auto mapping_verts = run(with_mapping, container);
-    EXPECT_EQ(mapping_verts[0].color, k_red);
-    EXPECT_EQ(mapping_verts[4].color, k_green);
+    EXPECT_EQ(mapping_verts[0].color, glm::vec4(k_red, 1.F));
+    EXPECT_EQ(mapping_verts[4].color, glm::vec4(k_green, 1.F));
 
     const auto with_global = Plot::Series {}.color(k_blue).y(Role::SPATIAL_Y).as_waveform().done();
     const auto global_verts = run(with_global, container);
-    EXPECT_EQ(global_verts[0].color, k_blue);
-    EXPECT_EQ(global_verts[4].color, k_blue);
+    EXPECT_EQ(global_verts[0].color, glm::vec4(k_blue, 1.F));
+    EXPECT_EQ(global_verts[4].color, glm::vec4(k_blue, 1.F));
 
     const auto bare = Plot::Series {}.y(Role::SPATIAL_Y).as_waveform().done();
-    EXPECT_EQ(run(bare, container)[0].color, glm::vec3(1.F));
+    EXPECT_EQ(run(bare, container)[0].color, glm::vec4(glm::vec3(1.F), 1.F));
 }
 
 TEST(FormaPlotWaveformTest, AMappingOfSeveralRolesCollectsEverySeriesOfThoseRoles)
@@ -330,7 +330,7 @@ TEST(FormaPlotScatterTest, SpecDeclaresAPointListAndItsCapacityArithmetic)
     const auto spec = Plot::Series {}.y(Role::SPATIAL_Y).as_scatter().done();
 
     EXPECT_EQ(spec.topology, Portal::Graphics::PrimitiveTopology::POINT_LIST);
-    EXPECT_EQ(spec.capacity_for(7), 7U * 60U);
+    EXPECT_EQ(spec.capacity_for(7), 7U * 68U);
 }
 
 // =============================================================================
@@ -386,7 +386,7 @@ TEST(FormaPlotBarsTest, SpecDeclaresATriangleListAndItsCapacityArithmetic)
     const auto spec = Plot::Series {}.y(Role::SPATIAL_Y).as_bars().done();
 
     EXPECT_EQ(spec.topology, Portal::Graphics::PrimitiveTopology::TRIANGLE_LIST);
-    EXPECT_EQ(spec.capacity_for(4), 4U * 6U * 60U);
+    EXPECT_EQ(spec.capacity_for(4), 4U * 6U * 68U);
 }
 
 // =============================================================================
@@ -509,7 +509,7 @@ TEST(FormaPlotFilledWaveformTest, SpecDeclaresATriangleStripAndItsCapacityArithm
     const auto spec = Plot::Series {}.y(Role::SPATIAL_Y).as_filled_waveform().done();
 
     EXPECT_EQ(spec.topology, Portal::Graphics::PrimitiveTopology::TRIANGLE_STRIP);
-    EXPECT_EQ(spec.capacity_for(10), 10U * 2U * 60U + 128U);
+    EXPECT_EQ(spec.capacity_for(10), 10U * 2U * 68U + 128U);
 }
 
 // =============================================================================
@@ -557,7 +557,7 @@ TEST(FormaPlotSeriesAdornmentTest, TheBackgroundFunctionDrawsTheSolidQuadInTheGi
 
     const auto verts = decode(out);
     ASSERT_EQ(verts.size(), 4U);
-    EXPECT_EQ(verts[0].color, k_blue);
+    EXPECT_EQ(verts[0].color, glm::vec4(k_blue, 1.F));
     EXPECT_EQ(verts[3].position, glm::vec3(0.5F, 0.25F, 0.F));
 }
 

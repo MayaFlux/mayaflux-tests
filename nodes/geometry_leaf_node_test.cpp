@@ -14,11 +14,11 @@ namespace {
     {
         Vertex v;
         v.position = { seed, seed + 1.0F, seed + 2.0F };
-        v.color = { 0.1F * seed, 0.2F * seed, 0.3F * seed };
+        v.color = { 0.1F * seed, 0.2F * seed, 0.3F * seed, 1.0F };
         v.scalar = 0.5F * seed;
         v.uv = { 0.25F * seed, 0.75F * seed };
         v.normal = { 0.0F, 1.0F, 0.0F };
-        v.tangent = { 0.0F, 0.0F, 1.0F };
+        v.tangent = { 0.0F, 0.0F, 1.0F, 1.0F };
         return v;
     }
 
@@ -115,7 +115,7 @@ namespace {
         ASSERT_EQ(node.size(), 2U);
         EXPECT_EQ(node.get_geometry()[0].position, glm::vec3(1, 2, 3));
         EXPECT_EQ(node.get_geometry()[1].position, glm::vec3(4, 5, 6));
-        EXPECT_EQ(node.get_geometry()[1].color, glm::vec3(1.0F));
+        EXPECT_EQ(node.get_geometry()[1].color, glm::vec4(glm::vec3(1.0F), 1.F));
         EXPECT_FLOAT_EQ(node.get_geometry()[1].scalar, 1.0F);
         EXPECT_EQ(node.get_geometry()[1].normal, glm::vec3(0, 0, 1));
     }
@@ -127,7 +127,7 @@ namespace {
 
         ASSERT_EQ(node.size(), 1U);
         EXPECT_EQ(node.get_geometry()[0].position, glm::vec3(7, 8, 9));
-        EXPECT_EQ(node.get_geometry()[0].color, glm::vec3(1.0F));
+        EXPECT_EQ(node.get_geometry()[0].color, glm::vec4(glm::vec3(1.0F), 1.F));
     }
 
     TEST_F(GeometryLeafNodeTest, SetGeometryReplacesEverything)

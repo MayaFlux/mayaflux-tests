@@ -14,7 +14,7 @@ namespace {
     {
         LineVertex v;
         v.position = position;
-        v.color = color;
+        v.color = glm::vec4(color, 1.0F);
         v.thickness = thickness;
         return v;
     }
@@ -133,7 +133,7 @@ namespace {
         PathGeneratorNode node;
 
         EXPECT_EQ(node.get_control_point_capacity(), 64U);
-        EXPECT_EQ(node.get_path_color(), glm::vec3(1.0F));
+        EXPECT_EQ(node.get_path_color(), glm::vec4(glm::vec3(1.0F), 1.F));
         EXPECT_FLOAT_EQ(node.get_path_thickness(), 2.0F);
         EXPECT_FALSE(node.should_force_uniform_color());
     }
@@ -548,21 +548,21 @@ namespace {
         add_in_order(node, collinear_points(3));
         node.compute_frame();
 
-        node.set_path_color({ 0, 1, 0 });
+        node.set_path_color({ 0, 1, 0, 1 });
         node.compute_frame();
 
         for (const auto& v : uploaded_vertices(node)) {
             EXPECT_TRUE(near_vec(v.color, { 0, 1, 0 }));
         }
         EXPECT_TRUE(node.should_force_uniform_color());
-        EXPECT_EQ(node.get_path_color(), glm::vec3(0, 1, 0));
+        EXPECT_EQ(node.get_path_color(), glm::vec4(glm::vec3(0, 1, 0), 1.F));
     }
 
     TEST_F(PathGeneratorNodeTest, UniformColourSetBeforeTheFirstFrameApplies)
     {
         auto node = linear();
         add_in_order(node, collinear_points(3));
-        node.set_path_color({ 0, 1, 0 });
+        node.set_path_color({ 0, 1, 0, 1 });
         node.compute_frame();
 
         for (const auto& v : uploaded_vertices(node)) {
@@ -574,7 +574,7 @@ namespace {
     {
         auto node = linear();
         add_in_order(node, collinear_points(3));
-        node.set_path_color({ 0, 1, 0 });
+        node.set_path_color({ 0, 1, 0, 1 });
         node.compute_frame();
 
         node.force_uniform_color(false);
@@ -590,10 +590,10 @@ namespace {
     {
         auto node = linear();
         add_in_order(node, collinear_points(3));
-        node.set_path_color({ 0, 0, 1 }, false);
+        node.set_path_color({ 0, 0, 1, 1 }, false);
         node.compute_frame();
 
-        EXPECT_EQ(node.get_path_color(), glm::vec3(0, 0, 1));
+        EXPECT_EQ(node.get_path_color(), glm::vec4(glm::vec3(0, 0, 1), 1.F));
         EXPECT_FALSE(node.should_force_uniform_color());
         EXPECT_TRUE(near_vec(uploaded_vertices(node)[0].color, { 0.3F, 0, 0 }));
     }
@@ -634,7 +634,7 @@ namespace {
         add_in_order(node, collinear_points(5));
         node.compute_frame();
 
-        node.set_path_color({ 0, 1, 0 });
+        node.set_path_color({ 0, 1, 0, 1 });
         node.compute_frame();
 
         ASSERT_GT(node.get_vertex_count(), 0U);
@@ -703,7 +703,7 @@ namespace {
     TEST_F(PathGeneratorNodeTest, UniformColourAppliesToEveryVertexOfADrawnStroke)
     {
         auto node = linear();
-        node.set_path_color({ 0, 1, 0 });
+        node.set_path_color({ 0, 1, 0, 1 });
         node.draw_to(make_vertex({ 0, 0, 0 }, 2.0F, { 1, 0, 0 }));
         node.draw_to(make_vertex({ 1, 0, 0 }, 2.0F, { 1, 0, 0 }));
         node.compute_frame();

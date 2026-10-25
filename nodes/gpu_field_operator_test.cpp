@@ -122,7 +122,7 @@ namespace {
 
     TEST_F(GpuFieldOperatorTest, ReportsStrideInWords)
     {
-        EXPECT_EQ(op.query_state("stride_words"), 15.0);
+        EXPECT_EQ(op.query_state("stride_words"), 17.0);
     }
 
     TEST_F(GpuFieldOperatorTest, ReportsBindingCountThroughQueryState)
@@ -244,7 +244,7 @@ namespace {
 
     TEST(GpuFieldLayoutTest, TargetMissingFromLayoutIsRejected)
     {
-        GpuFieldOperator op(layout_without(Kakshya::DataModality::VERTEX_COLORS_RGB));
+        GpuFieldOperator op(layout_without(Kakshya::DataModality::VERTEX_COLORS_RGBA));
 
         op.bind(FieldTarget::COLOR, fields::tint_red);
         EXPECT_EQ(op.binding_count(), 0U);
@@ -330,9 +330,9 @@ namespace {
 
         const auto glsl = glsl_of(op);
 
-        EXPECT_TRUE(has(glsl, "vertices[b + 6u] = acc_scalar;"));
-        EXPECT_TRUE(has(glsl, "vertices[b + 7u] = acc_uv.x;"));
-        EXPECT_TRUE(has(glsl, "vertices[b + 8u] = acc_uv.y;"));
+        EXPECT_TRUE(has(glsl, "vertices[b + 7u] = acc_scalar;"));
+        EXPECT_TRUE(has(glsl, "vertices[b + 8u] = acc_uv.x;"));
+        EXPECT_TRUE(has(glsl, "vertices[b + 9u] = acc_uv.y;"));
     }
 
     TEST_F(GpuFieldOperatorTest, UntouchedTargetsAreNotWritten)

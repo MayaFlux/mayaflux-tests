@@ -16,7 +16,7 @@ namespace {
     {
         LineVertex v;
         v.position = position;
-        v.color = color;
+        v.color = glm::vec4(color, 1.0F);
         v.thickness = thickness;
         return v;
     }
@@ -113,7 +113,7 @@ namespace {
     {
         TopologyGeneratorNode node;
 
-        EXPECT_EQ(node.get_line_color(), glm::vec3(1.0F));
+        EXPECT_EQ(node.get_line_color(), glm::vec4(glm::vec3(1.0F), 1.F));
         EXPECT_FALSE(node.should_force_uniform_color());
     }
 
@@ -742,7 +742,7 @@ namespace {
         add_in_order(node, collinear_points(3));
         node.compute_frame();
 
-        node.set_line_color({ 0, 1, 0 });
+        node.set_line_color({ 0, 1, 0, 1 });
         node.compute_frame();
 
         ASSERT_EQ(uploaded_count(node), 4U);
@@ -750,7 +750,7 @@ namespace {
             EXPECT_TRUE(near_vec(v.color, { 0, 1, 0 }));
         }
         EXPECT_TRUE(node.should_force_uniform_color());
-        EXPECT_EQ(node.get_line_color(), glm::vec3(0, 1, 0));
+        EXPECT_EQ(node.get_line_color(), glm::vec4(glm::vec3(0, 1, 0), 1.F));
     }
 
     TEST_F(TopologyGeneratorNodeTest, UniformColourOverridesEverySmoothPathVertex)
@@ -760,7 +760,7 @@ namespace {
         add_in_order(node, collinear_points(5));
         node.compute_frame();
 
-        node.set_line_color({ 0, 1, 0 });
+        node.set_line_color({ 0, 1, 0, 1 });
         node.compute_frame();
 
         ASSERT_EQ(uploaded_count(node), 32U);
@@ -773,7 +773,7 @@ namespace {
     {
         LineTopology node;
         add_in_order(node, collinear_points(3));
-        node.set_line_color({ 0, 1, 0 });
+        node.set_line_color({ 0, 1, 0, 1 });
         node.compute_frame();
 
         node.force_uniform_color(false);
@@ -789,10 +789,10 @@ namespace {
     {
         LineTopology node;
         add_in_order(node, collinear_points(3));
-        node.set_line_color({ 0, 0, 1 }, false);
+        node.set_line_color({ 0, 0, 1, 1 }, false);
         node.compute_frame();
 
-        EXPECT_EQ(node.get_line_color(), glm::vec3(0, 0, 1));
+        EXPECT_EQ(node.get_line_color(), glm::vec4(glm::vec3(0, 0, 1), 1.F));
         EXPECT_TRUE(near_vec(uploaded_vertices(node)[0].color, { 0.3F, 0, 0 }));
     }
 

@@ -222,8 +222,8 @@ TEST_P(FormaFaderValueTest, HorizontalTrackIsTheCentreBandOfTheBounds)
     EXPECT_NEAR(verts[3].position.x, k_bounds.max.x, k_eps);
     EXPECT_NEAR(verts[0].position.y, k_bounds.min.y + 0.35F * k_bounds.height(), k_eps);
     EXPECT_NEAR(verts[3].position.y, k_bounds.min.y + 0.65F * k_bounds.height(), k_eps);
-    EXPECT_EQ(verts[0].color, glm::vec3(0.3F));
-    EXPECT_EQ(verts[12].color, glm::vec3(0.9F));
+    EXPECT_EQ(verts[0].color, glm::vec4(glm::vec3(0.3F), 1.F));
+    EXPECT_EQ(verts[12].color, glm::vec4(glm::vec3(0.9F), 1.F));
 }
 
 TEST_P(FormaFaderValueTest, VerticalHandleTravelsTrackMinusOneHandle)
@@ -374,7 +374,7 @@ TEST(FormaPointTest, VertexSitsAtTheValueWithItsDeclaredSize)
     const auto verts = decode<PointVertex>(r.bytes);
     ASSERT_EQ(verts.size(), 1U);
     EXPECT_EQ(verts[0].position, glm::vec3(0.25F, -0.5F, 0.F));
-    EXPECT_EQ(verts[0].color, glm::vec3(0.1F, 0.2F, 0.3F));
+    EXPECT_EQ(verts[0].color, glm::vec4(glm::vec3(0.1F, 0.2F, 0.3F), 1.F));
     EXPECT_FLOAT_EQ(verts[0].size, 12.F);
     EXPECT_EQ(r.bytes.size(), form.capacity);
 }
@@ -451,7 +451,7 @@ TEST(FormaCrosshairTest, FourArmsCentredOnTheValue)
     EXPECT_EQ(verts[2].position, glm::vec3(pos.x, pos.y - 0.1F, 0.F));
     EXPECT_EQ(verts[3].position, glm::vec3(pos.x, pos.y + 0.1F, 0.F));
     for (const auto& v : verts) {
-        EXPECT_EQ(v.color, glm::vec3(0.4F));
+        EXPECT_EQ(v.color, glm::vec4(glm::vec3(0.4F), 1.F));
         EXPECT_FLOAT_EQ(v.thickness, 3.F);
     }
     EXPECT_EQ(r.bytes.size(), form.capacity);
@@ -598,9 +598,9 @@ TEST(FormaToggleTest, ColourFollowsTheBoolAndTheQuadFillsTheRegion)
     ASSERT_EQ(voff.size(), 4U);
     ASSERT_EQ(von.size(), 4U);
     for (const auto& v : voff)
-        EXPECT_EQ(v.color, glm::vec3(0.1F));
+        EXPECT_EQ(v.color, glm::vec4(glm::vec3(0.1F), 1.F));
     for (const auto& v : von)
-        EXPECT_EQ(v.color, glm::vec3(0.8F, 0.2F, 0.2F));
+        EXPECT_EQ(v.color, glm::vec4(glm::vec3(0.8F, 0.2F, 0.2F), 1.F));
     expect_near(glm::vec2(voff[0].position), k_bounds.min);
     expect_near(glm::vec2(voff[3].position), k_bounds.max);
     expect_near(*on.element.bounds_hint, k_bounds);
@@ -637,8 +637,8 @@ TEST_P(FormaLevelMeterValueTest, HorizontalSplitIsTheClampedFraction)
     EXPECT_NEAR(verts[3].position.x, split, k_eps);
     EXPECT_NEAR(verts[4].position.x, split, k_eps);
     EXPECT_NEAR(verts[7].position.x, k_bounds.max.x, k_eps);
-    EXPECT_EQ(verts[0].color, glm::vec3(0.2F, 0.7F, 0.3F));
-    EXPECT_EQ(verts[4].color, glm::vec3(0.15F));
+    EXPECT_EQ(verts[0].color, glm::vec4(glm::vec3(0.2F, 0.7F, 0.3F), 1.F));
+    EXPECT_EQ(verts[4].color, glm::vec4(glm::vec3(0.15F), 1.F));
     expect_near(*r.element.bounds_hint, k_bounds);
     EXPECT_EQ(r.bytes.size(), form.capacity);
 }

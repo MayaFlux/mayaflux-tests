@@ -13,7 +13,7 @@ namespace {
     {
         PointVertex p;
         p.position = { seed, seed + 1.0F, seed + 2.0F };
-        p.color = { 0.1F * seed, 0.2F * seed, 0.3F * seed };
+        p.color = { 0.1F * seed, 0.2F * seed, 0.3F * seed, 1.0F };
         p.size = 2.0F + seed;
         p.uv = { 0.5F * seed, 0.25F * seed };
         return p;

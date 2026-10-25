@@ -255,10 +255,10 @@ TEST(FormaPlotBackgroundTest, SolidQuadCoversTheBoundsAsATriangleStrip)
     EXPECT_EQ(verts[2].position, glm::vec3(-0.5F, 0.25F, 0.F));
     EXPECT_EQ(verts[3].position, glm::vec3(0.5F, 0.25F, 0.F));
     for (const auto& v : verts) {
-        EXPECT_EQ(v.color, glm::vec3(0.1F, 0.2F, 0.3F));
+        EXPECT_EQ(v.color, glm::vec4(glm::vec3(0.1F, 0.2F, 0.3F), 1.F));
         EXPECT_FLOAT_EQ(v.weight, 0.F);
         EXPECT_EQ(v.normal, glm::vec3(0.F, 0.F, 1.F));
-        EXPECT_EQ(v.tangent, glm::vec3(1.F, 0.F, 0.F));
+        EXPECT_EQ(v.tangent, glm::vec4(glm::vec3(1.F, 0.F, 0.F), 1.F));
     }
 }
 
@@ -358,7 +358,7 @@ TEST(FormaPlotGridTest, ColourAndThicknessApplyToEveryVertex)
     const auto verts = Plot::plot_grid(k_plot, 2, 2, glm::vec3(0.4F, 0.5F, 0.6F), 3.F);
 
     for (const auto& v : verts) {
-        EXPECT_EQ(v.color, glm::vec3(0.4F, 0.5F, 0.6F));
+        EXPECT_EQ(v.color, glm::vec4(glm::vec3(0.4F, 0.5F, 0.6F), 1.F));
         EXPECT_FLOAT_EQ(v.thickness, 3.F);
         EXPECT_FLOAT_EQ(v.position.z, 0.F);
     }
@@ -381,7 +381,7 @@ TEST(FormaPlotCursorTest, VerticalCursorMapsTheValueOntoTheXAxis)
     const float x = -0.5F + 0.25F * 1.0F;
     EXPECT_EQ(verts[0].position, glm::vec3(x, -0.25F, 0.F));
     EXPECT_EQ(verts[1].position, glm::vec3(x, 0.25F, 0.F));
-    EXPECT_EQ(verts[0].color, glm::vec3(0.7F));
+    EXPECT_EQ(verts[0].color, glm::vec4(glm::vec3(0.7F), 1.F));
     EXPECT_FLOAT_EQ(verts[0].thickness, 2.F);
     ASSERT_TRUE(el.bounds_hint.has_value());
     EXPECT_NEAR(el.bounds_hint->min.x, x - 0.01F, 1e-6F);

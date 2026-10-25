@@ -90,7 +90,7 @@ namespace {
 
         for (const auto& vertex : v) {
             EXPECT_FLOAT_EQ(vertex.weight, coverage_weight(2));
-            EXPECT_EQ(vertex.color, glm::vec3(1.F, 0.F, 0.F));
+            EXPECT_EQ(vertex.color, glm::vec4(glm::vec3(1.F, 0.F, 0.F), 1.F));
         }
     }
 
@@ -116,8 +116,8 @@ namespace {
         const auto v = glyph_vertices(quads, k_red, spans, {}, 0);
 
         ASSERT_EQ(v.size(), 12U);
-        EXPECT_EQ(v[0].color, glm::vec3(0.F, 1.F, 0.F));
-        EXPECT_EQ(v[6].color, glm::vec3(1.F, 0.F, 0.F));
+        EXPECT_EQ(v[0].color, glm::vec4(glm::vec3(0.F, 1.F, 0.F), 1.F));
+        EXPECT_EQ(v[6].color, glm::vec4(glm::vec3(1.F, 0.F, 0.F), 1.F));
     }
 
     TEST(GlyphMeshTest, TheLaterOfTwoOverlappingSpansWins)
@@ -131,7 +131,7 @@ namespace {
         const auto v = glyph_vertices(quads, k_white, spans, {}, 0);
 
         ASSERT_EQ(v.size(), 6U);
-        EXPECT_EQ(v[0].color, glm::vec3(0.F, 1.F, 0.F));
+        EXPECT_EQ(v[0].color, glm::vec4(glm::vec3(0.F, 1.F, 0.F), 1.F));
     }
 
     TEST(GlyphMeshTest, ASpanWithReversedBoundsCoversTheSameRange)
@@ -142,7 +142,7 @@ namespace {
         const auto v = glyph_vertices(quads, k_red, spans, {}, 0);
 
         ASSERT_EQ(v.size(), 6U);
-        EXPECT_EQ(v[0].color, glm::vec3(0.F, 1.F, 0.F));
+        EXPECT_EQ(v[0].color, glm::vec4(glm::vec3(0.F, 1.F, 0.F), 1.F));
     }
 
 } // namespace

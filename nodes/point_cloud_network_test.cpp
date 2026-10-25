@@ -211,7 +211,7 @@ namespace {
         PathOperator op;
         op.initialize_paths({ points(6), points(8) }, InterpolationMode::CATMULL_ROM);
 
-        op.set_global_color({ 0.2F, 0.4F, 0.6F });
+        op.set_global_color({ 0.2F, 0.4F, 0.6F, 1.0F });
         op.process(0.0F);
 
         const auto bytes = op.get_vertex_data();
@@ -437,7 +437,7 @@ namespace {
         op.initialize_topologies({ points(8), points(8, 20.0F) }, ProximityMode::K_NEAREST);
 
         op.set_parameter("line_thickness", 6.0);
-        op.set_global_line_color({ 0.2F, 0.4F, 0.6F });
+        op.set_global_line_color({ 0.2F, 0.4F, 0.6F, 1.0F });
         op.process(0.0F);
 
         for (uint32_t g = 0; g < 2; ++g) {
@@ -480,7 +480,7 @@ namespace {
         auto replacement = op.extract_vertices();
         for (auto& v : replacement) {
             v.position.x += 100.0F;
-            v.color = { 0.1F, 0.2F, 0.3F };
+            v.color = { 0.1F, 0.2F, 0.3F, 1.0F };
         }
 
         op.set_vertices(replacement);
@@ -819,7 +819,7 @@ namespace {
         net.create_operator<PathOperator>();
 
         net.set_line_thickness(6.0F);
-        net.set_line_color({ 0.2F, 0.4F, 0.6F });
+        net.set_line_color({ 0.2F, 0.4F, 0.6F, 1.0F });
         net.process_batch(1);
 
         auto* path = dynamic_cast<PathOperator*>(net.get_operator());
@@ -836,7 +836,7 @@ namespace {
         InitializedCloud net(12);
 
         net.set_line_thickness(6.0F);
-        net.set_line_color({ 0.2F, 0.4F, 0.6F });
+        net.set_line_color({ 0.2F, 0.4F, 0.6F, 1.0F });
         net.process_batch(1);
 
         auto* topo = dynamic_cast<TopologyOperator*>(net.get_operator());
@@ -872,7 +872,7 @@ namespace {
         EXPECT_NO_THROW(net.set_connection_radius(1.0F));
         EXPECT_NO_THROW(net.set_k_neighbors(3));
         EXPECT_NO_THROW(net.set_line_thickness(4.0F));
-        EXPECT_NO_THROW(net.set_line_color({ 1.0F, 0.0F, 0.0F }));
+        EXPECT_NO_THROW(net.set_line_color({ 1.0F, 0.0F, 0.0F, 1.0F }));
         EXPECT_NO_THROW(net.set_samples_per_segment(8));
         EXPECT_NO_THROW(net.set_tension(0.2));
         EXPECT_EQ(net.get_node_count(), 12U);
@@ -883,7 +883,7 @@ namespace {
         InitializedCloud net(5);
         net.set_vertices(points(5));
 
-        net.apply_color_gradient({ 1.0F, 0.0F, 0.0F }, { 0.0F, 0.0F, 1.0F });
+        net.apply_color_gradient({ 1.0F, 0.0F, 0.0F, 1.0F }, { 0.0F, 0.0F, 1.0F, 1.0F });
 
         const auto v = net.get_vertices();
         ASSERT_EQ(v.size(), 5U);
@@ -901,12 +901,12 @@ namespace {
         line[2].position = { 3.0F, 0.0F, 0.0F };
         net.set_vertices(line);
 
-        net.apply_radial_gradient({ 1.0F, 1.0F, 1.0F }, { 0.0F, 0.0F, 0.0F });
+        net.apply_radial_gradient({ 1.0F, 1.0F, 1.0F, 1.0F }, { 0.0F, 0.0F, 0.0F, 1.0F });
 
         const auto v = net.get_vertices();
         ASSERT_EQ(v.size(), 3U);
         EXPECT_TRUE(near_color(v[0].color, { 1.0F, 1.0F, 1.0F }));
-        EXPECT_TRUE(near_color(v[1].color, glm::vec3(2.0F / 3.0F)));
+        EXPECT_TRUE(near_color(v[1].color, glm::vec4(glm::vec3(2.0F / 3.0F), 1.F)));
         EXPECT_TRUE(near_color(v[2].color, { 0.0F, 0.0F, 0.0F }));
     }
 
@@ -917,7 +917,7 @@ namespace {
         topo->add_topology(points(6, 20.0F), ProximityMode::K_NEAREST);
         ASSERT_EQ(topo->get_topology_count(), 2U);
 
-        net.apply_color_gradient({ 1.0F, 0.0F, 0.0F }, { 0.0F, 0.0F, 1.0F });
+        net.apply_color_gradient({ 1.0F, 0.0F, 0.0F, 1.0F }, { 0.0F, 0.0F, 1.0F, 1.0F });
 
         EXPECT_EQ(topo->get_topology_count(), 2U);
     }
@@ -930,7 +930,7 @@ namespace {
         path->add_path(points(8, 20.0F), InterpolationMode::CATMULL_ROM);
         ASSERT_EQ(path->get_path_count(), 2U);
 
-        net.apply_radial_gradient({ 1.0F, 0.0F, 0.0F }, { 0.0F, 0.0F, 1.0F });
+        net.apply_radial_gradient({ 1.0F, 0.0F, 0.0F, 1.0F }, { 0.0F, 0.0F, 1.0F, 1.0F });
 
         EXPECT_EQ(path->get_path_count(), 2U);
         EXPECT_EQ(path->get_path(0)->get_control_point_count(), 12U);
@@ -941,7 +941,7 @@ namespace {
     {
         InitializedCloud net(12);
 
-        net.apply_color_gradient({ 1.0F, 0.0F, 0.0F }, { 0.0F, 0.0F, 1.0F });
+        net.apply_color_gradient({ 1.0F, 0.0F, 0.0F, 1.0F }, { 0.0F, 0.0F, 1.0F, 1.0F });
         net.process_batch(1);
 
         auto* topo = dynamic_cast<TopologyOperator*>(net.get_operator());
@@ -961,7 +961,7 @@ namespace {
         auto* path = dynamic_cast<PathOperator*>(net.get_operator());
         ASSERT_EQ(path->get_path(0)->get_control_point_count(), 12U);
 
-        net.apply_color_gradient({ 1.0F, 0.0F, 0.0F }, { 0.0F, 0.0F, 1.0F });
+        net.apply_color_gradient({ 1.0F, 0.0F, 0.0F, 1.0F }, { 0.0F, 0.0F, 1.0F, 1.0F });
 
         EXPECT_EQ(path->get_path(0)->get_control_point_count(), 12U);
     }
@@ -972,7 +972,7 @@ namespace {
         net.create_operator<TopologyOperator>();
         net.set_vertices(points(1));
 
-        net.apply_color_gradient({ 1.0F, 0.0F, 0.0F }, { 0.0F, 0.0F, 1.0F });
+        net.apply_color_gradient({ 1.0F, 0.0F, 0.0F, 1.0F }, { 0.0F, 0.0F, 1.0F, 1.0F });
 
         ASSERT_EQ(net.get_vertices().size(), 1U);
         EXPECT_TRUE(near_color(net.get_vertices()[0].color, { 1.0F, 0.0F, 0.0F }));

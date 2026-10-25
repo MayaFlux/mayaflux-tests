@@ -39,7 +39,7 @@ namespace {
         std::vector<Kakshya::Vertex> out(count);
         for (uint32_t i = 0; i < count; ++i) {
             out[i].position = { static_cast<float>(i), 1.0F, 2.0F };
-            out[i].color = { 0.25F, 0.5F, 0.75F };
+            out[i].color = { 0.25F, 0.5F, 0.75F, 1.0F };
         }
         return out;
     }
@@ -147,7 +147,7 @@ namespace {
         ASSERT_EQ(node->get_vertex_count(), 3U);
         const auto v = node->get_vertex_typed<Kakshya::Vertex>(2);
         EXPECT_EQ(v.position, glm::vec3(2.0F, 1.0F, 2.0F));
-        EXPECT_EQ(v.color, glm::vec3(0.25F, 0.5F, 0.75F));
+        EXPECT_EQ(v.color, glm::vec4(glm::vec3(0.25F, 0.5F, 0.75F), 1.F));
     }
 
     TEST(AssemblyOperatorTest, MeshBecomesATriangleItem)

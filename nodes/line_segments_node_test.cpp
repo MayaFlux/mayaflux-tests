@@ -13,7 +13,7 @@ namespace {
     {
         LineVertex v;
         v.position = position;
-        v.color = color;
+        v.color = glm::vec4(color, 1.0F);
         v.thickness = thickness;
         return v;
     }

@@ -111,7 +111,7 @@ namespace {
         ASSERT_EQ(v.size(), 6U + run.layout().quads.size() * 6);
         for (size_t i = 0; i < 6; ++i) {
             EXPECT_FLOAT_EQ(v[i].weight, 0.F);
-            EXPECT_EQ(v[i].color, glm::vec3(0.2F, 0.4F, 0.6F));
+            EXPECT_EQ(v[i].color, glm::vec4(glm::vec3(0.2F, 0.4F, 0.6F), 1.F));
             EXPECT_GE(v[i].position.x, -1.F);
             EXPECT_LE(v[i].position.x, 1.F);
         }

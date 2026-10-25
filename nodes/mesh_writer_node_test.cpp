@@ -13,7 +13,7 @@ namespace {
     {
         MeshVertex v;
         v.position = { seed, seed + 1.0F, seed + 2.0F };
-        v.color = { 0.1F * seed, 0.2F * seed, 0.3F * seed };
+        v.color = { 0.1F * seed, 0.2F * seed, 0.3F * seed, 1.0F };
         v.weight = 0.5F * seed;
         v.uv = { 0.25F * seed, 0.75F * seed };
         v.normal = { 0.0F, 1.0F, 0.0F };

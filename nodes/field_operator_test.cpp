@@ -55,7 +55,7 @@ namespace {
             PointVertex v;
             const auto f = static_cast<float>(i);
             v.position = { f, f + 1.0F, f + 2.0F };
-            v.color = { 0.1F * f, 0.2F, 0.3F };
+            v.color = { 0.1F * f, 0.2F, 0.3F, 1.0F };
             v.size = 3.0F + f;
             out.push_back(v);
         }
@@ -152,9 +152,9 @@ namespace {
         EXPECT_STREQ(op->get_vertex_type_name(), GetParam().type_name);
         EXPECT_EQ(op->get_vertex_count(), 5U);
         EXPECT_EQ(op->get_point_count(), 5U);
-        EXPECT_EQ(op->get_vertex_layout().stride_bytes, 60U);
+        EXPECT_EQ(op->get_vertex_layout().stride_bytes, 68U);
         EXPECT_EQ(op->get_vertex_layout().vertex_count, 5U);
-        EXPECT_EQ(op->get_vertex_data().size(), 5U * 60U);
+        EXPECT_EQ(op->get_vertex_data().size(), 5U * 68U);
     }
 
     TEST_P(FieldOperatorVertexKindTest, InitializeMarksDirtyAndKeepsTheSourceBytes)
