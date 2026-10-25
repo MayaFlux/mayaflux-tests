@@ -240,6 +240,31 @@ void main() { color = params.value; }
         EXPECT_TRUE(flow().allocate_pipeline_descriptors(9999).empty());
     }
 
+    TEST_F(RenderFlowTest, APushDescriptorSetGetsNoPooledSetAndTheOthersStillAllocate)
+    {
+        const auto only_push = flow().create_pipeline(basic_config(), { k_color_format }, vk::Format::eUndefined, 0U);
+        ASSERT_NE(only_push, INVALID_RENDER_PIPELINE);
+        EXPECT_TRUE(flow().allocate_pipeline_descriptors(only_push).empty());
+
+        RenderPipelineConfig config = basic_config();
+        config.descriptor_sets = { { DescriptorBindingInfo { .set = 1, .binding = 0, .type = vk::DescriptorType::eUniformBuffer } } };
+        const auto pooled = flow().create_pipeline(config, { k_color_format });
+        const auto with_push = flow().create_pipeline(config, { k_color_format }, vk::Format::eUndefined, 0U);
+        ASSERT_NE(pooled, INVALID_RENDER_PIPELINE);
+        ASSERT_NE(with_push, INVALID_RENDER_PIPELINE);
+
+        EXPECT_EQ(flow().allocate_pipeline_descriptors(pooled).size(), 2U);
+        EXPECT_EQ(flow().allocate_pipeline_descriptors(with_push).size(), 1U);
+    }
+
+    TEST_F(RenderFlowTest, APushDescriptorSetBeyondTheDescriptorSetsIsRefused)
+    {
+        EXPECT_EQ(flow().create_pipeline(basic_config(), { k_color_format }, vk::Format::eUndefined, 5U),
+            INVALID_RENDER_PIPELINE);
+        EXPECT_NE(flow().create_pipeline(basic_config(), { k_color_format }, vk::Format::eUndefined, 0U),
+            INVALID_RENDER_PIPELINE);
+    }
+
     // ------------------------------------------------------------------
     // Recording
     // ------------------------------------------------------------------
@@ -262,6 +287,22 @@ void main() { color = params.value; }
         EXPECT_NO_THROW(flow().draw_indexed(9999, 3));
         EXPECT_NO_THROW(flow().draw_mesh_tasks(9999, 1, 1, 1));
         EXPECT_NO_THROW(flow().draw_mesh_tasks_indirect(9999, nullptr, 0, 1));
+
+        foundry().submit_and_wait(cmd);
+    }
+
+    TEST_F(RenderFlowTest, PushingDescriptorsIsIgnoredWithoutAPushSetOrWithUnknownIds)
+    {
+        const auto plain = flow().create_pipeline(basic_config(), { k_color_format });
+        const auto pushable = flow().create_pipeline(basic_config(), { k_color_format }, vk::Format::eUndefined, 0U);
+        ASSERT_NE(plain, INVALID_RENDER_PIPELINE);
+        ASSERT_NE(pushable, INVALID_RENDER_PIPELINE);
+        const auto cmd = foundry().begin_commands(Portal::Graphics::ShaderFoundry::CommandBufferType::GRAPHICS);
+        const std::vector<vk::WriteDescriptorSet> writes(1);
+
+        EXPECT_NO_THROW(flow().push_descriptors(cmd, plain, writes));
+        EXPECT_NO_THROW(flow().push_descriptors(cmd, 9999, writes));
+        EXPECT_NO_THROW(flow().push_descriptors(9999, pushable, writes));
 
         foundry().submit_and_wait(cmd);
     }
