@@ -18,15 +18,17 @@ namespace MayaFlux::Test {
  * @brief Path of a system font that every supported platform is expected to ship.
  *
  * Tries generic and per-platform families through find_font and keeps the first
- * result that exists on disk. Nothing is bundled with the tests; a host with no
+ * result that exists on disk. The Noto families come last: on macOS the font
+ * directories only hold per-script Noto files that lack Latin glyphs, and
+ * find_font matches file names by substring. Nothing is bundled with the tests; a host with no
  * resolvable font fails the suite rather than skipping it.
  */
 inline const std::optional<std::string>& system_font_path()
 {
     static const std::optional<std::string> path = [] () -> std::optional<std::string> {
         const std::vector<std::string_view> families = {
-            "sans-serif", "DejaVu Sans", "Liberation Sans", "Noto Sans",
-            "Arial", "Helvetica", "Segoe UI", "Menlo"
+            "sans-serif", "DejaVu Sans", "Liberation Sans",
+            "Arial", "Helvetica", "Segoe UI", "Menlo", "Noto Sans"
         };
         for (const auto family : families) {
             if (const auto found = Portal::Text::find_font(family);
@@ -50,8 +52,8 @@ inline const std::optional<std::string>& second_system_font_path()
     static const std::optional<std::string> path = [] () -> std::optional<std::string> {
         const auto& first = system_font_path();
         const std::vector<std::string_view> families = {
-            "monospace", "DejaVu Sans Mono", "Liberation Mono", "Noto Serif", "Liberation Serif",
-            "Courier New", "Courier", "Times New Roman", "Times", "Consolas", "Menlo", "Georgia"
+            "monospace", "DejaVu Sans Mono", "Liberation Mono", "Liberation Serif",
+            "Courier New", "Courier", "Times New Roman", "Times", "Consolas", "Menlo", "Georgia", "Noto Serif"
         };
         for (const auto family : families) {
             if (const auto found = Portal::Text::find_font(family);
