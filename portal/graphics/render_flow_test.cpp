@@ -26,6 +26,7 @@ namespace {
     using Portal::Graphics::INVALID_SHADER;
     using Portal::Graphics::RenderFlow;
     using Portal::Graphics::RenderPipelineConfig;
+    using Portal::Graphics::RenderPipelineID;
     using Portal::Graphics::ShaderID;
     using Portal::Graphics::ShaderStage;
     using Portal::Graphics::TextureLoom;
@@ -38,6 +39,14 @@ void main()
 {
     vec2 p = vec2(float((gl_VertexIndex << 1) & 2), float(gl_VertexIndex & 2));
     gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}
+)";
+
+    constexpr std::string_view k_position_vertex_source = R"(#version 450
+layout(location = 0) in vec3 position;
+void main()
+{
+    gl_Position = vec4(position, 1.0);
 }
 )";
 
@@ -75,6 +84,12 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
     TextureLoom& loom()
     {
         return Portal::Graphics::get_texture_manager();
+    }
+
+    bool share_state(RenderPipelineID a, RenderPipelineID b)
+    {
+        const auto layout = flow().get_view_transform_layout(a);
+        return layout && layout == flow().get_view_transform_layout(b);
     }
 
     class RenderFlowTest : public ::testing::Test {
@@ -201,6 +216,215 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
         EXPECT_NE(first, INVALID_RENDER_PIPELINE);
         EXPECT_NE(second, INVALID_RENDER_PIPELINE);
         EXPECT_NE(first, second);
+    }
+
+    // ------------------------------------------------------------------
+    // State sharing
+    // ------------------------------------------------------------------
+
+    TEST_F(RenderFlowTest, IdenticalRequestsShareOneStateUnderDistinctIds)
+    {
+        const auto config = basic_config();
+        const auto first = flow().create_pipeline(config, { k_color_format });
+        const auto second = flow().create_pipeline(config, { k_color_format });
+        const auto third = flow().create_pipeline(config, { k_color_format });
+        ASSERT_NE(first, INVALID_RENDER_PIPELINE);
+        ASSERT_NE(second, INVALID_RENDER_PIPELINE);
+        ASSERT_NE(third, INVALID_RENDER_PIPELINE);
+
+        EXPECT_NE(first, second);
+        EXPECT_NE(second, third);
+        EXPECT_TRUE(share_state(first, second));
+        EXPECT_TRUE(share_state(second, third));
+    }
+
+    TEST_F(RenderFlowTest, DifferentAttachmentFormatsDoNotShare)
+    {
+        const auto config = basic_config();
+        const auto base = flow().create_pipeline(config, { k_color_format });
+        const auto other_color = flow().create_pipeline(config, { vk::Format::eB8G8R8A8Unorm });
+        const auto with_depth = flow().create_pipeline(config, { k_color_format }, vk::Format::eD32Sfloat);
+        ASSERT_NE(base, INVALID_RENDER_PIPELINE);
+        ASSERT_NE(other_color, INVALID_RENDER_PIPELINE);
+        ASSERT_NE(with_depth, INVALID_RENDER_PIPELINE);
+
+        EXPECT_FALSE(share_state(base, other_color));
+        EXPECT_FALSE(share_state(base, with_depth));
+        EXPECT_FALSE(share_state(other_color, with_depth));
+    }
+
+    TEST_F(RenderFlowTest, FixedFunctionStateSplitsSharing)
+    {
+        const auto config = basic_config();
+        const auto base = flow().create_pipeline(config, { k_color_format });
+
+        RenderPipelineConfig culled = config;
+        culled.rasterization.cull_mode = CullMode::BACK;
+        const auto culled_id = flow().create_pipeline(culled, { k_color_format });
+
+        RenderPipelineConfig blended = config;
+        blended.blend_attachments[0].blend_enable = true;
+        const auto blended_id = flow().create_pipeline(blended, { k_color_format });
+
+        RenderPipelineConfig depth_tested = config;
+        depth_tested.depth_stencil.depth_test_enable = true;
+        const auto depth_tested_id = flow().create_pipeline(depth_tested, { k_color_format });
+
+        for (const auto id : { base, culled_id, blended_id, depth_tested_id }) {
+            ASSERT_NE(id, INVALID_RENDER_PIPELINE);
+        }
+        EXPECT_FALSE(share_state(base, culled_id));
+        EXPECT_FALSE(share_state(base, blended_id));
+        EXPECT_FALSE(share_state(base, depth_tested_id));
+        EXPECT_FALSE(share_state(culled_id, blended_id));
+    }
+
+    TEST_F(RenderFlowTest, PushSetAndSpecializationSplitSharing)
+    {
+        const auto config = basic_config();
+        const auto pooled = flow().create_pipeline(config, { k_color_format });
+        const auto pushed = flow().create_pipeline(config, { k_color_format }, vk::Format::eUndefined, 0U);
+        ASSERT_NE(pooled, INVALID_RENDER_PIPELINE);
+        ASSERT_NE(pushed, INVALID_RENDER_PIPELINE);
+        EXPECT_FALSE(share_state(pooled, pushed));
+
+        RenderPipelineConfig specialized = config;
+        specialized.fragment_shader = foundry().load_shader(
+            std::string(k_specialized_fragment_source), ShaderStage::FRAGMENT);
+        specialized.push_constant_size = 0;
+        ASSERT_NE(specialized.fragment_shader, INVALID_SHADER);
+
+        const auto red = flow().create_pipeline(specialized, { k_color_format },
+            vk::Format::eUndefined, std::nullopt, { { 3U, 0U } });
+        const auto green = flow().create_pipeline(specialized, { k_color_format },
+            vk::Format::eUndefined, std::nullopt, { { 3U, 1U } });
+        const auto green_again = flow().create_pipeline(specialized, { k_color_format },
+            vk::Format::eUndefined, std::nullopt, { { 3U, 1U } });
+        ASSERT_NE(red, INVALID_RENDER_PIPELINE);
+        ASSERT_NE(green, INVALID_RENDER_PIPELINE);
+        ASSERT_NE(green_again, INVALID_RENDER_PIPELINE);
+
+        EXPECT_FALSE(share_state(red, green));
+        EXPECT_TRUE(share_state(green, green_again));
+    }
+
+    TEST_F(RenderFlowTest, DescriptorLayoutDecidesSharingNotBindingNames)
+    {
+        const auto config = basic_config();
+
+        RenderPipelineConfig with_set = config;
+        with_set.descriptor_sets = { { DescriptorBindingInfo { .set = 1, .binding = 0, .type = vk::DescriptorType::eUniformBuffer, .name = "first" } } };
+
+        RenderPipelineConfig renamed = config;
+        renamed.descriptor_sets = { { DescriptorBindingInfo { .set = 1, .binding = 0, .type = vk::DescriptorType::eUniformBuffer, .name = "second" } } };
+
+        RenderPipelineConfig storage = config;
+        storage.descriptor_sets = { { DescriptorBindingInfo { .set = 1, .binding = 0, .type = vk::DescriptorType::eStorageBuffer, .name = "first" } } };
+
+        const auto none = flow().create_pipeline(config, { k_color_format });
+        const auto uniform = flow().create_pipeline(with_set, { k_color_format });
+        const auto uniform_renamed = flow().create_pipeline(renamed, { k_color_format });
+        const auto storage_id = flow().create_pipeline(storage, { k_color_format });
+        for (const auto id : { none, uniform, uniform_renamed, storage_id }) {
+            ASSERT_NE(id, INVALID_RENDER_PIPELINE);
+        }
+
+        EXPECT_TRUE(share_state(uniform, uniform_renamed));
+        EXPECT_FALSE(share_state(none, uniform));
+        EXPECT_FALSE(share_state(uniform, storage_id));
+    }
+
+    TEST_F(RenderFlowTest, VertexInputShapeDecidesSharingNotVertexCount)
+    {
+        RenderPipelineConfig config = basic_config();
+        config.vertex_shader = foundry().load_shader(
+            std::string(k_position_vertex_source), ShaderStage::VERTEX);
+        ASSERT_NE(config.vertex_shader, INVALID_SHADER);
+
+        const auto position_layout = [](uint32_t stride, uint32_t vertex_count) {
+            Kakshya::VertexLayout layout;
+            layout.stride_bytes = stride;
+            layout.vertex_count = vertex_count;
+            layout.attributes.push_back({ .component_modality = Kakshya::DataModality::VERTEX_POSITIONS_3D,
+                .offset_in_vertex = 0,
+                .name = "position" });
+            return layout;
+        };
+
+        const auto few = position_layout(12, 10);
+        const auto many = position_layout(12, 5000);
+        const auto wider = position_layout(16, 10);
+
+        RenderPipelineConfig few_config = config;
+        few_config.semantic_vertex_layout = few;
+        RenderPipelineConfig many_config = config;
+        many_config.semantic_vertex_layout = many;
+        RenderPipelineConfig wider_config = config;
+        wider_config.semantic_vertex_layout = wider;
+
+        const auto few_id = flow().create_pipeline(few_config, { k_color_format });
+        const auto many_id = flow().create_pipeline(many_config, { k_color_format });
+        const auto wider_id = flow().create_pipeline(wider_config, { k_color_format });
+        for (const auto id : { few_id, many_id, wider_id }) {
+            ASSERT_NE(id, INVALID_RENDER_PIPELINE);
+        }
+
+        EXPECT_TRUE(share_state(few_id, many_id));
+        EXPECT_FALSE(share_state(few_id, wider_id));
+    }
+
+    TEST_F(RenderFlowTest, ASharedStateOutlivesTheIdThatCreatedIt)
+    {
+        const auto config = basic_config();
+        const auto creator = flow().create_pipeline(config, { k_color_format });
+        const auto sharer = flow().create_pipeline(config, { k_color_format });
+        ASSERT_NE(creator, INVALID_RENDER_PIPELINE);
+        ASSERT_TRUE(share_state(creator, sharer));
+        const auto layout = flow().get_view_transform_layout(sharer);
+
+        flow().destroy_pipeline(creator);
+
+        EXPECT_FALSE(flow().get_view_transform_layout(creator));
+        EXPECT_EQ(flow().get_view_transform_layout(sharer), layout);
+
+        const auto latecomer = flow().create_pipeline(config, { k_color_format });
+        ASSERT_NE(latecomer, INVALID_RENDER_PIPELINE);
+        EXPECT_TRUE(share_state(sharer, latecomer));
+    }
+
+    TEST_F(RenderFlowTest, TheLastIdReleasesTheStateAndALaterRequestBuildsAnother)
+    {
+        const auto config = basic_config();
+        const auto first = flow().create_pipeline(config, { k_color_format });
+        const auto second = flow().create_pipeline(config, { k_color_format });
+        ASSERT_TRUE(share_state(first, second));
+
+        flow().destroy_pipeline(first);
+        flow().destroy_pipeline(second);
+        EXPECT_FALSE(flow().get_view_transform_layout(first));
+        EXPECT_FALSE(flow().get_view_transform_layout(second));
+
+        const auto rebuilt = flow().create_pipeline(config, { k_color_format });
+        ASSERT_NE(rebuilt, INVALID_RENDER_PIPELINE);
+        EXPECT_TRUE(flow().get_view_transform_layout(rebuilt));
+        EXPECT_FALSE(flow().allocate_pipeline_descriptors(rebuilt).empty());
+    }
+
+    TEST_F(RenderFlowTest, ShutdownReleasesSharedStatesAndTheFlowStartsClean)
+    {
+        const auto config = basic_config();
+        const auto first = flow().create_pipeline(config, { k_color_format });
+        const auto second = flow().create_pipeline(config, { k_color_format });
+        ASSERT_TRUE(share_state(first, second));
+
+        EXPECT_NO_THROW(flow().shutdown());
+        ASSERT_TRUE(flow().initialize());
+
+        EXPECT_FALSE(flow().get_view_transform_layout(first));
+        EXPECT_FALSE(flow().get_view_transform_layout(second));
+        const auto fresh = flow().create_pipeline(basic_config(), { k_color_format });
+        EXPECT_NE(fresh, INVALID_RENDER_PIPELINE);
+        EXPECT_TRUE(flow().get_view_transform_layout(fresh));
     }
 
     TEST_F(RenderFlowTest, SpecializationValuesProduceDistinctResultsFromOneShaderModule)

@@ -146,6 +146,50 @@ TEST(GraphicsPipelineConfigTest, RasterizationToggles)
     EXPECT_EQ(config.cull_mode, vk::CullModeFlagBits::eBack);
 }
 
+TEST(GraphicsPipelineConfigTest, EqualConfigsCompareEqual)
+{
+    EXPECT_TRUE(GraphicsPipelineConfig {} == GraphicsPipelineConfig {});
+    EXPECT_TRUE(GraphicsPipelineConfig::alpha_blended() == GraphicsPipelineConfig::alpha_blended());
+    EXPECT_FALSE(GraphicsPipelineConfig::default_2d() == GraphicsPipelineConfig::default_3d());
+}
+
+TEST(GraphicsPipelineConfigTest, EqualityDetectsEveryNestedInput)
+{
+    const auto base = GraphicsPipelineConfig::default_3d();
+
+    auto vertex_binding = base;
+    vertex_binding.vertex_bindings.emplace_back(0U, 68U);
+    EXPECT_FALSE(vertex_binding == base);
+
+    auto instanced_binding = vertex_binding;
+    instanced_binding.vertex_bindings[0].per_instance = true;
+    EXPECT_FALSE(instanced_binding == vertex_binding);
+
+    auto vertex_attribute = base;
+    vertex_attribute.vertex_attributes.emplace_back(0U, 0U, vk::Format::eR32G32B32Sfloat, 0U);
+    EXPECT_FALSE(vertex_attribute == base);
+
+    auto moved_attribute = vertex_attribute;
+    moved_attribute.vertex_attributes[0].offset = 12U;
+    EXPECT_FALSE(moved_attribute == vertex_attribute);
+
+    auto blend = base;
+    blend.color_blend_attachments[0].blend_enable = true;
+    EXPECT_FALSE(blend == base);
+
+    auto color_format = base;
+    color_format.color_attachment_formats.push_back(vk::Format::eR8G8B8A8Unorm);
+    EXPECT_FALSE(color_format == base);
+
+    auto push_range = base;
+    push_range.push_constant_ranges.emplace_back(vk::ShaderStageFlagBits::eVertex, 0U, 16U);
+    EXPECT_FALSE(push_range == base);
+
+    auto stencil = base;
+    stencil.front_stencil.compareMask = 0xFFU;
+    EXPECT_FALSE(stencil == base);
+}
+
 TEST(DescriptorSetLayoutConfigTest, StartsEmpty)
 {
     DescriptorSetLayoutConfig config;
