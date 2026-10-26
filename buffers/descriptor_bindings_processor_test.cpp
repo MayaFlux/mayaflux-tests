@@ -623,6 +623,30 @@ void main() {
         EXPECT_EQ(staged().front().buffer_info.range, static_cast<size_t>(4096) * sizeof(float));
     }
 
+    TEST_F(DescriptorBindingsProcessorDeviceTest, AnAudioNetworkLargerThanItsBufferGrowsTheBuffer)
+    {
+        auto network = std::make_shared<DescriptorBindingsAudioNetwork>();
+        network->fill({ 1.0, 2.0, 3.0 });
+        processor->bind_network("audio", network, "samples", 0);
+        tick();
+
+        std::vector<double> larger(64);
+        for (size_t i = 0; i < larger.size(); ++i)
+            larger[i] = static_cast<double>(i);
+        network->fill(larger);
+
+        EXPECT_NO_THROW(tick());
+
+        auto gpu = processor->get_bound_buffer("samples");
+        ASSERT_NE(gpu, nullptr);
+        EXPECT_GE(gpu->get_size_bytes(), larger.size() * sizeof(float));
+        ASSERT_EQ(staged().size(), 1U);
+        EXPECT_GE(staged().front().buffer_info.range, larger.size() * sizeof(float));
+        const auto uploaded = gpu_floats(gpu, larger.size());
+        for (size_t i = 0; i < larger.size(); ++i)
+            ASSERT_FLOAT_EQ(uploaded[i], static_cast<float>(i)) << "sample " << i;
+    }
+
     TEST_F(DescriptorBindingsProcessorDeviceTest, ANetworkWithNeitherAudioNorGeometryBindsNothing)
     {
         auto network = std::make_shared<DescriptorBindingsAudioNetwork>(Nodes::Network::OutputMode::NONE);
