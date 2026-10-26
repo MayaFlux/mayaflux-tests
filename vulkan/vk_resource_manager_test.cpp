@@ -370,15 +370,15 @@ TEST_F(BackendResourceManagerTest, UploadWithNullArgumentsIsRejected)
     resources().cleanup_image(image);
 }
 
-TEST_F(BackendResourceManagerTest, UploadThroughProvidedStagingBufferRoundTrips)
+TEST_F(BackendResourceManagerTest, DeferredUploadThroughProvidedStagingBufferRoundTrips)
 {
     auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
     auto staging = staging_buffer(64);
     const auto bytes = pattern(64, 5);
 
-    resources().upload_image_data(image, bytes.data(), bytes.size(), staging);
+    resources().upload_image_data(image, bytes.data(), bytes.size(), staging, true);
     std::vector<uint8_t> out(64, 0);
-    resources().download_image_data(image, out.data(), out.size(), staging);
+    resources().download_image_data(image, out.data(), out.size());
 
     EXPECT_EQ(out, bytes);
     resources().cleanup_buffer(staging);
@@ -393,6 +393,49 @@ TEST_F(BackendResourceManagerTest, LayerUploadReturnsTrueForAnArrayImage)
     const auto bytes = pattern(64);
 
     EXPECT_TRUE(resources().upload_image_layer(image, 1, bytes.data(), bytes.size()));
+    resources().cleanup_image(image);
+}
+
+TEST_F(BackendResourceManagerTest, LayerUploadPreservesOtherLayersAfterWholeArrayUpload)
+{
+    auto image = std::make_shared<VKImage>(2, 2, 1, vk::Format::eR8G8B8A8Unorm, VKImage::Usage::TEXTURE_2D,
+        VKImage::Type::TYPE_2D, 1, 3);
+    resources().initialize_image(image);
+
+    auto expected = pattern(48, 7);
+    resources().upload_image_data(image, expected.data(), expected.size());
+
+    const auto replacement = pattern(16, 101);
+    ASSERT_TRUE(resources().upload_image_layer(image, 1, replacement.data(), replacement.size()));
+    std::memcpy(expected.data() + 16, replacement.data(), replacement.size());
+
+    std::vector<uint8_t> out(expected.size(), 0);
+    resources().download_image_data(image, out.data(), out.size());
+
+    EXPECT_EQ(out, expected);
+    resources().cleanup_image(image);
+}
+
+TEST_F(BackendResourceManagerTest, HostReadbackRestoresGeneralLayoutForAnotherUpload)
+{
+    auto image = make_image(2, 2, vk::Format::eR8G8B8A8Unorm, VKImage::Usage::STORAGE);
+    const auto first = pattern(16, 11);
+    const auto second = pattern(16, 51);
+
+    resources().upload_image_data(image, first.data(), first.size());
+
+    std::vector<uint8_t> out(first.size(), 0);
+    resources().download_image_data(
+        image, out.data(), out.size(),
+        vk::ImageLayout::eGeneral, vk::PipelineStageFlagBits2::eComputeShader);
+
+    EXPECT_EQ(out, first);
+    EXPECT_EQ(image->get_current_layout(), vk::ImageLayout::eGeneral);
+
+    resources().upload_image_data(image, second.data(), second.size());
+    resources().download_image_data(image, out.data(), out.size());
+
+    EXPECT_EQ(out, second);
     resources().cleanup_image(image);
 }
 

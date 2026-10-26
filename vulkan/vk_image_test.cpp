@@ -171,25 +171,7 @@ INSTANTIATE_TEST_SUITE_P(Usages, VKImageUsageFlagsTest,
         UsageFlags { VKImage::Usage::TRANSFER_SRC, {},
             vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage },
         UsageFlags { VKImage::Usage::TRANSFER_DST, {},
-            vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage },
-        UsageFlags { VKImage::Usage::STAGING, {},
             vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage }));
-
-TEST(VKImageTest, OnlyStagingImagesAreHostVisible)
-{
-    for (auto usage : { VKImage::Usage::TEXTURE_2D, VKImage::Usage::RENDER_TARGET,
-             VKImage::Usage::DEPTH_STENCIL, VKImage::Usage::STORAGE,
-             VKImage::Usage::TRANSFER_SRC, VKImage::Usage::TRANSFER_DST }) {
-        VKImage image(4, 4, 1, vk::Format::eR8G8B8A8Unorm, usage);
-        EXPECT_FALSE(image.is_host_visible());
-        EXPECT_EQ(image.get_memory_properties(), vk::MemoryPropertyFlagBits::eDeviceLocal);
-    }
-
-    VKImage staging(4, 4, 1, vk::Format::eR8G8B8A8Unorm, VKImage::Usage::STAGING);
-    EXPECT_TRUE(staging.is_host_visible());
-    EXPECT_EQ(staging.get_memory_properties(),
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-}
 
 TEST(VKImageTest, ColorUsagesUseColorAspect)
 {

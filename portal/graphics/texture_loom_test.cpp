@@ -440,34 +440,16 @@ namespace {
         EXPECT_EQ(rgba8_words(image), pixels);
     }
 
-    TEST_F(TextureLoomTest, UploadAndDownloadThroughACallerStagingBufferRoundTrip)
-    {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const std::vector<uint32_t> pixels { 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32 };
-        const size_t bytes = pixels.size() * sizeof(uint32_t);
-        Staging staging(bytes);
-        const ImagePtr image = loom().create_2d_uninitialized(4, 3, ImageFormat::RGBA8);
-        ASSERT_NE(image, nullptr);
-
-        loom().upload_data(image, pixels.data(), bytes, staging.buffer());
-        const auto downloaded = loom().download_image(image, staging.buffer());
-
-        ASSERT_TRUE(downloaded.has_value());
-        ASSERT_EQ(downloaded->byte_size(), bytes);
-        EXPECT_EQ(std::memcmp(downloaded->data(), pixels.data(), bytes), 0);
-    }
-
     TEST_F(TextureLoomTest, DownloadDataFillsACallerBuffer)
     {
         ASSERT_TRUE(loom().initialize(backend()));
         const std::vector<uint32_t> pixels { 41, 42, 43, 44 };
         const size_t bytes = pixels.size() * sizeof(uint32_t);
-        Staging staging(bytes);
         const ImagePtr image = loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
         ASSERT_NE(image, nullptr);
         std::vector<uint32_t> out(pixels.size(), 0);
 
-        loom().download_data(image, out.data(), bytes, staging.buffer());
+        loom().download_data(image, out.data(), bytes);
 
         EXPECT_EQ(out, pixels);
     }
@@ -625,16 +607,6 @@ namespace {
         EXPECT_FALSE(loom().upload_layer(array, 0, layer.data(), bytes - 4));
         EXPECT_FALSE(loom().upload_layer(array, 0, nullptr, bytes));
         EXPECT_FALSE(loom().upload_layer(nullptr, 0, layer.data(), bytes));
-    }
-
-    TEST_F(TextureLoomTest, DeferredLayerUploadNeedsACallerStagingBuffer)
-    {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr array = loom().create_2d_array(2, 2, 2, ImageFormat::RGBA8);
-        ASSERT_NE(array, nullptr);
-        const std::vector<uint32_t> layer { 1, 2, 3, 4 };
-
-        EXPECT_FALSE(loom().upload_layer(array, 0, layer.data(), layer.size() * sizeof(uint32_t), nullptr, true));
     }
 
     TEST_F(TextureLoomTest, BlitScalesWithNearestFilteringByReplicatingSourcePixels)
