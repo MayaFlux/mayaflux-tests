@@ -413,11 +413,17 @@ void main() {
         auto node = std::make_shared<Nodes::Constant>(2.0);
         processor->bind_scalar_node("gain", node, "params", 0);
         tick();
-        ASSERT_NE(processor->get_bound_buffer("params"), nullptr);
+        auto released = processor->get_bound_buffer("params");
+        ASSERT_NE(released, nullptr);
 
         processor->unbind("gain");
 
         EXPECT_EQ(processor->get_bound_buffer("params"), nullptr);
+        EXPECT_TRUE(released->is_initialized());
+
+        tick();
+
+        EXPECT_FALSE(released->is_initialized());
     }
 
     TEST_F(DescriptorBindingsProcessorDeviceTest, UnbindingRemovesTheSlotItStagedOnTheTarget)
@@ -484,6 +490,60 @@ void main() {
 
         ASSERT_EQ(staged().size(), 1U);
         EXPECT_EQ(gpu_floats(processor->get_bound_buffer("params"), 1), std::vector<float> { 3.0F });
+    }
+
+    TEST_F(DescriptorBindingsProcessorDeviceTest, RebindingANameToAnotherDescriptorReleasesTheOldSlotAndBuffer)
+    {
+        auto node = std::make_shared<Nodes::Constant>(2.0);
+        processor->bind_scalar_node("gain", node, "params", 0);
+        tick();
+        auto old_buffer = processor->get_bound_buffer("params");
+        ASSERT_NE(old_buffer, nullptr);
+        ASSERT_EQ(staged().size(), 1U);
+
+        processor->bind_scalar_node("gain", node, "samples", 0, DescriptorRole::STORAGE);
+        tick();
+
+        EXPECT_EQ(processor->get_bound_buffer("params"), nullptr);
+        EXPECT_FALSE(old_buffer->is_initialized());
+        ASSERT_EQ(staged().size(), 1U);
+        EXPECT_EQ(staged().front().binding, 1U);
+        EXPECT_EQ(gpu_floats(processor->get_bound_buffer("samples"), 1), std::vector<float> { 2.0F });
+    }
+
+    TEST_F(DescriptorBindingsProcessorDeviceTest, RebindingANameToTheSameDescriptorDestroysTheOldBuffer)
+    {
+        auto first = std::make_shared<Nodes::Constant>(2.0);
+        processor->bind_scalar_node("gain", first, "params", 0);
+        tick();
+        auto old_buffer = processor->get_bound_buffer("params");
+        ASSERT_NE(old_buffer, nullptr);
+
+        auto second = std::make_shared<Nodes::Constant>(5.0);
+        processor->bind_scalar_node("gain", second, "params", 0);
+        tick();
+
+        auto replacement = processor->get_bound_buffer("params");
+        ASSERT_NE(replacement, nullptr);
+        EXPECT_NE(replacement, old_buffer);
+        EXPECT_FALSE(old_buffer->is_initialized());
+        ASSERT_EQ(staged().size(), 1U);
+        EXPECT_EQ(staged().front().buffer_info.buffer, replacement->get_buffer());
+        EXPECT_EQ(gpu_floats(replacement, 1), std::vector<float> { 5.0F });
+    }
+
+    TEST_F(DescriptorBindingsProcessorDeviceTest, ADeviceLocalBindingKeepsUploadingAcrossManyTicks)
+    {
+        auto node = std::make_shared<Nodes::Constant>(0.0);
+        processor->bind_scalar_node("level", node, "samples", 0, DescriptorRole::STORAGE);
+
+        for (int i = 1; i <= 50; ++i) {
+            node->set_constant(static_cast<double>(i));
+            tick();
+        }
+
+        ASSERT_EQ(staged().size(), 1U);
+        EXPECT_EQ(gpu_floats(processor->get_bound_buffer("samples"), 1), std::vector<float> { 50.0F });
     }
 
     TEST_F(DescriptorBindingsProcessorDeviceTest, ProcessingModesDefaultToInternalAndCanBeSetPerBindingOrForAll)

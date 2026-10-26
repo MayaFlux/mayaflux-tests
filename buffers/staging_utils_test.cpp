@@ -330,6 +330,13 @@ namespace {
         EXPECT_THROW(Buffers::upload_intervals(source.data(), intervals, nullptr, staging), std::invalid_argument);
     }
 
+    TEST(StagingUtilsTest, UploadToGpuRejectsANullTarget)
+    {
+        const uint8_t byte = 1;
+
+        EXPECT_THROW(Buffers::upload_to_gpu(&byte, 1, nullptr), std::invalid_argument);
+    }
+
     TEST(SliceSetTest, FlushRejectsANullTarget)
     {
         SliceSet set(k_stride, k_topology);
@@ -411,6 +418,85 @@ namespace {
         const auto bytes = read_all(buffer);
         for (size_t i = 0; i < bytes.size(); ++i) {
             EXPECT_EQ(bytes[i], (i >= 16 && i < 24) ? 0x11 : 0xAA) << "byte " << i;
+        }
+    }
+
+    TEST_P(StagingUtilsDeviceTest, UploadToGpuIgnoresAnEmptyPayload)
+    {
+        auto buffer = make_filled(32, 0xAA);
+
+        Buffers::upload_to_gpu(nullptr, 0, buffer);
+
+        for (const auto byte : read_all(buffer)) {
+            EXPECT_EQ(byte, 0xAA);
+        }
+    }
+
+    TEST_P(StagingUtilsDeviceTest, UploadToGpuRejectsAPayloadPastTheBufferCapacity)
+    {
+        auto buffer = make_filled(32, 0xAA);
+        const std::vector<uint8_t> payload(16, 0x11);
+        const std::vector<uint8_t> oversized(40, 0x11);
+
+        EXPECT_THROW(Buffers::upload_to_gpu(payload.data(), payload.size(), buffer, nullptr, 24), std::runtime_error);
+        EXPECT_THROW(Buffers::upload_to_gpu(oversized.data(), oversized.size(), buffer), std::runtime_error);
+
+        for (const auto byte : read_all(buffer)) {
+            EXPECT_EQ(byte, 0xAA);
+        }
+    }
+
+    TEST_P(StagingUtilsDeviceTest, UploadToGpuCopiesTheSourceAtCallTime)
+    {
+        auto buffer = make_buffer(16);
+        std::vector<uint8_t> source(16, 0x33);
+
+        Buffers::upload_to_gpu(source.data(), source.size(), buffer);
+        std::ranges::fill(source, 0x77);
+
+        for (const auto byte : read_all(buffer)) {
+            EXPECT_EQ(byte, 0x33);
+        }
+    }
+
+    TEST_P(StagingUtilsDeviceTest, ASuppliedStagingBufferCarriesADeviceLocalPayload)
+    {
+        if (!device_local()) {
+            GTEST_SKIP() << "Only a device-local target goes through staging";
+        }
+        auto buffer = make_filled(64, 0xAA);
+        auto staging = Buffers::create_staging_buffer(64);
+        track(staging);
+        const std::vector<uint8_t> payload(24, 0x5A);
+
+        Buffers::upload_to_gpu(payload.data(), payload.size(), buffer, staging, 8);
+
+        const auto* staged = static_cast<const uint8_t*>(staging->get_buffer_resources().mapped_ptr);
+        for (size_t i = 0; i < payload.size(); ++i) {
+            EXPECT_EQ(staged[i], 0x5A) << "staging byte " << i;
+        }
+        const auto bytes = read_all(buffer);
+        for (size_t i = 0; i < bytes.size(); ++i) {
+            EXPECT_EQ(bytes[i], (i >= 8 && i < 32) ? 0x5A : 0xAA) << "byte " << i;
+        }
+    }
+
+    TEST_P(StagingUtilsDeviceTest, TheDataVariantEntryPointsWriteAtTheOffset)
+    {
+        auto buffer = make_filled(32, 0xAA);
+        const Kakshya::DataVariant variant(std::vector<uint8_t>(8, 0x22));
+
+        if (device_local()) {
+            auto staging = Buffers::create_staging_buffer(8);
+            track(staging);
+            Buffers::upload_device_local(buffer, staging, variant, 4);
+        } else {
+            Buffers::upload_host_visible(buffer, variant, 4);
+        }
+
+        const auto bytes = read_all(buffer);
+        for (size_t i = 0; i < bytes.size(); ++i) {
+            EXPECT_EQ(bytes[i], (i >= 4 && i < 12) ? 0x22 : 0xAA) << "byte " << i;
         }
     }
 
