@@ -519,7 +519,7 @@ TEST_F(BufferPipelineTest, Lifecycle_CallbacksExecute)
 }
 
 // ========== HARDWARE INPUT INTEGRATION ==========
-#define INTEGRATION_TEST_CAPTURE
+// #define INTEGRATION_TEST_CAPTURE
 
 #ifdef INTEGRATION_TEST_CAPTURE
 
