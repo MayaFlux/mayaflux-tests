@@ -331,6 +331,44 @@ namespace {
         device().waitIdle();
     }
 
+    TEST_F(ShaderFoundryDeviceTest, AWaitingCommandBufferRunsAfterItsProducer)
+    {
+        const auto buffer = host_buffer();
+        clear(*buffer);
+
+        const auto producer = foundry().begin_commands(CommandType::COMPUTE);
+        foundry().get_command_buffer(producer).fillBuffer(buffer->buffer(), 0, k_bytes, k_pattern);
+        const auto semaphore = foundry().submit_with_signal(producer);
+        ASSERT_NE(semaphore, INVALID_SEMAPHORE);
+
+        constexpr uint32_t consumer_pattern = 0x5A5A5A5AU;
+        const auto consumer = foundry().begin_commands_with_wait(
+            CommandType::COMPUTE, semaphore, vk::PipelineStageFlagBits2::eTransfer);
+        ASSERT_NE(consumer, INVALID_COMMAND_BUFFER);
+        foundry().get_command_buffer(consumer).fillBuffer(buffer->buffer(), 0, k_bytes, consumer_pattern);
+        foundry().submit_and_wait(consumer);
+
+        EXPECT_EQ(words(*buffer), std::vector<uint32_t>(k_words, consumer_pattern));
+        device().waitIdle();
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, ReleaseAfterSubmitRunsOnceThePendingSubmissionsComplete)
+    {
+        const auto id = foundry().begin_commands(CommandType::COMPUTE);
+        const auto fence = foundry().submit_async(id);
+        ASSERT_NE(fence, INVALID_FENCE);
+
+        bool released = false;
+        foundry().release_after_submit([&released] { released = true; });
+
+        foundry().wait_for_fence(fence);
+        foundry().release_fence(fence);
+
+        const auto next = foundry().begin_commands(CommandType::COMPUTE);
+        EXPECT_TRUE(released);
+        foundry().submit_and_wait(next);
+    }
+
     TEST_F(ShaderFoundryDeviceTest, EveryQueueKindHasAQueue)
     {
         EXPECT_TRUE(foundry().get_graphics_queue());

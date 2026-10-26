@@ -162,6 +162,62 @@ TEST_F(VKCommandManagerTest, RetiringANullBufferIsNoOp)
     EXPECT_NO_THROW(commands().collect());
 }
 
+TEST_F(VKCommandManagerTest, RetiredResourceIsReleasedOnceItsSubmissionCompletes)
+{
+    const uint64_t value = commands().submit(context().get_graphics_queue(), {});
+    ASSERT_GT(value, 0U);
+
+    int released = 0;
+    commands().retire_resource([&released] { ++released; }, value);
+    commands().wait(value);
+    commands().collect();
+    commands().collect();
+
+    EXPECT_EQ(released, 1);
+}
+
+TEST_F(VKCommandManagerTest, RetiringAResourceAgainstZeroReleasesItImmediately)
+{
+    bool released = false;
+    commands().retire_resource([&released] { released = true; }, 0);
+    EXPECT_TRUE(released);
+}
+
+TEST_F(VKCommandManagerTest, RetiringAnEmptyReleaseActionIsNoOp)
+{
+    EXPECT_NO_THROW(commands().retire_resource({}, 1));
+    EXPECT_NO_THROW(commands().collect());
+}
+
+TEST_F(VKCommandManagerTest, ReleaseActionsMayCollectAgain)
+{
+    const uint64_t value = commands().submit(context().get_graphics_queue(), {});
+    ASSERT_GT(value, 0U);
+
+    bool ran = false;
+    commands().retire_resource([&ran] {
+        commands().collect();
+        ran = true;
+    },
+        value);
+    commands().wait(value);
+
+    EXPECT_NO_THROW(commands().collect());
+    EXPECT_TRUE(ran);
+}
+
+TEST_F(VKCommandManagerTest, PendingReleaseActionsAreDroppedAtCleanup)
+{
+    Core::VKCommandManager manager;
+    ASSERT_TRUE(manager.initialize(context().get_device(), graphics_family(), compute_family()));
+
+    bool ran = false;
+    manager.retire_resource([&ran] { ran = true; }, 1000);
+    manager.cleanup();
+
+    EXPECT_FALSE(ran);
+}
+
 TEST_F(VKCommandManagerTest, DeferredCommandsStartEmpty)
 {
     EXPECT_FALSE(commands().has_deferred_commands());
