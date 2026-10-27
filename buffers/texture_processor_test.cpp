@@ -223,20 +223,12 @@ namespace {
     }
 
     // ------------------------------------------------------------------
-    // Streaming mode
+    // Direct host uploads
     // ------------------------------------------------------------------
 
-    TEST_F(TextureProcessorDeviceTest, StreamingModeIsOffByDefaultAndToggles)
-    {
-        EXPECT_FALSE(processor->is_streaming_mode());
-        processor->set_streaming_mode(true);
-        EXPECT_TRUE(processor->is_streaming_mode());
-    }
-
-    TEST_F(TextureProcessorDeviceTest, StreamingUploadsMatchDirectUploadsAcrossRepeatedFrames)
+    TEST_F(TextureProcessorDeviceTest, DirectUploadsUpdateRepeatedFrames)
     {
         make_buffer(4, 4, pattern(64, 1));
-        processor->set_streaming_mode(true);
         attach();
 
         for (const uint8_t seed : { uint8_t { 40 }, uint8_t { 80 }, uint8_t { 120 } }) {
@@ -248,10 +240,9 @@ namespace {
         }
     }
 
-    TEST_F(TextureProcessorDeviceTest, StreamingSurvivesAResizeOnceTheStagingIsInvalidated)
+    TEST_F(TextureProcessorDeviceTest, DirectUploadsSurviveTextureResize)
     {
         make_buffer(4, 4, pattern(64, 1));
-        processor->set_streaming_mode(true);
         attach();
 
         const auto first = pattern(64, 60);
@@ -259,7 +250,6 @@ namespace {
         process();
 
         buffer->resize_texture(8, 8);
-        processor->invalidate_staging();
         const auto resized = pattern(size_t { 8 } * 8 * 4, 150);
         buffer->set_pixel_data(resized.data(), resized.size());
         process();

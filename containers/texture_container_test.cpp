@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <span>
 #include <stdexcept>
@@ -12,6 +13,9 @@
 #include <variant>
 #include <vector>
 
+#include "../support/vulkan_test_support.hpp"
+
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
 #include "MayaFlux/Kakshya/Region/Region.hpp"
 #include "MayaFlux/Kakshya/Region/RegionSegment.hpp"
 #include "MayaFlux/Kakshya/Source/TextureContainer.hpp"
@@ -23,6 +27,52 @@ namespace {
     using Kakshya::ProcessingState;
     using Kakshya::Region;
     using Kakshya::TextureContainer;
+    using Portal::Graphics::TextureLoom;
+
+    TextureLoom& loom()
+    {
+        return TextureLoom::instance();
+    }
+
+    class TextureContainerGpuTest : public ::testing::Test {
+    protected:
+        static void SetUpTestSuite()
+        {
+            if (!vulkan_unavailable_reason().empty())
+                return;
+            s_backend = std::make_shared<Core::VulkanBackend>();
+            if (!s_backend->initialize(headless_graphics_config()))
+                s_backend.reset();
+        }
+
+        static void TearDownTestSuite()
+        {
+            s_backend.reset();
+        }
+
+        void SetUp() override
+        {
+            if (!s_backend)
+                GTEST_SKIP() << "No usable Vulkan device: " << vulkan_unavailable_reason();
+            loom().shutdown();
+            ASSERT_TRUE(loom().initialize(s_backend));
+        }
+
+        void TearDown() override
+        {
+            loom().shutdown();
+        }
+
+        static std::vector<uint8_t> read_image(
+            const std::shared_ptr<Core::VKImage>& image, size_t byte_count)
+        {
+            std::vector<uint8_t> bytes(byte_count);
+            loom().download_data(image, bytes.data(), bytes.size());
+            return bytes;
+        }
+
+        static inline std::shared_ptr<Core::VulkanBackend> s_backend;
+    };
 
     Region box(std::vector<uint64_t> start, std::vector<uint64_t> end)
     {
@@ -244,6 +294,109 @@ namespace {
         EXPECT_TRUE(std::ranges::all_of(tc.as_uint8(1), [](uint8_t v) { return v == 0; }));
         EXPECT_EQ(tc.get_processing_state(), ProcessingState::IDLE);
         EXPECT_EQ(tc.as_uint8(0).size(), 16U);
+    }
+
+    TEST_F(TextureContainerGpuTest, ToImageRefreshesLayerAndFromImageReadsItBack)
+    {
+        TextureContainer source(2, 2, ImageFormat::RGBA8, 2U);
+        const auto first = ramp(16, 3);
+        const auto updated = ramp(16, 91);
+        source.set_pixels(std::span<const uint8_t>(first), 1);
+
+        const auto image = source.to_image(1);
+        ASSERT_NE(image, nullptr);
+        EXPECT_EQ(read_image(image, first.size()), first);
+
+        source.set_pixels(std::span<const uint8_t>(updated), 1);
+        const auto refreshed = source.to_image(1);
+        EXPECT_EQ(refreshed, image);
+        EXPECT_EQ(read_image(refreshed, updated.size()), updated);
+
+        TextureContainer destination(2, 2, ImageFormat::RGBA8);
+        destination.from_image(refreshed);
+        EXPECT_TRUE(std::ranges::equal(destination.as_uint8(0), updated));
+    }
+
+    TEST_F(TextureContainerGpuTest, ToImageArrayAndFromImageArrayPreserveLayerOrder)
+    {
+        TextureContainer source(2, 2, ImageFormat::RGBA8, 3U);
+        const auto first = ramp(16, 5);
+        const auto second = ramp(16, 55);
+        const auto third = ramp(16, 105);
+        source.set_pixels(std::span<const uint8_t>(first), 0);
+        source.set_pixels(std::span<const uint8_t>(second), 1);
+        source.set_pixels(std::span<const uint8_t>(third), 2);
+
+        const auto image = source.to_image_array();
+        ASSERT_NE(image, nullptr);
+        EXPECT_EQ(image->get_array_layers(), 3U);
+
+        std::vector<uint8_t> expected;
+        expected.insert(expected.end(), first.begin(), first.end());
+        expected.insert(expected.end(), second.begin(), second.end());
+        expected.insert(expected.end(), third.begin(), third.end());
+        EXPECT_EQ(read_image(image, expected.size()), expected);
+
+        TextureContainer destination(2, 2, ImageFormat::RGBA8, 3U);
+        destination.from_image_array(image);
+        EXPECT_TRUE(std::ranges::equal(destination.as_uint8(0), first));
+        EXPECT_TRUE(std::ranges::equal(destination.as_uint8(1), second));
+        EXPECT_TRUE(std::ranges::equal(destination.as_uint8(2), third));
+    }
+
+    TEST_F(TextureContainerGpuTest, UploadImageWritesTheSelectedLayerToAnExistingImage)
+    {
+        TextureContainer source(2, 2, ImageFormat::RGBA8, 2U);
+        const auto first = ramp(16, 15);
+        const auto second = ramp(16, 75);
+        source.set_pixels(std::span<const uint8_t>(first), 0);
+        source.set_pixels(std::span<const uint8_t>(second), 1);
+        const auto image = loom().create_2d_uninitialized(2, 2, ImageFormat::RGBA8);
+        ASSERT_NE(image, nullptr);
+
+        EXPECT_TRUE(source.upload_image(image, 1));
+        EXPECT_EQ(read_image(image, second.size()), second);
+        EXPECT_FALSE(source.upload_image(image, 2));
+        EXPECT_FALSE(source.upload_image(nullptr, 0));
+    }
+
+    TEST_F(TextureContainerGpuTest, UploadImageArrayWritesAllLayersToAnExistingImage)
+    {
+        TextureContainer source(2, 2, ImageFormat::RGBA8, 2U);
+        const auto first = ramp(16, 25);
+        const auto second = ramp(16, 125);
+        source.set_pixels(std::span<const uint8_t>(first), 0);
+        source.set_pixels(std::span<const uint8_t>(second), 1);
+        const auto image = loom().create_2d_array(2, 2, 2, ImageFormat::RGBA8);
+        ASSERT_NE(image, nullptr);
+
+        EXPECT_TRUE(source.upload_image_array(image));
+        std::vector<uint8_t> expected;
+        expected.insert(expected.end(), first.begin(), first.end());
+        expected.insert(expected.end(), second.begin(), second.end());
+        EXPECT_EQ(read_image(image, expected.size()), expected);
+        EXPECT_FALSE(source.upload_image_array(nullptr));
+    }
+
+    TEST_F(TextureContainerGpuTest, TypedSixteenBitAndFloatPixelsSurviveGpuRoundTrips)
+    {
+        TextureContainer u16(4, 1, ImageFormat::R16);
+        const std::vector<uint16_t> wide { 0, 1, 32768, 65535 };
+        u16.set_pixels(std::span<const uint16_t>(wide), 0);
+        const auto u16_image = u16.to_image();
+        ASSERT_NE(u16_image, nullptr);
+        TextureContainer u16_copy(4, 1, ImageFormat::R16);
+        u16_copy.from_image(u16_image);
+        EXPECT_TRUE(std::ranges::equal(u16_copy.as_uint16(0), wide));
+
+        TextureContainer f32(4, 1, ImageFormat::R32F);
+        const std::vector<float> floats { -1.25F, 0.0F, 0.375F, 12.5F };
+        f32.set_pixels(std::span<const float>(floats), 0);
+        const auto f32_image = f32.to_image();
+        ASSERT_NE(f32_image, nullptr);
+        TextureContainer f32_copy(4, 1, ImageFormat::R32F);
+        f32_copy.from_image(f32_image);
+        EXPECT_TRUE(std::ranges::equal(f32_copy.as_float(0), floats));
     }
 
     // ------------------------------------------------------------------

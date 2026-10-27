@@ -803,13 +803,22 @@ namespace {
         ASSERT_TRUE(loom().initialize(backend()));
         ImageCacheEntry entry;
         const std::vector<uint32_t> pixels { 7, 8, 9, 10 };
+        const std::vector<uint32_t> updated_pixels { 11, 12, 13, 14 };
         const std::span<const uint8_t> bytes(
             reinterpret_cast<const uint8_t*>(pixels.data()), pixels.size() * sizeof(uint32_t));
 
-        const ImagePtr image = loom().refresh_cached_image(entry, sampled_key(2, 2), bytes);
+        ImagePtr image = loom().refresh_cached_image(entry, sampled_key(2, 2), bytes);
 
         ASSERT_NE(image, nullptr);
         EXPECT_EQ(rgba8_words(image), pixels);
+
+        const std::span<const uint8_t> updated_bytes(
+            reinterpret_cast<const uint8_t*>(updated_pixels.data()),
+            updated_pixels.size() * sizeof(uint32_t));
+        const ImagePtr refreshed = loom().refresh_cached_image(entry, sampled_key(2, 2), updated_bytes);
+
+        EXPECT_EQ(refreshed, image);
+        EXPECT_EQ(rgba8_words(refreshed), updated_pixels);
     }
 
     TEST_F(TextureLoomTest, RefreshCachedImageRefusesAWrongByteCountAndStorageKeys)
@@ -823,16 +832,6 @@ namespace {
 
         EXPECT_EQ(loom().refresh_cached_image(entry, sampled_key(2, 2), too_few), nullptr);
         EXPECT_EQ(loom().refresh_cached_image(entry, storage_key, exact), nullptr);
-    }
-
-    TEST_F(TextureLoomTest, RefreshCachedImageRefusesAStagingBufferThatIsTooSmall)
-    {
-        ASSERT_TRUE(loom().initialize(backend()));
-        ImageCacheEntry entry;
-        const std::vector<uint8_t> exact(16, 0);
-        Staging tiny(4);
-
-        EXPECT_EQ(loom().refresh_cached_image(entry, sampled_key(2, 2), exact, tiny.buffer()), nullptr);
     }
 
     TEST_F(TextureLoomTest, CacheSetReturnsOneImagePerKey)
