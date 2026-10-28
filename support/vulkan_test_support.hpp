@@ -68,6 +68,51 @@ private:
     static inline std::unique_ptr<Core::VulkanBackend> s_backend;
 };
 
+class TimelineGate {
+public:
+    explicit TimelineGate(vk::Device device)
+        : m_device(device)
+    {
+        vk::SemaphoreTypeCreateInfo type_info {};
+        type_info.semaphoreType = vk::SemaphoreType::eTimeline;
+        type_info.initialValue = 0;
+        vk::SemaphoreCreateInfo info {};
+        info.pNext = &type_info;
+        m_semaphore = m_device.createSemaphore(info);
+    }
+
+    ~TimelineGate()
+    {
+        open();
+        m_device.waitIdle();
+        m_device.destroySemaphore(m_semaphore);
+    }
+
+    TimelineGate(const TimelineGate&) = delete;
+    TimelineGate& operator=(const TimelineGate&) = delete;
+    TimelineGate(TimelineGate&&) = delete;
+    TimelineGate& operator=(TimelineGate&&) = delete;
+
+    [[nodiscard]] vk::SemaphoreSubmitInfo closed() const
+    {
+        return { m_semaphore, 1, vk::PipelineStageFlagBits2::eAllCommands };
+    }
+
+    void open()
+    {
+        if (m_opened) {
+            return;
+        }
+        m_opened = true;
+        m_device.signalSemaphore(vk::SemaphoreSignalInfo { m_semaphore, 1 });
+    }
+
+private:
+    vk::Device m_device;
+    vk::Semaphore m_semaphore;
+    bool m_opened {};
+};
+
 class RawVulkanBuffer {
 public:
     RawVulkanBuffer(Core::VulkanBackend& backend, size_t size, vk::BufferUsageFlags usage, bool host_visible)

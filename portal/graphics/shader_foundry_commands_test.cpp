@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -367,6 +368,128 @@ namespace {
         const auto next = foundry().begin_commands(CommandType::COMPUTE);
         EXPECT_TRUE(released);
         foundry().submit_and_wait(next);
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, WaitForFencesCoversGraphicsAndComputeSubmissions)
+    {
+        const auto a = host_buffer();
+        const auto b = host_buffer();
+        clear(*a);
+        clear(*b);
+        const auto graphics = foundry().begin_commands(CommandType::GRAPHICS);
+        foundry().get_command_buffer(graphics).fillBuffer(a->buffer(), 0, k_bytes, 3U);
+        const auto compute = foundry().begin_commands(CommandType::COMPUTE);
+        foundry().get_command_buffer(compute).fillBuffer(b->buffer(), 0, k_bytes, 4U);
+        const auto graphics_fence = foundry().submit_async(graphics);
+        const auto compute_fence = foundry().submit_async(compute);
+        ASSERT_NE(graphics_fence, INVALID_FENCE);
+        ASSERT_NE(compute_fence, INVALID_FENCE);
+
+        foundry().wait_for_fences({ graphics_fence, compute_fence });
+
+        EXPECT_TRUE(foundry().is_fence_signaled(graphics_fence));
+        EXPECT_TRUE(foundry().is_fence_signaled(compute_fence));
+        EXPECT_EQ(words(*a), std::vector<uint32_t>(k_words, 3U));
+        EXPECT_EQ(words(*b), std::vector<uint32_t>(k_words, 4U));
+        foundry().release_fence(graphics_fence);
+        foundry().release_fence(compute_fence);
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, RetireAfterSubmitFreesBuffersOnceTheirSubmissionCompletes)
+    {
+        const auto id = foundry().begin_commands(CommandType::COMPUTE);
+        const auto semaphore = foundry().submit_with_signal(id);
+        ASSERT_NE(semaphore, INVALID_SEMAPHORE);
+
+        const std::array<Portal::Graphics::CommandBufferID, 1> ids { id };
+        foundry().retire_after_submit(ids);
+        backend()->get_command_manager().wait(backend()->get_command_manager().submitted());
+
+        const auto next = foundry().begin_commands(CommandType::COMPUTE);
+        EXPECT_FALSE(foundry().get_command_buffer(id));
+        foundry().submit_and_wait(next);
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, RetireAfterSubmitFreesBuffersThatWereNeverSubmitted)
+    {
+        const auto id = foundry().begin_commands(CommandType::COMPUTE);
+        foundry().end_commands(id);
+
+        const std::array<Portal::Graphics::CommandBufferID, 1> ids { id };
+        foundry().retire_after_submit(ids);
+
+        const auto next = foundry().begin_commands(CommandType::COMPUTE);
+        EXPECT_FALSE(foundry().get_command_buffer(id));
+        foundry().submit_and_wait(next);
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, RetireAfterSubmitHoldsBuffersWhileTheQueueIsBlocked)
+    {
+        TimelineGate gate(device());
+        const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
+        auto& commands = backend()->get_command_manager();
+
+        const auto point = commands.submit(foundry().get_graphics_queue(), {}, waits);
+        ASSERT_TRUE(point);
+
+        const auto id = foundry().begin_commands(CommandType::GRAPHICS);
+        foundry().end_commands(id);
+        const std::array<Portal::Graphics::CommandBufferID, 1> ids { id };
+        foundry().retire_after_submit(ids);
+
+        const auto held = foundry().begin_commands(CommandType::GRAPHICS);
+        EXPECT_TRUE(foundry().get_command_buffer(id));
+        foundry().end_commands(held);
+
+        gate.open();
+        commands.wait(commands.submitted());
+
+        const auto next = foundry().begin_commands(CommandType::GRAPHICS);
+        EXPECT_FALSE(foundry().get_command_buffer(id));
+        foundry().end_commands(next);
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, RetireAfterSubmitIgnoresUnknownIds)
+    {
+        const std::array<Portal::Graphics::CommandBufferID, 1> ids { 9999 };
+        EXPECT_NO_THROW(foundry().retire_after_submit(ids));
+        EXPECT_NO_THROW(foundry().retire_after_submit({}));
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, ReleaseAfterSubmitWaitsForWorkPendingOnEveryQueue)
+    {
+        TimelineGate gate(device());
+        const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
+        auto& commands = backend()->get_command_manager();
+
+        const auto compute = commands.submit(foundry().get_compute_queue(), {}, waits);
+        const auto graphics = commands.submit(foundry().get_graphics_queue(), {}, waits);
+        ASSERT_TRUE(compute);
+        ASSERT_TRUE(graphics);
+
+        auto released = std::make_shared<bool>(false);
+        foundry().release_after_submit([released] { *released = true; });
+
+        const auto held = foundry().begin_commands(CommandType::COMPUTE);
+        EXPECT_FALSE(*released);
+        foundry().end_commands(held);
+
+        gate.open();
+        commands.wait(commands.submitted());
+
+        const auto next = foundry().begin_commands(CommandType::COMPUTE);
+        EXPECT_TRUE(*released);
+        foundry().end_commands(next);
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, ReleaseAfterSubmitRunsImmediatelyWhenNothingIsPending)
+    {
+        backend()->wait_idle();
+
+        auto released = std::make_shared<bool>(false);
+        foundry().release_after_submit([released] { *released = true; });
+
+        EXPECT_TRUE(*released);
     }
 
     TEST_F(ShaderFoundryDeviceTest, EveryQueueKindHasAQueue)

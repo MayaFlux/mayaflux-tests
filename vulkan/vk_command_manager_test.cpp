@@ -5,6 +5,10 @@
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKContext.hpp"
 
+#include <algorithm>
+#include <array>
+#include <memory>
+
 namespace MayaFlux::Test {
 namespace {
 
@@ -15,6 +19,13 @@ namespace {
 
         static uint32_t graphics_family() { return context().get_queue_families().graphics_family.value(); }
         static uint32_t compute_family() { return context().get_queue_families().compute_family.value(); }
+
+        static bool initialize_standalone(Core::VKCommandManager& manager)
+        {
+            return manager.initialize(
+                context().get_device(), graphics_family(), compute_family(),
+                context().get_graphics_queue(), context().get_compute_queue(), context().get_transfer_queue());
+        }
     };
 
 }
@@ -74,46 +85,70 @@ TEST_F(VKCommandManagerTest, PoolIsExposedAfterInitialize)
 
 TEST_F(VKCommandManagerTest, TimelineIsExposedAfterInitialize)
 {
-    EXPECT_TRUE(commands().get_timeline());
+    EXPECT_TRUE(commands().get_timeline(context().get_graphics_queue()));
 }
 
 TEST_F(VKCommandManagerTest, SubmitReturnsStrictlyIncreasingValues)
 {
     const auto queue = context().get_graphics_queue();
 
-    const uint64_t first = commands().submit(queue, {});
-    const uint64_t second = commands().submit(queue, {});
+    const auto first = commands().submit(queue, {});
+    const auto second = commands().submit(queue, {});
 
-    EXPECT_GT(first, 0U);
-    EXPECT_GT(second, first);
-    EXPECT_EQ(commands().submitted_value(), second);
+    EXPECT_GT(first.value, 0U);
+    EXPECT_EQ(second.timeline, first.timeline);
+    EXPECT_GT(second.value, first.value);
+    EXPECT_EQ(commands().submitted_value(second.timeline), second.value);
 }
 
 TEST_F(VKCommandManagerTest, WaitingOnASubmissionCompletesIt)
 {
-    const uint64_t value = commands().submit(context().get_graphics_queue(), {});
-    ASSERT_GT(value, 0U);
+    const auto point = commands().submit(context().get_graphics_queue(), {});
+    ASSERT_TRUE(point);
 
-    commands().wait(value);
+    commands().wait(point);
 
-    EXPECT_TRUE(commands().is_complete(value));
-    EXPECT_GE(commands().completed_value(), value);
+    EXPECT_TRUE(commands().is_complete(point));
+    EXPECT_GE(commands().completed_value(point.timeline), point.value);
 }
 
 TEST_F(VKCommandManagerTest, WaitingOnZeroReturnsImmediately)
 {
-    EXPECT_NO_THROW(commands().wait(0));
-    EXPECT_TRUE(commands().is_complete(0));
+    EXPECT_NO_THROW(commands().wait({}));
+    EXPECT_TRUE(commands().is_complete({}));
 }
 
-TEST_F(VKCommandManagerTest, SubmitsOnTheComputeQueueShareOneTimeline)
+TEST_F(VKCommandManagerTest, AliasedQueuesShareOneTimelineAndDistinctQueuesDoNot)
 {
-    const uint64_t graphics = commands().submit(context().get_graphics_queue(), {});
-    const uint64_t compute = commands().submit(context().get_compute_queue(), {});
+    const auto graphics = commands().submit(context().get_graphics_queue(), {});
+    const auto compute = commands().submit(context().get_compute_queue(), {});
+    ASSERT_TRUE(graphics);
+    ASSERT_TRUE(compute);
 
-    EXPECT_GT(compute, graphics);
-    commands().wait(compute);
+    const bool aliased = context().get_compute_queue() == context().get_graphics_queue();
+    EXPECT_EQ(graphics.timeline == compute.timeline, aliased);
+    if (aliased) {
+        EXPECT_GT(compute.value, graphics.value);
+    }
+
+    commands().wait(commands().submitted());
     EXPECT_TRUE(commands().is_complete(graphics));
+    EXPECT_TRUE(commands().is_complete(compute));
+}
+
+TEST_F(VKCommandManagerTest, TimelineCountMatchesDistinctQueues)
+{
+    std::vector<vk::Queue> distinct;
+    for (const vk::Queue queue : { context().get_graphics_queue(), context().get_compute_queue(), context().get_transfer_queue() }) {
+        if (std::ranges::find(distinct, queue) == distinct.end()) {
+            distinct.push_back(queue);
+        }
+    }
+
+    EXPECT_EQ(commands().timeline_count(), distinct.size());
+    for (const vk::Queue queue : distinct) {
+        EXPECT_LT(commands().timeline_index(queue), commands().timeline_count());
+    }
 }
 
 TEST_F(VKCommandManagerTest, SubmitExecutesRecordedCommandBuffers)
@@ -123,11 +158,11 @@ TEST_F(VKCommandManagerTest, SubmitExecutesRecordedCommandBuffers)
     cmd.end();
 
     const vk::CommandBuffer recorded[] = { cmd };
-    const uint64_t value = commands().submit(context().get_graphics_queue(), recorded);
-    ASSERT_GT(value, 0U);
+    const auto point = commands().submit(context().get_graphics_queue(), recorded);
+    ASSERT_TRUE(point);
 
-    commands().wait(value);
-    EXPECT_TRUE(commands().is_complete(value));
+    commands().wait(point);
+    EXPECT_TRUE(commands().is_complete(point));
     commands().free_command_buffer(cmd);
 }
 
@@ -138,11 +173,11 @@ TEST_F(VKCommandManagerTest, RetiredBufferIsFreedOnceItsSubmissionCompletes)
     cmd.end();
 
     const vk::CommandBuffer recorded[] = { cmd };
-    const uint64_t value = commands().submit(context().get_graphics_queue(), recorded);
-    ASSERT_GT(value, 0U);
+    const auto point = commands().submit(context().get_graphics_queue(), recorded);
+    ASSERT_TRUE(point);
 
-    commands().retire(cmd, value);
-    commands().wait(value);
+    commands().retire(cmd, point);
+    commands().wait(point);
     EXPECT_NO_THROW(commands().collect());
     EXPECT_NO_THROW(commands().free_command_buffer(cmd));
 }
@@ -152,24 +187,24 @@ TEST_F(VKCommandManagerTest, RetiringAgainstZeroFreesImmediately)
     auto cmd = commands().allocate_command_buffer();
     ASSERT_TRUE(cmd);
 
-    commands().retire(cmd, 0);
+    commands().retire(cmd, {});
     EXPECT_NO_THROW(commands().free_command_buffer(cmd));
 }
 
 TEST_F(VKCommandManagerTest, RetiringANullBufferIsNoOp)
 {
-    EXPECT_NO_THROW(commands().retire(vk::CommandBuffer {}, 1));
+    EXPECT_NO_THROW(commands().retire(vk::CommandBuffer {}, Core::TimelinePoint { .timeline = 0, .value = 1 }));
     EXPECT_NO_THROW(commands().collect());
 }
 
 TEST_F(VKCommandManagerTest, RetiredResourceIsReleasedOnceItsSubmissionCompletes)
 {
-    const uint64_t value = commands().submit(context().get_graphics_queue(), {});
-    ASSERT_GT(value, 0U);
+    const auto point = commands().submit(context().get_graphics_queue(), {});
+    ASSERT_TRUE(point);
 
     int released = 0;
-    commands().retire_resource([&released] { ++released; }, value);
-    commands().wait(value);
+    commands().retire_resource([&released] { ++released; }, point);
+    commands().wait(point);
     commands().collect();
     commands().collect();
 
@@ -179,28 +214,28 @@ TEST_F(VKCommandManagerTest, RetiredResourceIsReleasedOnceItsSubmissionCompletes
 TEST_F(VKCommandManagerTest, RetiringAResourceAgainstZeroReleasesItImmediately)
 {
     bool released = false;
-    commands().retire_resource([&released] { released = true; }, 0);
+    commands().retire_resource([&released] { released = true; }, {});
     EXPECT_TRUE(released);
 }
 
 TEST_F(VKCommandManagerTest, RetiringAnEmptyReleaseActionIsNoOp)
 {
-    EXPECT_NO_THROW(commands().retire_resource({}, 1));
+    EXPECT_NO_THROW(commands().retire_resource({}, Core::TimelinePoint { .timeline = 0, .value = 1 }));
     EXPECT_NO_THROW(commands().collect());
 }
 
 TEST_F(VKCommandManagerTest, ReleaseActionsMayCollectAgain)
 {
-    const uint64_t value = commands().submit(context().get_graphics_queue(), {});
-    ASSERT_GT(value, 0U);
+    const auto point = commands().submit(context().get_graphics_queue(), {});
+    ASSERT_TRUE(point);
 
     bool ran = false;
     commands().retire_resource([&ran] {
         commands().collect();
         ran = true;
     },
-        value);
-    commands().wait(value);
+        point);
+    commands().wait(point);
 
     EXPECT_NO_THROW(commands().collect());
     EXPECT_TRUE(ran);
@@ -209,10 +244,10 @@ TEST_F(VKCommandManagerTest, ReleaseActionsMayCollectAgain)
 TEST_F(VKCommandManagerTest, PendingReleaseActionsAreDroppedAtCleanup)
 {
     Core::VKCommandManager manager;
-    ASSERT_TRUE(manager.initialize(context().get_device(), graphics_family(), compute_family()));
+    ASSERT_TRUE(initialize_standalone(manager));
 
     bool ran = false;
-    manager.retire_resource([&ran] { ran = true; }, 1000);
+    manager.retire_resource([&ran] { ran = true; }, Core::TimelinePoint { .timeline = 0, .value = 1000 });
     manager.cleanup();
 
     EXPECT_FALSE(ran);
@@ -221,7 +256,7 @@ TEST_F(VKCommandManagerTest, PendingReleaseActionsAreDroppedAtCleanup)
 TEST_F(VKCommandManagerTest, DeferredCommandsStartEmpty)
 {
     EXPECT_FALSE(commands().has_deferred_commands());
-    EXPECT_EQ(commands().flush_deferred(context().get_graphics_queue()), 0U);
+    EXPECT_FALSE(commands().flush_deferred(context().get_graphics_queue()));
 }
 
 TEST_F(VKCommandManagerTest, RecordingDeferredCommandsMarksThemPendingAndBatchesIntoOneSubmission)
@@ -233,26 +268,26 @@ TEST_F(VKCommandManagerTest, RecordingDeferredCommandsMarksThemPendingAndBatches
     commands().record_deferred_commands([&calls](vk::CommandBuffer) { ++calls; });
     EXPECT_EQ(calls, 2);
 
-    const uint64_t value = commands().flush_deferred(context().get_graphics_queue());
-    EXPECT_GT(value, 0U);
+    const auto point = commands().flush_deferred(context().get_graphics_queue());
+    EXPECT_TRUE(point);
     EXPECT_FALSE(commands().has_deferred_commands());
 
-    commands().wait(value);
-    EXPECT_TRUE(commands().is_complete(value));
+    commands().wait(point);
+    EXPECT_TRUE(commands().is_complete(point));
 }
 
 TEST_F(VKCommandManagerTest, FlushingDeferredCommandsTwiceSubmitsOnce)
 {
     commands().record_deferred_commands([](vk::CommandBuffer) { });
 
-    EXPECT_GT(commands().flush_deferred(context().get_graphics_queue()), 0U);
-    EXPECT_EQ(commands().flush_deferred(context().get_graphics_queue()), 0U);
+    EXPECT_TRUE(commands().flush_deferred(context().get_graphics_queue()));
+    EXPECT_FALSE(commands().flush_deferred(context().get_graphics_queue()));
 }
 
 TEST_F(VKCommandManagerTest, StandaloneManagerOwnsItsPoolsUntilCleanup)
 {
     Core::VKCommandManager manager;
-    ASSERT_TRUE(manager.initialize(context().get_device(), graphics_family(), compute_family()));
+    ASSERT_TRUE(initialize_standalone(manager));
     EXPECT_TRUE(manager.get_pool());
 
     auto cmd = manager.allocate_command_buffer();
@@ -265,25 +300,29 @@ TEST_F(VKCommandManagerTest, StandaloneManagerOwnsItsPoolsUntilCleanup)
 TEST_F(VKCommandManagerTest, StandaloneManagerHasItsOwnTimeline)
 {
     Core::VKCommandManager manager;
-    ASSERT_TRUE(manager.initialize(context().get_device(), graphics_family(), compute_family()));
+    ASSERT_TRUE(initialize_standalone(manager));
 
-    EXPECT_NE(manager.get_timeline(), commands().get_timeline());
-    EXPECT_EQ(manager.submitted_value(), 0U);
-    EXPECT_EQ(manager.completed_value(), 0U);
+    const auto queue = context().get_graphics_queue();
+    EXPECT_NE(manager.get_timeline(queue), commands().get_timeline(queue));
 
-    const uint64_t value = manager.submit(context().get_graphics_queue(), {});
-    EXPECT_EQ(value, 1U);
-    manager.wait(value);
-    EXPECT_EQ(manager.completed_value(), 1U);
+    const uint32_t timeline = manager.timeline_index(queue);
+    ASSERT_LT(timeline, manager.timeline_count());
+    EXPECT_EQ(manager.submitted_value(timeline), 0U);
+    EXPECT_EQ(manager.completed_value(timeline), 0U);
+
+    const auto point = manager.submit(queue, {});
+    EXPECT_EQ(point.value, 1U);
+    manager.wait(point);
+    EXPECT_EQ(manager.completed_value(timeline), 1U);
 
     manager.cleanup();
-    EXPECT_FALSE(manager.get_timeline());
+    EXPECT_FALSE(manager.get_timeline(queue));
 }
 
 TEST_F(VKCommandManagerTest, StandaloneCleanupIsIdempotent)
 {
     Core::VKCommandManager manager;
-    ASSERT_TRUE(manager.initialize(context().get_device(), graphics_family(), compute_family()));
+    ASSERT_TRUE(initialize_standalone(manager));
     manager.cleanup();
     EXPECT_NO_THROW(manager.cleanup());
 }
@@ -291,10 +330,186 @@ TEST_F(VKCommandManagerTest, StandaloneCleanupIsIdempotent)
 TEST_F(VKCommandManagerTest, StandaloneCleanupFreesBuffersStillAllocated)
 {
     Core::VKCommandManager manager;
-    ASSERT_TRUE(manager.initialize(context().get_device(), graphics_family(), compute_family()));
+    ASSERT_TRUE(initialize_standalone(manager));
     (void)manager.allocate_command_buffer();
     (void)manager.begin_single_time_commands_compute();
     EXPECT_NO_THROW(manager.cleanup());
+}
+
+TEST(TimelineSnapshotTest, APointFillsOnlyItsOwnTimeline)
+{
+    const Core::TimelineSnapshot snapshot(Core::TimelinePoint { .timeline = 1, .value = 5 });
+
+    EXPECT_EQ(snapshot.values[0], 0U);
+    EXPECT_EQ(snapshot.values[1], 5U);
+    EXPECT_EQ(snapshot.values[2], 0U);
+}
+
+TEST(TimelineSnapshotTest, AnOutOfRangeTimelineIsIgnored)
+{
+    const Core::TimelineSnapshot snapshot(Core::TimelinePoint { .timeline = Core::k_max_timelines, .value = 5 });
+
+    for (const uint64_t value : snapshot.values) {
+        EXPECT_EQ(value, 0U);
+    }
+}
+
+TEST(TimelineSnapshotTest, AnEmptyPointIsFalseAndAnAssignedOneIsTrue)
+{
+    EXPECT_FALSE(Core::TimelinePoint {});
+    EXPECT_TRUE((Core::TimelinePoint { .timeline = 0, .value = 1 }));
+}
+
+TEST_F(VKCommandManagerTest, SubmittingToAQueueWithoutATimelineFails)
+{
+    EXPECT_FALSE(commands().submit(vk::Queue {}, {}));
+    EXPECT_EQ(commands().timeline_index(vk::Queue {}), commands().timeline_count());
+    EXPECT_FALSE(commands().get_timeline(vk::Queue {}));
+}
+
+TEST_F(VKCommandManagerTest, ASubmissionBlockedOnAWaitIsNotCompleteUntilItIsSatisfied)
+{
+    TimelineGate gate(context().get_device());
+    const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
+
+    const auto point = commands().submit(context().get_graphics_queue(), {}, waits);
+    ASSERT_TRUE(point);
+    EXPECT_FALSE(commands().is_complete(point));
+
+    auto released = std::make_shared<bool>(false);
+    commands().retire_resource([released] { *released = true; }, point);
+    commands().collect();
+    EXPECT_FALSE(*released);
+
+    gate.open();
+    commands().wait(point);
+    commands().collect();
+
+    EXPECT_TRUE(commands().is_complete(point));
+    EXPECT_TRUE(*released);
+}
+
+TEST_F(VKCommandManagerTest, SubmittedSnapshotHoldsAReleaseUntilPendingWorkCompletes)
+{
+    TimelineGate gate(context().get_device());
+    const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
+
+    const auto point = commands().submit(context().get_graphics_queue(), {}, waits);
+    ASSERT_TRUE(point);
+
+    const auto everything = commands().submitted();
+    EXPECT_FALSE(commands().is_complete(everything));
+
+    auto released = std::make_shared<bool>(false);
+    commands().retire_resource([released] { *released = true; }, everything);
+    commands().collect();
+    EXPECT_FALSE(*released);
+
+    gate.open();
+    commands().wait(everything);
+    commands().collect();
+    EXPECT_TRUE(*released);
+}
+
+TEST_F(VKCommandManagerTest, RetiredCommandBufferIsHeldWhileItsSubmissionIsPending)
+{
+    TimelineGate gate(context().get_device());
+    const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
+
+    auto cmd = commands().begin_single_time_commands();
+    ASSERT_TRUE(cmd);
+    cmd.end();
+
+    const vk::CommandBuffer recorded[] = { cmd };
+    const auto point = commands().submit(context().get_graphics_queue(), recorded, waits);
+    ASSERT_TRUE(point);
+    commands().retire(cmd, point);
+
+    EXPECT_NO_THROW(commands().collect());
+    EXPECT_FALSE(commands().is_complete(point));
+
+    gate.open();
+    commands().wait(point);
+    EXPECT_NO_THROW(commands().collect());
+}
+
+TEST_F(VKCommandManagerTest, DistinctQueuesCompleteIndependentlyAndAReleaseWaitsForBoth)
+{
+    if (context().get_compute_queue() == context().get_graphics_queue()) {
+        GTEST_SKIP() << "Compute is aliased to graphics on this device";
+    }
+
+    TimelineGate gate(context().get_device());
+    const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
+
+    const auto compute = commands().submit(context().get_compute_queue(), {}, waits);
+    const auto graphics = commands().submit(context().get_graphics_queue(), {});
+    ASSERT_TRUE(compute);
+    ASSERT_TRUE(graphics);
+    EXPECT_NE(compute.timeline, graphics.timeline);
+
+    commands().wait(graphics);
+    EXPECT_TRUE(commands().is_complete(graphics));
+    EXPECT_FALSE(commands().is_complete(compute));
+
+    auto after_compute = std::make_shared<bool>(false);
+    auto after_everything = std::make_shared<bool>(false);
+    commands().retire_resource([after_compute] { *after_compute = true; }, compute);
+    commands().retire_resource([after_everything] { *after_everything = true; }, commands().submitted());
+    commands().collect();
+    EXPECT_FALSE(*after_compute);
+    EXPECT_FALSE(*after_everything);
+
+    gate.open();
+    commands().wait(commands().submitted());
+    commands().collect();
+
+    EXPECT_TRUE(commands().is_complete(compute));
+    EXPECT_TRUE(*after_compute);
+    EXPECT_TRUE(*after_everything);
+}
+
+TEST_F(VKCommandManagerTest, OneWaitCoversPointsOnEveryTimeline)
+{
+    if (context().get_compute_queue() == context().get_graphics_queue()) {
+        GTEST_SKIP() << "Compute is aliased to graphics on this device";
+    }
+
+    TimelineGate gate(context().get_device());
+    const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
+
+    const auto compute = commands().submit(context().get_compute_queue(), {}, waits);
+    const auto graphics = commands().submit(context().get_graphics_queue(), {}, waits);
+    ASSERT_TRUE(compute);
+    ASSERT_TRUE(graphics);
+
+    Core::TimelineSnapshot both;
+    both.values[compute.timeline] = compute.value;
+    both.values[graphics.timeline] = graphics.value;
+    EXPECT_FALSE(commands().is_complete(both));
+
+    gate.open();
+    commands().wait(both);
+
+    EXPECT_TRUE(commands().is_complete(both));
+    EXPECT_TRUE(commands().is_complete(compute));
+    EXPECT_TRUE(commands().is_complete(graphics));
+}
+
+TEST_F(VKCommandManagerTest, WaitingWithATimeoutOnBlockedWorkReturnsWithoutCompleting)
+{
+    TimelineGate gate(context().get_device());
+    const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
+
+    const auto point = commands().submit(context().get_graphics_queue(), {}, waits);
+    ASSERT_TRUE(point);
+
+    commands().wait(point, 1'000'000);
+    EXPECT_FALSE(commands().is_complete(point));
+
+    gate.open();
+    commands().wait(point);
+    EXPECT_TRUE(commands().is_complete(point));
 }
 
 TEST(VKCommandManagerUninitializedTest, CleanupWithoutInitializeIsSafe)
@@ -302,7 +517,7 @@ TEST(VKCommandManagerUninitializedTest, CleanupWithoutInitializeIsSafe)
     Core::VKCommandManager manager;
     EXPECT_NO_THROW(manager.cleanup());
     EXPECT_FALSE(manager.get_pool());
-    EXPECT_FALSE(manager.get_timeline());
+    EXPECT_FALSE(manager.get_timeline(vk::Queue {}));
     EXPECT_FALSE(manager.has_deferred_commands());
 }
 

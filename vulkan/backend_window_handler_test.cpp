@@ -10,7 +10,9 @@
 #include <mutex>
 
 #include "MayaFlux/Buffers/VKBuffer.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/BackendResoureManager.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKContext.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VulkanBackend.hpp"
 #include "MayaFlux/Core/Windowing/WindowManager.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
@@ -280,6 +282,44 @@ TEST_F(BackendWindowHandlerTest, ExternallyRecordedFramesAcquireAndPresentThroug
     for (int i = 0; i < 6; ++i) {
         ASSERT_TRUE(present_external_frame(window, { 0.0F, 0.0F, 1.0F, 1.0F })) << "frame " << i;
     }
+}
+
+TEST_F(BackendWindowHandlerTest, PendingDeferredCommandsAreFlushedAndWaitedOnByThePresentedFrame)
+{
+    auto window = registered_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+    auto& commands = backend().get_command_manager();
+
+    int recorded = 0;
+    backend().get_resource_manager().record_deferred_commands([&recorded](vk::CommandBuffer) { ++recorded; });
+    EXPECT_EQ(recorded, 1);
+    EXPECT_TRUE(commands.has_deferred_commands());
+
+    const auto before = commands.submitted_value(commands.timeline_index(backend().get_context().get_graphics_queue()));
+
+    ASSERT_TRUE(present_external_frame(window, { 0.0F, 0.0F, 1.0F, 1.0F }));
+
+    const auto after = commands.submitted_value(commands.timeline_index(backend().get_context().get_graphics_queue()));
+    EXPECT_FALSE(commands.has_deferred_commands());
+    EXPECT_EQ(after, before + 2);
+    EXPECT_EQ(display->get_submitted_frame_count(window), 1U);
+    EXPECT_EQ(display->get_completed_frame_count(window), 1U);
+    EXPECT_TRUE(commands.is_complete(commands.submitted()));
+}
+
+TEST_F(BackendWindowHandlerTest, FramesWithoutDeferredCommandsSubmitOnce)
+{
+    auto window = registered_window();
+    ASSERT_NE(window, nullptr);
+    auto& commands = backend().get_command_manager();
+    const auto timeline = commands.timeline_index(backend().get_context().get_graphics_queue());
+
+    const auto before = commands.submitted_value(timeline);
+    ASSERT_TRUE(present_external_frame(window, { 0.0F, 0.0F, 1.0F, 1.0F }));
+
+    EXPECT_EQ(commands.submitted_value(timeline), before + 1);
 }
 
 TEST_F(BackendWindowHandlerTest, FrameCountersTrackSubmissionsAndCompletion)
