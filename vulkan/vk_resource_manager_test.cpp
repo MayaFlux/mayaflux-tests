@@ -1,6 +1,8 @@
 #include "gtest/gtest.h"
 
+#include <chrono>
 #include <cstring>
+#include <future>
 #include <numeric>
 
 #include "../support/vulkan_test_support.hpp"
@@ -491,6 +493,36 @@ TEST_F(BackendResourceManagerTest, HostReadbackRestoresGeneralLayoutForAnotherUp
     resources().download_image_data(image, out.data(), out.size());
 
     EXPECT_EQ(out, second);
+    resources().cleanup_image(image);
+}
+
+TEST_F(BackendResourceManagerTest, HostImageTransfersDoNotWaitForUnrelatedBlockedWork)
+{
+    auto& context = backend().get_context();
+    if (context.get_compute_queue() == context.get_graphics_queue()) {
+        GTEST_SKIP() << "The device has no separate compute queue to hold unrelated work on";
+    }
+
+    auto image = make_image(2, 2, vk::Format::eR8G8B8A8Unorm, VKImage::Usage::STORAGE);
+    const auto bytes = pattern(16, 3);
+
+    TimelineGate gate(context.get_device());
+    const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
+    const auto blocked = backend().get_command_manager().submit(context.get_compute_queue(), {}, waits);
+    ASSERT_TRUE(blocked);
+
+    auto transfer = std::async(std::launch::async, [&] {
+        resources().upload_image_data(image, bytes.data(), bytes.size());
+        std::vector<uint8_t> out(bytes.size(), 0);
+        resources().download_image_data(image, out.data(), out.size());
+        return out;
+    });
+
+    const bool finished = transfer.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    gate.open();
+
+    ASSERT_TRUE(finished);
+    EXPECT_EQ(transfer.get(), bytes);
     resources().cleanup_image(image);
 }
 
