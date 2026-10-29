@@ -295,6 +295,71 @@ namespace {
         foundry().release_fence(fence_b);
     }
 
+    TEST_F(ShaderFoundryDeviceTest, ALeaseHeldOnACommandBufferIsReleasedWhenASynchronousSubmitCompletes)
+    {
+        Portal::Graphics::SlotArena arena;
+        ASSERT_TRUE(arena.initialize(64, Portal::Graphics::BufferUsageHint::UNIFORM, 2));
+
+        const auto id = foundry().begin_commands(CommandType::COMPUTE);
+        foundry().hold_until_complete(id, arena.lease(0));
+        EXPECT_EQ(arena.acquire(), 1U);
+
+        foundry().submit_and_wait(id);
+
+        EXPECT_EQ(arena.acquire(), 0U);
+        arena.release();
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, ALeaseSurvivesReleasingTheFenceUntilTheSubmissionCompletes)
+    {
+        Portal::Graphics::SlotArena arena;
+        ASSERT_TRUE(arena.initialize(64, Portal::Graphics::BufferUsageHint::UNIFORM, 2));
+        const auto buffer = host_buffer();
+
+        const auto id = foundry().begin_commands(CommandType::COMPUTE);
+        foundry().get_command_buffer(id).fillBuffer(buffer->buffer(), 0, k_bytes, k_pattern);
+        foundry().hold_until_complete(id, arena.lease(0));
+
+        foundry().release_fence(foundry().submit_async(id));
+        backend()->wait_idle();
+        foundry().begin_commands(CommandType::COMPUTE);
+
+        EXPECT_EQ(arena.acquire(), 0U);
+        arena.release();
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, ALeaseOnACommandBufferRetiredWithoutSubmitIsReleasedWithIt)
+    {
+        Portal::Graphics::SlotArena arena;
+        ASSERT_TRUE(arena.initialize(64, Portal::Graphics::BufferUsageHint::UNIFORM, 2));
+
+        const auto id = foundry().begin_commands(CommandType::COMPUTE);
+        foundry().hold_until_complete(id, arena.lease(0));
+        EXPECT_EQ(arena.acquire(), 1U);
+
+        const std::array<Portal::Graphics::CommandBufferID, 1> ids { id };
+        foundry().retire_after_submit(ids);
+        backend()->wait_idle();
+        foundry().begin_commands(CommandType::COMPUTE);
+
+        EXPECT_EQ(arena.acquire(), 0U);
+        arena.release();
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, HoldingAnEmptyLeaseOrOnAnUnknownBufferHoldsNothing)
+    {
+        Portal::Graphics::SlotArena arena;
+        ASSERT_TRUE(arena.initialize(64, Portal::Graphics::BufferUsageHint::UNIFORM, 1));
+
+        const auto id = foundry().begin_commands(CommandType::COMPUTE);
+        EXPECT_NO_THROW(foundry().hold_until_complete(id, Portal::Graphics::SlotLease {}));
+        EXPECT_NO_THROW(foundry().hold_until_complete(9999, arena.lease(0)));
+
+        EXPECT_EQ(arena.acquire(), 0U);
+        EXPECT_EQ(arena.slot_count(), 1U);
+        arena.release();
+    }
+
     TEST_F(ShaderFoundryDeviceTest, SubmittingAnUnknownBufferGivesNoFenceOrSemaphore)
     {
         EXPECT_EQ(foundry().submit_async(9999), INVALID_FENCE);
