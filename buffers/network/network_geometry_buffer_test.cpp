@@ -206,10 +206,16 @@ namespace {
         attach(physics_particles(16));
         render(RenderConfig { .topology = PrimitiveTopology::LINE_LIST });
 
+        const bool has_geometry_stage = Portal::Graphics::get_shader_foundry()
+                                            .get_physical_device()
+                                            .getFeatures()
+                                            .geometryShader;
+
         const auto config = buffer->get_render_config();
         EXPECT_EQ(config.vertex_shader, "line.vert.spv");
         EXPECT_EQ(config.fragment_shader, "line.frag.spv");
-        EXPECT_EQ(config.geometry_shader, "line.geom.spv");
+        EXPECT_EQ(config.geometry_shader, has_geometry_stage ? "line.geom.spv" : "");
+        EXPECT_EQ(buffer->get_render_processor()->is_triangulate(), !has_geometry_stage);
     }
 
     TEST_F(NetworkBufferDeviceTest, TriangulatedLinesDropTheGeometryStage)

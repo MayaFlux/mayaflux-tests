@@ -7,7 +7,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstring>
-#include <mutex>
 
 #include "MayaFlux/Buffers/VKBuffer.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/BackendResoureManager.hpp"
