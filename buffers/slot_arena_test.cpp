@@ -37,6 +37,7 @@ TEST_F(SlotArenaTest, InitializesAMappedBufferWithAlignedSlots)
 
     EXPECT_TRUE(arena.is_initialized());
     EXPECT_EQ(arena.slot_count(), 2U);
+    EXPECT_EQ(arena.slot_bytes(), 192U);
 
     const auto first = arena.info(0);
     const auto second = arena.info(1);
