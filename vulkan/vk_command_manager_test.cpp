@@ -9,6 +9,8 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <thread>
 #include <vector>
 
@@ -74,16 +76,37 @@ TEST_F(VKCommandManagerTest, SingleTimeComputeCommandsSubmitOnComputeQueue)
     EXPECT_NO_THROW(commands().end_single_time_commands(cmd, context().get_compute_queue()));
 }
 
-TEST_F(VKCommandManagerTest, ResetPoolSucceedsWhenNothingIsPending)
+TEST_F(VKCommandManagerTest, FreedBufferLeavesTheManagerAbleToAllocateAgain)
 {
-    auto cmd = commands().allocate_command_buffer();
-    commands().free_command_buffer(cmd);
-    EXPECT_NO_THROW(commands().reset_pool());
+    auto first = commands().allocate_command_buffer();
+    ASSERT_TRUE(first);
+    commands().free_command_buffer(first);
+
+    auto second = commands().allocate_command_buffer();
+    EXPECT_TRUE(second);
+    commands().free_command_buffer(second);
 }
 
-TEST_F(VKCommandManagerTest, PoolIsExposedAfterInitialize)
+TEST_F(VKCommandManagerTest, LiveBuffersGetDistinctHandlesAndOwnPools)
 {
-    EXPECT_TRUE(commands().get_pool());
+    std::vector<vk::CommandBuffer> live;
+    for (int i = 0; i < 16; ++i) {
+        auto cmd = commands().begin_single_time_commands();
+        ASSERT_TRUE(cmd);
+        cmd.end();
+        live.push_back(cmd);
+    }
+
+    std::vector<VkCommandBuffer> handles;
+    for (const auto cmd : live) {
+        handles.push_back(static_cast<VkCommandBuffer>(cmd));
+    }
+    std::ranges::sort(handles);
+    EXPECT_EQ(std::ranges::adjacent_find(handles), handles.end());
+
+    for (const auto cmd : live) {
+        commands().free_command_buffer(cmd);
+    }
 }
 
 TEST_F(VKCommandManagerTest, TimelineIsExposedAfterInitialize)
@@ -356,13 +379,15 @@ TEST_F(VKCommandManagerTest, StandaloneManagerOwnsItsPoolsUntilCleanup)
 {
     Core::VKCommandManager manager;
     ASSERT_TRUE(initialize_standalone(manager));
-    EXPECT_TRUE(manager.get_pool());
 
     auto cmd = manager.allocate_command_buffer();
     EXPECT_TRUE(cmd);
+    auto compute = manager.begin_single_time_commands_compute();
+    EXPECT_TRUE(compute);
 
     manager.cleanup();
-    EXPECT_FALSE(manager.get_pool());
+    EXPECT_FALSE(manager.allocate_command_buffer());
+    EXPECT_NO_THROW(manager.free_command_buffer(cmd));
 }
 
 TEST_F(VKCommandManagerTest, StandaloneManagerHasItsOwnTimeline)
@@ -580,11 +605,250 @@ TEST_F(VKCommandManagerTest, WaitingWithATimeoutOnBlockedWorkReturnsWithoutCompl
     EXPECT_TRUE(commands().is_complete(point));
 }
 
+TEST_F(VKCommandManagerTest, BuffersAllocatedAtOnceFromManyThreadsAreAllDistinct)
+{
+    constexpr size_t threads_count = 4;
+    constexpr size_t per_thread = 24;
+
+    std::array<std::vector<vk::CommandBuffer>, threads_count> held;
+    std::atomic<size_t> allocated { 0 };
+    std::atomic<bool> release { false };
+
+    std::vector<std::thread> threads;
+    threads.reserve(threads_count);
+    for (size_t t = 0; t < threads_count; ++t) {
+        threads.emplace_back([&, t] {
+            for (size_t i = 0; i < per_thread; ++i) {
+                auto cmd = commands().begin_single_time_commands();
+                if (cmd) {
+                    cmd.end();
+                }
+                held[t].push_back(cmd);
+            }
+            allocated.fetch_add(1);
+            while (!release.load()) {
+                std::this_thread::yield();
+            }
+            for (const auto cmd : held[t]) {
+                commands().free_command_buffer(cmd);
+            }
+        });
+    }
+
+    while (allocated.load() < threads_count) {
+        std::this_thread::yield();
+    }
+
+    std::vector<VkCommandBuffer> handles;
+    for (const auto& group : held) {
+        for (const auto cmd : group) {
+            EXPECT_TRUE(cmd);
+            handles.push_back(static_cast<VkCommandBuffer>(cmd));
+        }
+    }
+    std::ranges::sort(handles);
+    EXPECT_EQ(std::ranges::adjacent_find(handles), handles.end());
+    EXPECT_EQ(handles.size(), threads_count * per_thread);
+
+    release.store(true);
+    for (auto& thread : threads) {
+        thread.join();
+    }
+}
+
+TEST_F(VKCommandManagerTest, ThreadsCyclingAllocateRecordAndFreeKeepTheManagerConsistent)
+{
+    constexpr size_t threads_count = 4;
+    constexpr int cycles = 150;
+    std::atomic<int> failures { 0 };
+
+    std::vector<std::thread> threads;
+    threads.reserve(threads_count);
+    for (size_t t = 0; t < threads_count; ++t) {
+        threads.emplace_back([&, t] {
+            for (int i = 0; i < cycles; ++i) {
+                auto cmd = (t % 2 == 0) ? commands().begin_single_time_commands()
+                                        : commands().begin_single_time_commands_compute();
+                if (!cmd) {
+                    failures.fetch_add(1);
+                    continue;
+                }
+                cmd.end();
+                commands().free_command_buffer(cmd);
+            }
+        });
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    EXPECT_EQ(failures.load(), 0);
+    auto after = commands().allocate_command_buffer();
+    EXPECT_TRUE(after);
+    commands().free_command_buffer(after);
+}
+
+TEST_F(VKCommandManagerTest, BuffersFreedByAnotherThreadReturnTheirPoolForReuse)
+{
+    std::vector<vk::CommandBuffer> made;
+    for (int i = 0; i < 8; ++i) {
+        auto cmd = commands().begin_single_time_commands();
+        ASSERT_TRUE(cmd);
+        cmd.end();
+        made.push_back(cmd);
+    }
+
+    std::thread freeing([&made] {
+        for (const auto cmd : made) {
+            commands().free_command_buffer(cmd);
+        }
+    });
+    freeing.join();
+
+    for (int i = 0; i < 8; ++i) {
+        auto cmd = commands().begin_single_time_commands();
+        ASSERT_TRUE(cmd);
+        cmd.end();
+        commands().free_command_buffer(cmd);
+    }
+}
+
+TEST_F(VKCommandManagerTest, FreeingOneBufferFromManyThreadsAtOnceFreesItOnce)
+{
+    constexpr size_t threads_count = 6;
+
+    for (int round = 0; round < 20; ++round) {
+        auto cmd = commands().allocate_command_buffer();
+        ASSERT_TRUE(cmd);
+
+        std::atomic<bool> go { false };
+        std::vector<std::thread> threads;
+        threads.reserve(threads_count);
+        for (size_t t = 0; t < threads_count; ++t) {
+            threads.emplace_back([&go, cmd] {
+                while (!go.load()) {
+                    std::this_thread::yield();
+                }
+                commands().free_command_buffer(cmd);
+            });
+        }
+        go.store(true);
+        for (auto& thread : threads) {
+            thread.join();
+        }
+    }
+
+    auto after = commands().allocate_command_buffer();
+    EXPECT_TRUE(after);
+    commands().free_command_buffer(after);
+}
+
+TEST_F(VKCommandManagerTest, RetiringFromManyThreadsWhileAllocatingFreesEveryBuffer)
+{
+    constexpr size_t threads_count = 4;
+    constexpr int per_thread = 60;
+    std::atomic<int> failures { 0 };
+    std::mutex submit_mutex;
+
+    std::vector<std::thread> threads;
+    threads.reserve(threads_count);
+    for (size_t t = 0; t < threads_count; ++t) {
+        threads.emplace_back([&failures, &submit_mutex] {
+            for (int i = 0; i < per_thread; ++i) {
+                auto cmd = commands().begin_single_time_commands();
+                if (!cmd) {
+                    failures.fetch_add(1);
+                    continue;
+                }
+                cmd.end();
+                const vk::CommandBuffer recorded[] = { cmd };
+                Core::TimelinePoint point;
+                {
+                    std::lock_guard lock(submit_mutex);
+                    point = commands().submit(context().get_graphics_queue(), recorded);
+                }
+                commands().retire(cmd, point);
+            }
+        });
+    }
+
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    commands().wait(commands().submitted());
+    commands().collect();
+
+    EXPECT_EQ(failures.load(), 0);
+}
+
+TEST_F(VKCommandManagerTest, DeferredRecordingFromManyThreadsGivesEachRecorderABatchToItself)
+{
+    constexpr size_t threads_count = 4;
+    constexpr int per_thread = 80;
+
+    std::mutex active_mutex;
+    std::set<VkCommandBuffer> active;
+    std::atomic<int> overlaps { 0 };
+    std::atomic<int> recorded { 0 };
+
+    std::vector<std::thread> threads;
+    threads.reserve(threads_count);
+    for (size_t t = 0; t < threads_count; ++t) {
+        threads.emplace_back([&] {
+            for (int i = 0; i < per_thread; ++i) {
+                commands().record_deferred_commands([&](vk::CommandBuffer batch) {
+                    const auto handle = static_cast<VkCommandBuffer>(batch);
+                    {
+                        std::lock_guard lock(active_mutex);
+                        if (!active.insert(handle).second) {
+                            overlaps.fetch_add(1);
+                        }
+                    }
+                    std::this_thread::yield();
+                    recorded.fetch_add(1);
+                    {
+                        std::lock_guard lock(active_mutex);
+                        active.erase(handle);
+                    }
+                });
+            }
+        });
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    EXPECT_EQ(overlaps.load(), 0);
+    EXPECT_EQ(recorded.load(), static_cast<int>(threads_count) * per_thread);
+    EXPECT_TRUE(commands().has_deferred_commands());
+
+    const auto point = commands().flush_deferred(context().get_graphics_queue());
+    ASSERT_TRUE(point);
+    EXPECT_FALSE(commands().has_deferred_commands());
+    commands().wait(point);
+    EXPECT_TRUE(commands().is_complete(point));
+}
+
+TEST_F(VKCommandManagerTest, OneThreadRecordingDeferredCommandsKeepsOneBatchAcrossCalls)
+{
+    std::set<VkCommandBuffer> seen;
+    for (int i = 0; i < 5; ++i) {
+        commands().record_deferred_commands([&seen](vk::CommandBuffer batch) {
+            seen.insert(static_cast<VkCommandBuffer>(batch));
+        });
+    }
+
+    EXPECT_EQ(seen.size(), 1U);
+    const auto point = commands().flush_deferred(context().get_graphics_queue());
+    EXPECT_TRUE(point);
+    commands().wait(point);
+}
+
 TEST(VKCommandManagerUninitializedTest, CleanupWithoutInitializeIsSafe)
 {
     Core::VKCommandManager manager;
     EXPECT_NO_THROW(manager.cleanup());
-    EXPECT_FALSE(manager.get_pool());
+    EXPECT_FALSE(manager.allocate_command_buffer());
     EXPECT_FALSE(manager.get_timeline(vk::Queue {}));
     EXPECT_FALSE(manager.has_deferred_commands());
 }
