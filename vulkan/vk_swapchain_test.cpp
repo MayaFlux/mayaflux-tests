@@ -1,11 +1,15 @@
 #include "gtest/gtest.h"
 
 #include "../support/native_window_test_support.hpp"
+#include "../support/vulkan_test_support.hpp"
 
 #if defined(MAYAFLUX_TEST_NATIVE_WINDOWS)
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <limits>
+#include <thread>
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKEnumUtils.hpp"
@@ -188,6 +192,36 @@ TEST_F(VKSwapchainFixture, RecreateRebuildsTheSwapchainAtTheCurrentWindowSize)
     EXPECT_EQ(swapchain->get_extent().height, expected.height);
     EXPECT_GT(swapchain->get_image_count(), 0U);
     EXPECT_EQ(swapchain->get_image_views().size(), swapchain->get_images().size());
+}
+
+TEST_F(VKSwapchainFixture, RecreateDoesNotWaitForWorkOnOtherQueues)
+{
+    if (context().get_compute_queue() == context().get_graphics_queue()) {
+        GTEST_SKIP() << "The device has no separate compute queue to hold unrelated work on";
+    }
+
+    auto window = make_window();
+    ASSERT_NE(window, nullptr);
+    auto* swapchain = create_swapchain(window);
+    ASSERT_NE(swapchain, nullptr);
+
+    TimelineGate gate(context().get_device());
+    const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
+    ASSERT_TRUE(backend().get_command_manager().submit(context().get_compute_queue(), {}, waits));
+
+    std::atomic<bool> gate_opened { false };
+    std::thread opener([&] {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        gate_opened.store(true);
+        gate.open();
+    });
+
+    const bool recreated = swapchain->recreate(0, 0);
+    const bool waited_for_other_queue = gate_opened.load();
+    opener.join();
+
+    EXPECT_TRUE(recreated);
+    EXPECT_FALSE(waited_for_other_queue);
 }
 
 TEST_F(VKSwapchainFixture, RecreatedSwapchainStillPresents)
