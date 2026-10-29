@@ -45,7 +45,8 @@ namespace {
             return window;
         }
 
-        bool present_external_frame(const std::shared_ptr<Window>& window, std::array<float, 4> color)
+        bool present_external_frame(const std::shared_ptr<Window>& window, std::array<float, 4> color,
+            Registry::Service::PresentPoint* point = nullptr)
         {
             auto* display = service();
             if (!display) {
@@ -106,7 +107,10 @@ namespace {
 
             uint64_t cmd_bits = 0;
             std::memcpy(&cmd_bits, &cmd, sizeof(cmd));
-            display->submit_and_present(window, cmd_bits);
+            const auto presented = display->submit_and_present(window, cmd_bits);
+            if (point) {
+                *point = presented;
+            }
 
             backend().wait_idle();
             commands.free_command_buffer(cmd);
@@ -338,6 +342,72 @@ TEST_F(BackendWindowHandlerTest, FrameCountersTrackSubmissionsAndCompletion)
 
     EXPECT_EQ(display->get_submitted_frame_count(window), frames);
     EXPECT_EQ(display->get_completed_frame_count(window), frames);
+}
+
+TEST_F(BackendWindowHandlerTest, PresentedFrameReturnsAPointThatCompletes)
+{
+    auto window = registered_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+
+    Registry::Service::PresentPoint point;
+    ASSERT_TRUE(present_external_frame(window, { 0.0F, 0.0F, 1.0F, 1.0F }, &point));
+
+    EXPECT_TRUE(point);
+    EXPECT_TRUE(display->is_present_complete(point));
+    EXPECT_NO_THROW(display->wait_present(point));
+}
+
+TEST_F(BackendWindowHandlerTest, PresentPointsIncreaseAcrossFramesOfAWindow)
+{
+    auto window = registered_window();
+    ASSERT_NE(window, nullptr);
+
+    Registry::Service::PresentPoint first;
+    Registry::Service::PresentPoint second;
+    ASSERT_TRUE(present_external_frame(window, { 0.0F, 0.0F, 1.0F, 1.0F }, &first));
+    ASSERT_TRUE(present_external_frame(window, { 0.0F, 1.0F, 0.0F, 1.0F }, &second));
+
+    EXPECT_EQ(first.timeline, second.timeline);
+    EXPECT_GT(second.value, first.value);
+}
+
+TEST_F(BackendWindowHandlerTest, EmptyPresentPointIsCompleteAndWaitingOnItReturns)
+{
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+
+    EXPECT_TRUE(display->is_present_complete({}));
+    EXPECT_NO_THROW(display->wait_present({}));
+}
+
+TEST_F(BackendWindowHandlerTest, SubmittingForAnUnregisteredWindowReturnsAnEmptyPoint)
+{
+    auto window = make_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+
+    EXPECT_FALSE(display->submit_and_present(window, 0));
+}
+
+TEST_F(BackendWindowHandlerTest, AFrameAcquiredButNeverSubmittedDoesNotStallCompletion)
+{
+    auto window = registered_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+
+    const uint32_t images = display->get_swapchain_image_count(window);
+    for (uint32_t i = 0; i < images; ++i) {
+        ASSERT_TRUE(present_external_frame(window, { 0.0F, 0.0F, 1.0F, 1.0F })) << "frame " << i;
+    }
+
+    ASSERT_NE(display->acquire_next_swapchain_image(window), 0U);
+    backend().wait_idle();
+
+    EXPECT_EQ(display->get_completed_frame_count(window), display->get_submitted_frame_count(window));
 }
 
 TEST_F(BackendWindowHandlerTest, CompletedFramesNeverExceedSubmittedAndCatchUpWhenIdle)

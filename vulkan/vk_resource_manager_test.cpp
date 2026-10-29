@@ -124,6 +124,61 @@ TEST_F(BackendResourceManagerTest, CleaningUpTwiceDoesNotFreeTwice)
     EXPECT_NO_THROW(resources().cleanup_buffer(buffer));
 }
 
+TEST_F(BackendResourceManagerTest, RetiredBufferIsDetachedAtOnceAndCanBeInitializedAgain)
+{
+    auto buffer = staging_buffer();
+    ASSERT_TRUE(buffer->is_initialized());
+
+    resources().retire_buffer(buffer);
+
+    EXPECT_FALSE(buffer->is_initialized());
+    EXPECT_EQ(buffer->get_mapped_ptr(), nullptr);
+
+    resources().initialize_buffer(buffer);
+    EXPECT_TRUE(buffer->is_initialized());
+    EXPECT_NE(buffer->get_mapped_ptr(), nullptr);
+
+    resources().cleanup_buffer(buffer);
+}
+
+TEST_F(BackendResourceManagerTest, RetiringNullOrUnmanagedBuffersIsNoOp)
+{
+    auto buffer = std::make_shared<VKBuffer>(64, VKBuffer::Usage::STAGING, Kakshya::DataModality::IMAGE_COLOR);
+
+    EXPECT_NO_THROW(resources().retire_buffer(nullptr));
+    EXPECT_NO_THROW(resources().retire_buffer(buffer));
+}
+
+TEST_F(BackendResourceManagerTest, BufferServiceRetireDetachesTheBuffer)
+{
+    auto buffer = staging_buffer();
+    ASSERT_NE(service(), nullptr);
+    ASSERT_TRUE(service()->retire_buffer);
+
+    service()->retire_buffer(buffer);
+
+    EXPECT_FALSE(buffer->is_initialized());
+}
+
+TEST_F(BackendResourceManagerTest, ResizingAManagedBufferPreservesItsBytesAndKeepsItUsable)
+{
+    auto buffer = staging_buffer(64);
+    const auto bytes = pattern(64);
+    std::memcpy(buffer->get_mapped_ptr(), bytes.data(), bytes.size());
+
+    buffer->resize(256, true);
+
+    EXPECT_EQ(buffer->get_size_bytes(), 256U);
+    ASSERT_NE(buffer->get_mapped_ptr(), nullptr);
+    EXPECT_EQ(std::memcmp(buffer->get_mapped_ptr(), bytes.data(), bytes.size()), 0);
+
+    buffer->resize(512, false);
+    EXPECT_EQ(buffer->get_size_bytes(), 512U);
+    EXPECT_TRUE(buffer->is_initialized());
+
+    resources().cleanup_buffer(buffer);
+}
+
 TEST_F(BackendResourceManagerTest, DeviceAddressIsNonZeroForAddressableBuffers)
 {
     auto buffer = std::make_shared<VKBuffer>(256, VKBuffer::Usage::STORAGE_BDA, Kakshya::DataModality::IMAGE_COLOR);

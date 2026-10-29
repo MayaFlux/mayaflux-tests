@@ -7,7 +7,10 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <memory>
+#include <thread>
+#include <vector>
 
 namespace MayaFlux::Test {
 namespace {
@@ -239,6 +242,71 @@ TEST_F(VKCommandManagerTest, ReleaseActionsMayCollectAgain)
 
     EXPECT_NO_THROW(commands().collect());
     EXPECT_TRUE(ran);
+}
+
+TEST_F(VKCommandManagerTest, ResourcesRetiredFromManyThreadsAreEachReleasedOnce)
+{
+    TimelineGate gate(context().get_device());
+    const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
+    const auto point = commands().submit(context().get_graphics_queue(), {}, waits);
+    ASSERT_TRUE(point);
+
+    constexpr int producers = 8;
+    constexpr int per_producer = 200;
+    std::atomic<int> released { 0 };
+
+    std::vector<std::thread> threads;
+    for (int t = 0; t < producers; ++t) {
+        threads.emplace_back([&released, point] {
+            for (int i = 0; i < per_producer; ++i) {
+                commands().retire_resource([&released] { ++released; }, point);
+            }
+        });
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    commands().collect();
+    EXPECT_EQ(released.load(), 0);
+
+    gate.open();
+    commands().wait(point);
+    commands().collect();
+
+    EXPECT_EQ(released.load(), producers * per_producer);
+}
+
+TEST_F(VKCommandManagerTest, ConcurrentCollectorsReleaseEveryResourceExactlyOnce)
+{
+    TimelineGate gate(context().get_device());
+    const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
+    const auto point = commands().submit(context().get_graphics_queue(), {}, waits);
+    ASSERT_TRUE(point);
+
+    constexpr int total = 1000;
+    std::atomic<int> released { 0 };
+    for (int i = 0; i < total; ++i) {
+        commands().retire_resource([&released] { ++released; }, point);
+    }
+
+    gate.open();
+    commands().wait(point);
+
+    std::vector<std::thread> collectors;
+    for (int t = 0; t < 4; ++t) {
+        collectors.emplace_back([] {
+            for (int i = 0; i < 50; ++i) {
+                commands().collect();
+            }
+        });
+    }
+    for (auto& collector : collectors) {
+        collector.join();
+    }
+    commands().collect();
+
+    EXPECT_EQ(released.load(), total);
 }
 
 TEST_F(VKCommandManagerTest, PendingReleaseActionsAreDroppedAtCleanup)
