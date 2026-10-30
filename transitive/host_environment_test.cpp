@@ -269,7 +269,130 @@ namespace {
     }
 #endif
 
+#if defined(MAYAFLUX_PLATFORM_LINUX)
+    TEST(HostEnvironmentTest, LinuxPathSeparatorIsSlash)
+    {
+        EXPECT_EQ(MayaFlux::Platform::PathSeparator, '/');
+    }
+
+    TEST(HostEnvironmentTest, LinuxLibrarySearchAddsLibPrefixAndSoExtension)
+    {
+        FixtureTree fixture;
+        const auto name = unique_library_name();
+        const auto expected = fixture.make_file(std::filesystem::path("lib") / ("lib" + name + ".so"));
+
+        const auto& resolved = MayaFlux::Platform::SystemConfig::find_dep_library(name, fixture.root().string());
+        EXPECT_EQ(std::filesystem::path(resolved), expected);
+    }
+
+    TEST(HostEnvironmentTest, LinuxLibrarySearchDoesNotDuplicateSoExtension)
+    {
+        FixtureTree fixture;
+        const auto name = unique_library_name() + ".so";
+        const auto expected = fixture.make_file(std::filesystem::path("lib") / name);
+
+        const auto& resolved = MayaFlux::Platform::SystemConfig::find_dep_library(name, fixture.root().string());
+        EXPECT_EQ(std::filesystem::path(resolved), expected);
+    }
+
+    TEST(HostEnvironmentTest, LinuxLibrarySearchPreservesArchiveExtension)
+    {
+        FixtureTree fixture;
+        const auto name = unique_library_name() + ".a";
+        const auto expected = fixture.make_file(std::filesystem::path("lib64") / name);
+
+        const auto& resolved = MayaFlux::Platform::SystemConfig::find_dep_library(name, fixture.root().string());
+        EXPECT_EQ(std::filesystem::path(resolved), expected);
+    }
+
+    TEST(HostEnvironmentTest, LinuxExecCommandMergesStderrWhenRedirected)
+    {
+        const auto output = MayaFlux::Platform::SystemConfig::exec_command(
+            "sh -c 'echo FixtureError >&2' 2>&1");
+        EXPECT_NE(output.find("FixtureError"), std::string::npos);
+    }
+
+    TEST(HostEnvironmentTest, LinuxLibraryDiscoveryOnlyReturnsExistingPaths)
+    {
+        const auto& libraries = MayaFlux::Platform::SystemConfig::get_system_libraries();
+
+        for (const auto& path : libraries) {
+            EXPECT_TRUE(std::filesystem::exists(path)) << path;
+        }
+    }
+#endif
+
 #if defined(MAYAFLUX_PLATFORM_MACOS)
+    TEST(HostEnvironmentTest, MacPathSeparatorIsSlash)
+    {
+        EXPECT_EQ(MayaFlux::Platform::PathSeparator, '/');
+    }
+
+    TEST(HostEnvironmentTest, MacLibrarySearchAddsLibPrefixAndDylibExtension)
+    {
+        FixtureTree fixture;
+        const auto name = unique_library_name();
+        const auto expected = fixture.make_file(std::filesystem::path("lib") / ("lib" + name + ".dylib"));
+
+        const auto& resolved = MayaFlux::Platform::SystemConfig::find_dep_library(name, fixture.root().string());
+        EXPECT_EQ(std::filesystem::path(resolved), expected);
+    }
+
+    TEST(HostEnvironmentTest, MacLibrarySearchDoesNotDuplicateDylibExtension)
+    {
+        FixtureTree fixture;
+        const auto name = unique_library_name() + ".dylib";
+        const auto expected = fixture.make_file(std::filesystem::path("lib64") / name);
+
+        const auto& resolved = MayaFlux::Platform::SystemConfig::find_dep_library(name, fixture.root().string());
+        EXPECT_EQ(std::filesystem::path(resolved), expected);
+    }
+
+    TEST(HostEnvironmentTest, MacLibrarySearchPreservesLibPrefixedFilename)
+    {
+        FixtureTree fixture;
+        const auto name = "lib" + unique_library_name() + ".dylib";
+        const auto expected = fixture.make_file(std::filesystem::path("bin") / name);
+
+        const auto& resolved = MayaFlux::Platform::SystemConfig::find_dep_library(name, fixture.root().string());
+        EXPECT_EQ(std::filesystem::path(resolved), expected);
+    }
+
+    TEST(HostEnvironmentTest, MacExecCommandMergesStderrWhenRedirected)
+    {
+        const auto output = MayaFlux::Platform::SystemConfig::exec_command(
+            "sh -c 'echo FixtureError >&2' 2>&1");
+        EXPECT_NE(output.find("FixtureError"), std::string::npos);
+    }
+
+    TEST(HostEnvironmentTest, MacLibraryDiscoveryOnlyReturnsExistingPaths)
+    {
+        const auto& libraries = MayaFlux::Platform::SystemConfig::get_system_libraries();
+
+        for (const auto& path : libraries) {
+            EXPECT_TRUE(std::filesystem::exists(path)) << path;
+        }
+    }
+
+    TEST(HostEnvironmentTest, MacHomebrewPathsAreIncludedWhenPresent)
+    {
+        const std::filesystem::path homebrew_include = "/opt/homebrew/include";
+        const std::filesystem::path homebrew_library = "/opt/homebrew/lib";
+        const auto& includes = MayaFlux::Platform::SystemConfig::get_system_includes();
+        const auto& libraries = MayaFlux::Platform::SystemConfig::get_system_libraries();
+
+        if (!std::filesystem::exists(homebrew_include) && !std::filesystem::exists(homebrew_library)) {
+            GTEST_SKIP() << "Homebrew include and library directories are not installed";
+        }
+
+        if (std::filesystem::exists(homebrew_include)) {
+            EXPECT_NE(std::find(includes.begin(), includes.end(), homebrew_include.string()), includes.end());
+        }
+        if (std::filesystem::exists(homebrew_library)) {
+            EXPECT_NE(std::find(libraries.begin(), libraries.end(), homebrew_library.string()), libraries.end());
+        }
+    }
+
     TEST(HostEnvironmentTest, MacSdkDiscoveryReturnsAValidSdkAndFeedsSystemIncludes)
     {
         const auto sdk = MayaFlux::Platform::SystemConfig::get_macos_sdk_path();
