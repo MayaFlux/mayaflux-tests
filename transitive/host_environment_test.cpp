@@ -86,17 +86,17 @@ namespace {
     TEST(HostEnvironmentTest, ExecCommandCapturesStdoutAndTrimOutputNormalizesIt)
     {
 #if defined(MAYAFLUX_PLATFORM_WINDOWS)
-        auto output = MayaFlux::Platform::SystemConfig::exec_command("cmd /c echo FixtureOutput");
+        auto output = MayaFlux::Platform::exec_command("cmd /c echo FixtureOutput");
 #else
-        auto output = MayaFlux::Platform::SystemConfig::exec_command("printf 'FixtureOutput\\r\\n'");
+        auto output = MayaFlux::Platform::exec_command("printf 'FixtureOutput\\r\\n'");
 #endif
         EXPECT_NE(output.find("FixtureOutput"), std::string::npos);
 
-        MayaFlux::Platform::SystemConfig::trim_output(output);
+        MayaFlux::Platform::trim_output(output);
         EXPECT_EQ(output, "FixtureOutput");
 
         std::string whitespace = " \t\r\n";
-        MayaFlux::Platform::SystemConfig::trim_output(whitespace);
+        MayaFlux::Platform::trim_output(whitespace);
         EXPECT_TRUE(whitespace.empty());
     }
 
@@ -213,7 +213,7 @@ namespace {
 
     TEST(HostEnvironmentTest, WindowsExecCommandMergesStderrWhenRedirected)
     {
-        const auto output = MayaFlux::Platform::SystemConfig::exec_command(
+        const auto output = MayaFlux::Platform::exec_command(
             "cmd /c \"echo FixtureError 1>&2\" 2>&1");
         EXPECT_NE(output.find("FixtureError"), std::string::npos);
     }
@@ -307,7 +307,7 @@ namespace {
 
     TEST(HostEnvironmentTest, LinuxExecCommandMergesStderrWhenRedirected)
     {
-        const auto output = MayaFlux::Platform::SystemConfig::exec_command(
+        const auto output = MayaFlux::Platform::exec_command(
             "sh -c 'echo FixtureError >&2' 2>&1");
         EXPECT_NE(output.find("FixtureError"), std::string::npos);
     }
@@ -360,7 +360,7 @@ namespace {
 
     TEST(HostEnvironmentTest, MacExecCommandMergesStderrWhenRedirected)
     {
-        const auto output = MayaFlux::Platform::SystemConfig::exec_command(
+        const auto output = MayaFlux::Platform::exec_command(
             "sh -c 'echo FixtureError >&2' 2>&1");
         EXPECT_NE(output.find("FixtureError"), std::string::npos);
     }
