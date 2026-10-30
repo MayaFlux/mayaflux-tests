@@ -14,23 +14,6 @@ namespace {
     using Kakshya::WindowContainer;
     using namespace WindowSupport;
 
-    std::type_index element_type_of(const DataVariant& variant)
-    {
-        return std::visit(
-            [](const auto& v) { return std::type_index(typeid(typename std::decay_t<decltype(v)>::value_type)); },
-            variant);
-    }
-
-    std::vector<uint8_t> bytes_of(const DataVariant& variant)
-    {
-        return std::visit(
-            [](const auto& v) {
-                const auto* first = reinterpret_cast<const uint8_t*>(v.data());
-                return std::vector<uint8_t>(first, first + v.size() * sizeof(typename std::decay_t<decltype(v)>::value_type));
-            },
-            variant);
-    }
-
     class WindowAccessProcessorTest : public ::testing::Test {
     protected:
         void attach() { processor->on_attach(rig.container); }
@@ -275,6 +258,7 @@ namespace {
     struct SurfaceCase {
         SurfaceFormat format;
         std::type_index element;
+        size_t element_size;
         const char* name;
     };
 
@@ -282,11 +266,11 @@ namespace {
 
     INSTANTIATE_TEST_SUITE_P(Surfaces, WindowAccessProcessorFormatTest,
         ::testing::Values(
-            SurfaceCase { SurfaceFormat::B8G8R8A8_SRGB, typeid(uint8_t), "Bgra8Srgb" },
-            SurfaceCase { SurfaceFormat::R8G8B8A8_UNORM, typeid(uint8_t), "Rgba8Unorm" },
-            SurfaceCase { SurfaceFormat::R16G16B16A16_SFLOAT, typeid(uint16_t), "Rgba16F" },
-            SurfaceCase { SurfaceFormat::R32G32B32A32_SFLOAT, typeid(float), "Rgba32F" },
-            SurfaceCase { SurfaceFormat::A2B10G10R10_UNORM, typeid(uint32_t), "A2b10g10r10" }),
+            SurfaceCase { SurfaceFormat::B8G8R8A8_SRGB, typeid(uint8_t), sizeof(uint8_t), "Bgra8Srgb" },
+            SurfaceCase { SurfaceFormat::R8G8B8A8_UNORM, typeid(uint8_t), sizeof(uint8_t), "Rgba8Unorm" },
+            SurfaceCase { SurfaceFormat::R16G16B16A16_SFLOAT, typeid(uint16_t), sizeof(uint16_t), "Rgba16F" },
+            SurfaceCase { SurfaceFormat::R32G32B32A32_SFLOAT, typeid(float), sizeof(float), "Rgba32F" },
+            SurfaceCase { SurfaceFormat::A2B10G10R10_UNORM, typeid(uint32_t), sizeof(uint32_t), "A2b10g10r10" }),
         [](const ::testing::TestParamInfo<SurfaceCase>& info) { return std::string(info.param.name); });
 
     TEST_P(WindowAccessProcessorFormatTest, TheCaptureKeepsTheSurfacesNativeElementType)
@@ -301,10 +285,79 @@ namespace {
 
         const auto& processed = std::as_const(*rig.container).get_processed_data();
         ASSERT_FALSE(processed.empty());
-        EXPECT_EQ(element_type_of(processed[0]), c.element);
-        EXPECT_EQ(bytes_of(processed[0]), frame);
+        EXPECT_EQ(element_type(processed[0]), c.element);
+        EXPECT_EQ(raw_bytes(processed[0]), frame);
         EXPECT_EQ(processor.get_last_readback_bytes(), frame.size());
         EXPECT_EQ(processor.get_surface_format(), c.format);
+    }
+
+    TEST_P(WindowAccessProcessorFormatTest, TheHistoryKeepsTheCaptureInTheSameElementType)
+    {
+        const auto& c = GetParam();
+        WindowRig rig(k_history, c.format);
+        WindowAccessProcessor processor;
+        processor.on_attach(rig.container);
+        const auto first = rig.display.present(3);
+        processor.process(rig.container);
+        const auto second = rig.display.present(4);
+        processor.process(rig.container);
+
+        EXPECT_EQ(rig.container->get_surface_format(), c.format);
+        EXPECT_EQ(rig.container->value_element_type(), c.element);
+        EXPECT_EQ(rig.container->get_write_head(), 2U);
+        EXPECT_EQ(rig.container->get_num_frames(), 2U);
+        EXPECT_EQ(element_type(rig.container->get_data()[0]), c.element);
+        EXPECT_EQ(history_slot(*rig.container, 0), first);
+        EXPECT_EQ(history_slot(*rig.container, 1), second);
+    }
+
+    TEST_P(WindowAccessProcessorFormatTest, TheSurfaceIsThreeDimensionalWhateverTheFormat)
+    {
+        const auto& c = GetParam();
+        WindowRig rig(k_history, c.format);
+        WindowAccessProcessor processor;
+        processor.on_attach(rig.container);
+
+        const auto dims = rig.container->get_dimensions();
+
+        ASSERT_EQ(dims.size(), 3U);
+        EXPECT_EQ(dims[0].size, k_surface_height);
+        EXPECT_EQ(dims[1].size, k_surface_width);
+        EXPECT_EQ(rig.container->get_total_elements(), surface_bytes_per_pixel(c.format) * k_surface_width * k_surface_height / c.element_size);
+    }
+
+    TEST_F(WindowAccessProcessorTest, AttachingFollowsTheSwapchainWhenItDiffersFromTheWindow)
+    {
+        rig.display.resize(6, 5);
+
+        attach();
+        const auto frame = rig.display.present(1);
+        process();
+
+        const auto& structure = std::as_const(*rig.container).get_structure();
+        EXPECT_EQ(structure.get_width(), 6U);
+        EXPECT_EQ(structure.get_height(), 5U);
+        EXPECT_EQ(history_slot(*rig.container, 0), frame);
+        EXPECT_EQ(rig.container->get_write_head(), 1U);
+    }
+
+    TEST_F(WindowAccessProcessorTest, AFormatChangeAtTheSameExtentReshapesTheContainer)
+    {
+        attach();
+        rig.display.present(1);
+        process();
+        ASSERT_EQ(rig.container->value_element_type(), std::type_index(typeid(uint8_t)));
+
+        rig.display.set_format(SurfaceFormat::R16G16B16A16_SFLOAT);
+        const auto frame = rig.display.present(2);
+        process();
+
+        EXPECT_EQ(rig.container->get_surface_format(), SurfaceFormat::R16G16B16A16_SFLOAT);
+        EXPECT_EQ(rig.container->value_element_type(), std::type_index(typeid(uint16_t)));
+        EXPECT_EQ(rig.container->get_write_head(), 1U);
+        EXPECT_EQ(rig.container->get_num_frames(), 1U);
+        EXPECT_EQ(history_slot(*rig.container, 0), frame);
+        EXPECT_EQ(processed_pixels(*rig.container), frame);
     }
 
 } // namespace

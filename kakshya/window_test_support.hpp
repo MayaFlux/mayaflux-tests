@@ -88,38 +88,65 @@ private:
     Registry::Service::DisplayService m_service;
 };
 
+class WindowProbe : public Kakshya::WindowContainer {
+public:
+    using Kakshya::WindowContainer::WindowContainer;
+
+    template <typename T>
+    void copy_frames(std::vector<T>& out, uint64_t start, uint64_t count) const
+    {
+        get_frames_impl(out.data(), out.size(), start, count, typeid(T));
+    }
+
+    template <typename T>
+    [[nodiscard]] T read_value(const std::vector<uint64_t>& coords, T sentinel) const
+    {
+        get_value_impl(coords, &sentinel, typeid(T));
+        return sentinel;
+    }
+};
+
 class WindowRig {
 public:
     explicit WindowRig(uint32_t history = k_history, SurfaceFormat format = SurfaceFormat::R8G8B8A8_UNORM)
         : window(std::make_shared<ScriptedWindow>(k_surface_width, k_surface_height))
         , display(k_surface_width, k_surface_height, format)
-        , container(std::make_shared<Kakshya::WindowContainer>(window, history))
+        , container(std::make_shared<WindowProbe>(window, history))
     {
     }
 
     std::shared_ptr<ScriptedWindow> window;
     FakeDisplay display;
-    std::shared_ptr<Kakshya::WindowContainer> container;
+    std::shared_ptr<WindowProbe> container;
 };
+
+inline std::vector<uint8_t> raw_bytes(const Kakshya::DataVariant& variant)
+{
+    return std::visit(
+        [](const auto& v) {
+            const auto* first = reinterpret_cast<const uint8_t*>(v.data());
+            return std::vector<uint8_t>(first, first + v.size() * sizeof(typename std::decay_t<decltype(v)>::value_type));
+        },
+        variant);
+}
+
+inline std::type_index element_type(const Kakshya::DataVariant& variant)
+{
+    return std::visit(
+        [](const auto& v) { return std::type_index(typeid(typename std::decay_t<decltype(v)>::value_type)); },
+        variant);
+}
 
 inline std::vector<uint8_t> processed_pixels(const Kakshya::WindowContainer& container)
 {
     const auto& processed = container.get_processed_data();
-    if (processed.empty()) {
-        return {};
-    }
-    const auto* bytes = std::get_if<std::vector<uint8_t>>(&processed[0]);
-    return bytes ? *bytes : std::vector<uint8_t> {};
+    return processed.empty() ? std::vector<uint8_t> {} : raw_bytes(processed[0]);
 }
 
 inline std::vector<uint8_t> history_slot(Kakshya::WindowContainer& container, uint32_t index)
 {
     const auto& data = container.get_data();
-    if (index >= data.size()) {
-        return {};
-    }
-    const auto* bytes = std::get_if<std::vector<uint8_t>>(&data[index]);
-    return bytes ? *bytes : std::vector<uint8_t> {};
+    return index < data.size() ? raw_bytes(data[index]) : std::vector<uint8_t> {};
 }
 
 }
