@@ -326,6 +326,88 @@ namespace {
         EXPECT_EQ(*locus.position(), locus.nav().eye);
     }
 
+    TEST_F(NexusLocusTest, NoTimestepIsSetByDefault)
+    {
+        EXPECT_FALSE(locus.timestep().has_value());
+    }
+
+    TEST_F(NexusLocusTest, AFixedTimestepMovesTheEyeByExactlyThatDistance)
+    {
+        locus.nav().forward_held = true;
+        locus.set_timestep(0.01F);
+
+        locus.invoke_perception({});
+
+        EXPECT_NEAR(locus.nav().eye.z, 4.0F, 1e-4F);
+        EXPECT_NEAR(locus.nav().eye.x, 0.0F, 1e-4F);
+    }
+
+    TEST_F(NexusLocusTest, AFixedTimestepIgnoresTheWallClock)
+    {
+        locus.nav().forward_held = true;
+        locus.set_timestep(0.01F);
+        age_the_clock();
+
+        locus.invoke_perception({});
+
+        EXPECT_NEAR(locus.nav().eye.z, 4.0F, 1e-4F);
+    }
+
+    TEST_F(NexusLocusTest, EachPerceptionAdvancesByTheTimestep)
+    {
+        locus.nav().forward_held = true;
+        locus.set_timestep(0.01F);
+
+        for (int i = 0; i < 5; ++i) {
+            locus.invoke_perception({});
+        }
+
+        EXPECT_NEAR(locus.nav().eye.z, 0.0F, 1e-3F);
+    }
+
+    TEST_F(NexusLocusTest, TwoLociWithTheSameInputAndTimestepFollowTheSameEyePath)
+    {
+        Locus other { config(), 2.0F, [](const PerceptionContext&) { }, [](const InfluenceContext&) { } };
+        for (auto* l : { &locus, &other }) {
+            l->nav().forward_held = true;
+            l->nav().right_held = true;
+            l->set_timestep(1.0F / 60.0F);
+        }
+        other.nav().last_tick = std::chrono::steady_clock::now() - std::chrono::seconds(30);
+
+        for (int i = 0; i < 10; ++i) {
+            locus.invoke_perception({});
+            other.invoke_perception({});
+        }
+
+        EXPECT_EQ(locus.nav().eye, other.nav().eye);
+        EXPECT_NE(locus.nav().eye, glm::vec3(0.0F, 0.0F, 5.0F));
+    }
+
+    TEST_F(NexusLocusTest, AZeroTimestepLeavesTheEyeWhereItIs)
+    {
+        locus.nav().forward_held = true;
+        locus.set_timestep(0.0F);
+        age_the_clock();
+
+        locus.invoke_perception({});
+
+        EXPECT_EQ(locus.nav().eye, glm::vec3(0.0F, 0.0F, 5.0F));
+    }
+
+    TEST_F(NexusLocusTest, ClearingTheTimestepReturnsToWallTime)
+    {
+        locus.nav().forward_held = true;
+        locus.set_timestep(0.01F);
+        locus.clear_timestep();
+        age_the_clock();
+
+        locus.invoke_perception({});
+
+        EXPECT_FALSE(locus.timestep().has_value());
+        EXPECT_LT(locus.nav().eye.z, 0.0F);
+    }
+
     TEST_F(NexusLocusTest, HeldBackMovesTheEyeAwayFromTheTarget)
     {
         locus.nav().back_held = true;

@@ -1,10 +1,12 @@
 #include "gtest/gtest.h"
 
 #include "../support/frame_scheduler.hpp"
+#include "../support/log_capture.hpp"
 #include "../support/scripted_window.hpp"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Nexus/Fabric.hpp"
+#include "MayaFlux/Nexus/Principals/Locus.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
 
 namespace MayaFlux::Test {
@@ -585,6 +587,82 @@ namespace {
         }
 
         EXPECT_EQ(fired, 4);
+    }
+
+    class NexusWiringAudioTokenTest : public NexusWiringTest {
+    protected:
+        void SetUp() override
+        {
+            LogCapture::install();
+            LogCapture::clear();
+        }
+
+        std::shared_ptr<Nexus::Locus> make_locus()
+        {
+            Kinesis::NavigationConfig config;
+            config.initial_eye = { 0.0F, 0.0F, 5.0F };
+            config.initial_target = { 0.0F, 0.0F, 0.0F };
+            return std::make_shared<Nexus::Locus>(
+                config, 1.0F,
+                [](const PerceptionContext&) { },
+                [this](const InfluenceContext&) { ++fired; });
+        }
+
+        static constexpr const char* k_warning = "runs on the audio token";
+    };
+
+    TEST_F(NexusWiringAudioTokenTest, ALocusDrivenOnTheAudioTokenWarns)
+    {
+        fabric.wire(make_locus()).every(0.01).finalise();
+
+        EXPECT_TRUE(LogCapture::contains(k_warning));
+    }
+
+    TEST_F(NexusWiringAudioTokenTest, ALocusDrivenOnTheGraphicsTokenDoesNotWarn)
+    {
+        fabric.wire(make_locus()).every(0.01, Vruta::ProcessingToken::FRAME_ACCURATE).finalise();
+
+        EXPECT_FALSE(LogCapture::contains(k_warning));
+    }
+
+    TEST_F(NexusWiringAudioTokenTest, ALocusWithoutAnIntervalDoesNotWarn)
+    {
+        fabric.wire(make_locus()).finalise();
+
+        EXPECT_FALSE(LogCapture::contains(k_warning));
+    }
+
+    TEST_F(NexusWiringAudioTokenTest, AnEmitterWithoutRenderSinksOnTheAudioTokenDoesNotWarn)
+    {
+        fabric.wire(make_counting_emitter()).every(0.01).finalise();
+
+        EXPECT_FALSE(LogCapture::contains(k_warning));
+    }
+
+    TEST_F(NexusWiringAudioTokenTest, AnAgentThatIsNotALocusOnTheAudioTokenDoesNotWarn)
+    {
+        fabric.wire(std::make_shared<Agent>(1.0F)).every(0.01).finalise();
+
+        EXPECT_FALSE(LogCapture::contains(k_warning));
+    }
+
+    TEST_F(NexusWiringAudioTokenTest, TheWarningNamesTheEntity)
+    {
+        const auto locus = make_locus();
+        fabric.wire(locus).every(0.01).finalise();
+
+        EXPECT_TRUE(LogCapture::contains("Entity " + std::to_string(locus->id())));
+    }
+
+    TEST_F(NexusWiringAudioTokenTest, TheWiringStillRunsAfterTheWarning)
+    {
+        const auto locus = make_locus();
+        fabric.wire(locus).every(0.001).finalise();
+
+        run_samples(1);
+
+        EXPECT_NE(fabric.wiring_for(locus->id()), nullptr);
+        EXPECT_EQ(fired, 1);
     }
 
     TEST_F(NexusWiringTest, BindWithADurationButNoDetachSchedulesNothing)
