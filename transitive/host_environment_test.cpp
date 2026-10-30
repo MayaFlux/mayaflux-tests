@@ -195,6 +195,80 @@ namespace {
         EXPECT_TRUE(MayaFlux::Platform::SystemConfig::find_dep_library(name, fixture.root().string()).empty());
     }
 
+#if defined(MAYAFLUX_PLATFORM_WINDOWS)
+    TEST(HostEnvironmentTest, WindowsPathSeparatorIsBackslash)
+    {
+        EXPECT_EQ(MayaFlux::Platform::PathSeparator, '\\');
+    }
+
+    TEST(HostEnvironmentTest, WindowsLibrarySearchDoesNotDuplicateDllExtension)
+    {
+        FixtureTree fixture;
+        const auto name = unique_library_name() + ".dll";
+        const auto expected = fixture.make_file(std::filesystem::path("bin") / name);
+
+        const auto& resolved = MayaFlux::Platform::SystemConfig::find_dep_library(name, fixture.root().string());
+        EXPECT_EQ(std::filesystem::path(resolved), expected);
+    }
+
+    TEST(HostEnvironmentTest, WindowsExecCommandMergesStderrWhenRedirected)
+    {
+        const auto output = MayaFlux::Platform::SystemConfig::exec_command(
+            "cmd /c \"echo FixtureError 1>&2\" 2>&1");
+        EXPECT_NE(output.find("FixtureError"), std::string::npos);
+    }
+
+    TEST(HostEnvironmentTest, WindowsSdkDiscoveryOnlyReturnsExistingDirectories)
+    {
+        const auto& includes = MayaFlux::Platform::SystemConfig::get_system_includes();
+        const auto& libraries = MayaFlux::Platform::SystemConfig::get_system_libraries();
+
+        for (const auto& path : includes) {
+            EXPECT_TRUE(std::filesystem::exists(path)) << path;
+        }
+        for (const auto& path : libraries) {
+            EXPECT_TRUE(std::filesystem::exists(path)) << path;
+        }
+    }
+
+    TEST(HostEnvironmentTest, WindowsSdkDiscoveryIgnoresNonexistentSdkDirectory)
+    {
+        static FixtureTree fixture;
+        const auto missing_root = fixture.root() / "missing-windows-sdk";
+        const std::string missing_root_string = missing_root.string();
+        MayaFlux::Test::ScopedEnv sdk_dir("WindowsSdkDir", missing_root_string.c_str());
+        MayaFlux::Test::ScopedEnv sdk_version("WindowsSDKVersion", "10.0.0.0\\");
+
+        const auto& includes = MayaFlux::Platform::SystemConfig::get_system_includes();
+        const auto& libraries = MayaFlux::Platform::SystemConfig::get_system_libraries();
+
+        for (const auto& path : includes) {
+            EXPECT_FALSE(path.starts_with(missing_root_string)) << path;
+        }
+        for (const auto& path : libraries) {
+            EXPECT_FALSE(path.starts_with(missing_root_string)) << path;
+        }
+    }
+
+    TEST(HostEnvironmentTest, WindowsMsvcDiscoveryProvidesToolchainHeadersAndLibraries)
+    {
+        const auto& includes = MayaFlux::Platform::SystemConfig::get_system_includes();
+        const auto& libraries = MayaFlux::Platform::SystemConfig::get_system_libraries();
+
+        const auto has_header = std::any_of(includes.begin(), includes.end(), [](const std::string& path) {
+            return std::filesystem::exists(std::filesystem::path(path) / "vcruntime.h");
+        });
+        if (!has_header) {
+            GTEST_SKIP() << "No Visual Studio C++ toolchain located by vswhere or VCINSTALLDIR";
+        }
+
+        const auto has_msvc_lib = std::any_of(libraries.begin(), libraries.end(), [](const std::string& path) {
+            return std::filesystem::exists(std::filesystem::path(path) / "msvcrt.lib");
+        });
+        EXPECT_TRUE(has_msvc_lib);
+    }
+#endif
+
 #if defined(MAYAFLUX_PLATFORM_MACOS)
     TEST(HostEnvironmentTest, MacSdkDiscoveryReturnsAValidSdkAndFeedsSystemIncludes)
     {
