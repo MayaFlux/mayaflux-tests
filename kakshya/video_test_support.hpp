@@ -1,5 +1,6 @@
 #pragma once
 
+#include "MayaFlux/Kakshya/Source/DynamicVideoStream.hpp"
 #include "MayaFlux/Kakshya/Source/VideoStreamContainer.hpp"
 
 namespace MayaFlux::Test::VideoSupport {
@@ -90,6 +91,34 @@ inline std::vector<uint8_t> pixels_of(const Kakshya::VideoStreamContainer& video
 {
     const auto span = video.get_frame_pixels(frame);
     return { span.begin(), span.end() };
+}
+
+inline std::vector<uint8_t> processed_bytes(const Kakshya::VideoStreamContainer& video)
+{
+    const auto& processed = video.get_processed_data();
+    if (processed.empty()) {
+        return {};
+    }
+    return std::get<std::vector<uint8_t>>(processed[0]);
+}
+
+inline Kakshya::VideoStreamSpec rgba8_spec(uint64_t ring_frames = 0, double frame_rate = k_fps)
+{
+    return { .width = k_width,
+        .height = k_height,
+        .format = Kakshya::ImageFormat::RGBA8,
+        .frame_rate = frame_rate,
+        .ring_frames = ring_frames };
+}
+
+inline uint64_t append_ramp(Kakshya::DynamicVideoStream& stream, uint64_t count, uint64_t first = 0)
+{
+    uint64_t stored = 0;
+    for (uint64_t f = first; f < first + count; ++f) {
+        const auto bytes = frame_bytes(f, stream.get_frame_byte_size());
+        stored += stream.append_frame(std::span<const uint8_t>(bytes)) ? 1 : 0;
+    }
+    return stored;
 }
 
 }
