@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 
 #include "../support/frame_scheduler.hpp"
+#include "../support/scripted_window.hpp"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Nexus/Fabric.hpp"
@@ -417,6 +418,173 @@ namespace {
         EXPECT_TRUE(wiring->has_bind_detach());
         EXPECT_EQ(wiring->bind_attach_name(), "on");
         EXPECT_EQ(wiring->bind_detach_name(), "off");
+    }
+
+    TEST_F(NexusWiringTest, ADurationTimerDoesNotRunTheDetachAgainAfterCancelWiring)
+    {
+        int detached {};
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).bind([] { }, [&detached] { ++detached; }).for_duration(0.005).finalise();
+
+        fabric.cancel_wiring(emitter->id());
+        ASSERT_EQ(detached, 1);
+        run_samples(1000);
+
+        EXPECT_EQ(detached, 1);
+    }
+
+    TEST_F(NexusWiringTest, CancelWiringAfterTheDurationEndedDoesNotRunTheDetachAgain)
+    {
+        int detached {};
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).bind([] { }, [&detached] { ++detached; }).for_duration(0.005).finalise();
+        run_samples(1000);
+        ASSERT_EQ(detached, 1);
+
+        fabric.cancel_wiring(emitter->id());
+
+        EXPECT_EQ(detached, 1);
+    }
+
+    TEST_F(NexusWiringTest, RemovingAnEntityRunsTheBindDetachOnce)
+    {
+        int detached {};
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).bind([] { }, [&detached] { ++detached; }).finalise();
+
+        fabric.remove(emitter->id());
+
+        EXPECT_EQ(detached, 1);
+    }
+
+    TEST_F(NexusWiringTest, RemovingAnEntityBeforeTheDurationEndsRunsTheDetachOnlyOnce)
+    {
+        int detached {};
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).bind([] { }, [&detached] { ++detached; }).for_duration(0.005).finalise();
+
+        fabric.remove(emitter->id());
+        ASSERT_EQ(detached, 1);
+        run_samples(1000);
+
+        EXPECT_EQ(detached, 1);
+    }
+
+    TEST_F(NexusWiringTest, RemovingAnEntityAfterCancelWiringDoesNotRunTheDetachAgain)
+    {
+        int detached {};
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).bind([] { }, [&detached] { ++detached; }).finalise();
+        fabric.cancel_wiring(emitter->id());
+
+        fabric.remove(emitter->id());
+
+        EXPECT_EQ(detached, 1);
+    }
+
+    TEST_F(NexusWiringTest, DestroyingTheFabricRunsTheBindDetach)
+    {
+        int detached {};
+        const auto emitter = make_counting_emitter();
+        {
+            Fabric local(*frames.scheduler, events, buffers, 1.0F);
+            local.wire(emitter).bind([] { }, [&detached] { ++detached; }).finalise();
+        }
+
+        EXPECT_EQ(detached, 1);
+    }
+
+    class NexusWiringTriggerTest : public NexusWiringTest {
+    protected:
+        std::shared_ptr<ScriptedWindow> window = std::make_shared<ScriptedWindow>(400U, 300U);
+    };
+
+    TEST_F(NexusWiringTriggerTest, AKeyTriggerFiresOnEveryPressWithoutTimes)
+    {
+        fabric.wire(make_counting_emitter()).on(window, IO::Keys::Space).finalise();
+
+        for (int i = 0; i < 5; ++i) {
+            window->key_down(IO::Keys::Space);
+        }
+
+        EXPECT_EQ(fired, 5);
+    }
+
+    TEST_F(NexusWiringTriggerTest, AKeyTriggerFiresExactlyTimesThenStops)
+    {
+        fabric.wire(make_counting_emitter()).on(window, IO::Keys::Space).times(3).finalise();
+
+        for (int i = 0; i < 6; ++i) {
+            window->key_down(IO::Keys::Space);
+        }
+
+        EXPECT_EQ(fired, 3);
+    }
+
+    TEST_F(NexusWiringTriggerTest, AMouseTriggerFiresExactlyTimesThenStops)
+    {
+        fabric.wire(make_counting_emitter()).on(window, IO::MouseButtons::Left).times(2).finalise();
+
+        for (int i = 0; i < 5; ++i) {
+            window->press(IO::MouseButtons::Left);
+        }
+
+        EXPECT_EQ(fired, 2);
+    }
+
+    TEST_F(NexusWiringTriggerTest, AScrollTriggerCallsItsFunctionExactlyTimesThenStops)
+    {
+        int scrolled {};
+        fabric.wire(make_counting_emitter())
+            .on_scroll(window, [&scrolled](double, double) { ++scrolled; })
+            .times(2)
+            .finalise();
+
+        for (int i = 0; i < 5; ++i) {
+            window->scroll(0.0, 1.0);
+        }
+
+        EXPECT_EQ(scrolled, 2);
+    }
+
+    TEST_F(NexusWiringTriggerTest, AWindowEventTriggerFiresExactlyTimesThenStops)
+    {
+        Vruta::WindowEventFilter filter;
+        filter.event_type = Core::WindowEventType::MOUSE_SCROLLED;
+        fabric.wire(make_counting_emitter()).on(window->get_event_source(), filter).times(2).finalise();
+
+        for (int i = 0; i < 5; ++i) {
+            window->scroll(0.0, 1.0);
+        }
+
+        EXPECT_EQ(fired, 2);
+    }
+
+    TEST_F(NexusWiringTriggerTest, ALimitedTriggerLeavesAnotherWiringOnTheSameWindowRunning)
+    {
+        int other {};
+        fabric.wire(make_counting_emitter()).on(window, IO::Keys::Space).times(2).finalise();
+        fabric.wire(std::make_shared<Emitter>([&other](const InfluenceContext&) { ++other; }))
+            .on(window, IO::Keys::Space)
+            .finalise();
+
+        for (int i = 0; i < 5; ++i) {
+            window->key_down(IO::Keys::Space);
+        }
+
+        EXPECT_EQ(fired, 2);
+        EXPECT_EQ(other, 5);
+    }
+
+    TEST_F(NexusWiringTriggerTest, TimesOfOneIsNotALimitOnATrigger)
+    {
+        fabric.wire(make_counting_emitter()).on(window, IO::Keys::Space).times(1).finalise();
+
+        for (int i = 0; i < 4; ++i) {
+            window->key_down(IO::Keys::Space);
+        }
+
+        EXPECT_EQ(fired, 4);
     }
 
     TEST_F(NexusWiringTest, BindWithADurationButNoDetachSchedulesNothing)
