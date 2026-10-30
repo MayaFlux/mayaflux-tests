@@ -2,6 +2,8 @@
 
 #include "MayaFlux/Kakshya/Source/DynamicVideoStream.hpp"
 #include "MayaFlux/Kakshya/Source/VideoStreamContainer.hpp"
+#include "MayaFlux/Registry/BackendRegistry.hpp"
+#include "MayaFlux/Registry/Service/IOService.hpp"
 
 namespace MayaFlux::Test::VideoSupport {
 
@@ -92,6 +94,35 @@ inline std::vector<uint8_t> pixels_of(const Kakshya::VideoStreamContainer& video
     const auto span = video.get_frame_pixels(frame);
     return { span.begin(), span.end() };
 }
+
+class RecordingIOService {
+public:
+    RecordingIOService()
+    {
+        m_service.request_decode = [this](uint64_t id) { decodes.push_back(id); };
+        m_service.request_frame = [this](uint64_t id) { frames.push_back(id); };
+        Registry::BackendRegistry::instance().register_service<Registry::Service::IOService>(
+            [this]() -> void* { return &m_service; });
+    }
+
+    RecordingIOService(const RecordingIOService&) = delete;
+    RecordingIOService& operator=(const RecordingIOService&) = delete;
+    RecordingIOService(RecordingIOService&&) = delete;
+    RecordingIOService& operator=(RecordingIOService&&) = delete;
+
+    ~RecordingIOService()
+    {
+        Registry::BackendRegistry::instance().unregister_service<Registry::Service::IOService>();
+    }
+
+    [[nodiscard]] Registry::Service::IOService& service() { return m_service; }
+
+    std::vector<uint64_t> decodes;
+    std::vector<uint64_t> frames;
+
+private:
+    Registry::Service::IOService m_service;
+};
 
 inline std::vector<uint8_t> processed_bytes(const Kakshya::VideoStreamContainer& video)
 {

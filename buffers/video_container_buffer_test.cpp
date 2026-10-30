@@ -6,6 +6,7 @@
 #include "MayaFlux/Buffers/Container/VideoContainerBuffer.hpp"
 #include "MayaFlux/Buffers/Textures/TextureBuffer.hpp"
 #include "MayaFlux/Kakshya/Processors/FrameAccessProcessor.hpp"
+#include "MayaFlux/Kakshya/Source/CameraContainer.hpp"
 
 namespace MayaFlux::Test {
 namespace {
@@ -31,6 +32,8 @@ namespace {
 
         CallbackGuard(const CallbackGuard&) = delete;
         CallbackGuard& operator=(const CallbackGuard&) = delete;
+        CallbackGuard(CallbackGuard&&) = delete;
+        CallbackGuard& operator=(CallbackGuard&&) = delete;
 
         ~CallbackGuard()
         {
@@ -416,6 +419,29 @@ namespace {
 
         reader->processing_function(buffer);
         EXPECT_EQ(buffer->get_pixel_data(), frame_bytes(1));
+    }
+
+    TEST(VideoContainerBufferTest, ItsReaderShowsEachNewCameraFrameAndAsksForTheNext)
+    {
+        RecordingIOService io;
+        const auto camera = std::make_shared<Kakshya::CameraContainer>(k_width, k_height, ImageFormat::RGBA8, k_fps);
+        const CallbackGuard guard(camera);
+        camera->create_default_processor();
+        camera->setup_io(5);
+        const auto bytes_a = frame_bytes(1);
+        const auto bytes_b = frame_bytes(2);
+        std::memcpy(camera->mutable_frame_ptr(), bytes_a.data(), bytes_a.size());
+        const auto buffer = std::make_shared<VideoContainerBuffer>(camera);
+        const auto reader = buffer->get_video_reader();
+        reader->on_attach(buffer);
+
+        reader->processing_function(buffer);
+        EXPECT_EQ(buffer->get_pixel_data(), bytes_a);
+
+        std::memcpy(camera->mutable_frame_ptr(), bytes_b.data(), bytes_b.size());
+        reader->processing_function(buffer);
+        EXPECT_EQ(buffer->get_pixel_data(), bytes_b);
+        EXPECT_EQ(io.frames, (std::vector<uint64_t> { 5, 5 }));
     }
 
 } // namespace

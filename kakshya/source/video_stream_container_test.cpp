@@ -297,6 +297,83 @@ namespace {
         EXPECT_EQ(missing, 77);
     }
 
+    class VideoStreamContainerRefillTest : public ::testing::Test {
+    protected:
+        static constexpr uint64_t k_reader = 42;
+
+        void ring_with_threshold(uint32_t threshold)
+        {
+            video = std::make_shared<VideoStreamContainer>();
+            video->setup_ring(10, 4, k_width, k_height, ImageFormat::RGBA8, k_fps, threshold, k_reader);
+        }
+
+        RecordingIOService io;
+        std::shared_ptr<VideoStreamContainer> video;
+    };
+
+    TEST_F(VideoStreamContainerRefillTest, RunningLowOnBufferedFramesRequestsADecode)
+    {
+        ring_with_threshold(3);
+        for (uint64_t f = 0; f < 5; ++f) {
+            commit_pattern(*video, f);
+        }
+
+        video->update_read_position_for_channel(0, 3);
+
+        EXPECT_EQ(io.decodes, std::vector<uint64_t> { k_reader });
+    }
+
+    TEST_F(VideoStreamContainerRefillTest, PlentyOfBufferedFramesRequestsNothing)
+    {
+        ring_with_threshold(3);
+        for (uint64_t f = 0; f < 5; ++f) {
+            commit_pattern(*video, f);
+        }
+
+        video->update_read_position_for_channel(0, 1);
+
+        EXPECT_TRUE(io.decodes.empty());
+    }
+
+    TEST_F(VideoStreamContainerRefillTest, AReaderAheadOfTheCacheRequestsADecode)
+    {
+        ring_with_threshold(3);
+        commit_pattern(*video, 0);
+
+        video->update_read_position_for_channel(0, 6);
+
+        EXPECT_EQ(io.decodes, std::vector<uint64_t> { k_reader });
+    }
+
+    TEST_F(VideoStreamContainerRefillTest, AThresholdOfZeroNeverRequests)
+    {
+        ring_with_threshold(0);
+
+        video->update_read_position_for_channel(0, 5);
+
+        EXPECT_TRUE(io.decodes.empty());
+    }
+
+    TEST_F(VideoStreamContainerRefillTest, TheThresholdCanBeChangedAfterSetup)
+    {
+        ring_with_threshold(0);
+        commit_pattern(*video, 0);
+        video->set_refill_threshold(3);
+
+        video->update_read_position_for_channel(0, 1);
+
+        EXPECT_EQ(io.decodes, std::vector<uint64_t> { k_reader });
+    }
+
+    TEST_F(VideoStreamContainerRefillTest, AServiceWithoutADecodeRequestIsTolerated)
+    {
+        io.service().request_decode = nullptr;
+        ring_with_threshold(3);
+
+        EXPECT_NO_THROW(video->update_read_position_for_channel(0, 3));
+        EXPECT_EQ(video->get_read_position(), std::vector<uint64_t> { 3 });
+    }
+
     class VideoStreamContainerFlatTest : public ::testing::Test {
     protected:
         static constexpr uint64_t k_frames = 3;
