@@ -725,6 +725,19 @@ namespace {
         EXPECT_TRUE(video.all_dimensions_consumed());
     }
 
+    TEST(VideoStreamContainerTest, ConsumptionCanBeClearedForTheNextCycle)
+    {
+        VideoStreamContainer video(k_width, k_height, ImageFormat::RGBA8, k_fps);
+        const uint32_t reader = video.register_dimension_reader(0);
+        video.mark_dimension_consumed(0, reader);
+        ASSERT_TRUE(video.all_dimensions_consumed());
+
+        video.clear_all_consumption();
+
+        EXPECT_FALSE(video.all_dimensions_consumed());
+        EXPECT_TRUE(video.has_active_readers());
+    }
+
     TEST(VideoStreamContainerTest, ProcessingTokensAreHeldByOneChannelAtATime)
     {
         VideoStreamContainer video(k_width, k_height, ImageFormat::RGBA8, k_fps);
