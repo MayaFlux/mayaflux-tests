@@ -342,6 +342,81 @@ namespace {
         EXPECT_EQ(dims[3].role, Role::CHANNEL);
     }
 
+    TEST(NDDataCreateDimensionsTest, MonoAudioIsASingleTimeAxis)
+    {
+        const auto dims = DataDimension::create_dimensions(DataModality::AUDIO_1D, { 256 });
+
+        ASSERT_EQ(dims.size(), 1U);
+        EXPECT_EQ(dims[0].name, "time");
+        EXPECT_EQ(dims[0].role, Role::TIME);
+        EXPECT_EQ(dims[0].size, 256U);
+    }
+
+    TEST(NDDataCreateDimensionsTest, ColorImageArrayIsIndexRowsColumnsChannels)
+    {
+        const auto dims = DataDimension::create_dimensions(DataModality::IMAGE_COLOR_ARRAY, { 6, 4, 8, 3 });
+
+        ASSERT_EQ(dims.size(), 4U);
+        EXPECT_EQ(dims[0].name, "index");
+        EXPECT_EQ(dims[0].role, Role::TIME);
+        EXPECT_EQ(dims[0].size, 6U);
+        EXPECT_EQ(dims[1].role, Role::SPATIAL_Y);
+        EXPECT_EQ(dims[2].role, Role::SPATIAL_X);
+        EXPECT_EQ(dims[3].role, Role::CHANNEL);
+        EXPECT_EQ(dims[3].size, 3U);
+    }
+
+    TEST(NDDataCreateDimensionsTest, GrayscaleVideoIsFramesRowsColumns)
+    {
+        const auto dims = DataDimension::create_dimensions(DataModality::VIDEO_GRAYSCALE, { 5, 4, 8 });
+
+        ASSERT_EQ(dims.size(), 3U);
+        EXPECT_EQ(dims[0].name, "frames");
+        EXPECT_EQ(dims[0].role, Role::TIME);
+        EXPECT_EQ(dims[1].role, Role::SPATIAL_Y);
+        EXPECT_EQ(dims[1].stride, 8U);
+        EXPECT_EQ(dims[2].role, Role::SPATIAL_X);
+        EXPECT_EQ(dims[2].stride, 1U);
+    }
+
+    TEST(NDDataCreateDimensionsTest, DepthVideoIsFramesRowsColumnsDepth)
+    {
+        const auto dims = DataDimension::create_dimensions(DataModality::VIDEO_DEPTH, { 5, 4, 8, 2 });
+
+        ASSERT_EQ(dims.size(), 4U);
+        EXPECT_EQ(dims[0].name, "frames");
+        EXPECT_EQ(dims[0].role, Role::TIME);
+        EXPECT_EQ(dims[3].role, Role::DEPTH);
+        EXPECT_EQ(dims[3].size, 2U);
+        EXPECT_EQ(dims[3].stride, 1U);
+    }
+
+    TEST(NDDataCreateDimensionsTest, StridesFollowTheRequestedLayout)
+    {
+        const auto row = DataDimension::create_dimensions(DataModality::IMAGE_COLOR, { 4, 8, 3 }, MemoryLayout::ROW_MAJOR);
+        const auto column = DataDimension::create_dimensions(DataModality::IMAGE_COLOR, { 4, 8, 3 }, MemoryLayout::COLUMN_MAJOR);
+
+        EXPECT_EQ(row[0].stride, 24U);
+        EXPECT_EQ(row[1].stride, 3U);
+        EXPECT_EQ(row[2].stride, 1U);
+        EXPECT_EQ(column[0].stride, 1U);
+        EXPECT_EQ(column[1].stride, 4U);
+        EXPECT_EQ(column[2].stride, 32U);
+    }
+
+    TEST(NDDataCreateDimensionsTest, VolumeStridesAgreeWithCalculateStrides)
+    {
+        const std::vector<uint64_t> shape { 2, 3, 4 };
+        const auto dims = DataDimension::create_dimensions(DataModality::VOLUMETRIC_3D, shape);
+        const auto strides = DataDimension::calculate_strides(shape, MemoryLayout::ROW_MAJOR);
+
+        ASSERT_EQ(dims.size(), strides.size());
+        for (size_t i = 0; i < dims.size(); ++i) {
+            EXPECT_EQ(dims[i].stride, strides[i]) << i;
+            EXPECT_EQ(dims[i].size, shape[i]) << i;
+        }
+    }
+
     struct RankCase {
         std::string_view name;
         DataModality modality;
@@ -436,6 +511,54 @@ namespace {
         for (const auto& variant : variants) {
             EXPECT_EQ(std::get<std::vector<float>>(variant).size(), 12U);
         }
+    }
+
+    TEST(NDDataCreateModuleTest, DepthMapHasOnePlanePerComponent)
+    {
+        const auto variants = DataDimension::create_for_modality<float>(
+            DataModality::DEPTH_MAP, { 3, 4, 2 }, 1.5F).first;
+
+        ASSERT_EQ(variants.size(), 2U);
+        for (const auto& variant : variants) {
+            const auto& plane = std::get<std::vector<float>>(variant);
+            ASSERT_EQ(plane.size(), 12U);
+            EXPECT_TRUE(std::ranges::all_of(plane, [](float v) { return v == 1.5F; }));
+        }
+    }
+
+    TEST(NDDataCreateModuleTest, GrayscaleVideoHasOnePlanePerFrame)
+    {
+        const auto variants = DataDimension::create_for_modality<uint8_t>(
+            DataModality::VIDEO_GRAYSCALE, { 4, 2, 3 }).first;
+
+        ASSERT_EQ(variants.size(), 4U);
+        for (const auto& variant : variants) {
+            EXPECT_EQ(std::get<std::vector<uint8_t>>(variant).size(), 6U);
+        }
+    }
+
+    TEST(NDDataCreateModuleTest, InterleavedColorVideoIsOneVariantOfEveryElement)
+    {
+        const auto variants = DataDimension::create_for_modality<uint8_t>(
+            DataModality::VIDEO_COLOR, { 2, 3, 4, 3 }, uint8_t { 7 },
+            MemoryLayout::ROW_MAJOR, OrganizationStrategy::INTERLEAVED).first;
+
+        ASSERT_EQ(variants.size(), 1U);
+        const auto& all = std::get<std::vector<uint8_t>>(variants[0]);
+        EXPECT_EQ(all.size(), 72U);
+        EXPECT_TRUE(std::ranges::all_of(all, [](uint8_t v) { return v == 7; }));
+    }
+
+    TEST(NDDataCreateModuleTest, StorageTypeFollowsTheTemplateArgument)
+    {
+        const auto complex_module = DataDimension::create_spectral_2d<std::complex<float>>(2, 4);
+        const auto vec_module = DataDimension::create_for_modality<glm::vec3>(
+            DataModality::VOLUMETRIC_3D, { 2, 2, 2 }, glm::vec3(1.0F, 2.0F, 3.0F));
+
+        ASSERT_EQ(complex_module.first.size(), 1U);
+        EXPECT_EQ(std::get<std::vector<std::complex<float>>>(complex_module.first[0]).size(), 8U);
+        ASSERT_EQ(vec_module.first.size(), 1U);
+        EXPECT_EQ(std::get<std::vector<glm::vec3>>(vec_module.first[0]).front(), glm::vec3(1.0F, 2.0F, 3.0F));
     }
 
     TEST(NDDataCreateModuleTest, VolumeIsOneVariantOfTheProductOfItsExtents)
