@@ -3,6 +3,7 @@
 #include "../support/frame_scheduler.hpp"
 #include "../support/scoped_working_dir.hpp"
 
+#include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/IO/GlmSerializer.hpp"
 #include "MayaFlux/IO/Image/EXRWriter.hpp"
 #include "MayaFlux/Nexus/Principals/Locus.hpp"
@@ -121,8 +122,9 @@ namespace {
         std::string act2_dir = (std::filesystem::current_path() / "act2").string();
         FrameScheduler frames;
         std::shared_ptr<Vruta::EventManager> events = std::make_shared<Vruta::EventManager>();
-        Fabric source { *frames.scheduler, *events, 1.0F };
-        Fabric target { *frames.scheduler, *events, 1.0F };
+        std::shared_ptr<Buffers::BufferManager> buffers = std::make_shared<Buffers::BufferManager>();
+        Fabric source { *frames.scheduler, *events, *buffers, 1.0F };
+        Fabric target { *frames.scheduler, *events, *buffers, 1.0F };
         StateEncoder encoder;
         StateDecoder decoder;
         int target_pulse {};
@@ -142,7 +144,7 @@ namespace {
 
     TEST_F(NexusStateTest, SchemaListsEntitiesInIdOrderWithTheirKinds)
     {
-        Fabric local(*frames.scheduler, *events, 2.0F);
+        Fabric local(*frames.scheduler, *events, *buffers, 2.0F);
         local.set_name("stage");
         add_emitter(local);
         add_emitter(local);
@@ -632,6 +634,137 @@ namespace {
         EXPECT_TRUE(has_warning(result.warnings, "radiate_fn: unknown 'spread'"));
     }
 
+    TEST_F(NexusStateTest, APresenceRestoresItsRegisteredFunctions)
+    {
+        auto presence = std::make_shared<Presence>(4.0F, "see", [](const PerceptionContext&) { }, "act", [](const InfluenceContext&) { }, "spread", [](uint32_t, float) { });
+        source.wire(presence).finalise();
+        ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
+        int perceived = 0;
+        int influenced = 0;
+        int radiated = 0;
+        target.register_perception("see", [&perceived](const PerceptionContext&) { ++perceived; });
+        target.register_influence("act", [&influenced](const InfluenceContext&) { ++influenced; });
+        target.register_radiate("spread", [&radiated](uint32_t, float) { ++radiated; });
+
+        const auto result = decoder.reconstruct(target, snap_base);
+
+        const auto restored = std::dynamic_pointer_cast<Presence>(target.get_agent(first_id(target)));
+        ASSERT_NE(restored, nullptr);
+        EXPECT_FALSE(has_warning(result.warnings, "unknown"));
+        ASSERT_TRUE(static_cast<bool>(restored->radiate_fn()));
+        restored->radiate_fn()(1U, 0.5F);
+        EXPECT_EQ(radiated, 1);
+        restored->invoke_perception(PerceptionContext {});
+        restored->invoke_influence(InfluenceContext {});
+        EXPECT_EQ(perceived, 1);
+        EXPECT_EQ(influenced, 1);
+    }
+
+    TEST_F(NexusStateTest, WiringAPresenceRegistersItsRadiateFunction)
+    {
+        source.wire(std::make_shared<Presence>(4.0F, "see", [](const PerceptionContext&) { }, "act", [](const InfluenceContext&) { }, "spread", [](uint32_t, float) { })).finalise();
+
+        EXPECT_NE(source.resolve_radiate_fn("spread"), nullptr);
+        EXPECT_EQ(source.resolve_radiate_fn("other"), nullptr);
+    }
+
+    TEST_F(NexusStateTest, AddingAnExpanseRegistersItsNamedFunctions)
+    {
+        int entered = 0;
+        int exited = 0;
+        source.add_expanse(std::make_shared<Expanse>(
+            "left", "arrive", "depart",
+            [](const glm::vec3& p) { return p.x < 0.0F; },
+            [&entered](uint32_t) { ++entered; },
+            [&exited](uint32_t) { ++exited; }));
+
+        const auto contains = source.resolve_expanse_fn("left");
+        const auto arrive = source.resolve_crossing_fn("arrive");
+        const auto depart = source.resolve_crossing_fn("depart");
+        ASSERT_NE(contains, nullptr);
+        ASSERT_NE(arrive, nullptr);
+        ASSERT_NE(depart, nullptr);
+        EXPECT_TRUE((*contains)(glm::vec3(-1.0F, 0.0F, 0.0F)));
+        EXPECT_FALSE((*contains)(glm::vec3(1.0F, 0.0F, 0.0F)));
+        (*arrive)(1U);
+        (*depart)(1U);
+        EXPECT_EQ(entered, 1);
+        EXPECT_EQ(exited, 1);
+    }
+
+    TEST_F(NexusStateTest, AddingAnExpanseWithoutNamesOrCallablesRegistersNothing)
+    {
+        auto named_only = std::make_shared<Expanse>(box(1.0F));
+        named_only->set_fn_name("ghost");
+        named_only->set_on_enter_fn_name("phantom");
+        source.add_expanse(std::make_shared<Expanse>(box(1.0F)));
+        source.add_expanse(named_only);
+
+        EXPECT_EQ(source.resolve_expanse_fn("ghost"), nullptr);
+        EXPECT_EQ(source.resolve_crossing_fn("phantom"), nullptr);
+    }
+
+    TEST_F(NexusStateTest, RegisteringANameAgainReplacesTheFunction)
+    {
+        int first = 0;
+        int second = 0;
+        target.register_crossing("arrive", [&first](uint32_t) { ++first; });
+        target.register_crossing("arrive", [&second](uint32_t) { ++second; });
+
+        (*target.resolve_crossing_fn("arrive"))(1U);
+
+        EXPECT_EQ(first, 0);
+        EXPECT_EQ(second, 1);
+    }
+
+    TEST_F(NexusStateTest, RegisteringAnEmptyNameIsIgnored)
+    {
+        target.register_contains("", [](const glm::vec3&) { return true; });
+
+        EXPECT_EQ(target.resolve_expanse_fn(""), nullptr);
+    }
+
+    TEST_F(NexusStateTest, ANamedPredicateExpanseRestoresWhenTheTargetRegistersIt)
+    {
+        source.add_expanse(std::make_shared<Expanse>("left", [](const glm::vec3& p) { return p.x < 0.0F; }, nullptr, nullptr));
+        ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
+        target.register_contains("left", [](const glm::vec3& p) { return p.x < 0.0F; });
+
+        const auto result = decoder.reconstruct(target, snap_base);
+
+        EXPECT_FALSE(has_warning(result.warnings, "not in registry"));
+        ASSERT_EQ(target.all_expanse_ids().size(), 1U);
+        const auto restored = target.get_expanse(target.all_expanse_ids().front());
+        EXPECT_EQ(restored->fn_name(), "left");
+        EXPECT_TRUE(restored->contains(glm::vec3(-1.0F, 0.0F, 0.0F)));
+        EXPECT_FALSE(restored->contains(glm::vec3(1.0F, 0.0F, 0.0F)));
+    }
+
+    TEST_F(NexusStateTest, AnExpanseCrossingRestoresWhenTheTargetRegistersIt)
+    {
+        auto expanse = std::make_shared<Expanse>(box(1.0F));
+        expanse->set_on_enter_fn_name("arrive");
+        expanse->set_on_exit_fn_name("depart");
+        source.add_expanse(expanse);
+        ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
+        int arrived = 0;
+        int departed = 0;
+        target.register_crossing("arrive", [&arrived](uint32_t) { ++arrived; });
+        target.register_crossing("depart", [&departed](uint32_t) { ++departed; });
+
+        const auto result = decoder.reconstruct(target, snap_base);
+
+        EXPECT_FALSE(has_warning(result.warnings, "not in registry"));
+        ASSERT_EQ(target.all_expanse_ids().size(), 1U);
+        const auto restored = target.get_expanse(target.all_expanse_ids().front());
+        ASSERT_TRUE(static_cast<bool>(restored->on_enter_fn()));
+        ASSERT_TRUE(static_cast<bool>(restored->on_exit_fn()));
+        restored->on_enter_fn()(1U);
+        restored->on_exit_fn()(1U);
+        EXPECT_EQ(arrived, 1);
+        EXPECT_EQ(departed, 1);
+    }
+
     TEST_F(NexusStateTest, ABoxExpanseRestoresAsAWorkingRegion)
     {
         source.add_expanse(std::make_shared<Expanse>(box(1.0F)));
@@ -750,7 +883,7 @@ namespace {
     protected:
         std::shared_ptr<Tapestry> make_tapestry()
         {
-            return std::make_shared<Tapestry>(frames.scheduler, events);
+            return std::make_shared<Tapestry>(frames.scheduler, events, buffers);
         }
 
         void SetUp() override

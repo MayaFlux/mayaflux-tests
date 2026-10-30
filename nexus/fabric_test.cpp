@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 
+#include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Nexus/Fabric.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
@@ -69,7 +70,8 @@ namespace {
 
         Vruta::TaskScheduler scheduler { 48000 };
         Vruta::EventManager events;
-        Fabric fabric { scheduler, events, 1.0F };
+        Buffers::BufferManager buffers;
+        Fabric fabric { scheduler, events, buffers, 1.0F };
     };
 
     TEST_F(NexusFabricTest, IdsStartAtOneAndAreSharedAcrossKinds)
@@ -665,7 +667,7 @@ namespace {
             [this](uint32_t id) { exited.push_back(id); });
         uint32_t entity {};
         {
-            Fabric local(scheduler, events, 1.0F);
+            Fabric local(scheduler, events, buffers, 1.0F);
             local.add_expanse(expanse);
             auto emitter = std::make_shared<Emitter>();
             emitter->set_position(glm::vec3(0.0F));
@@ -696,7 +698,7 @@ namespace {
 
     TEST_F(NexusFabricExpanseTest, OneExpanseOnTwoFabricsKeepsSeparateOccupants)
     {
-        Fabric other(scheduler, events, 1.0F);
+        Fabric other(scheduler, events, buffers, 1.0F);
         fabric.set_id(1);
         other.set_id(2);
         const auto expanse = add_box(AABB3D::from_center(glm::vec3(0.0F), glm::vec3(1.0F)));

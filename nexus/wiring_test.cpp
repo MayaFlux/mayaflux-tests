@@ -2,6 +2,7 @@
 
 #include "../support/frame_scheduler.hpp"
 
+#include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Nexus/Fabric.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
 
@@ -55,7 +56,8 @@ namespace {
 
         FrameScheduler frames;
         Vruta::EventManager events;
-        Fabric fabric { *frames.scheduler, events, 1.0F };
+        Buffers::BufferManager buffers;
+        Fabric fabric { *frames.scheduler, events, buffers, 1.0F };
         int fired {};
         InfluenceContext last;
     };
@@ -135,7 +137,7 @@ namespace {
     {
         int local_fired {};
         {
-            Fabric local(*frames.scheduler, events, 1.0F);
+            Fabric local(*frames.scheduler, events, buffers, 1.0F);
             auto emitter = std::make_shared<Emitter>([&local_fired](const InfluenceContext&) { ++local_fired; });
             local.wire(emitter).every(0.001).finalise();
             run_samples(1);
