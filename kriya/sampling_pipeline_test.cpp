@@ -635,6 +635,289 @@ namespace {
         expect_near(rig.blocks[2], ramp_blocks(0, 1, block));
     }
 
+    TEST_F(SamplingPipelineTest, TriggeringAPlayingVoiceRestartsItFromTheStartOfItsSlice)
+    {
+        auto& rig = make_rig();
+
+        rig.sampler->play_continuous(0, rig.sampler->slice_from_stream());
+        tick(2);
+        rig.sampler->trigger(0);
+        tick(2);
+
+        ASSERT_EQ(rig.blocks.size(), 4U);
+        EXPECT_EQ(rig.blocks[2], ramp_blocks(0, 1, block));
+        EXPECT_EQ(rig.blocks[3], ramp_blocks(1, 1, block));
+    }
+
+    TEST_F(SamplingPipelineTest, TriggeringALoadedIdleVoiceStartsIt)
+    {
+        auto& rig = make_rig();
+        rig.sampler->build();
+        rig.sampler->load(0, rig.sampler->slice_from_stream());
+
+        tick(1);
+        rig.sampler->trigger(0);
+        tick(2);
+
+        ASSERT_EQ(rig.blocks.size(), 3U);
+        EXPECT_EQ(rig.blocks[0], silence());
+        EXPECT_EQ(rig.blocks[1], ramp_blocks(0, 1, block));
+        EXPECT_EQ(rig.blocks[2], ramp_blocks(1, 1, block));
+    }
+
+    TEST_F(SamplingPipelineTest, ADifferentVoiceCanBeTriggeredAgainAfterItsOneShotEnded)
+    {
+        auto& rig = make_rig();
+
+        rig.sampler->play(0, rig.sampler->slice_from_stream());
+        tick(k_stream_blocks + 1);
+        rig.sampler->trigger(0);
+        tick(2);
+
+        ASSERT_EQ(rig.blocks.size(), k_stream_blocks + 3);
+        EXPECT_EQ(rig.blocks[k_stream_blocks], silence());
+        EXPECT_EQ(rig.blocks[k_stream_blocks + 1], ramp_blocks(0, 1, block));
+        EXPECT_EQ(rig.blocks[k_stream_blocks + 2], ramp_blocks(1, 1, block));
+    }
+
+    TEST_F(SamplingPipelineTest, TriggeringPicksUpTheRegionAndScaleEditedBeforehand)
+    {
+        auto& rig = make_rig();
+
+        rig.sampler->play(0, rig.sampler->slice_from_stream());
+        tick(k_stream_blocks + 1);
+        rig.sampler->slice(0).region = rig.sampler->slice_from_range(2 * block, 4 * block - 1).region;
+        rig.sampler->slice(0).scale = 0.5;
+        rig.sampler->trigger(0);
+        tick(3);
+
+        ASSERT_EQ(rig.blocks.size(), k_stream_blocks + 4);
+        EXPECT_EQ(rig.blocks[k_stream_blocks + 1], scaled(ramp_blocks(2, 1, block), 0.5));
+        EXPECT_EQ(rig.blocks[k_stream_blocks + 2], scaled(ramp_blocks(3, 1, block), 0.5));
+        EXPECT_EQ(rig.blocks[k_stream_blocks + 3], silence());
+    }
+
+    TEST_F(SamplingPipelineTest, TriggeringATimeMappedVoiceRestartsItsClock)
+    {
+        auto& rig = make_rig();
+        StreamSlice slice = rig.sampler->slice_from_stream();
+        slice.time_map = std::make_shared<const Kinesis::TimeMap>(
+            Kinesis::TimeMaps::quadratic(0.0, static_cast<double>(k_rate), 0.0));
+
+        rig.sampler->play(0, slice);
+        tick(2);
+        rig.sampler->trigger(0);
+        tick(1);
+
+        ASSERT_EQ(rig.blocks.size(), 3U);
+        expect_near(rig.blocks[2], ramp_blocks(0, 1, block));
+    }
+
+    TEST_F(SamplingPipelineTest, TriggeringAnIndexThatWasNeverLoadedIsRefusedWithoutEffect)
+    {
+        auto& rig = make_rig();
+        rig.sampler->build();
+
+        EXPECT_NO_THROW(rig.sampler->trigger(3));
+        tick(2);
+
+        ASSERT_EQ(rig.blocks.size(), 2U);
+        EXPECT_EQ(rig.blocks[0], silence());
+        EXPECT_EQ(rig.blocks[1], silence());
+    }
+
+    TEST_F(SamplingPipelineTest, AnEnvelopeScalesEachOutputSampleByItsGainAtThatTime)
+    {
+        auto& rig = make_rig();
+        StreamSlice slice = rig.sampler->slice_from_stream();
+        slice.with_envelope(Kinesis::TimeMaps::linear(0.0, 1.0, static_cast<double>(block) / k_rate));
+
+        rig.sampler->play(0, slice);
+        tick(2);
+
+        ASSERT_EQ(rig.blocks.size(), 2U);
+        std::vector<double> expected;
+        for (uint64_t n = 0; n < block; ++n) {
+            expected.push_back(sample(n) * static_cast<double>(n) / static_cast<double>(block));
+        }
+        expect_near(rig.blocks[0], expected);
+        expect_near(rig.blocks[1], ramp_blocks(1, 1, block));
+    }
+
+    TEST_F(SamplingPipelineTest, AnEnvelopeComposesWithTheScaleOfTheVoice)
+    {
+        auto& rig = make_rig();
+        StreamSlice slice = rig.sampler->slice_from_stream();
+        slice.scale = 0.5;
+        slice.with_envelope(Kinesis::TimeMaps::linear(0.0, 1.0, static_cast<double>(block) / k_rate));
+
+        rig.sampler->play(0, slice);
+        tick(2);
+
+        ASSERT_EQ(rig.blocks.size(), 2U);
+        expect_near(rig.blocks[1], scaled(ramp_blocks(1, 1, block), 0.5));
+    }
+
+    TEST_F(SamplingPipelineTest, AnEnvelopeIsMeasuredFromTheTriggerNotFromTheStreamPosition)
+    {
+        auto& rig = make_rig();
+        StreamSlice slice = rig.sampler->slice_from_stream();
+        slice.with_envelope(Kinesis::TimeMaps::linear(0.0, 1.0, static_cast<double>(block) / k_rate));
+
+        rig.sampler->play_continuous(0, slice);
+        tick(3);
+        rig.sampler->trigger(0);
+        tick(1);
+
+        ASSERT_EQ(rig.blocks.size(), 4U);
+        std::vector<double> expected;
+        for (uint64_t n = 0; n < block; ++n) {
+            expected.push_back(sample(n) * static_cast<double>(n) / static_cast<double>(block));
+        }
+        expect_near(rig.blocks[3], expected);
+    }
+
+    TEST_F(SamplingPipelineTest, AnEnvelopeIsNotStretchedByATimeMapOnTheSamePosition)
+    {
+        auto& rig = make_rig();
+        StreamSlice slice = rig.sampler->slice_from_stream();
+        slice.time_map = std::make_shared<const Kinesis::TimeMap>(
+            Kinesis::TimeMaps::quadratic(0.0, 2.0 * static_cast<double>(k_rate), 0.0));
+        slice.with_envelope(Kinesis::TimeMaps::linear(0.0, 1.0, static_cast<double>(block) / k_rate));
+
+        rig.sampler->play(0, slice);
+        tick(2);
+
+        ASSERT_EQ(rig.blocks.size(), 2U);
+        std::vector<double> expected;
+        for (uint64_t n = 0; n < block; ++n) {
+            expected.push_back(sample(2 * n) * static_cast<double>(n) / static_cast<double>(block));
+        }
+        expect_near(rig.blocks[0], expected);
+        for (uint64_t n = 0; n < block; ++n) {
+            EXPECT_NEAR(rig.blocks[1][n], sample(2 * (block + n)), 1e-6) << n;
+        }
+    }
+
+    TEST_F(SamplingPipelineTest, ClearingTheEnvelopeOfAPlayingVoiceRestoresFullLevel)
+    {
+        auto& rig = make_rig();
+        StreamSlice slice = rig.sampler->slice_from_stream();
+        slice.with_envelope(Kinesis::TimeMap { .fn = [](const double&) { return 0.0; } });
+
+        rig.sampler->play_continuous(0, slice);
+        tick(2);
+        rig.sampler->slice(0).envelope = nullptr;
+        tick(1);
+
+        ASSERT_EQ(rig.blocks.size(), 3U);
+        EXPECT_EQ(rig.blocks[0], silence());
+        EXPECT_EQ(rig.blocks[1], silence());
+        EXPECT_EQ(rig.blocks[2], ramp_blocks(2, 1, block));
+    }
+
+    TEST_F(SamplingPipelineTest, AnOffsetTriggerSoundsThatManyFramesIntoTheNextBlock)
+    {
+        constexpr uint32_t offset = 100;
+        auto& rig = make_rig();
+        rig.sampler->build();
+        rig.sampler->load(0, rig.sampler->slice_from_stream());
+
+        rig.sampler->trigger(0, offset);
+        tick(2);
+
+        ASSERT_EQ(rig.blocks.size(), 2U);
+        std::vector<double> first(block, 0.0);
+        std::vector<double> second;
+        for (uint64_t n = offset; n < block; ++n) {
+            first[n] = sample(n - offset);
+        }
+        for (uint64_t n = 0; n < block; ++n) {
+            second.push_back(sample(block - offset + n));
+        }
+        EXPECT_EQ(rig.blocks[0], first);
+        EXPECT_EQ(rig.blocks[1], second);
+    }
+
+    TEST_F(SamplingPipelineTest, AnOffsetPastOneBlockWaitsWholeBlocksFirst)
+    {
+        constexpr uint32_t offset = 10;
+        auto& rig = make_rig();
+        rig.sampler->build();
+        rig.sampler->load(0, rig.sampler->slice_from_stream());
+
+        rig.sampler->trigger(0, static_cast<uint32_t>(block) + offset);
+        tick(1);
+
+        EXPECT_TRUE(rig.sampler->slice(0).active);
+        tick(2);
+
+        ASSERT_EQ(rig.blocks.size(), 3U);
+        EXPECT_EQ(rig.blocks[0], silence());
+        for (uint64_t n = 0; n < block; ++n) {
+            EXPECT_EQ(rig.blocks[1][n], n < offset ? 0.0 : sample(n - offset)) << n;
+        }
+    }
+
+    TEST_F(SamplingPipelineTest, ATriggerWithoutAnOffsetStillStartsOnTheBlockEdge)
+    {
+        auto& rig = make_rig();
+        rig.sampler->build();
+        rig.sampler->load(0, rig.sampler->slice_from_stream());
+
+        rig.sampler->trigger(0, 0);
+        tick(1);
+
+        ASSERT_EQ(rig.blocks.size(), 1U);
+        EXPECT_EQ(rig.blocks[0], ramp_blocks(0, 1, block));
+    }
+
+    TEST_F(SamplingPipelineTest, AnOffsetTimeMappedVoiceStartsItsClockOnTheOffsetFrame)
+    {
+        constexpr uint32_t offset = 100;
+        auto& rig = make_rig();
+        StreamSlice slice = rig.sampler->slice_from_stream();
+        slice.time_map = std::make_shared<const Kinesis::TimeMap>(
+            Kinesis::TimeMaps::quadratic(0.0, static_cast<double>(k_rate), 0.0));
+        rig.sampler->build();
+        rig.sampler->load(0, slice);
+
+        rig.sampler->trigger(0, offset);
+        tick(2);
+
+        ASSERT_EQ(rig.blocks.size(), 2U);
+        std::vector<double> first(block, 0.0);
+        std::vector<double> second;
+        for (uint64_t n = offset; n < block; ++n) {
+            first[n] = sample(n - offset);
+        }
+        for (uint64_t n = 0; n < block; ++n) {
+            second.push_back(sample(block - offset + n));
+        }
+        expect_near(rig.blocks[0], first);
+        expect_near(rig.blocks[1], second);
+    }
+
+    TEST_F(SamplingPipelineTest, AnOffsetVoiceStartsItsEnvelopeOnTheOffsetFrame)
+    {
+        constexpr uint32_t offset = 100;
+        auto& rig = make_rig();
+        StreamSlice slice = rig.sampler->slice_from_stream();
+        slice.with_envelope(Kinesis::TimeMaps::linear(0.0, 1.0, static_cast<double>(block) / k_rate));
+        rig.sampler->build();
+        rig.sampler->load(0, slice);
+
+        rig.sampler->trigger(0, offset);
+        tick(1);
+
+        ASSERT_EQ(rig.blocks.size(), 1U);
+        std::vector<double> expected(block, 0.0);
+        for (uint64_t n = offset; n < block; ++n) {
+            expected[n] = sample(n - offset) * static_cast<double>(n - offset) / static_cast<double>(block);
+        }
+        expect_near(rig.blocks[0], expected);
+    }
+
     TEST_F(SamplingPipelineTest, ASamplersOutputReachesItsChannelAndLeavesWithIt)
     {
         auto& rig = make_rig();
