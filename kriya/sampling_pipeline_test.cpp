@@ -918,6 +918,21 @@ namespace {
         expect_near(rig.blocks[0], expected);
     }
 
+    TEST_F(SamplingPipelineTest, RebuildingABuiltSamplerLeavesExactlyOnePipelineRunning)
+    {
+        auto& rig = make_rig();
+
+        rig.sampler->build();
+        rig.sampler->play_continuous(0, rig.sampler->slice_from_stream());
+        tick(2);
+        rig.sampler->rebuild_for(1000);
+        tick(1);
+        const size_t before = rig.blocks.size();
+        tick(1);
+
+        EXPECT_EQ(rig.blocks.size() - before, 1U);
+    }
+
     TEST_F(SamplingPipelineTest, ASamplersOutputReachesItsChannelAndLeavesWithIt)
     {
         auto& rig = make_rig();

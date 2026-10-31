@@ -711,6 +711,23 @@ namespace {
         EXPECT_FALSE(pipeline->is_running());
     }
 
+    TEST_F(BufferPipelineTest, StoppingAContinuousPipelineEndsItAtTheEndOfTheCycleInProgress)
+    {
+        const auto pipeline = make_pipeline();
+        int captured = 0;
+
+        *pipeline >> BufferOperation::capture_from(source).on_data_ready([&](DataVariant&, uint32_t) { ++captured; });
+        pipeline->execute_continuous();
+        tick(4);
+        pipeline->stop_continuous();
+        tick(2);
+        const int at_stop = captured;
+        tick(6);
+
+        EXPECT_EQ(captured, at_stop);
+        EXPECT_FALSE(pipeline->is_running());
+    }
+
     TEST_F(BufferPipelineTest, EndingCancelsARunningPipelineAndReportsCompletionOnce)
     {
         const auto pipeline = make_pipeline();
