@@ -608,6 +608,61 @@ namespace {
         EXPECT_TRUE(processor->is_active());
     }
 
+    TEST_P(CursorTimeMapTest, TheLoopCountEndsALoopingMapAfterThatManyWraps)
+    {
+        int ended = 0;
+        processor->set_on_end([&ended] { ++ended; });
+        processor->set_looping(true);
+        processor->set_loop_count(2);
+        start_with(map_of([](double t) { return 2.0 * t * k_rate; }), 8);
+
+        run();
+        EXPECT_TRUE(processor->is_active());
+        run();
+
+        EXPECT_FALSE(processor->is_active());
+        EXPECT_EQ(ended, 1);
+    }
+
+    TEST_P(CursorTimeMapTest, AMapThatStaysInsideTheRegionNeverUsesUpTheLoopCount)
+    {
+        processor->set_looping(true);
+        processor->set_loop_count(1);
+        start_with(map_of([](double t) { return 4.0 + 3.0 * std::sin(10.0 * t); }), 8);
+
+        for (int i = 0; i < 20; ++i) {
+            run();
+        }
+
+        EXPECT_TRUE(processor->is_active());
+    }
+
+    TEST_P(CursorTimeMapTest, ReversingPastTheRegionStartCountsAsAPass)
+    {
+        int ended = 0;
+        processor->set_on_end([&ended] { ++ended; });
+        processor->set_looping(true);
+        processor->set_loop_count(1);
+        start_with(map_of([](double t) { return 2.0 - 2.0 * t * k_rate; }), 8);
+
+        run();
+
+        EXPECT_FALSE(processor->is_active());
+        EXPECT_EQ(ended, 1);
+    }
+
+    TEST_P(CursorTimeMapTest, WithoutALoopCountAMapLoopsForever)
+    {
+        processor->set_looping(true);
+        start_with(map_of([](double t) { return 2.0 * t * k_rate; }), 8);
+
+        for (int i = 0; i < 20; ++i) {
+            run();
+        }
+
+        EXPECT_TRUE(processor->is_active());
+    }
+
     TEST_P(CursorTimeMapTest, ADifferentMapRestartsTheClockButTheSameMapDoesNot)
     {
         const auto map = map_of([](double t) { return t * k_rate; });
