@@ -2,9 +2,6 @@
 
 #include "network_buffer_fixture.hpp"
 
-#include <algorithm>
-#include <numeric>
-#include <set>
 
 #include "MayaFlux/Buffers/Network/SpatialHashProcessor.hpp"
 #include "MayaFlux/Nodes/Network/AssemblyNetwork.hpp"

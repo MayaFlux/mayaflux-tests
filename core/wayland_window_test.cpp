@@ -2,15 +2,6 @@
 
 #if defined(MAYAFLUX_PLATFORM_LINUX) && defined(WAYLAND_BACKEND)
 
-#include <array>
-#include <cstdint>
-#include <cstdlib>
-#include <memory>
-#include <optional>
-#include <string>
-#include <thread>
-#include <utility>
-#include <vector>
 
 #include "../support/wayland_test_support.hpp"
 

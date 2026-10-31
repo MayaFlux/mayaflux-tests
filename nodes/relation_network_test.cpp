@@ -1,19 +1,9 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Kinesis/Discrete/Boolean.hpp"
 #include "MayaFlux/Nodes/Generators/Polynomial.hpp"
 #include "MayaFlux/Nodes/Network/RelationNetwork.hpp"
 
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <functional>
-#include <memory>
-#include <optional>
-#include <span>
-#include <string>
-#include <utility>
-#include <vector>
 
 namespace MayaFlux::Test {
 

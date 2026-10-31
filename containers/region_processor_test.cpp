@@ -1,4 +1,4 @@
-#include <algorithm>
+#include <gtest/gtest.h>
 
 #include "../mock_signalsourcecontainer.hpp"
 

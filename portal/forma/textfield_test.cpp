@@ -1,4 +1,4 @@
-#include "../../test_config.h"
+#include "gtest/gtest.h"
 
 #include "../../support/scripted_window.hpp"
 #include "../../support/text_test_support.hpp"

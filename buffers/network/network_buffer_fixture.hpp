@@ -2,9 +2,6 @@
 
 #include "gtest/gtest.h"
 
-#include <cstdint>
-#include <memory>
-#include <vector>
 
 #include "../../support/scripted_window.hpp"
 #include "../../support/vulkan_test_support.hpp"

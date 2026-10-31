@@ -4,9 +4,6 @@
 
 #if defined(MAYAFLUX_PLATFORM_LINUX) && defined(WAYLAND_BACKEND)
 
-#include <cstdlib>
-#include <optional>
-#include <string>
 
 #include <wayland-client.h>
 

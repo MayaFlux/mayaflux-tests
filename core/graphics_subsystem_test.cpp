@@ -1,7 +1,6 @@
 #include "gtest/gtest.h"
 
 #include <chrono>
-#include <thread>
 
 #include "../support/vulkan_test_support.hpp"
 

@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/Node/PolynomialProcessor.hpp"
@@ -13,6 +13,8 @@ using Nodes::Generator::PolynomialMode;
 
 namespace {
 
+    constexpr unsigned int BUFFER_SIZE = 512;
+
     double quadratic(double x)
     {
         return 2.0 * x * x + 3.0 * x + 1.0;
@@ -25,7 +27,7 @@ namespace {
 
     std::shared_ptr<AudioBuffer> make_block(size_t samples, double fill = 0.0, uint32_t channel = 0)
     {
-        auto buffer = std::make_shared<AudioBuffer>(channel, TestConfig::BUFFER_SIZE);
+        auto buffer = std::make_shared<AudioBuffer>(channel, BUFFER_SIZE);
         buffer->resize(static_cast<uint32_t>(samples));
         std::ranges::fill(buffer->get_data(), fill);
         return buffer;
@@ -463,7 +465,7 @@ TEST_P(ProcessorSourceTest, AppliesTheQuadraticToEverySample)
     EXPECT_EQ(processor->is_using_internal(), GetParam() != ProcessorSource::External);
     ASSERT_NE(processor->get_polynomial(), nullptr);
 
-    auto buffer = make_block(TestConfig::BUFFER_SIZE);
+    auto buffer = make_block(BUFFER_SIZE);
     for (size_t i = 0; i < buffer->get_data().size(); ++i) {
         buffer->get_data().at(i) = static_cast<double>(i) / static_cast<double>(buffer->get_data().size());
     }

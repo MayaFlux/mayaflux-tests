@@ -1,6 +1,5 @@
 #include "gtest/gtest.h"
 
-#include <algorithm>
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKEnumUtils.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"

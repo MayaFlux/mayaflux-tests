@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Nodes/Conduit/Constant.hpp"
 #include "MayaFlux/Nodes/Conduit/StreamReaderNode.hpp"

@@ -1,17 +1,7 @@
 #include "gtest/gtest.h"
 
-#include <algorithm>
 #include <chrono>
-#include <cstdint>
-#include <functional>
-#include <memory>
-#include <mutex>
-#include <optional>
-#include <string>
 #include <string_view>
-#include <thread>
-#include <utility>
-#include <vector>
 
 #include "MayaFlux/Core/Input/InputManager.hpp"
 #include "MayaFlux/Core/ProcessingArchitecture.hpp"

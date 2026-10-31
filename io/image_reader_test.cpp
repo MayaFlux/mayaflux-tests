@@ -1,10 +1,5 @@
 #include "gtest/gtest.h"
 
-#include <cstdint>
-#include <filesystem>
-#include <memory>
-#include <string>
-#include <vector>
 
 #include "../support/scoped_working_dir.hpp"
 #include "../support/vulkan_test_support.hpp"

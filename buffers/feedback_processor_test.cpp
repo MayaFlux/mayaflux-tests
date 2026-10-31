@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/BufferSpec.hpp"
@@ -14,9 +14,11 @@ using Buffers::FeedbackProcessor;
 
 namespace {
 
+    constexpr unsigned int BUFFER_SIZE = 512;
+
     std::shared_ptr<AudioBuffer> make_block(size_t samples, double fill = 0.0)
     {
-        auto buffer = std::make_shared<AudioBuffer>(0, TestConfig::BUFFER_SIZE);
+        auto buffer = std::make_shared<AudioBuffer>(0, BUFFER_SIZE);
         buffer->resize(static_cast<uint32_t>(samples));
         std::ranges::fill(buffer->get_data(), fill);
         return buffer;
@@ -181,7 +183,7 @@ TEST(FeedbackProcessorTest, CoefficientArrayIsPerBufferState)
 
 TEST(FeedbackBufferRingTest,CloneGetsItsOwnRingAndProcessor)
 {
-    auto original = std::make_shared<FeedbackBuffer>(0, TestConfig::BUFFER_SIZE, 0.5F, 64);
+    auto original = std::make_shared<FeedbackBuffer>(0, BUFFER_SIZE, 0.5F, 64);
     original->resize(64);
     std::ranges::fill(original->get_data(), 1.0);
 
@@ -203,7 +205,7 @@ TEST(FeedbackBufferRingTest,CloneGetsItsOwnRingAndProcessor)
 
 TEST(FeedbackBufferRingTest,RingGrowsToFitALongerLag)
 {
-    auto buffer = std::make_shared<FeedbackBuffer>(0, TestConfig::BUFFER_SIZE, 0.5F, 64);
+    auto buffer = std::make_shared<FeedbackBuffer>(0, BUFFER_SIZE, 0.5F, 64);
     buffer->set_default_processor(std::make_shared<FeedbackProcessor>(recirculate(0.5), std::vector<double> { 700.0 }));
 
     buffer->process_default();
@@ -213,7 +215,7 @@ TEST(FeedbackBufferRingTest,RingGrowsToFitALongerLag)
 
 TEST(FeedbackBufferRingTest,FeedSamplesChangesTheDefaultLag)
 {
-    auto buffer = std::make_shared<FeedbackBuffer>(0, TestConfig::BUFFER_SIZE, 0.5F, 512);
+    auto buffer = std::make_shared<FeedbackBuffer>(0, BUFFER_SIZE, 0.5F, 512);
     buffer->resize(8);
     buffer->set_feed_samples(2);
     buffer->get_data().front() = 1.0;
@@ -290,7 +292,7 @@ class LagSourceTest : public ::testing::TestWithParam<bool> { };
 
 TEST_P(LagSourceTest, ReadsTheSourceOneBlockBehindWhicheverRunsFirst)
 {
-    auto source = std::make_shared<FeedbackBuffer>(0, TestConfig::BUFFER_SIZE, 0.5F, 8);
+    auto source = std::make_shared<FeedbackBuffer>(0, BUFFER_SIZE, 0.5F, 8);
     source->resize(8);
     source->set_default_processor(std::make_shared<FeedbackProcessor>(
         FeedbackProcessor::Combine { [](double x, std::span<const double>, std::span<double>) { return x; } },
@@ -330,7 +332,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST(FeedbackBufferRingTest, WriteCountStartsAtZeroForAClone)
 {
-    auto original = std::make_shared<FeedbackBuffer>(0, TestConfig::BUFFER_SIZE, 0.5F, 8);
+    auto original = std::make_shared<FeedbackBuffer>(0, BUFFER_SIZE, 0.5F, 8);
     original->resize(8);
     original->process_default();
     EXPECT_EQ(original->get_write_count(), 8U);

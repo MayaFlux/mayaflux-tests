@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Kinesis/Discrete/Boolean.hpp"
 #include "MayaFlux/Kinesis/Discrete/Kernels.hpp"

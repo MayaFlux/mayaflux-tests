@@ -1,10 +1,9 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Kakshya/KakshyaUtils.hpp"
 #include "MayaFlux/Kakshya/Region/RegionGroup.hpp"
 
 #include <chrono>
-#include <thread>
 
 using namespace MayaFlux::Kakshya;
 

@@ -1,7 +1,8 @@
 #include "MayaFlux/Kakshya/NDData/DataAccess.hpp"
-#include "test_config.h"
 
 #include "MayaFlux/Kakshya/SignalSourceContainer.hpp"
+
+#include <gtest/gtest.h>
 
 using namespace MayaFlux::Kakshya;
 

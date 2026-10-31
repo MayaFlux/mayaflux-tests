@@ -1,13 +1,5 @@
 #include "gtest/gtest.h"
 
-#include <array>
-#include <cstdint>
-#include <cstring>
-#include <functional>
-#include <memory>
-#include <optional>
-#include <string>
-#include <vector>
 
 #include "../../support/native_window_test_support.hpp"
 

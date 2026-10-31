@@ -1,4 +1,4 @@
-#include "../../test_config.h"
+#include "gtest/gtest.h"
 
 #include "../../support/native_window_test_support.hpp"
 #include "../../support/scripted_window.hpp"
@@ -30,8 +30,10 @@ using Portal::Graphics::PrimitiveTopology;
 
 namespace {
 
+    constexpr unsigned int SAMPLE_RATE = 48000;
+
     struct AtelierHarness {
-        std::shared_ptr<Vruta::TaskScheduler> scheduler = std::make_shared<Vruta::TaskScheduler>(TestConfig::SAMPLE_RATE);
+        std::shared_ptr<Vruta::TaskScheduler> scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
         std::shared_ptr<Nodes::NodeGraphManager> nodes = std::make_shared<Nodes::NodeGraphManager>();
         std::shared_ptr<Buffers::BufferManager> buffers = std::make_shared<Buffers::BufferManager>();
         std::shared_ptr<Vruta::EventManager> events = std::make_shared<Vruta::EventManager>();

@@ -2,25 +2,12 @@
 
 #if defined(MAYAFLUX_PLATFORM_LINUX)
 
-#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <deque>
 #include <expected>
-#include <filesystem>
 #include <fstream>
-#include <map>
-#include <memory>
-#include <mutex>
-#include <optional>
-#include <string>
-#include <thread>
-#include <utility>
-#include <vector>
 
 #include <signal.h>
 #include <unistd.h>

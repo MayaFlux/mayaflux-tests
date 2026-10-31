@@ -1,14 +1,7 @@
 #include "gtest/gtest.h"
 
-#include <cstdint>
-#include <cstring>
-#include <memory>
-#include <span>
 #include <stdexcept>
-#include <string>
 #include <string_view>
-#include <utility>
-#include <vector>
 
 #include <glm/glm.hpp>
 

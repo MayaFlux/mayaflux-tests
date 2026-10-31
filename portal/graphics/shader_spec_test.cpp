@@ -1,7 +1,5 @@
 #include "gtest/gtest.h"
 
-#include <string>
-#include <vector>
 
 #include "MayaFlux/Portal/Graphics/ShaderSpec.hpp"
 

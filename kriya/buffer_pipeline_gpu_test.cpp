@@ -1,6 +1,5 @@
 #include "gtest/gtest.h"
 
-#include <cstring>
 
 #include "../kakshya/video_test_support.hpp"
 #include "../support/vulkan_test_support.hpp"

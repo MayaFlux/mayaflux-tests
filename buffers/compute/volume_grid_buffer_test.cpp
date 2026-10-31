@@ -1,10 +1,6 @@
 #include "gtest/gtest.h"
 
-#include <array>
-#include <cstdint>
 #include <stdexcept>
-#include <string>
-#include <vector>
 
 #include "volume_grid_fixture.hpp"
 

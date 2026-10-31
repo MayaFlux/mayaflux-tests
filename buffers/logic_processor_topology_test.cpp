@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/Node/LogicProcessor.hpp"
@@ -17,12 +17,13 @@ using Modulation = LogicProcessor::ModulationType;
 
 namespace {
 
+    constexpr unsigned int BUFFER_SIZE = 512;
     constexpr double HIGH = 0.9;
     constexpr double LOW = 0.1;
 
     std::shared_ptr<AudioBuffer> make_block(const std::vector<double>& values)
     {
-        auto buffer = std::make_shared<AudioBuffer>(0, TestConfig::BUFFER_SIZE);
+        auto buffer = std::make_shared<AudioBuffer>(0, BUFFER_SIZE);
         buffer->resize(static_cast<uint32_t>(values.size()));
         buffer->get_data() = values;
         return buffer;

@@ -1,13 +1,6 @@
 #include "gtest/gtest.h"
 
-#include <array>
-#include <cstdint>
-#include <cstring>
-#include <memory>
 #include <stdexcept>
-#include <string>
-#include <variant>
-#include <vector>
 
 #include "../../support/scripted_window.hpp"
 #include "../../support/native_window_test_support.hpp"

@@ -2,17 +2,7 @@
 
 #if defined(MAYAFLUX_PLATFORM_MACOS) && defined(COCOA_BACKEND)
 
-#include <algorithm>
-#include <array>
-#include <atomic>
 #include <chrono>
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <thread>
-#include <utility>
-#include <variant>
-#include <vector>
 
 #include "MayaFlux/Core/Backends/Windowing/Cocoa/CocoaWindow.hpp"
 #include "MayaFlux/Core/Backends/Windowing/Cocoa/KeyMapping.hpp"

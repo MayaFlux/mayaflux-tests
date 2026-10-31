@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/Recursive/BlockFeedbackProcessor.hpp"
@@ -10,9 +10,11 @@ using Buffers::BlockFeedbackProcessor;
 
 namespace {
 
+    constexpr unsigned int BUFFER_SIZE = 512;
+
     std::shared_ptr<AudioBuffer> make_block(size_t samples, double fill)
     {
-        auto buffer = std::make_shared<AudioBuffer>(0, TestConfig::BUFFER_SIZE);
+        auto buffer = std::make_shared<AudioBuffer>(0, BUFFER_SIZE);
         buffer->resize(static_cast<uint32_t>(samples));
         std::ranges::fill(buffer->get_data(), fill);
         return buffer;

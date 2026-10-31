@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Kriya/Awaiters/BroadcastAwaiter.hpp"
 #include "MayaFlux/Kriya/Awaiters/EventAwaiter.hpp"

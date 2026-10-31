@@ -1,9 +1,5 @@
 #pragma once
 
-#include <memory>
-#include <mutex>
-#include <string>
-#include <vector>
 
 #include "MayaFlux/Journal/Archivist.hpp"
 #include "MayaFlux/Journal/Sink.hpp"

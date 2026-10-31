@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Kinesis/Scalar.hpp"
 #include "MayaFlux/Kinesis/Tendency/TimeMap.hpp"

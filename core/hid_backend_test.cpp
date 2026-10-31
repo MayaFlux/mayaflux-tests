@@ -1,17 +1,6 @@
 #include "gtest/gtest.h"
 
-#include <algorithm>
-#include <array>
 #include <chrono>
-#include <cstdint>
-#include <map>
-#include <memory>
-#include <mutex>
-#include <optional>
-#include <set>
-#include <string>
-#include <thread>
-#include <vector>
 
 #include "MayaFlux/Core/Backends/Input/HIDBackend.hpp"
 

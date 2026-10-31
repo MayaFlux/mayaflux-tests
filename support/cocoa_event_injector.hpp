@@ -2,11 +2,7 @@
 
 #ifdef MAYAFLUX_PLATFORM_MACOS
 
-#include <cstdint>
-#include <memory>
-#include <string>
 #include <string_view>
-#include <utility>
 
 /**
  * @namespace MayaFlux::Test::CocoaInput

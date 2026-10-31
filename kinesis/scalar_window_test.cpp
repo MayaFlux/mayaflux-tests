@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Kinesis/Differential.hpp"
 #include "MayaFlux/Kinesis/SymbolicTrajectory.hpp"

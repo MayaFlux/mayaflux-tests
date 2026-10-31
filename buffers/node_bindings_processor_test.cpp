@@ -1,15 +1,6 @@
 #include "gtest/gtest.h"
 
-#include <algorithm>
-#include <cstdint>
-#include <cstring>
-#include <filesystem>
 #include <fstream>
-#include <memory>
-#include <optional>
-#include <string>
-#include <utility>
-#include <vector>
 
 #include "../support/vulkan_test_support.hpp"
 

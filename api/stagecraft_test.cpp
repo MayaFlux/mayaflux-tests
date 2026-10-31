@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Nexus/Tapestry.hpp"
@@ -8,12 +8,16 @@
 namespace MayaFlux::Test {
 namespace {
 
+    constexpr unsigned int SAMPLE_RATE = 48000;
+    constexpr unsigned int BUFFER_SIZE = 512;
+    constexpr unsigned int NUM_CHANNELS = 2;
+
     class ApiStagecraftTest : public ::testing::Test {
     protected:
         void SetUp() override
         {
             MayaFlux::End();
-            MayaFlux::Init(TestConfig::SAMPLE_RATE, TestConfig::BUFFER_SIZE, TestConfig::NUM_CHANNELS, 0);
+            MayaFlux::Init(SAMPLE_RATE, BUFFER_SIZE, NUM_CHANNELS, 0);
         }
 
         void TearDown() override { MayaFlux::End(); }

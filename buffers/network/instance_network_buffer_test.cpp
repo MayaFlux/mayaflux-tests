@@ -1,11 +1,5 @@
 #include "gtest/gtest.h"
 
-#include <algorithm>
-#include <array>
-#include <cstdint>
-#include <cstring>
-#include <memory>
-#include <vector>
 
 #include "../../support/native_window_test_support.hpp"
 #include "../../support/scripted_window.hpp"

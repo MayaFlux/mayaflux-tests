@@ -1,11 +1,7 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Kinesis/Stochastic/Weights.hpp"
 
-#include <array>
-#include <string>
-#include <utility>
-#include <vector>
 
 namespace MayaFlux::Test {
 

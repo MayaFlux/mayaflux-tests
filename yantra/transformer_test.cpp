@@ -1,10 +1,9 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Yantra/Transformers/ConvolutionTransformer.hpp"
 #include "MayaFlux/Yantra/Transformers/MathematicalTransformer.hpp"
 #include "MayaFlux/Yantra/Transformers/SpectralTransformer.hpp"
 #include "MayaFlux/Yantra/Transformers/TemporalTransformer.hpp"
-#include <cstddef>
 #include <random>
 
 using namespace MayaFlux::Yantra;

@@ -1,11 +1,5 @@
 #include "gtest/gtest.h"
 
-#include <array>
-#include <cmath>
-#include <cstdint>
-#include <cstring>
-#include <memory>
-#include <vector>
 
 #include "../../support/vulkan_test_support.hpp"
 

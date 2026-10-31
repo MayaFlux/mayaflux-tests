@@ -1,4 +1,4 @@
-#include "../../test_config.h"
+#include "gtest/gtest.h"
 
 #include "../../support/frame_scheduler.hpp"
 #include "../../support/vulkan_test_support.hpp"

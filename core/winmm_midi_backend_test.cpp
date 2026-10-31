@@ -2,16 +2,8 @@
 
 #if defined(MAYAFLUX_PLATFORM_WINDOWS)
 
-#include <algorithm>
 #include <chrono>
 #include <condition_variable>
-#include <cstdint>
-#include <memory>
-#include <mutex>
-#include <optional>
-#include <string>
-#include <thread>
-#include <vector>
 
 #include "MayaFlux/Core/Backends/Input/WinMmMidiBackend.hpp"
 

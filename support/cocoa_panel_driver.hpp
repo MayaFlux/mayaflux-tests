@@ -2,10 +2,6 @@
 
 #ifdef MAYAFLUX_PLATFORM_MACOS
 
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <vector>
 
 /**
  * @namespace MayaFlux::Test::CocoaPanel

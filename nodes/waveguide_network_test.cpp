@@ -1,17 +1,9 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Nodes/Filters/FIR.hpp"
 #include "MayaFlux/Nodes/Generators/Polynomial.hpp"
 #include "MayaFlux/Nodes/Network/WaveguideNetwork.hpp"
 
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <memory>
-#include <ranges>
-#include <span>
-#include <string>
-#include <vector>
 
 namespace MayaFlux::Test {
 

@@ -1,10 +1,16 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Nodes/Generators/Impulse.hpp"
 #include "MayaFlux/Nodes/Generators/Phasor.hpp"
 #include "MayaFlux/Nodes/Generators/Sine.hpp"
 
 namespace MayaFlux::Test {
+
+namespace {
+
+    constexpr unsigned int SAMPLE_RATE = 48000;
+
+}
 
 class ImpulseTest : public ::testing::Test {
 protected:
@@ -121,7 +127,7 @@ TEST_F(PhasorTest, BasicProperties)
 
 TEST_F(PhasorTest, PhaseProgression)
 {
-    double expected_phase_increment = phasor->get_frequency() / TestConfig::SAMPLE_RATE;
+    double expected_phase_increment = phasor->get_frequency() / SAMPLE_RATE;
     double phase = 0.0;
 
     for (int i = 0; i < 10; i++) {
@@ -143,7 +149,7 @@ TEST_F(PhasorTest, PhaseWrapCallback)
         wrap_callback_count++;
     });
 
-    phasor->set_frequency(TestConfig::SAMPLE_RATE / 4.0); // Wraps around every 4 samples
+    phasor->set_frequency(SAMPLE_RATE / 4.0); // Wraps around every 4 samples
 
     for (int i = 0; i < 10; i++) {
         phasor->process_sample(0.0);
@@ -163,7 +169,7 @@ TEST_F(PhasorTest, ThresholdCallback)
         },
         threshold);
 
-    for (unsigned int i = 0; i < TestConfig::SAMPLE_RATE; i++) {
+    for (unsigned int i = 0; i < SAMPLE_RATE; i++) {
         phasor->process_sample(0.0);
     }
 
@@ -178,7 +184,7 @@ TEST_F(PhasorTest, FrequencyChange)
 
     phasor->set_frequency(2.0);
 
-    double expected_phase_increment = 2.0 / TestConfig::SAMPLE_RATE;
+    double expected_phase_increment = 2.0 / SAMPLE_RATE;
     double last_value = phasor->process_sample(0.0);
 
     for (int i = 0; i < 5; i++) {

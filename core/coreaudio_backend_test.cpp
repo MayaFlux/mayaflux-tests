@@ -2,15 +2,8 @@
 
 #if defined(MAYAFLUX_PLATFORM_MACOS) && defined(COREAUDIO_BACKEND)
 
-#include <algorithm>
-#include <atomic>
 #include <chrono>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <memory>
 #include <stdexcept>
-#include <thread>
 
 #include "MayaFlux/Core/Backends/Audio/CoreAudioBackend.hpp"
 

@@ -1,10 +1,9 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Nodes/Generators/Polynomial.hpp"
 #include "MayaFlux/Nodes/Network/ResonatorNetwork.hpp"
 
 #include <chrono>
-#include <iostream>
 
 namespace MayaFlux::Test {
 

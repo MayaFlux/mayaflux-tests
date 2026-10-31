@@ -6,7 +6,6 @@
 #if defined(MAYAFLUX_TEST_NATIVE_WINDOWS)
 
 #include <chrono>
-#include <thread>
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Core/ProcessingArchitecture.hpp"

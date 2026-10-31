@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/Node/LogicProcessor.hpp"
@@ -16,9 +16,11 @@ using Modulation = LogicProcessor::ModulationType;
 
 namespace {
 
+    constexpr unsigned int BUFFER_SIZE = 512;
+
     std::shared_ptr<AudioBuffer> make_block(const std::vector<double>& values)
     {
-        auto buffer = std::make_shared<AudioBuffer>(0, TestConfig::BUFFER_SIZE);
+        auto buffer = std::make_shared<AudioBuffer>(0, BUFFER_SIZE);
         buffer->resize(static_cast<uint32_t>(values.size()));
         buffer->get_data() = values;
         return buffer;
@@ -135,7 +137,7 @@ TEST_P(SourceTest, AppliesItsDecisionToEverySample)
     ASSERT_NE(processor->get_logic(), nullptr);
     EXPECT_EQ(processor->get_modulation_type(), Modulation::REPLACE);
 
-    std::vector<double> input = ramp(TestConfig::BUFFER_SIZE);
+    std::vector<double> input = ramp(BUFFER_SIZE);
     if (GetParam() == Source::InternalSequential) {
         for (size_t i = 0; i < input.size(); ++i) {
             input[i] = (i / 3) % 2 == 0 ? 0.2 : 0.8;
@@ -207,7 +209,7 @@ protected:
 TEST_P(ModulationTest, CombinesLogicAndBufferPerSample)
 {
     const auto processor = make_processor();
-    const auto input = ramp(TestConfig::BUFFER_SIZE);
+    const auto input = ramp(BUFFER_SIZE);
     auto buffer = make_block(input);
 
     EXPECT_EQ(processor->get_modulation_type(), GetParam().type);
@@ -223,7 +225,7 @@ TEST_P(ModulationTest, CombinesLogicAndBufferPerSample)
 TEST_P(ModulationTest, GenerateThenApplyMatchesProcess)
 {
     const auto processor = make_processor();
-    const auto input = ramp(TestConfig::BUFFER_SIZE);
+    const auto input = ramp(BUFFER_SIZE);
     auto buffer = make_block(input);
 
     EXPECT_FALSE(processor->has_generated_data());
@@ -242,7 +244,7 @@ TEST_P(ModulationTest, GenerateThenApplyMatchesProcess)
 TEST_P(ModulationTest, ExplicitFunctionOverridesTheType)
 {
     auto processor = std::make_shared<LogicProcessor>(std::make_shared<Logic>(0.5));
-    const auto input = ramp(TestConfig::BUFFER_SIZE);
+    const auto input = ramp(BUFFER_SIZE);
     auto buffer = make_block(input);
 
     processor->generate(input.size(), input);
@@ -270,7 +272,7 @@ TEST_P(ModulationTest, CloneAppliesTheSameModulation)
     processor->set_reset_between_buffers(false);
     copy->set_reset_between_buffers(false);
 
-    const auto input = ramp(TestConfig::BUFFER_SIZE);
+    const auto input = ramp(BUFFER_SIZE);
     auto first = make_block(input);
     auto second = make_block(input);
 

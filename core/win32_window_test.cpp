@@ -2,15 +2,7 @@
 
 #if defined(MAYAFLUX_PLATFORM_WINDOWS)
 
-#include <algorithm>
-#include <array>
 #include <chrono>
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <thread>
-#include <variant>
-#include <vector>
 
 #include "MayaFlux/Core/Backends/Windowing/Win32/KeyMapping.hpp"
 #include "MayaFlux/Core/Backends/Windowing/Win32/Win32Window.hpp"

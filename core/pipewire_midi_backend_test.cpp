@@ -5,19 +5,9 @@
 #include <alsa/asoundlib.h>
 #include <pipewire/pipewire.h>
 
-#include <algorithm>
 #include <chrono>
 #include <condition_variable>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <memory>
-#include <mutex>
-#include <string>
 #include <string_view>
-#include <thread>
-#include <utility>
-#include <vector>
 
 #include "MayaFlux/Core/Backends/Audio/PipewireBackend.hpp"
 #include "MayaFlux/Core/Backends/Input/PipewireMidiBackend.hpp"

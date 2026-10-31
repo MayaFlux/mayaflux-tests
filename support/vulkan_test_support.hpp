@@ -2,7 +2,6 @@
 
 #include "gtest/gtest.h"
 
-#include <string>
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/BackendResoureManager.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKContext.hpp"

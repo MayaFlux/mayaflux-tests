@@ -2,18 +2,9 @@
 
 #if defined(MAYAFLUX_PLATFORM_MACOS)
 
-#include <algorithm>
 #include <chrono>
 #include <condition_variable>
-#include <cstdint>
 #include <expected>
-#include <filesystem>
-#include <memory>
-#include <mutex>
-#include <optional>
-#include <string>
-#include <thread>
-#include <vector>
 
 #include <unistd.h>
 

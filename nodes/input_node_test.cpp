@@ -1,8 +1,5 @@
 #include "gtest/gtest.h"
 
-#include <cstdint>
-#include <memory>
-#include <vector>
 
 #include "MayaFlux/Nodes/Input/InputNode.hpp"
 

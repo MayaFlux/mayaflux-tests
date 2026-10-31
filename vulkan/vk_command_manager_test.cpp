@@ -5,14 +5,6 @@
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKContext.hpp"
 
-#include <algorithm>
-#include <array>
-#include <atomic>
-#include <memory>
-#include <mutex>
-#include <set>
-#include <thread>
-#include <vector>
 
 namespace MayaFlux::Test {
 namespace {

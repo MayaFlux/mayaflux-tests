@@ -1,19 +1,9 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Nodes/Filters/FIR.hpp"
 #include "MayaFlux/Nodes/Generators/Polynomial.hpp"
 #include "MayaFlux/Nodes/Network/ModalNetwork.hpp"
 
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <memory>
-#include <ranges>
-#include <span>
-#include <string>
-#include <unordered_map>
-#include <utility>
-#include <vector>
 
 namespace MayaFlux::Test {
 

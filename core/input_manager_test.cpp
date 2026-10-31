@@ -1,14 +1,7 @@
 #include "gtest/gtest.h"
 
 #include <chrono>
-#include <cstdint>
-#include <map>
-#include <memory>
-#include <optional>
-#include <string>
 #include <string_view>
-#include <thread>
-#include <vector>
 
 #include "MayaFlux/Core/Input/InputManager.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"

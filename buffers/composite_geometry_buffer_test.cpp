@@ -1,16 +1,9 @@
 #include "gtest/gtest.h"
 
-#include <algorithm>
-#include <array>
 #include <chrono>
-#include <cstdint>
-#include <filesystem>
 #include <fstream>
 #include <initializer_list>
-#include <memory>
-#include <span>
 #include <type_traits>
-#include <vector>
 
 #include "../support/native_window_test_support.hpp"
 #include "../support/scripted_window.hpp"

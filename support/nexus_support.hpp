@@ -2,10 +2,6 @@
 
 #include "gtest/gtest.h"
 
-#include <algorithm>
-#include <cstring>
-#include <memory>
-#include <vector>
 
 #include "scripted_window.hpp"
 #include "vulkan_test_support.hpp"

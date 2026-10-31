@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Yantra/ComputeGrammar.hpp"
 #include "MayaFlux/Yantra/Extractors/FeatureExtractor.hpp"

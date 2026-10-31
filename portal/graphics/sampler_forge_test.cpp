@@ -1,11 +1,6 @@
 #include "gtest/gtest.h"
 
-#include <functional>
-#include <memory>
-#include <string>
 #include <string_view>
-#include <utility>
-#include <vector>
 
 #include "../../support/vulkan_test_support.hpp"
 

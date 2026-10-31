@@ -1,15 +1,8 @@
 #include "gtest/gtest.h"
 
-#include <algorithm>
 #include <chrono>
 #include <condition_variable>
-#include <cstdint>
-#include <memory>
-#include <mutex>
 #include <stdexcept>
-#include <string>
-#include <thread>
-#include <vector>
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Buffers/Input/InputAudioBuffer.hpp"

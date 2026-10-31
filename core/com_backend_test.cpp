@@ -4,16 +4,7 @@
 
 #include <chrono>
 #include <condition_variable>
-#include <cstdint>
 #include <expected>
-#include <filesystem>
-#include <functional>
-#include <memory>
-#include <mutex>
-#include <optional>
-#include <string>
-#include <thread>
-#include <vector>
 
 #include <windows.h>
 

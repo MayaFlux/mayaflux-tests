@@ -5,11 +5,7 @@
 
 #if defined(MAYAFLUX_TEST_NATIVE_WINDOWS)
 
-#include <algorithm>
-#include <atomic>
 #include <chrono>
-#include <limits>
-#include <thread>
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKEnumUtils.hpp"

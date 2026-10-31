@@ -1,12 +1,6 @@
-#include <algorithm>
-#include <atomic>
 #include <chrono>
-#include <cmath>
-#include <cstdlib>
-#include <memory>
-#include <thread>
 
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Core/Engine.hpp"

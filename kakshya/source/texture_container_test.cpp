@@ -1,17 +1,8 @@
 #include "gtest/gtest.h"
 
-#include <algorithm>
-#include <cstdint>
-#include <cstring>
-#include <memory>
-#include <span>
 #include <stdexcept>
-#include <string>
 #include <string_view>
 #include <typeindex>
-#include <utility>
-#include <variant>
-#include <vector>
 
 #include "../../support/vulkan_test_support.hpp"
 

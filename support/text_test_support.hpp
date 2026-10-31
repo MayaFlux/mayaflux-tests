@@ -2,11 +2,7 @@
 
 #include "gtest/gtest.h"
 
-#include <filesystem>
-#include <optional>
-#include <string>
 #include <string_view>
-#include <vector>
 
 #include "MayaFlux/Portal/Text/FontDiscovery.hpp"
 #include "MayaFlux/Portal/Text/FontFace.hpp"

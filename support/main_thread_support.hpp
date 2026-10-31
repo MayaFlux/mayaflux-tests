@@ -2,8 +2,6 @@
 
 #include <chrono>
 #include <future>
-#include <thread>
-#include <utility>
 
 #include "MayaFlux/Transitive/Parallel/Dispatch.hpp"
 

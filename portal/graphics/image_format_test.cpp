@@ -1,9 +1,6 @@
 #include "gtest/gtest.h"
 
-#include <optional>
-#include <string>
 #include <string_view>
-#include <vector>
 
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 

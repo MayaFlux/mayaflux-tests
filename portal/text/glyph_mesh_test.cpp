@@ -1,7 +1,5 @@
 #include "gtest/gtest.h"
 
-#include <cmath>
-#include <vector>
 
 #include "MayaFlux/Portal/Text/GlyphMesh.hpp"
 

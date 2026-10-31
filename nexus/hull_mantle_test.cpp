@@ -1,7 +1,5 @@
 #include "gtest/gtest.h"
 
-#include <memory>
-#include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>

@@ -1,12 +1,5 @@
 #include "gtest/gtest.h"
 
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstdint>
-#include <cstring>
-#include <memory>
-#include <vector>
 
 #include "volume_grid_fixture.hpp"
 #include "../../support/native_window_test_support.hpp"

@@ -1,4 +1,4 @@
-#include "../../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Kakshya/Source/PlotContainer.hpp"
 #include "MayaFlux/Portal/Forma/Plot/PlotSource.hpp"

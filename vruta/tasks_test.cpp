@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Kriya/Chain.hpp"
@@ -15,6 +15,8 @@ namespace MayaFlux::Test {
 using SchedToken = Vruta::ProcessingToken;
 
 namespace {
+
+    constexpr unsigned int SAMPLE_RATE = 48000;
 
     template <typename T>
     class Log {
@@ -118,7 +120,7 @@ class TasksFixture : public Base {
 protected:
     void SetUp() override
     {
-        scheduler = std::make_shared<Vruta::TaskScheduler>(TestConfig::SAMPLE_RATE);
+        scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
         node_graph_manager = std::make_shared<Nodes::NodeGraphManager>();
         buffer_manager = std::make_shared<Buffers::BufferManager>();
         processing_token = Nodes::ProcessingToken::AUDIO_RATE;

@@ -1,9 +1,7 @@
 #include "gtest/gtest.h"
 
 #include <chrono>
-#include <cstring>
 #include <future>
-#include <numeric>
 
 #include "../support/vulkan_test_support.hpp"
 

@@ -1,10 +1,6 @@
 #include "gtest/gtest.h"
 
-#include <cstdint>
-#include <memory>
-#include <string>
 #include <string_view>
-#include <vector>
 
 #include "../../support/text_test_support.hpp"
 

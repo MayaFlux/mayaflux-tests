@@ -1,7 +1,5 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
-#include <algorithm>
-#include <set>
 
 #include "MayaFlux/Kinesis/Spatial/SpatialIndex.hpp"
 

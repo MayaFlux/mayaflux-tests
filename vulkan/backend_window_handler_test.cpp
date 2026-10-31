@@ -4,9 +4,7 @@
 
 #if defined(MAYAFLUX_TEST_NATIVE_WINDOWS)
 
-#include <atomic>
 #include <chrono>
-#include <cstring>
 
 #include "MayaFlux/Buffers/VKBuffer.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/BackendResoureManager.hpp"

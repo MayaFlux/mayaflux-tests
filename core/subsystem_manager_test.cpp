@@ -1,10 +1,6 @@
 #include "gtest/gtest.h"
 
-#include <memory>
 #include <stdexcept>
-#include <string>
-#include <utility>
-#include <vector>
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Core/GlobalGraphicsInfo.hpp"

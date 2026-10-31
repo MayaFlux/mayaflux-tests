@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Kriya/Awaiters/ConditionAwaiter.hpp"
 #include "MayaFlux/Kriya/Awaiters/DelayAwaiters.hpp"
@@ -12,6 +12,9 @@ using SchedToken = Vruta::ProcessingToken;
 using Count = std::shared_ptr<std::atomic<int>>;
 
 namespace {
+
+    constexpr unsigned int SAMPLE_RATE = 48000;
+    constexpr unsigned int BUFFER_SIZE = 512;
 
     Count make_count()
     {
@@ -194,7 +197,7 @@ class SchedulerFixture : public Base {
 protected:
     void SetUp() override
     {
-        scheduler = std::make_shared<Vruta::TaskScheduler>(TestConfig::SAMPLE_RATE);
+        scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
     }
 
     void TearDown() override
@@ -266,10 +269,10 @@ INSTANTIATE_TEST_SUITE_P(
     ConversionTest,
     ::testing::Values(
         ConversionCase { "Zero", 0.0, 0, 0 },
-        ConversionCase { "Half", 0.5, TestConfig::SAMPLE_RATE / 2, 30 },
-        ConversionCase { "One", 1.0, TestConfig::SAMPLE_RATE, 60 },
-        ConversionCase { "TwoAndAHalf", 2.5, TestConfig::SAMPLE_RATE * 5 / 2, 150 },
-        ConversionCase { "SubFrame", 0.01, TestConfig::SAMPLE_RATE / 100, 0 }),
+        ConversionCase { "Half", 0.5, SAMPLE_RATE / 2, 30 },
+        ConversionCase { "One", 1.0, SAMPLE_RATE, 60 },
+        ConversionCase { "TwoAndAHalf", 2.5, SAMPLE_RATE * 5 / 2, 150 },
+        ConversionCase { "SubFrame", 0.01, SAMPLE_RATE / 100, 0 }),
     [](const ::testing::TestParamInfo<ConversionCase>& info) { return std::string(info.param.name); });
 
 class UnitsTest : public SchedulerParamTest<uint64_t> { };
@@ -286,7 +289,7 @@ TEST_P(UnitsTest, ProcessingAdvancesOnlyTheProcessedClock)
 
     EXPECT_EQ(scheduler->current_units(SchedToken::SAMPLE_ACCURATE), units);
     EXPECT_EQ(scheduler->current_units(SchedToken::FRAME_ACCURATE), 0U);
-    EXPECT_DOUBLE_EQ(sample_clock.current_time(), static_cast<double>(units) / TestConfig::SAMPLE_RATE);
+    EXPECT_DOUBLE_EQ(sample_clock.current_time(), static_cast<double>(units) / SAMPLE_RATE);
 
     scheduler->process_token(SchedToken::FRAME_ACCURATE, units);
 
@@ -297,17 +300,17 @@ TEST_P(UnitsTest, ProcessingAdvancesOnlyTheProcessedClock)
 INSTANTIATE_TEST_SUITE_P(
     Units,
     UnitsTest,
-    ::testing::Values(uint64_t { 1 }, uint64_t { 10 }, uint64_t { TestConfig::BUFFER_SIZE }, uint64_t { 1000 }));
+    ::testing::Values(uint64_t { 1 }, uint64_t { 10 }, uint64_t { BUFFER_SIZE }, uint64_t { 1000 }));
 
 TEST_F(SchedulerTest, ReportsTheRatePerToken)
 {
-    EXPECT_EQ(scheduler->get_rate(SchedToken::SAMPLE_ACCURATE), TestConfig::SAMPLE_RATE);
+    EXPECT_EQ(scheduler->get_rate(SchedToken::SAMPLE_ACCURATE), SAMPLE_RATE);
     EXPECT_EQ(scheduler->get_rate(SchedToken::FRAME_ACCURATE), 60U);
     EXPECT_EQ(scheduler->get_rate(SchedToken::ON_DEMAND), 1U);
 
-    EXPECT_EQ(scheduler->get_clock(SchedToken::SAMPLE_ACCURATE).rate(), TestConfig::SAMPLE_RATE);
+    EXPECT_EQ(scheduler->get_clock(SchedToken::SAMPLE_ACCURATE).rate(), SAMPLE_RATE);
     EXPECT_EQ(scheduler->get_clock(SchedToken::FRAME_ACCURATE).rate(), 60U);
-    EXPECT_EQ(scheduler->get_typed_clock<Vruta::SampleClock>(SchedToken::SAMPLE_ACCURATE).sample_rate(), TestConfig::SAMPLE_RATE);
+    EXPECT_EQ(scheduler->get_typed_clock<Vruta::SampleClock>(SchedToken::SAMPLE_ACCURATE).sample_rate(), SAMPLE_RATE);
 }
 
 TEST_F(SchedulerTest, ClockResetReturnsToZero)
@@ -1175,7 +1178,7 @@ TEST_P(TerminationBarrierTest, QueuedCancelAndReplacementAreResolvedBeforeCleari
 
 TEST(SchedulerConditionalTermination, WorkerIsQuiescentOnceTerminationReturns)
 {
-    auto scheduler = std::make_shared<Vruta::TaskScheduler>(TestConfig::SAMPLE_RATE);
+    auto scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
     auto steps = make_count();
     auto completions = make_count();
     auto routine = make_counting(SchedToken::CONDITIONAL, steps);
@@ -1195,7 +1198,7 @@ TEST(SchedulerConditionalTermination, WorkerIsQuiescentOnceTerminationReturns)
 
 TEST(SchedulerConditionalTermination, CallbackOnWorkerThreadCannotDeadlockTermination)
 {
-    auto scheduler = std::make_shared<Vruta::TaskScheduler>(TestConfig::SAMPLE_RATE);
+    auto scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
     auto routine = make_counting(SchedToken::CONDITIONAL, make_count());
     auto reentered = make_count();
     routine->on_complete([&scheduler, reentered] {
@@ -1215,7 +1218,7 @@ TEST(SchedulerConditionalTermination, CallbackOnWorkerThreadCannotDeadlockTermin
 TEST(SchedulerTerminationRace, AcceptedSubmissionsAreTerminatedAndRejectedOnesNeverStart)
 {
     constexpr int ROUTINES = 200;
-    auto scheduler = std::make_shared<Vruta::TaskScheduler>(TestConfig::SAMPLE_RATE);
+    auto scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
 
     std::vector<std::shared_ptr<Vruta::Routine>> routines;
     std::vector<Count> completions;
