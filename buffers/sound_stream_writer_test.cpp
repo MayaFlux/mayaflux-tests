@@ -106,6 +106,17 @@ namespace {
         EXPECT_EQ(writer->get_write_position(), 0U);
     }
 
+    TEST_F(SoundStreamWriterTest, ABufferMarkedForRemovalIsNotWritten)
+    {
+        const auto leaving = make_buffer(0, { 1, 2, 3, 4 });
+        leaving->mark_for_removal();
+
+        writer->processing_function(leaving);
+
+        EXPECT_FALSE(stream->has_data());
+        EXPECT_EQ(writer->get_write_position(), 0U);
+    }
+
     TEST_F(SoundStreamWriterTest, TheWritePositionCanBeMovedAndRewound)
     {
         writer->set_write_position(10);

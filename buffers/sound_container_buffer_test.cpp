@@ -358,5 +358,37 @@ namespace {
         other->unregister_state_change_callback();
     }
 
+    TEST(SoundStreamReaderAdvancingProcessorTest, EveryBlockIsDeliveredBeforeTheBufferLeaves)
+    {
+        const auto stream = std::make_shared<DynamicSoundStream>(48000, 2);
+        const std::vector<double> left { 1, 2, 3, 4, 5, 6, 7, 8 };
+        const std::vector<double> right { 11, 12, 13, 14, 15, 16, 17, 18 };
+        stream->write_frames(std::vector<std::span<const double>> { std::span<const double>(left), std::span<const double>(right) }, 0);
+        const auto processor = std::make_shared<ContiguousAccessProcessor>();
+        stream->set_default_processor(processor);
+        stream->mark_ready_for_processing(true);
+        processor->set_output_size({ 4, 2 });
+        const auto buffer = std::make_shared<SoundContainerBuffer>(0, 4, stream, 0);
+        buffer->resize(4);
+        buffer->initialize();
+        const auto reader = std::dynamic_pointer_cast<SoundStreamReader>(buffer->get_default_processor());
+        ASSERT_NE(reader, nullptr);
+
+        reader->processing_function(buffer);
+        EXPECT_EQ(buffer->get_data(), (std::vector<double> { 1, 2, 3, 4 }));
+        EXPECT_EQ(stream->get_read_position(), (std::vector<uint64_t> { 4, 4 }));
+        EXPECT_FALSE(buffer->needs_removal());
+
+        reader->processing_function(buffer);
+        EXPECT_EQ(buffer->get_data(), (std::vector<double> { 5, 6, 7, 8 }));
+        EXPECT_EQ(stream->get_read_position(), (std::vector<uint64_t> { 8, 8 }));
+        EXPECT_FALSE(buffer->needs_removal());
+
+        reader->processing_function(buffer);
+        EXPECT_TRUE(buffer->needs_removal());
+        EXPECT_EQ(buffer->get_data(), (std::vector<double> { 5, 6, 7, 8 }));
+        stream->unregister_state_change_callback();
+    }
+
 } // namespace
 } // namespace MayaFlux::Test

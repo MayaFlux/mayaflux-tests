@@ -222,14 +222,29 @@ namespace {
         EXPECT_EQ(read_position(), std::vector<uint64_t>(channels(), 0));
     }
 
-    TEST_P(ContiguousAccessProcessorFileTest, ReachingTheEndHoldsOnTheLastFrame)
+    TEST_P(ContiguousAccessProcessorFileTest, ReachingTheEndMovesTheContainerToItsEnd)
     {
         attach({ 2, channels() });
 
         run();
+        EXPECT_FALSE(container->is_at_end());
         run();
 
-        EXPECT_EQ(read_position(), std::vector<uint64_t>(channels(), k_frames - 1));
+        EXPECT_EQ(read_position(), std::vector<uint64_t>(channels(), k_frames));
+        EXPECT_TRUE(container->is_at_end());
+    }
+
+    TEST_P(ContiguousAccessProcessorFileTest, ALastBlockLongerThanTheRemainderIsClipped)
+    {
+        attach({ 3, channels() });
+
+        run();
+        expect_processed(0, 3);
+        run();
+
+        expect_processed(3, 1);
+        EXPECT_EQ(read_position(), std::vector<uint64_t>(channels(), k_frames));
+        EXPECT_TRUE(container->is_at_end());
     }
 
     TEST_P(ContiguousAccessProcessorFileTest, ALoopingStreamWrapsToTheLoopStart)
