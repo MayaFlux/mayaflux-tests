@@ -409,8 +409,9 @@ namespace {
 
         processor->slice(0).with_speed(2.0);
 
-        expect_near(play(), ramp(0, 4, k_block));
-        expect_near(play(), ramp(0, 12, k_block));
+        expect_near(play(), { sample(4, 0), sample(6, 0), sample(8, 0), sample(10, 0) });
+        expect_near(play(), { sample(12, 0), sample(14, 0), 0.0, 0.0 });
+        EXPECT_FALSE(processor->any_active());
     }
 
     TEST_P(StreamSliceProcessorTest, ATimeMapDrivesThePlayback)

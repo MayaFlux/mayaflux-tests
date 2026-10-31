@@ -322,15 +322,125 @@ namespace {
         EXPECT_EQ(run(), ramp(0, 0, k_block));
     }
 
-    TEST_P(CursorAccessProcessorTest, SpeedScalesHowFarEachBlockAdvances)
+    TEST_P(CursorAccessProcessorTest, SpeedReadsFramesAtThatRateWithinEachBlock)
     {
         processor->set_speed(2.0);
         attach();
         processor->reset();
 
-        EXPECT_EQ(run(), ramp(0, 0, k_block));
+        std::vector<double> first;
+        std::vector<double> second;
+        for (uint64_t n = 0; n < k_block; ++n) {
+            first.push_back(sample(2 * n, 0));
+            second.push_back(sample(8 + 2 * n, 0));
+        }
+
+        EXPECT_EQ(run(), first);
         EXPECT_EQ(processor->cursor(), 8U);
-        EXPECT_EQ(run(), ramp(0, 8, k_block));
+        EXPECT_EQ(run(), second);
+    }
+
+    TEST_P(CursorAccessProcessorTest, ASlowSpeedInterpolatesBetweenFrames)
+    {
+        processor->set_speed(0.5);
+        attach();
+        processor->reset();
+
+        const auto at = [](double u) {
+            const auto frame = static_cast<uint64_t>(std::floor(u));
+            return sample(frame, 0) + (u - std::floor(u)) * (sample(frame + 1, 0) - sample(frame, 0));
+        };
+
+        const auto first = run();
+        const auto second = run();
+
+        ASSERT_EQ(first.size(), k_block);
+        ASSERT_EQ(second.size(), k_block);
+        for (uint64_t n = 0; n < k_block; ++n) {
+            EXPECT_NEAR(first[n], at(0.5 * static_cast<double>(n)), 1e-9) << n;
+            EXPECT_NEAR(second[n], at(2.0 + 0.5 * static_cast<double>(n)), 1e-9) << n;
+        }
+    }
+
+    TEST_P(CursorAccessProcessorTest, ChangingTheSpeedWhilePlayingCarriesOnFromTheCursor)
+    {
+        attach();
+        processor->reset();
+        EXPECT_EQ(run(), ramp(0, 0, k_block));
+
+        processor->set_speed(2.0);
+
+        const auto faster = run();
+        ASSERT_EQ(faster.size(), k_block);
+        for (uint64_t n = 0; n < k_block; ++n) {
+            EXPECT_EQ(faster[n], sample(4 + 2 * n, 0)) << n;
+        }
+        EXPECT_EQ(processor->cursor(), 12U);
+    }
+
+    TEST_P(CursorAccessProcessorTest, AOneShotAtSpeedEndsWithTheBlockThatReachedTheEnd)
+    {
+        int ended = 0;
+        processor->set_on_end([&ended] { ++ended; });
+        processor->set_speed(2.0);
+        attach();
+        processor->reset();
+
+        run();
+        EXPECT_TRUE(processor->is_active());
+        run();
+
+        EXPECT_FALSE(processor->is_active());
+        EXPECT_EQ(ended, 1);
+        EXPECT_EQ(run(), std::vector<double>(k_block, 0.0));
+    }
+
+    TEST_P(CursorAccessProcessorTest, ALoopingVoiceAtSpeedWrapsInsideTheRegion)
+    {
+        processor->set_loop_region(0, 8);
+        processor->set_looping(true);
+        processor->set_speed(2.0);
+        attach();
+        processor->reset();
+
+        const auto first = run();
+        const auto second = run();
+
+        EXPECT_EQ(first, second);
+        EXPECT_TRUE(processor->is_active());
+    }
+
+    TEST_P(CursorAccessProcessorTest, TheLoopCountEndsAVoiceThatLoopsAtSpeed)
+    {
+        int ended = 0;
+        processor->set_on_end([&ended] { ++ended; });
+        processor->set_loop_region(0, 8);
+        processor->set_looping(true);
+        processor->set_loop_count(2);
+        processor->set_speed(2.0);
+        attach();
+        processor->reset();
+
+        run();
+        EXPECT_TRUE(processor->is_active());
+        run();
+
+        EXPECT_FALSE(processor->is_active());
+        EXPECT_EQ(ended, 1);
+    }
+
+    TEST_P(CursorAccessProcessorTest, ResettingDropsTheFractionalPosition)
+    {
+        processor->set_speed(0.625);
+        attach();
+        processor->reset();
+        const auto first = run();
+        run();
+        run();
+
+        processor->reset();
+
+        EXPECT_EQ(run(), first);
     }
 
     TEST_P(CursorAccessProcessorTest, SubFrameAdvancesAccumulate)
