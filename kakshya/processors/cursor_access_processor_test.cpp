@@ -2,6 +2,7 @@
 
 #include "MayaFlux/Kakshya/Processors/CursorAccessProcessor.hpp"
 #include "MayaFlux/Kakshya/Source/DynamicSoundStream.hpp"
+#include "MayaFlux/Kinesis/Tendency/TimeMap.hpp"
 
 namespace MayaFlux::Test {
 namespace {
@@ -31,22 +32,22 @@ namespace {
         return values;
     }
 
-    std::shared_ptr<DynamicSoundStream> make_stream(OrganizationStrategy organization, uint64_t frames = k_frames)
+    std::shared_ptr<DynamicSoundStream> make_stream(OrganizationStrategy organization, uint64_t frames = k_frames, uint32_t channels = k_channels)
     {
-        auto stream = std::make_shared<DynamicSoundStream>(k_rate, k_channels);
+        auto stream = std::make_shared<DynamicSoundStream>(k_rate, channels);
         stream->get_structure().organization = organization;
 
         if (organization == OrganizationStrategy::INTERLEAVED) {
             std::vector<double> flat;
             for (uint64_t f = 0; f < frames; ++f) {
-                for (uint32_t c = 0; c < k_channels; ++c) {
+                for (uint32_t c = 0; c < channels; ++c) {
                     flat.push_back(sample(f, c));
                 }
             }
             stream->write_frames(std::vector<std::span<const double>> { std::span<const double>(flat) }, 0);
         } else {
             std::vector<std::vector<double>> columns;
-            for (uint32_t c = 0; c < k_channels; ++c) {
+            for (uint32_t c = 0; c < channels; ++c) {
                 columns.push_back(ramp(c, 0, frames));
             }
             std::vector<std::span<const double>> spans(columns.begin(), columns.end());
@@ -55,13 +56,13 @@ namespace {
         return stream;
     }
 
-    std::vector<double> channel_of(const std::vector<DataVariant>& pd, OrganizationStrategy organization, uint32_t channel)
+    std::vector<double> channel_of(const std::vector<DataVariant>& pd, OrganizationStrategy organization, uint32_t channel, uint32_t channels = k_channels)
     {
         if (organization == OrganizationStrategy::INTERLEAVED) {
             const auto& flat = std::get<std::vector<double>>(pd.at(0));
             std::vector<double> values;
-            for (size_t f = 0; f * k_channels + channel < flat.size(); ++f) {
-                values.push_back(flat[f * k_channels + channel]);
+            for (size_t f = 0; f * channels + channel < flat.size(); ++f) {
+                values.push_back(flat[f * channels + channel]);
             }
             return values;
         }
@@ -559,6 +560,158 @@ namespace {
         processor->set_repeat(nullptr);
 
         expect_near(run(0), ramp(0, 8, k_block));
+    }
+
+    TEST_P(CursorTimeMapTest, AnEmptyRegionEndsTheVoiceWithSilence)
+    {
+        int ended = 0;
+        processor->set_on_end([&ended] { ++ended; });
+        processor->set_loop_region(5, 5);
+        processor->set_time_map(map_of([](double t) { return t * k_rate; }));
+        attach();
+        processor->reset();
+
+        expect_near(run(0), std::vector<double>(k_block, 0.0));
+
+        EXPECT_FALSE(processor->is_active());
+        EXPECT_EQ(ended, 1);
+    }
+
+    struct StreamShape {
+        OrganizationStrategy organization;
+        uint32_t channels;
+    };
+
+    class CursorAccessProcessorShapeTest : public ::testing::TestWithParam<StreamShape> {
+    protected:
+        void SetUp() override
+        {
+            processor = std::make_shared<CursorAccessProcessor>(k_block);
+        }
+
+        [[nodiscard]] OrganizationStrategy organization() const { return GetParam().organization; }
+        [[nodiscard]] uint32_t channels() const { return GetParam().channels; }
+
+        static std::shared_ptr<const Kinesis::TimeMap> map_of(std::function<double(double)> fn)
+        {
+            return std::make_shared<const Kinesis::TimeMap>(Kinesis::TimeMap {
+                .fn = [fn = std::move(fn)](const double& t) { return fn(t); } });
+        }
+
+        void make_written_stream(uint64_t frames = k_frames)
+        {
+            stream = make_stream(organization(), frames, channels());
+        }
+
+        void make_ring(uint64_t capacity)
+        {
+            stream = std::make_shared<DynamicSoundStream>(k_rate, channels());
+            stream->get_structure().organization = organization();
+            stream->enable_circular_buffer(capacity);
+        }
+
+        void append(uint64_t first, uint64_t count)
+        {
+            for (uint32_t c = 0; c < channels(); ++c) {
+                const auto values = ramp(c, first, count);
+                stream->append_frames(std::span<const double>(values), c);
+            }
+        }
+
+        void start()
+        {
+            processor->on_attach(stream);
+            processor->reset();
+        }
+
+        void run() { processor->process(stream); }
+
+        [[nodiscard]] std::vector<double> block_of(uint32_t channel) const
+        {
+            return channel_of(stream->get_dynamic_data(processor->get_slot_index()), organization(), channel, channels());
+        }
+
+        void expect_block(uint64_t first) const
+        {
+            for (uint32_t c = 0; c < channels(); ++c) {
+                expect_near(block_of(c), ramp(c, first, k_block));
+            }
+        }
+
+        std::shared_ptr<DynamicSoundStream> stream;
+        std::shared_ptr<CursorAccessProcessor> processor;
+    };
+
+    INSTANTIATE_TEST_SUITE_P(Shapes, CursorAccessProcessorShapeTest,
+        ::testing::Values(
+            StreamShape { OrganizationStrategy::INTERLEAVED, 1 },
+            StreamShape { OrganizationStrategy::INTERLEAVED, 2 },
+            StreamShape { OrganizationStrategy::INTERLEAVED, 3 },
+            StreamShape { OrganizationStrategy::PLANAR, 1 },
+            StreamShape { OrganizationStrategy::PLANAR, 2 },
+            StreamShape { OrganizationStrategy::PLANAR, 3 }),
+        [](const ::testing::TestParamInfo<StreamShape>& info) {
+            return std::string(info.param.organization == OrganizationStrategy::INTERLEAVED ? "Interleaved" : "Planar")
+                + std::to_string(info.param.channels) + "ch";
+        });
+
+    TEST_P(CursorAccessProcessorShapeTest, EveryChannelOfSuccessiveBlocksIsFilled)
+    {
+        make_written_stream();
+        start();
+
+        run();
+        expect_block(0);
+        run();
+        expect_block(k_block);
+    }
+
+    TEST_P(CursorAccessProcessorShapeTest, AnInactiveBlockIsSilentInEveryChannel)
+    {
+        make_written_stream();
+        processor->on_attach(stream);
+
+        run();
+
+        for (uint32_t c = 0; c < channels(); ++c) {
+            EXPECT_EQ(block_of(c), std::vector<double>(k_block, 0.0)) << c;
+        }
+    }
+
+    TEST_P(CursorAccessProcessorShapeTest, AMappedReadFillsEveryChannel)
+    {
+        make_written_stream();
+        processor->set_loop_region(0, k_frames);
+        processor->set_time_map(map_of([](double t) { return t * k_rate; }));
+        start();
+
+        run();
+        expect_block(0);
+        run();
+        expect_block(k_block);
+    }
+
+    TEST_P(CursorAccessProcessorShapeTest, ALaggedTapTrailsAWriteHeadThatWrapsTheRing)
+    {
+        constexpr uint64_t ring = 16;
+        constexpr double lag = 8.0;
+        make_ring(ring);
+        append(0, 8);
+        const auto origin = static_cast<double>(stream->get_write_head(0));
+        processor->set_loop_region(0, ring);
+        processor->set_looping(true);
+        processor->set_time_map(std::make_shared<const Kinesis::TimeMap>(
+            Kinesis::TimeMaps::lagged(origin, k_rate, Kinesis::TimeMap { .fn = [](const double&) { return lag; } })));
+        start();
+
+        for (uint64_t block = 0; block < 7; ++block) {
+            append(8 + block * k_block, k_block);
+            run();
+            expect_block(block * k_block);
+            if (HasFatalFailure()) {
+                return;
+            }
+        }
     }
 
 } // namespace

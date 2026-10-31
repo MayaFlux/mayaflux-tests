@@ -1,4 +1,4 @@
-#include "../test_config.h"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Kakshya/NDData/DataAccess.hpp"
