@@ -1,5 +1,8 @@
 #include "gtest/gtest.h"
 
+#include "MayaFlux/Kriya/Awaiters/ConditionAwaiter.hpp"
+#include "MayaFlux/Kriya/Awaiters/DelayAwaiters.hpp"
+#include "MayaFlux/Kriya/Awaiters/GetPromise.hpp"
 #include "MayaFlux/Vruta/Routine.hpp"
 
 #include <stdexcept>
@@ -59,92 +62,6 @@ namespace {
         ~Guard() { ++probe->destroyed; }
     };
 
-    struct AudioPark {
-        uint64_t samples;
-
-        bool await_ready() const noexcept { return false; }
-        void await_suspend(std::coroutine_handle<Vruta::audio_promise> h) const noexcept
-        {
-            h.promise().next_sample += samples;
-            h.promise().active_delay_context = Vruta::DelayContext::SAMPLE_BASED;
-        }
-        void await_resume() const noexcept { }
-    };
-
-    struct AudioBufferPark {
-        uint64_t cycles;
-
-        bool await_ready() const noexcept { return false; }
-        void await_suspend(std::coroutine_handle<Vruta::audio_promise> h) const noexcept
-        {
-            auto& p = h.promise();
-            p.next_buffer_cycle += cycles;
-            p.delay_amount = cycles;
-            p.active_delay_context = Vruta::DelayContext::BUFFER_BASED;
-        }
-        void await_resume() const noexcept { }
-    };
-
-    struct AudioAwait {
-        bool await_ready() const noexcept { return false; }
-        void await_suspend(std::coroutine_handle<Vruta::audio_promise> h) const noexcept
-        {
-            h.promise().active_delay_context = Vruta::DelayContext::AWAIT;
-        }
-        void await_resume() const noexcept { }
-    };
-
-    struct FramePark {
-        uint64_t frames;
-
-        bool await_ready() const noexcept { return false; }
-        void await_suspend(std::coroutine_handle<Vruta::graphics_promise> h) const noexcept
-        {
-            h.promise().next_frame += frames;
-            h.promise().active_delay_context = Vruta::DelayContext::FRAME_BASED;
-        }
-        void await_resume() const noexcept { }
-    };
-
-    struct CrossPark {
-        uint64_t samples;
-        uint64_t frames;
-
-        bool await_ready() const noexcept { return false; }
-        void await_suspend(std::coroutine_handle<Vruta::cross_promise> h) const noexcept
-        {
-            auto& p = h.promise();
-            p.next_sample.fetch_add(samples, std::memory_order_relaxed);
-            p.next_frame.fetch_add(frames, std::memory_order_relaxed);
-            p.sample_delay_amount = samples;
-            p.frame_delay_amount = frames;
-            p.active_delay_context.store(Vruta::DelayContext::MULTIPLE, std::memory_order_release);
-        }
-        void await_resume() const noexcept { }
-    };
-
-    struct CrossAwait {
-        bool await_ready() const noexcept { return false; }
-        void await_suspend(std::coroutine_handle<Vruta::cross_promise> h) const noexcept
-        {
-            h.promise().active_delay_context.store(Vruta::DelayContext::AWAIT, std::memory_order_release);
-        }
-        void await_resume() const noexcept { }
-    };
-
-    struct CondPark {
-        std::function<bool()> condition;
-
-        bool await_ready() const noexcept { return false; }
-        void await_suspend(std::coroutine_handle<Vruta::conditional_promise> h)
-        {
-            auto& p = h.promise();
-            p.condition = std::move(condition);
-            p.armed.store(true, std::memory_order_release);
-        }
-        void await_resume() const noexcept { }
-    };
-
     template <typename Promise>
     struct Suspend {
         bool await_ready() const noexcept { return false; }
@@ -165,7 +82,7 @@ namespace {
     {
         Guard guard { p };
         ++p->ticks;
-        co_await AudioPark { DUE };
+        co_await Kriya::SampleDelay { DUE };
         ++p->ticks;
     }
 
@@ -174,7 +91,7 @@ namespace {
         Guard guard { p };
         for (;;) {
             ++p->ticks;
-            co_await AudioPark { DUE };
+            co_await Kriya::SampleDelay { DUE };
         }
     }
 
@@ -190,9 +107,9 @@ namespace {
     {
         Guard guard { p };
         ++p->ticks;
-        co_await AudioAwait {};
+        [[maybe_unused]] auto& promise = co_await Kriya::GetAudioPromise {};
         ++p->ticks;
-        co_await AudioPark { DUE };
+        co_await Kriya::SampleDelay { DUE };
     }
 
     Vruta::SoundRoutine sound_buffer(Probe* p)
@@ -200,7 +117,7 @@ namespace {
         Guard guard { p };
         for (;;) {
             ++p->ticks;
-            co_await AudioBufferPark { 2 };
+            co_await Kriya::BufferDelay { 2 };
         }
     }
 
@@ -214,7 +131,7 @@ namespace {
     {
         Guard guard { p };
         ++p->ticks;
-        co_await FramePark { DUE };
+        co_await Kriya::FrameDelay { .frames_to_wait = DUE };
         ++p->ticks;
     }
 
@@ -223,7 +140,7 @@ namespace {
         Guard guard { p };
         for (;;) {
             ++p->ticks;
-            co_await FramePark { 3 };
+            co_await Kriya::FrameDelay { .frames_to_wait = 3 };
         }
     }
 
@@ -245,7 +162,7 @@ namespace {
     {
         Guard guard { p };
         ++p->ticks;
-        co_await CrossPark { DUE, 0 };
+        co_await Kriya::MultiRateDelay { DUE, 0 };
         ++p->ticks;
     }
 
@@ -254,7 +171,7 @@ namespace {
         Guard guard { p };
         for (;;) {
             ++p->ticks;
-            co_await CrossPark { DUE, 0 };
+            co_await Kriya::MultiRateDelay { DUE, 0 };
         }
     }
 
@@ -262,7 +179,7 @@ namespace {
     {
         Guard guard { p };
         ++p->ticks;
-        co_await CrossPark { DUE, 5 };
+        co_await Kriya::MultiRateDelay { DUE, 5 };
         ++p->ticks;
     }
 
@@ -270,7 +187,7 @@ namespace {
     {
         Guard guard { p };
         ++p->ticks;
-        co_await CrossPark { 0, 1 };
+        co_await Kriya::MultiRateDelay { 0, 1 };
         ++p->ticks;
     }
 
@@ -286,7 +203,7 @@ namespace {
     {
         Guard guard { p };
         ++p->ticks;
-        co_await CrossAwait {};
+        [[maybe_unused]] auto& promise = co_await Kriya::GetCrossPromise {};
         ++p->ticks;
     }
 
@@ -300,7 +217,7 @@ namespace {
     {
         Guard guard { p };
         ++p->ticks;
-        co_await CondPark { [p] { return p->ready; } };
+        co_await Kriya::ConditionAwaiter { [p] { return p->ready; } };
         ++p->ticks;
     }
 
@@ -309,7 +226,8 @@ namespace {
         Guard guard { p };
         for (;;) {
             ++p->ticks;
-            co_await CondPark { [p] { return p->ready; } };
+            co_await Kriya::ConditionAwaiter { [p] { return p->ready; } };
+            p->ready = false;
         }
     }
 
@@ -517,10 +435,6 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(Kind::Sound, Kind::Graphics, Kind::Cross, Kind::Free),
     [](const ::testing::TestParamInfo<Kind>& info) { return kind_label(info.param); });
 
-//-----------------------------------------------------------------------------
-// SoundRoutine
-//-----------------------------------------------------------------------------
-
 TEST(SoundRoutineTest, PromiseHoldsItsDefaults)
 {
     Probe probe;
@@ -643,10 +557,6 @@ TEST(SoundRoutineTest, MoveTransfersTheFrameAndMoveAssignmentReleasesTheOldOne)
     EXPECT_TRUE(target.is_active());
 }
 
-//-----------------------------------------------------------------------------
-// GraphicsRoutine
-//-----------------------------------------------------------------------------
-
 TEST(GraphicsRoutineTest, PromiseHoldsItsDefaults)
 {
     Probe probe;
@@ -731,9 +641,66 @@ TEST(GraphicsRoutineTest, MoveConstructorTransfersTheFrame)
     EXPECT_EQ(target.next_execution(), 3U);
 }
 
-//-----------------------------------------------------------------------------
-// CrossRoutine
-//-----------------------------------------------------------------------------
+TEST(SoundRoutineTest, MovedFromRoutineReportsTerminatedAndIgnoresSetTerminate)
+{
+    Probe probe;
+    Vruta::SoundRoutine source(sound_loop(&probe));
+    Vruta::SoundRoutine target(std::move(source));
+
+    EXPECT_TRUE(source.get_should_terminate());
+    source.set_should_terminate(false);
+    EXPECT_TRUE(source.get_should_terminate());
+    EXPECT_FALSE(target.get_should_terminate());
+    EXPECT_TRUE(target.is_active());
+}
+
+TEST(GraphicsRoutineTest, MovedFromRoutineReportsTerminatedAndIgnoresSetTerminate)
+{
+    Probe probe;
+    Vruta::GraphicsRoutine source(graphics_loop(&probe));
+    Vruta::GraphicsRoutine target(std::move(source));
+
+    EXPECT_TRUE(source.get_should_terminate());
+    source.set_should_terminate(false);
+    EXPECT_TRUE(source.get_should_terminate());
+    EXPECT_FALSE(target.get_should_terminate());
+    EXPECT_TRUE(target.is_active());
+}
+
+TEST(CrossRoutineTest, MovedFromRoutineReportsTerminatedAndIgnoresSetTerminate)
+{
+    Probe probe;
+    Vruta::CrossRoutine source(cross_loop(&probe));
+    Vruta::CrossRoutine target(std::move(source));
+
+    EXPECT_TRUE(source.get_should_terminate());
+    source.set_should_terminate(false);
+    EXPECT_TRUE(source.get_should_terminate());
+    EXPECT_FALSE(target.get_should_terminate());
+    EXPECT_TRUE(target.is_active());
+}
+
+TEST(GraphicsRoutineTest, MoveAssignmentReleasesTheOldFrame)
+{
+    Probe first;
+    Probe second;
+    Vruta::GraphicsRoutine source(graphics_loop(&second));
+    Vruta::GraphicsRoutine target(graphics_loop(&first));
+
+    target = std::move(source);
+
+    EXPECT_EQ(first.destroyed, 1);
+    EXPECT_EQ(second.destroyed, 0);
+    EXPECT_FALSE(source.is_active());
+    EXPECT_TRUE(target.is_active());
+    EXPECT_EQ(target.next_execution(), 3U);
+}
+
+TEST(CrossRoutineTest, CopyIsDeleted)
+{
+    EXPECT_FALSE(std::is_copy_constructible_v<Vruta::CrossRoutine>);
+    EXPECT_FALSE(std::is_copy_assignable_v<Vruta::CrossRoutine>);
+}
 
 TEST(CrossRoutineTest, PromiseHoldsItsDefaults)
 {
@@ -837,9 +804,54 @@ TEST(CrossRoutineTest, MoveConstructorTransfersTheFrame)
     EXPECT_EQ(target.next_execution(), DUE);
 }
 
-//-----------------------------------------------------------------------------
-// FreeRoutine
-//-----------------------------------------------------------------------------
+TEST(CrossRoutineTest, MoveAssignmentReleasesTheOldFrame)
+{
+    Probe first;
+    Probe second;
+    Vruta::CrossRoutine source(cross_loop(&second));
+    Vruta::CrossRoutine target(cross_loop(&first));
+
+    target = std::move(source);
+
+    EXPECT_EQ(first.destroyed, 1);
+    EXPECT_EQ(second.destroyed, 0);
+    EXPECT_FALSE(source.is_active());
+    EXPECT_TRUE(target.is_active());
+    EXPECT_EQ(target.next_execution(), DUE);
+}
+
+TEST(CrossRoutineTest, ConcurrentPumpsOpenTheGateExactlyOnce)
+{
+    for (int attempt = 0; attempt < 50; ++attempt) {
+        Probe probe;
+        Vruta::CrossRoutine routine(cross_both(&probe));
+        std::atomic<int> opened { 0 };
+
+        std::vector<std::thread> pumps;
+        for (int i = 0; i < 4; ++i) {
+            pumps.emplace_back([&routine, &opened] {
+                for (int tries = 0; tries < 1000; ++tries) {
+                    if (routine.try_resume_with_context(DUE, Vruta::DelayContext::SAMPLE_BASED)) {
+                        opened.fetch_add(1);
+                    }
+                }
+            });
+            pumps.emplace_back([&routine, &opened] {
+                for (int tries = 0; tries < 1000; ++tries) {
+                    if (routine.try_resume_with_context(5, Vruta::DelayContext::FRAME_BASED)) {
+                        opened.fetch_add(1);
+                    }
+                }
+            });
+        }
+        for (auto& pump : pumps) {
+            pump.join();
+        }
+
+        ASSERT_EQ(opened.load(), 1) << "attempt " << attempt;
+        ASSERT_EQ(probe.ticks, 2) << "attempt " << attempt;
+    }
+}
 
 TEST(FreeRoutineTest, PromiseHoldsItsDefaults)
 {
@@ -901,6 +913,21 @@ TEST(FreeRoutineTest, MoveLeavesTheSourceInactiveAndReportsItTerminated)
 
     EXPECT_FALSE(source.is_active());
     EXPECT_TRUE(source.get_should_terminate());
+    EXPECT_TRUE(target.is_active());
+}
+
+TEST(FreeRoutineTest, MoveAssignmentReleasesTheOldFrame)
+{
+    Probe first;
+    Probe second;
+    Vruta::FreeRoutine source(free_loop(&second));
+    Vruta::FreeRoutine target(free_loop(&first));
+
+    target = std::move(source);
+
+    EXPECT_EQ(first.destroyed, 1);
+    EXPECT_EQ(second.destroyed, 0);
+    EXPECT_FALSE(source.is_active());
     EXPECT_TRUE(target.is_active());
 }
 
