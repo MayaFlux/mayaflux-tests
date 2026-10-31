@@ -196,4 +196,22 @@ TEST(InputEventsWindowTest, WindowClosedFiresOnEachClose)
     EXPECT_EQ(calls, 2);
 }
 
+TEST(InputEventsCancelTest, CancelledHeldKeyHandlerDoesNotRunItsCallbackOnTheNextPress)
+{
+    InputRig rig;
+    int calls = 0;
+    auto held = std::make_shared<Vruta::Event>(
+        Kriya::key_pressed(rig.window, IO::Keys::A, [&calls]() { ++calls; }));
+    rig.manager.add_event(held, "held_press");
+
+    rig.window->key_down(IO::Keys::A);
+    EXPECT_EQ(calls, 1);
+
+    EXPECT_TRUE(rig.manager.cancel_event(std::string("held_press")));
+    rig.window->key_down(IO::Keys::A);
+
+    EXPECT_EQ(calls, 1);
+    EXPECT_FALSE(held->is_active());
+}
+
 } // namespace MayaFlux::Test
