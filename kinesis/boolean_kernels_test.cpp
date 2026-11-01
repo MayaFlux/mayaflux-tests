@@ -717,6 +717,53 @@ TEST_P(EvenSequenceTest, RotationShiftsTheStart)
     }
 }
 
+TEST_P(EvenSequenceTest, OnsetGapsSumToTheLoopAndStayEven)
+{
+    const auto [pulses, steps] = GetParam();
+    const auto gaps = Discrete::onset_gaps(Discrete::maximally_even_sequence(pulses, steps), 0.125);
+
+    if (pulses == 0) {
+        EXPECT_TRUE(gaps.empty());
+        return;
+    }
+
+    ASSERT_EQ(gaps.size(), pulses);
+    EXPECT_NEAR(std::accumulate(gaps.begin(), gaps.end(), 0.0), static_cast<double>(steps) * 0.125, 1e-12);
+
+    const auto [lowest, highest] = std::ranges::minmax(gaps);
+    EXPECT_GT(lowest, 0.0);
+    EXPECT_LE(highest - lowest, 0.125 + 1e-12);
+}
+
+TEST_P(EvenSequenceTest, RotatingTheTableRotatesTheGaps)
+{
+    const auto [pulses, steps] = GetParam();
+    if (pulses == 0) {
+        return;
+    }
+
+    const auto base = Discrete::maximally_even_sequence(pulses, steps);
+    const auto base_gaps = Discrete::onset_gaps(base, 1.0);
+
+    std::vector<size_t> onsets;
+    for (size_t i = 0; i < steps; ++i) {
+        if (base[i] > 0.5) {
+            onsets.push_back(i);
+        }
+    }
+
+    for (size_t rotation = 0; rotation < steps; ++rotation) {
+        const auto rotated_gaps = Discrete::onset_gaps(Discrete::maximally_even_sequence(pulses, steps, rotation), 1.0);
+        ASSERT_EQ(rotated_gaps.size(), pulses);
+
+        const auto first = std::ranges::lower_bound(onsets, rotation);
+        const size_t start = first == onsets.end() ? 0 : static_cast<size_t>(first - onsets.begin());
+        for (size_t k = 0; k < pulses; ++k) {
+            EXPECT_DOUBLE_EQ(rotated_gaps[k], base_gaps[(start + k) % pulses]) << "rotation=" << rotation << " k=" << k;
+        }
+    }
+}
+
 std::vector<std::pair<size_t, size_t>> pulse_step_pairs()
 {
     std::vector<std::pair<size_t, size_t>> pairs;
@@ -748,6 +795,30 @@ TEST(EvenSequenceTest, EdgeCases)
     EXPECT_TRUE(Discrete::maximally_even_sequence(3, 0).empty());
     EXPECT_EQ(Discrete::maximally_even_sequence(9, 4), (std::vector<double> { 1, 1, 1, 1 }));
     EXPECT_EQ(Discrete::maximally_even_sequence(0, 4), (std::vector<double> { 0, 0, 0, 0 }));
+}
+
+TEST(OnsetGapsTest, KnownRhythms)
+{
+    EXPECT_EQ(Discrete::onset_gaps(Discrete::maximally_even_sequence(3, 8), 0.5), (std::vector<double> { 1.5, 1.5, 1.0 }));
+    EXPECT_EQ(Discrete::onset_gaps(Discrete::maximally_even_sequence(5, 8), 1.0), (std::vector<double> { 2, 2, 1, 2, 1 }));
+}
+
+TEST(OnsetGapsTest, EdgeCases)
+{
+    EXPECT_TRUE(Discrete::onset_gaps(std::vector<double> {}, 1.0).empty());
+    EXPECT_TRUE(Discrete::onset_gaps(std::vector<double> { 0, 0, 0 }, 1.0).empty());
+    EXPECT_EQ(Discrete::onset_gaps(std::vector<double> { 1, 1, 1, 1 }, 0.25), (std::vector<double> { 0.25, 0.25, 0.25, 0.25 }));
+    EXPECT_EQ(Discrete::onset_gaps(std::vector<double> { 0, 0, 1, 0, 0, 0, 0, 0 }, 0.5), (std::vector<double> { 4.0 }));
+}
+
+TEST(OnsetGapsTest, RestsBeforeTheFirstOneJoinTheLastGap)
+{
+    EXPECT_EQ(Discrete::onset_gaps(std::vector<double> { 0, 0, 1, 0, 1, 0 }, 1.0), (std::vector<double> { 2, 4 }));
+}
+
+TEST(OnsetGapsTest, OnlyEntriesAboveHalfAreOnes)
+{
+    EXPECT_EQ(Discrete::onset_gaps(std::vector<double> { 0.5, 0.51, 0.4, 0.9 }, 1.0), (std::vector<double> { 2, 2 }));
 }
 
 class StepPatternTest : public ::testing::TestWithParam<std::tuple<size_t, size_t, size_t>> { };

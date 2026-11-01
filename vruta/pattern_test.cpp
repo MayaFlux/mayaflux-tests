@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 
+#include "MayaFlux/Kinesis/Discrete/Boolean.hpp"
 #include "MayaFlux/Kinesis/Tendency/TimeMap.hpp"
 #include "MayaFlux/Nodes/Generators/Logic.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
@@ -1568,6 +1569,112 @@ TEST_F(PatternTest, ARangeFollowsATimeMap)
 
     EXPECT_EQ(seen->items(), (std::vector<int> { 1, 2, 3 }));
     EXPECT_FALSE(routine->is_active());
+}
+
+//-----------------------------------------------------------------------------
+// pattern: rhythm grids
+//-----------------------------------------------------------------------------
+
+TEST_F(PatternTest, AnEuclideanRhythmSpacesTheSteps)
+{
+    auto seen = std::make_shared<Log<uint64_t>>();
+
+    const auto gaps = Kinesis::Discrete::onset_gaps(Kinesis::Discrete::maximally_even_sequence(3, 8), 0.125);
+    ASSERT_EQ(gaps, (std::vector<double> { 0.375, 0.375, 0.25 }));
+
+    auto routine = Kriya::pattern(
+        [](uint64_t index) { return index; },
+        [seen](uint64_t index) { seen->add(index); },
+        gaps);
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+
+    const std::vector<std::pair<double, int>> checkpoints { { 0.3, 1 }, { 0.15, 2 }, { 0.35, 3 }, { 0.25, 4 }, { 0.3, 4 }, { 0.1, 5 } };
+    for (const auto& [seconds, expected] : checkpoints) {
+        run_seconds(seconds);
+        EXPECT_EQ(static_cast<int>(seen->items().size()), expected);
+    }
+
+    EXPECT_TRUE(scheduler->cancel_task(routine));
+}
+
+//-----------------------------------------------------------------------------
+// pattern: completion
+//-----------------------------------------------------------------------------
+
+TEST_F(PatternTest, ARangeFiresOnCompleteOnceAfterItsLastGap)
+{
+    auto fired = std::make_shared<int>(0);
+
+    auto routine = Kriya::pattern(
+        std::vector<int> { 60, 62, 64, 67 },
+        [](int) { },
+        std::vector<double> { 0.25 });
+
+    ASSERT_NE(routine, nullptr);
+    routine->on_complete([fired] { ++*fired; });
+    scheduler->add_task(routine);
+
+    run_seconds(0.9);
+    EXPECT_EQ(*fired, 0);
+
+    run_seconds(0.2);
+    EXPECT_EQ(*fired, 1);
+
+    run_seconds(1.0);
+    EXPECT_EQ(*fired, 1);
+}
+
+TEST_F(PatternTest, CancellingARecurringPatternFiresOnCompleteOnce)
+{
+    auto fired = std::make_shared<int>(0);
+
+    auto routine = Kriya::pattern(
+        Kriya::recurring(std::vector<int> { 1, 2, 3 }),
+        [](int) { },
+        std::vector<double> { 0.25 });
+
+    ASSERT_NE(routine, nullptr);
+    routine->on_complete([fired] { ++*fired; });
+    scheduler->add_task(routine);
+
+    run_seconds(0.6);
+    EXPECT_EQ(*fired, 0);
+
+    EXPECT_TRUE(scheduler->cancel_task(routine));
+    run_samples(10);
+    EXPECT_EQ(*fired, 1);
+
+    run_seconds(0.5);
+    EXPECT_EQ(*fired, 1);
+}
+
+TEST_F(PatternTest, ACompletionCanStartTheNextPhrase)
+{
+    auto seen = std::make_shared<Log<int>>();
+    auto* sched = scheduler.get();
+
+    auto second = Kriya::pattern(
+        std::vector<int> { 3, 4 },
+        [seen](int value) { seen->add(value); },
+        std::vector<double> { 0.25 });
+
+    auto first = Kriya::pattern(
+        std::vector<int> { 1, 2 },
+        [seen](int value) { seen->add(value); },
+        std::vector<double> { 0.25 });
+
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    first->on_complete([sched, second] { sched->add_task(second); });
+    scheduler->add_task(first);
+
+    run_seconds(0.6);
+    run_seconds(0.6);
+
+    EXPECT_EQ(seen->items(), (std::vector<int> { 1, 2, 3, 4 }));
+    EXPECT_FALSE(second->is_active());
 }
 
 } // namespace MayaFlux::Test
