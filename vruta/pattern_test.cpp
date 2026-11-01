@@ -1124,4 +1124,290 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(0, 1, 2),
     [](const ::testing::TestParamInfo<int>& info) { return timed_argument_name(info.param); });
 
+//-----------------------------------------------------------------------------
+// pattern: range values
+//-----------------------------------------------------------------------------
+
+TEST_F(PatternTest, RangeValueTypesAreDeduced)
+{
+    static_assert(Kriya::PatternValues<std::vector<int>, uint64_t>);
+    static_assert(Kriya::PatternValues<Kriya::Recurring<std::vector<int>>, uint64_t>);
+    static_assert(!Kriya::PatternValues<int, uint64_t>);
+    static_assert(std::same_as<Kriya::pattern_value_t<std::vector<int>, uint64_t>, int&>);
+    static_assert(std::same_as<Kriya::pattern_value_t<Kriya::Recurring<std::vector<int>>, uint64_t>, int&>);
+    SUCCEED();
+}
+
+struct RangeCase {
+    const char* name;
+    std::vector<int> values;
+    std::vector<double> durations;
+    std::vector<std::pair<double, int>> checkpoints;
+};
+
+class PatternRangeTest : public PatternParamTest<RangeCase> { };
+
+TEST_P(PatternRangeTest, PlaysOnceFollowingTheDurationsThenEnds)
+{
+    const auto& param = GetParam();
+    auto seen = std::make_shared<Log<int>>();
+
+    auto routine = Kriya::pattern(
+        param.values,
+        [seen](int value) { seen->add(value); },
+        param.durations);
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+
+    for (const auto& [seconds, expected] : param.checkpoints) {
+        run_seconds(seconds);
+        EXPECT_EQ(static_cast<int>(seen->items().size()), expected);
+        EXPECT_TRUE(routine->is_active());
+    }
+
+    run_seconds(1.0);
+    EXPECT_EQ(seen->items(), param.values);
+    EXPECT_FALSE(routine->is_active());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Phrases,
+    PatternRangeTest,
+    ::testing::Values(
+        RangeCase { "LongerThanTheDurations", { 1, 2, 3, 4, 5 }, { 0.25, 0.5 }, { { 0.2, 1 }, { 0.1, 2 }, { 0.5, 3 }, { 0.25, 4 }, { 0.5, 5 } } },
+        RangeCase { "ShorterThanTheDurations", { 1, 2 }, { 0.25, 0.5, 0.125 }, { { 0.125, 1 }, { 0.25, 2 } } },
+        RangeCase { "SingleValue", { 7 }, { 0.25 }, { { 0.125, 1 } } }),
+    [](const ::testing::TestParamInfo<RangeCase>& info) { return std::string(info.param.name); });
+
+TEST_F(PatternTest, ARangeEndsOnlyAfterTheLastGap)
+{
+    auto seen = std::make_shared<Log<int>>();
+
+    auto routine = Kriya::pattern(
+        std::vector<int> { 60, 62, 64, 67 },
+        [seen](int value) { seen->add(value); },
+        std::vector<double> { 0.25 });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+
+    run_seconds(0.9);
+    EXPECT_EQ(seen->items(), (std::vector<int> { 60, 62, 64, 67 }));
+    EXPECT_TRUE(routine->is_active());
+
+    run_seconds(0.2);
+    EXPECT_EQ(seen->items().size(), 4U);
+    EXPECT_FALSE(routine->is_active());
+}
+
+TEST_F(PatternTest, ARecurringRangeStartsAgain)
+{
+    auto seen = std::make_shared<Log<int>>();
+
+    auto routine = Kriya::pattern(
+        Kriya::recurring(std::vector<int> { 1, 2, 3 }),
+        [seen](int value) { seen->add(value); },
+        std::vector<double> { 0.25 });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+    run_seconds(0.9);
+
+    EXPECT_EQ(seen->items(), (std::vector<int> { 1, 2, 3, 1 }));
+    EXPECT_TRUE(routine->is_active());
+
+    EXPECT_TRUE(scheduler->cancel_task(routine));
+}
+
+TEST_F(PatternTest, ARecurringRangeDriftsAgainstTheDurations)
+{
+    auto seen = std::make_shared<Log<int>>();
+
+    auto routine = Kriya::pattern(
+        Kriya::recurring(std::vector<int> { 1, 2, 3, 4, 5 }),
+        [seen](int value) { seen->add(value); },
+        std::vector<double> { 0.25, 0.25, 0.5 });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+    run_seconds(2.1);
+
+    EXPECT_EQ(seen->items(), (std::vector<int> { 1, 2, 3, 4, 5, 1, 2 }));
+
+    EXPECT_TRUE(scheduler->cancel_task(routine));
+}
+
+TEST_F(PatternTest, AnEmptyRangeEndsAtOnce)
+{
+    auto seen = std::make_shared<Log<int>>();
+
+    auto routine = Kriya::pattern(
+        std::vector<int> {},
+        [seen](int value) { seen->add(value); },
+        std::vector<double> { 0.25 });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+    run_seconds(0.1);
+
+    EXPECT_TRUE(seen->items().empty());
+    EXPECT_FALSE(routine->is_active());
+}
+
+TEST_F(PatternTest, AnEmptyRecurringRangeEndsAtOnce)
+{
+    auto seen = std::make_shared<Log<int>>();
+
+    auto routine = Kriya::pattern(
+        Kriya::recurring(std::vector<int> {}),
+        [seen](int value) { seen->add(value); },
+        std::vector<double> { 0.25 });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+    run_seconds(0.1);
+
+    EXPECT_TRUE(seen->items().empty());
+    EXPECT_FALSE(routine->is_active());
+}
+
+TEST_F(PatternTest, ACallbackThatThrowsEndsARangePattern)
+{
+    auto seen = std::make_shared<Log<int>>();
+
+    auto routine = Kriya::pattern(
+        std::vector<int> { 1, 2, 3 },
+        [seen](int value) {
+            seen->add(value);
+            if (value == 2) {
+                throw std::runtime_error("callback");
+            }
+        },
+        std::vector<double> { 0.25 });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+    run_seconds(1.5);
+
+    EXPECT_EQ(seen->items(), (std::vector<int> { 1, 2 }));
+    EXPECT_FALSE(routine->is_active());
+}
+
+TEST_F(PatternTest, ARangeThatThrowsWhileReadingEndsThePattern)
+{
+    auto seen = std::make_shared<Log<int>>();
+
+    auto phrase = std::views::iota(0, 4) | std::views::transform([](int value) {
+        if (value == 2) {
+            throw std::runtime_error("range");
+        }
+        return value;
+    });
+
+    auto routine = Kriya::pattern(
+        phrase,
+        [seen](int value) { seen->add(value); },
+        std::vector<double> { 0.25 });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+    run_seconds(1.5);
+
+    EXPECT_EQ(seen->items(), (std::vector<int> { 0, 1 }));
+    EXPECT_FALSE(routine->is_active());
+}
+
+TEST_F(PatternTest, ARangeOfMoveOnlyElements)
+{
+    auto seen = std::make_shared<Log<int>>();
+
+    std::vector<std::unique_ptr<int>> phrase;
+    phrase.push_back(std::make_unique<int>(3));
+    phrase.push_back(std::make_unique<int>(6));
+
+    auto routine = Kriya::pattern(
+        std::move(phrase),
+        [seen](const std::unique_ptr<int>& value) { seen->add(*value); },
+        std::vector<double> { 0.25 });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+    run_seconds(1.0);
+
+    EXPECT_EQ(seen->items(), (std::vector<int> { 3, 6 }));
+    EXPECT_FALSE(routine->is_active());
+}
+
+TEST_F(PatternTest, ARangeFollowsADurationFunction)
+{
+    auto seen = std::make_shared<Log<int>>();
+
+    auto routine = Kriya::pattern(
+        std::vector<int> { 1, 2, 3 },
+        [seen](int value) { seen->add(value); },
+        [](uint64_t) { return std::vector<double> { 0.25 }; });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+    run_seconds(1.0);
+
+    EXPECT_EQ(seen->items(), (std::vector<int> { 1, 2, 3 }));
+    EXPECT_FALSE(routine->is_active());
+}
+
+class PatternRangeTokenTest : public PatternParamTest<SchedToken> { };
+
+TEST_P(PatternRangeTokenTest, ARangePlaysOnceOnEveryToken)
+{
+    const SchedToken token = GetParam();
+    auto seen = std::make_shared<Log<int>>();
+
+    auto routine = Kriya::pattern(
+        std::views::iota(0, 4),
+        [seen](int value) { seen->add(value); },
+        std::vector<double> { 0.25 },
+        token);
+
+    ASSERT_NE(routine, nullptr);
+
+    if (token == SchedToken::FRAME_ACCURATE) {
+        advance(routine, token, 200);
+    } else {
+        scheduler->add_task(routine);
+        run_samples(60000);
+    }
+
+    EXPECT_EQ(seen->items(), (std::vector<int> { 0, 1, 2, 3 }));
+    EXPECT_FALSE(routine->is_active());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Tokens,
+    PatternRangeTokenTest,
+    ::testing::Values(SchedToken::SAMPLE_ACCURATE, SchedToken::FRAME_ACCURATE, SchedToken::MULTI_RATE),
+    [](const ::testing::TestParamInfo<SchedToken>& info) { return std::string(token_name(info.param)); });
+
+TEST_F(PatternTest, AFreeRangePatternEndsOnTheConditionThread)
+{
+    auto seen = std::make_shared<Log<int>>();
+
+    auto routine = Kriya::pattern(
+        std::views::iota(0, 3),
+        [seen](int value) { seen->add(value); },
+        std::vector<double> { 0.005 },
+        SchedToken::CONDITIONAL);
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (routine->is_active() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    EXPECT_EQ(seen->items(), (std::vector<int> { 0, 1, 2 }));
+    EXPECT_FALSE(routine->is_active());
+}
+
 } // namespace MayaFlux::Test
