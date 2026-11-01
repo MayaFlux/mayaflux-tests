@@ -198,6 +198,37 @@ namespace {
         ::testing::ValuesIn(field_cases()),
         [](const ::testing::TestParamInfo<FieldCase>& info) { return std::string(info.param.name); });
 
+    class SamplerConfigEqualityTest : public ::testing::TestWithParam<FieldCase> { };
+
+    TEST_P(SamplerConfigEqualityTest, ChangingOneFieldMakesTheConfigsUnequal)
+    {
+        const SamplerConfig baseline;
+        SamplerConfig changed;
+        GetParam().change(changed);
+
+        EXPECT_FALSE(baseline == changed);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(Fields, SamplerConfigEqualityTest,
+        ::testing::ValuesIn(field_cases()),
+        [](const ::testing::TestParamInfo<FieldCase>& info) { return std::string(info.param.name); });
+
+    TEST(SamplerConfigValueTest, SeparatelyBuiltConfigsWithTheSameValuesAreEqual)
+    {
+        const auto build = [] {
+            SamplerConfig config;
+            config.mag_filter = FilterMode::NEAREST;
+            config.address_mode_w = AddressMode::MIRRORED_REPEAT;
+            config.max_anisotropy = 4.0F;
+            config.enable_mipmaps = true;
+            config.border_color = BorderColor::OPAQUE_WHITE;
+            return config;
+        };
+
+        EXPECT_TRUE(SamplerConfig {} == SamplerConfig {});
+        EXPECT_TRUE(build() == build());
+    }
+
     TEST_F(SamplerForgeTest, EveryCombinationOfFieldsGetsItsOwnSamplerAndIsServedAgain)
     {
         ASSERT_TRUE(forge().initialize(backend()));

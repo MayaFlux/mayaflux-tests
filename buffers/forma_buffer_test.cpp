@@ -465,7 +465,7 @@ TEST_P(FormaBufferShaderTest, RenderingSelectsShadersForTopologyAndTextureMode)
     if (c.single_texture)
         config.default_texture_binding = "texSampler";
     if (c.multi_texture)
-        config.additional_textures.emplace_back("otherTexture", nullptr);
+        config.additional_textures.push_back({ "otherTexture", nullptr });
 
     buffer->setup_rendering(config);
 
@@ -593,7 +593,7 @@ protected:
 
     void prepare(bool textured,
         const std::vector<std::shared_ptr<Core::VKImage>>& pre_setup_textures = {},
-        const std::vector<std::pair<std::string, std::shared_ptr<Core::VKImage>>>& additional_textures = {})
+        const std::vector<Portal::Graphics::SampledTexture>& additional_textures = {})
     {
         buffer = std::make_shared<FormaBuffer>(sizeof(Kakshya::MeshVertex) * 4,
             PrimitiveTopology::TRIANGLE_STRIP);
