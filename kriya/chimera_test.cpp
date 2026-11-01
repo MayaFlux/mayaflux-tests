@@ -10,6 +10,7 @@
 #include "MayaFlux/Buffers/Textures/TextureArrayBuffer.hpp"
 #include "MayaFlux/Buffers/VKBuffer.hpp"
 #include "MayaFlux/Kakshya/Source/DynamicVideoStream.hpp"
+#include "MayaFlux/Kakshya/Source/TextureCollection.hpp"
 #include "MayaFlux/Kriya/BufferPipeline.hpp"
 #include "MayaFlux/Kriya/Chimera.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
@@ -934,6 +935,49 @@ namespace {
         frames->tick(2);
 
         EXPECT_EQ(layer_bytes(0), VideoSupport::frame_bytes(8));
+    }
+
+    TEST_F(ChimeraImageTest, ACollectionFedFromABufferGivesAChimeraLayerTheNewestImageEachCycle)
+    {
+        const auto image = make_image(0);
+        const auto source = std::make_shared<Buffers::TextureBuffer>(VideoSupport::k_width, VideoSupport::k_height, Portal::Graphics::ImageFormat::RGBA8);
+        source->set_gpu_texture(image);
+        const auto collection = std::make_shared<Kakshya::TextureCollection>(
+            Kakshya::TextureCollectionSpec { .width = VideoSupport::k_width, .height = VideoSupport::k_height, .ring_layers = 3 });
+        const Chimera chimera = builder()
+                                    .record(BufferOperation::capture_to_collection(source, collection))
+                                    .layer()
+                                    .from(collection)
+                                    .lag(0.0)
+                                    .start();
+
+        for (uint64_t n = 1; n <= 7; ++n) {
+            const auto pixels = VideoSupport::frame_bytes(n);
+            loom().upload_data(image, pixels.data(), pixels.size());
+            const uint64_t before = collection->get_write_head();
+            for (int attempt = 0; attempt < 4 && collection->get_write_head() == before; ++attempt) {
+                frames->tick();
+            }
+
+            ASSERT_GT(collection->get_write_head(), before) << n;
+            EXPECT_EQ(layer_bytes(0), pixels) << n;
+        }
+    }
+
+    TEST_F(ChimeraImageTest, ASourceBufferWithoutATextureAppendsNothing)
+    {
+        const auto source = std::make_shared<Buffers::TextureBuffer>(VideoSupport::k_width, VideoSupport::k_height, Portal::Graphics::ImageFormat::RGBA8);
+        const auto collection = std::make_shared<Kakshya::TextureCollection>(
+            Kakshya::TextureCollectionSpec { .width = VideoSupport::k_width, .height = VideoSupport::k_height, .ring_layers = 3 });
+        const Chimera chimera = builder()
+                                    .record(BufferOperation::capture_to_collection(source, collection))
+                                    .layer()
+                                    .from(still(1))
+                                    .start();
+
+        frames->tick(4);
+
+        EXPECT_EQ(collection->get_write_head(), 0U);
     }
 
     TEST_F(ChimeraImageTest, AGpuImageLayerFollowsTheImageItsSourceIsRewrittenWith)

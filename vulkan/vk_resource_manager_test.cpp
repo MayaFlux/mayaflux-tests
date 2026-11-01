@@ -537,6 +537,92 @@ TEST_F(BackendResourceManagerTest, TransitionsBetweenCommonLayoutsComplete)
     resources().cleanup_image(image);
 }
 
+TEST_F(BackendResourceManagerTest, ExecuteAsyncSubmitsAndItsPointCompletes)
+{
+    RawVulkanBuffer buffer(backend(), 64, vk::BufferUsageFlagBits::eTransferDst, true);
+
+    const auto point = resources().execute_async([&](vk::CommandBuffer cmd) {
+        cmd.fillBuffer(buffer.buffer(), 0, 64, 0xABABABABU);
+    });
+
+    ASSERT_TRUE(point);
+    backend().get_command_manager().wait(point);
+    const auto* bytes = static_cast<const uint8_t*>(buffer.mapped());
+    for (size_t i = 0; i < 64; ++i) {
+        EXPECT_EQ(bytes[i], 0xAB) << i;
+    }
+}
+
+TEST_F(BackendResourceManagerTest, ExecuteAsyncReleasesWhatItKeepsAliveOnceItCompletes)
+{
+    auto token = std::make_shared<int>(1);
+    const std::weak_ptr<int> watcher = token;
+
+    const auto point = resources().execute_async([](vk::CommandBuffer) { }, { token });
+    token.reset();
+
+    ASSERT_TRUE(point);
+    backend().get_command_manager().wait(point);
+    backend().get_command_manager().collect();
+    EXPECT_TRUE(watcher.expired());
+}
+
+TEST_F(BackendResourceManagerTest, ConsecutiveAsyncSubmissionsOrderOnTheQueue)
+{
+    RawVulkanBuffer buffer(backend(), 64, vk::BufferUsageFlagBits::eTransferDst, true);
+
+    const auto first = resources().execute_async([&](vk::CommandBuffer cmd) {
+        cmd.fillBuffer(buffer.buffer(), 0, 64, 0x11111111U);
+    });
+    const auto second = resources().execute_async([&](vk::CommandBuffer cmd) {
+        cmd.fillBuffer(buffer.buffer(), 0, 64, 0x22222222U);
+    });
+
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(second);
+    EXPECT_GT(second.value, first.value);
+    backend().get_command_manager().wait(second);
+    EXPECT_EQ(static_cast<const uint8_t*>(buffer.mapped())[0], 0x22);
+}
+
+TEST_F(BackendResourceManagerTest, AsyncBlitCopiesPixelsAndAHostReadAfterwardsSeesThem)
+{
+    auto src = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
+    auto dst = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
+    const auto bytes = pattern(64, 9);
+    resources().upload_image_data(src, bytes.data(), bytes.size());
+
+    vk::ImageBlit region {};
+    region.srcSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+    region.srcOffsets = std::array<vk::Offset3D, 2> { vk::Offset3D { 0, 0, 0 }, vk::Offset3D { 4, 4, 1 } };
+    region.dstSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+    region.dstOffsets = std::array<vk::Offset3D, 2> { vk::Offset3D { 0, 0, 0 }, vk::Offset3D { 4, 4, 1 } };
+
+    ASSERT_TRUE(resources().blit_image(src, dst, region, vk::Filter::eNearest, Core::SubmitMode::ASYNC));
+    std::vector<uint8_t> out(64, 0);
+    resources().download_image_data(dst, out.data(), out.size());
+
+    EXPECT_EQ(out, bytes);
+    resources().cleanup_image(src);
+    resources().cleanup_image(dst);
+}
+
+TEST_F(BackendResourceManagerTest, TheServiceHookSubmitsWithoutAHandleAndItsPointCompletes)
+{
+    RawVulkanBuffer buffer(backend(), 64, vk::BufferUsageFlagBits::eTransferDst, true);
+
+    const auto [timeline, value] = service()->execute_async(
+        [&](void* handle) {
+            vk::CommandBuffer cmd(static_cast<VkCommandBuffer>(handle));
+            cmd.fillBuffer(buffer.buffer(), 0, 64, 0xCDCDCDCDU);
+        },
+        {});
+
+    ASSERT_NE(value, 0U);
+    service()->await_point(timeline, value);
+    EXPECT_EQ(static_cast<const uint8_t*>(buffer.mapped())[0], 0xCD);
+}
+
 TEST_F(BackendResourceManagerTest, SameFormatBlitIsSupportedAndUndefinedIsNot)
 {
     EXPECT_TRUE(resources().supports_blit(vk::Format::eR8G8B8A8Unorm, vk::Format::eR8G8B8A8Unorm));

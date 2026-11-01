@@ -4,8 +4,10 @@
 
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/BufferManager.hpp"
+#include "MayaFlux/Buffers/Textures/TextureBuffer.hpp"
 #include "MayaFlux/Kakshya/Source/DynamicSoundStream.hpp"
 #include "MayaFlux/Kakshya/Source/DynamicVideoStream.hpp"
+#include "MayaFlux/Kakshya/Source/TextureCollection.hpp"
 #include "MayaFlux/Kriya/BufferOperation.hpp"
 
 namespace MayaFlux::Test {
@@ -283,6 +285,34 @@ namespace {
 
         expect_operation(op, OpType::ROUTE, ProcessingToken::GRAPHICS_BACKEND, false, true);
         EXPECT_EQ(op.get_graphics_stream(), stream);
+    }
+
+    TEST(BufferOperationFactoryTest, CapturingToACollectionIsAGraphicsProcessPhaseRoute)
+    {
+        const auto source = std::make_shared<Buffers::TextureBuffer>(4, 2, Portal::Graphics::ImageFormat::RGBA8);
+        const auto collection = std::make_shared<Kakshya::TextureCollection>(
+            Kakshya::TextureCollectionSpec { .width = 4, .height = 2, .ring_layers = 4 });
+
+        const auto op = BufferOperation::capture_to_collection(source, collection);
+
+        expect_operation(op, OpType::ROUTE, ProcessingToken::GRAPHICS_BACKEND, false, true);
+        EXPECT_EQ(op.get_collection(), collection);
+        EXPECT_EQ(op.get_graphics_stream(), nullptr);
+    }
+
+    TEST(BufferOperationFactoryTest, CapturingToACollectionNeedsASourceAndACollection)
+    {
+        const auto source = std::make_shared<Buffers::TextureBuffer>(4, 2, Portal::Graphics::ImageFormat::RGBA8);
+        const auto collection = std::make_shared<Kakshya::TextureCollection>(
+            Kakshya::TextureCollectionSpec { .width = 4, .height = 2, .ring_layers = 4 });
+
+        EXPECT_THROW(static_cast<void>(BufferOperation::capture_to_collection(nullptr, collection)), std::runtime_error);
+        EXPECT_THROW(static_cast<void>(BufferOperation::capture_to_collection(source, nullptr)), std::runtime_error);
+    }
+
+    TEST(BufferOperationFactoryTest, OtherRoutesHaveNoCollection)
+    {
+        EXPECT_EQ(BufferOperation::route_to_buffer(make_source()).get_collection(), nullptr);
     }
 
     TEST(BufferOperationFactoryTest, OtherRoutesHaveNoGraphicsStream)
