@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 
+#include "MayaFlux/Kinesis/Tendency/TimeMap.hpp"
 #include "MayaFlux/Nodes/Generators/Logic.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
 
@@ -1407,6 +1408,165 @@ TEST_F(PatternTest, AFreeRangePatternEndsOnTheConditionThread)
     }
 
     EXPECT_EQ(seen->items(), (std::vector<int> { 0, 1, 2 }));
+    EXPECT_FALSE(routine->is_active());
+}
+
+//-----------------------------------------------------------------------------
+// pattern: TimeMap durations
+//-----------------------------------------------------------------------------
+
+TEST_F(PatternTest, ATimeMapIsADurationSourceAndNeverACondition)
+{
+    auto double_condition = [](uint64_t) { return 0.5; };
+
+    static_assert(!Kriya::PatternCondition<Kinesis::TimeMap, uint64_t>);
+    static_assert(Kriya::PatternDurations<Kinesis::TimeMap>);
+    static_assert(Kriya::PatternCondition<decltype(double_condition), uint64_t>);
+    static_assert(!Kriya::PatternDurations<decltype(double_condition)>);
+    SUCCEED();
+}
+
+TEST_F(PatternTest, AConditionThatReturnsADoubleStillDrivesTheSteps)
+{
+    auto seen = std::make_shared<Log<uint64_t>>();
+
+    auto routine = Kriya::pattern(
+        [](uint64_t index) { return index; },
+        [seen](uint64_t index) { seen->add(index); },
+        [](uint64_t) { return 0.5; });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+    run_samples(3);
+
+    EXPECT_EQ(seen->items(), first_n(3));
+}
+
+struct MapCase {
+    const char* name;
+    Kinesis::TimeMap map;
+};
+
+class PatternTimeMapTest : public PatternParamTest<MapCase> { };
+
+TEST_P(PatternTimeMapTest, StepsFollowTheMapAtTheElapsedSeconds)
+{
+    const auto& param = GetParam();
+    auto seen = std::make_shared<Log<uint64_t>>();
+
+    std::vector<double> times { 0.0 };
+    double elapsed = 0.0;
+    for (int k = 0; k < 6; ++k) {
+        elapsed += param.map(elapsed);
+        times.push_back(elapsed);
+    }
+
+    auto routine = Kriya::pattern(
+        [](uint64_t index) { return index; },
+        [seen](uint64_t index) { seen->add(index); },
+        param.map);
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+
+    double now = 0.0;
+    for (size_t k = 1; k < times.size(); ++k) {
+        run_seconds(times[k] - 0.01 - now);
+        now = times[k] - 0.01;
+        EXPECT_EQ(seen->items().size(), k) << "before step " << k;
+
+        run_seconds(0.02);
+        now += 0.02;
+        EXPECT_EQ(seen->items().size(), k + 1) << "at step " << k;
+    }
+
+    EXPECT_EQ(seen->items(), first_n(seen->items().size()));
+    EXPECT_TRUE(scheduler->cancel_task(routine));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Maps,
+    PatternTimeMapTest,
+    ::testing::Values(
+        MapCase { "Accelerando", Kinesis::TimeMaps::exponential(0.5, 0.05, 10.0) },
+        MapCase { "LinearThenHeld", Kinesis::TimeMaps::linear(0.5, 0.1, 1.0) },
+        MapCase { "Constant", Kinesis::TimeMap { .fn = [](const double&) { return 0.25; } } }),
+    [](const ::testing::TestParamInfo<MapCase>& info) { return std::string(info.param.name); });
+
+class PatternTimeMapClampTest : public PatternParamTest<ClampCase> { };
+
+TEST_P(PatternTimeMapClampTest, GapsAreAtLeastOneUnit)
+{
+    const double value = GetParam().value;
+    auto seen = std::make_shared<Log<uint64_t>>();
+
+    auto routine = Kriya::pattern(
+        [](uint64_t index) { return index; },
+        [seen](uint64_t index) { seen->add(index); },
+        Kinesis::TimeMap { .fn = [value](const double&) { return value; } });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+    run_samples(10);
+
+    EXPECT_EQ(seen->items(), first_n(10));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Values,
+    PatternTimeMapClampTest,
+    ::testing::Values(
+        ClampCase { "Zero", 0.0 },
+        ClampCase { "Negative", -1.0 },
+        ClampCase { "NaN", std::numeric_limits<double>::quiet_NaN() }),
+    [](const ::testing::TestParamInfo<ClampCase>& info) { return std::string(info.param.name); });
+
+TEST_F(PatternTest, AnUnsetTimeMapReturnsNull)
+{
+    auto routine = Kriya::pattern(
+        [](uint64_t index) { return index; },
+        [](uint64_t) { },
+        Kinesis::TimeMap {});
+
+    EXPECT_EQ(routine, nullptr);
+}
+
+TEST_F(PatternTest, ATimeMapThatThrowsEndsThePattern)
+{
+    auto seen = std::make_shared<Log<uint64_t>>();
+
+    auto routine = Kriya::pattern(
+        [](uint64_t index) { return index; },
+        [seen](uint64_t index) { seen->add(index); },
+        Kinesis::TimeMap { .fn = [](const double& elapsed) -> double {
+            if (elapsed > 0.4) {
+                throw std::runtime_error("map");
+            }
+            return 0.25;
+        } });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+    run_seconds(1.5);
+
+    EXPECT_EQ(seen->items(), first_n(3));
+    EXPECT_FALSE(routine->is_active());
+}
+
+TEST_F(PatternTest, ARangeFollowsATimeMap)
+{
+    auto seen = std::make_shared<Log<int>>();
+
+    auto routine = Kriya::pattern(
+        std::vector<int> { 1, 2, 3 },
+        [seen](int value) { seen->add(value); },
+        Kinesis::TimeMap { .fn = [](const double&) { return 0.25; } });
+
+    ASSERT_NE(routine, nullptr);
+    scheduler->add_task(routine);
+    run_seconds(1.0);
+
+    EXPECT_EQ(seen->items(), (std::vector<int> { 1, 2, 3 }));
     EXPECT_FALSE(routine->is_active());
 }
 
