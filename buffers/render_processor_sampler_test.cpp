@@ -183,5 +183,18 @@ void main() {
         EXPECT_EQ(cached(), 1U);
     }
 
+    TEST_F(RenderProcessorSamplerTest, ChangingTheSamplerOfABoundBindingCreatesItAndKeepsTheTexture)
+    {
+        render->bind_texture(2, image);
+        ASSERT_EQ(cached(), 1U);
+
+        render->set_binding_sampler(2, nearest_clamped());
+
+        EXPECT_EQ(cached(), 2U);
+
+        render->bind_texture(2, image);
+        EXPECT_EQ(cached(), 2U);
+    }
+
 } // namespace
 } // namespace MayaFlux::Test
