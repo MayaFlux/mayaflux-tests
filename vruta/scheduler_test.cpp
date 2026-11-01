@@ -609,6 +609,69 @@ TEST_F(SchedulerTest, CancelAcceptedForAnyName)
     EXPECT_TRUE(scheduler->get_task_names().empty());
 }
 
+TEST_F(SchedulerTest, ConcurrentSubmissionsFromManyThreadsAreAllAppliedOnce)
+{
+    constexpr size_t THREADS = 4;
+    constexpr size_t PER_THREAD = 40;
+
+    std::atomic<size_t> finished { 0 };
+    std::vector<std::thread> producers;
+    for (size_t thread = 0; thread < THREADS; ++thread) {
+        producers.emplace_back([this, thread, &finished] {
+            for (size_t i = 0; i < PER_THREAD; ++i) {
+                scheduler->add_task(
+                    make_counting(SchedToken::SAMPLE_ACCURATE, make_count()),
+                    "t" + std::to_string(thread) + "_" + std::to_string(i));
+            }
+            finished.fetch_add(1);
+        });
+    }
+
+    while (finished.load() < THREADS) {
+        scheduler->process_token(SchedToken::SAMPLE_ACCURATE, 1);
+    }
+    for (auto& producer : producers) {
+        producer.join();
+    }
+    scheduler->process_token(SchedToken::SAMPLE_ACCURATE, 1);
+
+    auto names = scheduler->get_task_names(SchedToken::SAMPLE_ACCURATE);
+    std::ranges::sort(names);
+
+    EXPECT_EQ(names.size(), THREADS * PER_THREAD);
+    EXPECT_EQ(std::ranges::adjacent_find(names), names.end());
+}
+
+TEST_F(SchedulerTest, ResubmissionFromReplacementCallbackWaitsForTheNextDrain)
+{
+    auto original = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
+    auto replacement = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
+    auto rearmed = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
+    auto fired = make_count();
+
+    original->on_complete([this, rearmed, fired] {
+        if (fired->fetch_add(1) == 0) {
+            scheduler->add_task(rearmed, "rearm");
+        }
+    });
+
+    scheduler->add_task(original, "rearm");
+    scheduler->process_token(SchedToken::SAMPLE_ACCURATE, 2);
+    ASSERT_EQ(scheduler->get_task("rearm"), original);
+
+    scheduler->add_task(replacement, "rearm");
+    scheduler->process_token(SchedToken::SAMPLE_ACCURATE, 1);
+
+    EXPECT_EQ(fired->load(), 1);
+    EXPECT_EQ(scheduler->get_task("rearm"), replacement);
+    EXPECT_FALSE(replacement->get_should_terminate());
+
+    scheduler->process_token(SchedToken::SAMPLE_ACCURATE, 1);
+
+    EXPECT_EQ(scheduler->get_task("rearm"), rearmed);
+    EXPECT_TRUE(replacement->get_should_terminate());
+}
+
 class RoutineCompletionTest : public SchedulerParamTest<SchedToken> { };
 
 TEST_P(RoutineCompletionTest, CompletionFiresAtFinalSuspendOnlyOnce)
