@@ -198,6 +198,115 @@ namespace {
         ::testing::ValuesIn(field_cases()),
         [](const ::testing::TestParamInfo<FieldCase>& info) { return std::string(info.param.name); });
 
+    TEST_F(SamplerForgeTest, EveryCombinationOfFieldsGetsItsOwnSamplerAndIsServedAgain)
+    {
+        ASSERT_TRUE(forge().initialize(backend()));
+        const std::array filters { FilterMode::NEAREST, FilterMode::LINEAR };
+        const std::array modes { AddressMode::REPEAT, AddressMode::MIRRORED_REPEAT, AddressMode::CLAMP_TO_EDGE, AddressMode::CLAMP_TO_BORDER };
+        const std::array depth_modes { AddressMode::REPEAT, AddressMode::CLAMP_TO_EDGE };
+        std::vector<SamplerConfig> configs;
+        for (const auto mag : filters) {
+            for (const auto min : filters) {
+                for (const auto u : modes) {
+                    for (const auto v : modes) {
+                        for (const auto w : depth_modes) {
+                            for (const bool mipmaps : { false, true }) {
+                                SamplerConfig config;
+                                config.mag_filter = mag;
+                                config.min_filter = min;
+                                config.address_mode_u = u;
+                                config.address_mode_v = v;
+                                config.address_mode_w = w;
+                                config.enable_mipmaps = mipmaps;
+                                configs.push_back(config);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        std::vector<vk::Sampler> first;
+        std::set<VkSampler> distinct;
+        for (const auto& config : configs) {
+            first.push_back(forge().get_or_create(config));
+            ASSERT_TRUE(first.back());
+            distinct.insert(static_cast<VkSampler>(first.back()));
+        }
+
+        EXPECT_EQ(distinct.size(), configs.size());
+        EXPECT_EQ(forge().get_sampler_count(), configs.size());
+        for (size_t i = 0; i < configs.size(); ++i) {
+            EXPECT_EQ(forge().get_or_create(configs[i]), first[i]) << i;
+        }
+        EXPECT_EQ(forge().get_sampler_count(), configs.size());
+    }
+
+    TEST_F(SamplerForgeTest, SwappingValuesBetweenFieldsYieldsAnotherSampler)
+    {
+        ASSERT_TRUE(forge().initialize(backend()));
+        SamplerConfig clamp_u;
+        clamp_u.address_mode_u = AddressMode::CLAMP_TO_EDGE;
+        SamplerConfig clamp_v;
+        clamp_v.address_mode_v = AddressMode::CLAMP_TO_EDGE;
+        SamplerConfig clamp_w;
+        clamp_w.address_mode_w = AddressMode::CLAMP_TO_EDGE;
+        SamplerConfig nearest_mag;
+        nearest_mag.mag_filter = FilterMode::NEAREST;
+        SamplerConfig nearest_min;
+        nearest_min.min_filter = FilterMode::NEAREST;
+
+        const std::set<VkSampler> distinct {
+            static_cast<VkSampler>(forge().get_or_create(clamp_u)),
+            static_cast<VkSampler>(forge().get_or_create(clamp_v)),
+            static_cast<VkSampler>(forge().get_or_create(clamp_w)),
+            static_cast<VkSampler>(forge().get_or_create(nearest_mag)),
+            static_cast<VkSampler>(forge().get_or_create(nearest_min))
+        };
+
+        EXPECT_EQ(distinct.size(), 5U);
+        EXPECT_EQ(forge().get_sampler_count(), 5U);
+    }
+
+    TEST_F(SamplerForgeTest, EveryBorderColorOfAClampToBorderConfigIsItsOwnSampler)
+    {
+        ASSERT_TRUE(forge().initialize(backend()));
+        std::set<VkSampler> distinct;
+        for (const auto color : { BorderColor::DEFAULT, BorderColor::TRANSPARENT_BLACK, BorderColor::OPAQUE_BLACK, BorderColor::OPAQUE_WHITE }) {
+            SamplerConfig config;
+            config.address_mode_u = AddressMode::CLAMP_TO_BORDER;
+            config.address_mode_v = AddressMode::CLAMP_TO_BORDER;
+            config.address_mode_w = AddressMode::CLAMP_TO_BORDER;
+            config.border_color = color;
+            distinct.insert(static_cast<VkSampler>(forge().get_or_create(config)));
+        }
+
+        EXPECT_EQ(distinct.size(), 4U);
+        EXPECT_EQ(forge().get_sampler_count(), 4U);
+    }
+
+    TEST_F(SamplerForgeTest, SeparatelyBuiltEqualConfigsShareOneSampler)
+    {
+        ASSERT_TRUE(forge().initialize(backend()));
+
+        const auto build = [] {
+            SamplerConfig config;
+            config.mag_filter = FilterMode::NEAREST;
+            config.address_mode_v = AddressMode::MIRRORED_REPEAT;
+            config.max_anisotropy = 8.0F;
+            config.enable_mipmaps = true;
+            config.border_color = BorderColor::OPAQUE_WHITE;
+            return config;
+        };
+
+        const vk::Sampler first = forge().get_or_create(build());
+        const vk::Sampler second = forge().get_or_create(build());
+
+        ASSERT_TRUE(first);
+        EXPECT_EQ(first, second);
+        EXPECT_EQ(forge().get_sampler_count(), 1U);
+    }
+
     // ------------------------------------------------------------------
     // Creation over the enumerations
     // ------------------------------------------------------------------
