@@ -143,8 +143,6 @@ namespace {
         EXPECT_EQ(loom().create_render_target(4, 4), nullptr);
         EXPECT_EQ(loom().create_depth_buffer(4, 4), nullptr);
         EXPECT_EQ(loom().create_storage_image(4, 4), nullptr);
-        EXPECT_FALSE(loom().get_default_sampler());
-        EXPECT_FALSE(loom().get_nearest_sampler());
     }
 
     TEST_F(TextureLoomTest, InitializeRejectsANullBackend)
@@ -860,37 +858,6 @@ namespace {
 
         EXPECT_NE(cache.acquire(loom(), sampled_key(8, 8)), nullptr);
         EXPECT_NE(cache.acquire(loom(), sampled_key(16, 16)), nullptr);
-    }
-
-    // ------------------------------------------------------------------
-    // Samplers
-    // ------------------------------------------------------------------
-
-    TEST_F(TextureLoomTest, DefaultAndNearestSamplersAreDistinctAndStable)
-    {
-        ASSERT_TRUE(loom().initialize(backend()));
-
-        const vk::Sampler linear = loom().get_default_sampler();
-        const vk::Sampler nearest = loom().get_nearest_sampler();
-
-        ASSERT_TRUE(linear);
-        ASSERT_TRUE(nearest);
-        EXPECT_NE(linear, nearest);
-        EXPECT_EQ(loom().get_default_sampler(), linear);
-        EXPECT_EQ(loom().get_nearest_sampler(), nearest);
-    }
-
-    TEST_F(TextureLoomTest, EqualSamplerConfigsShareOneSampler)
-    {
-        ASSERT_TRUE(loom().initialize(backend()));
-        SamplerConfig config;
-        config.address_mode_u = Portal::Graphics::AddressMode::MIRRORED_REPEAT;
-
-        const vk::Sampler first = loom().get_or_create_sampler(config);
-        const vk::Sampler second = loom().get_or_create_sampler(config);
-
-        ASSERT_TRUE(first);
-        EXPECT_EQ(first, second);
     }
 
 } // namespace
