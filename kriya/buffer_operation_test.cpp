@@ -4,6 +4,7 @@
 
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/BufferManager.hpp"
+#include "MayaFlux/Buffers/Textures/TextureArrayBuffer.hpp"
 #include "MayaFlux/Buffers/Textures/TextureBuffer.hpp"
 #include "MayaFlux/Kakshya/Source/DynamicSoundStream.hpp"
 #include "MayaFlux/Kakshya/Source/DynamicVideoStream.hpp"
@@ -308,6 +309,33 @@ namespace {
 
         EXPECT_THROW(static_cast<void>(BufferOperation::capture_to_collection(nullptr, collection)), std::runtime_error);
         EXPECT_THROW(static_cast<void>(BufferOperation::capture_to_collection(source, nullptr)), std::runtime_error);
+    }
+
+    TEST(BufferOperationFactoryTest, CapturingToARingIsAGraphicsProcessPhaseRoute)
+    {
+        const auto source = std::make_shared<Buffers::TextureBuffer>(4, 2, Portal::Graphics::ImageFormat::RGBA8);
+        const auto ring = std::make_shared<Buffers::TextureArrayBuffer>(4, 2, Portal::Graphics::ImageFormat::RGBA8, 3);
+
+        const auto op = BufferOperation::capture_to_ring(source, ring);
+
+        expect_operation(op, OpType::ROUTE, ProcessingToken::GRAPHICS_BACKEND, false, true);
+        EXPECT_EQ(op.get_ring(), ring);
+        EXPECT_EQ(op.get_collection(), nullptr);
+        EXPECT_EQ(op.get_graphics_stream(), nullptr);
+    }
+
+    TEST(BufferOperationFactoryTest, CapturingToARingNeedsASourceAndAnArray)
+    {
+        const auto source = std::make_shared<Buffers::TextureBuffer>(4, 2, Portal::Graphics::ImageFormat::RGBA8);
+        const auto ring = std::make_shared<Buffers::TextureArrayBuffer>(4, 2, Portal::Graphics::ImageFormat::RGBA8, 3);
+
+        EXPECT_THROW(static_cast<void>(BufferOperation::capture_to_ring(nullptr, ring)), std::runtime_error);
+        EXPECT_THROW(static_cast<void>(BufferOperation::capture_to_ring(source, nullptr)), std::runtime_error);
+    }
+
+    TEST(BufferOperationFactoryTest, OtherRoutesHaveNoRing)
+    {
+        EXPECT_EQ(BufferOperation::route_to_buffer(make_source()).get_ring(), nullptr);
     }
 
     TEST(BufferOperationFactoryTest, OtherRoutesHaveNoCollection)

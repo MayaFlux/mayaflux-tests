@@ -213,6 +213,125 @@ namespace {
         ::testing::ValuesIn(field_cases()),
         [](const ::testing::TestParamInfo<FieldCase>& info) { return std::string(info.param.name); });
 
+    TEST(SamplerPresetsTest, FilterPresetsSetTheirFiltersAndClampEveryAxis)
+    {
+        namespace P = Portal::Graphics::SamplerPresets;
+
+        for (const auto& config : { P::nearest_clamped(), P::linear_clamped(), P::magnify_nearest(), P::minify_nearest() }) {
+            EXPECT_EQ(config.address_mode_u, AddressMode::CLAMP_TO_EDGE);
+            EXPECT_EQ(config.address_mode_v, AddressMode::CLAMP_TO_EDGE);
+            EXPECT_EQ(config.address_mode_w, AddressMode::CLAMP_TO_EDGE);
+        }
+        EXPECT_EQ(P::nearest_clamped().mag_filter, FilterMode::NEAREST);
+        EXPECT_EQ(P::nearest_clamped().min_filter, FilterMode::NEAREST);
+        EXPECT_EQ(P::linear_clamped().mag_filter, FilterMode::LINEAR);
+        EXPECT_EQ(P::linear_clamped().min_filter, FilterMode::LINEAR);
+        EXPECT_EQ(P::magnify_nearest().mag_filter, FilterMode::NEAREST);
+        EXPECT_EQ(P::magnify_nearest().min_filter, FilterMode::LINEAR);
+        EXPECT_EQ(P::minify_nearest().mag_filter, FilterMode::LINEAR);
+        EXPECT_EQ(P::minify_nearest().min_filter, FilterMode::NEAREST);
+    }
+
+    TEST(SamplerPresetsTest, AddressingPresetsSetEveryAxisAndTakeTheFilter)
+    {
+        namespace P = Portal::Graphics::SamplerPresets;
+
+        EXPECT_EQ(P::repeating().address_mode_u, AddressMode::REPEAT);
+        EXPECT_EQ(P::repeating(FilterMode::NEAREST).mag_filter, FilterMode::NEAREST);
+        EXPECT_EQ(P::repeating(FilterMode::NEAREST).min_filter, FilterMode::NEAREST);
+        EXPECT_EQ(P::mirrored().address_mode_u, AddressMode::MIRRORED_REPEAT);
+        EXPECT_EQ(P::mirrored().address_mode_v, AddressMode::MIRRORED_REPEAT);
+        EXPECT_EQ(P::mirrored().address_mode_w, AddressMode::MIRRORED_REPEAT);
+        EXPECT_EQ(P::mirrored(FilterMode::NEAREST).mag_filter, FilterMode::NEAREST);
+    }
+
+    TEST(SamplerPresetsTest, ABorderedPresetClampsToTheBorderWithItsColour)
+    {
+        namespace P = Portal::Graphics::SamplerPresets;
+
+        for (const auto color : { BorderColor::TRANSPARENT_BLACK, BorderColor::OPAQUE_BLACK, BorderColor::OPAQUE_WHITE }) {
+            const auto config = P::bordered(color, FilterMode::NEAREST);
+            EXPECT_EQ(config.address_mode_u, AddressMode::CLAMP_TO_BORDER);
+            EXPECT_EQ(config.address_mode_v, AddressMode::CLAMP_TO_BORDER);
+            EXPECT_EQ(config.address_mode_w, AddressMode::CLAMP_TO_BORDER);
+            EXPECT_EQ(config.border_color, color);
+            EXPECT_EQ(config.mag_filter, FilterMode::NEAREST);
+        }
+    }
+
+    TEST(SamplerPresetsTest, AxesSetsEachAxisOnItsOwn)
+    {
+        namespace P = Portal::Graphics::SamplerPresets;
+
+        const auto config = P::axes(AddressMode::REPEAT, AddressMode::CLAMP_TO_EDGE, FilterMode::NEAREST, AddressMode::MIRRORED_REPEAT);
+
+        EXPECT_EQ(config.address_mode_u, AddressMode::REPEAT);
+        EXPECT_EQ(config.address_mode_v, AddressMode::CLAMP_TO_EDGE);
+        EXPECT_EQ(config.address_mode_w, AddressMode::MIRRORED_REPEAT);
+        EXPECT_EQ(config.mag_filter, FilterMode::NEAREST);
+        EXPECT_EQ(P::axes(AddressMode::REPEAT, AddressMode::REPEAT).address_mode_w, AddressMode::CLAMP_TO_EDGE);
+    }
+
+    TEST(SamplerPresetsTest, TheDepthPresetRepeatsOnlyTheDepthAxis)
+    {
+        namespace P = Portal::Graphics::SamplerPresets;
+
+        const auto config = P::repeating_depth();
+
+        EXPECT_EQ(config.address_mode_u, AddressMode::CLAMP_TO_EDGE);
+        EXPECT_EQ(config.address_mode_v, AddressMode::CLAMP_TO_EDGE);
+        EXPECT_EQ(config.address_mode_w, AddressMode::REPEAT);
+    }
+
+    TEST(SamplerPresetsTest, ObliqueClampsAnisotropyIntoOneToSixteen)
+    {
+        namespace P = Portal::Graphics::SamplerPresets;
+
+        EXPECT_EQ(P::oblique().max_anisotropy, 16.0F);
+        EXPECT_EQ(P::oblique(4.0F).max_anisotropy, 4.0F);
+        EXPECT_EQ(P::oblique(0.25F).max_anisotropy, 1.0F);
+        EXPECT_EQ(P::oblique(64.0F).max_anisotropy, 16.0F);
+    }
+
+    TEST(SamplerPresetsTest, EveryNamedPresetIsADifferentConfig)
+    {
+        namespace P = Portal::Graphics::SamplerPresets;
+        const std::vector<SamplerConfig> all {
+            P::nearest_clamped(), P::linear_clamped(), P::repeating(), P::repeating(FilterMode::NEAREST),
+            P::mirrored(), P::mirrored(FilterMode::NEAREST), P::bordered(BorderColor::TRANSPARENT_BLACK),
+            P::bordered(BorderColor::OPAQUE_WHITE), P::magnify_nearest(), P::minify_nearest(),
+            P::repeating_depth(), P::oblique()
+        };
+
+        for (size_t i = 0; i < all.size(); ++i) {
+            for (size_t j = i + 1; j < all.size(); ++j) {
+                EXPECT_FALSE(all[i] == all[j]) << i << " " << j;
+            }
+        }
+    }
+
+    TEST_F(SamplerForgeTest, EveryNamedPresetCreatesItsOwnSampler)
+    {
+        namespace P = Portal::Graphics::SamplerPresets;
+        ASSERT_TRUE(forge().initialize(backend()));
+        const std::vector<SamplerConfig> all {
+            P::nearest_clamped(), P::linear_clamped(), P::repeating(), P::repeating(FilterMode::NEAREST),
+            P::mirrored(), P::mirrored(FilterMode::NEAREST), P::bordered(BorderColor::TRANSPARENT_BLACK),
+            P::bordered(BorderColor::OPAQUE_WHITE), P::magnify_nearest(), P::minify_nearest(),
+            P::repeating_depth(), P::oblique()
+        };
+
+        std::set<VkSampler> distinct;
+        for (const auto& config : all) {
+            const vk::Sampler sampler = forge().get_or_create(config);
+            ASSERT_TRUE(sampler);
+            distinct.insert(static_cast<VkSampler>(sampler));
+        }
+
+        EXPECT_EQ(distinct.size(), all.size());
+        EXPECT_EQ(forge().get_sampler_count(), all.size());
+    }
+
     TEST(SamplerConfigValueTest, SeparatelyBuiltConfigsWithTheSameValuesAreEqual)
     {
         const auto build = [] {

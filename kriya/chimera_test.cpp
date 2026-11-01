@@ -980,6 +980,96 @@ namespace {
         EXPECT_EQ(collection->get_write_head(), 0U);
     }
 
+    TEST_F(ChimeraImageTest, AnAsyncPushWritesTheHeadLayerAndAdvancesAroundTheRing)
+    {
+        for (uint64_t n = 1; n <= 5; ++n) {
+            ASSERT_TRUE(array->push_layer_async(make_image(n)));
+        }
+
+        EXPECT_EQ(array->get_write_head(), 2U);
+        EXPECT_EQ(layer_bytes(0), VideoSupport::frame_bytes(4));
+        EXPECT_EQ(layer_bytes(1), VideoSupport::frame_bytes(5));
+        EXPECT_EQ(layer_bytes(2), VideoSupport::frame_bytes(3));
+    }
+
+    TEST_F(ChimeraImageTest, TheNewestFrameSitsOneBehindTheHeadAndOlderOnesFollowBackwards)
+    {
+        for (uint64_t n = 1; n <= 7; ++n) {
+            ASSERT_TRUE(array->push_layer_async(make_image(n)));
+        }
+
+        const uint32_t count = array->get_layer_count();
+        const uint32_t head = array->get_write_head();
+        for (uint32_t age = 0; age < count; ++age) {
+            EXPECT_EQ(layer_bytes((head + count - 1 - age) % count), VideoSupport::frame_bytes(7 - age)) << age;
+        }
+    }
+
+    TEST_F(ChimeraImageTest, ARingFedFromABufferHoldsTheLatestFramesOfTheSourceInOrder)
+    {
+        const auto image = make_image(0);
+        const auto source = std::make_shared<Buffers::TextureBuffer>(VideoSupport::k_width, VideoSupport::k_height, Portal::Graphics::ImageFormat::RGBA8);
+        source->set_gpu_texture(image);
+        auto pipeline = BufferPipeline::create(*frames->scheduler, manager);
+        pipelines.push_back(pipeline);
+        uint32_t cycles = 0;
+        *pipeline
+            >> BufferOperation::capture_to_ring(source, array)
+            >> BufferOperation::dispatch_to([&cycles](Kakshya::DataVariant&, uint32_t) { ++cycles; });
+        pipeline->execute_frame_rate();
+
+        for (uint64_t n = 1; n <= 5; ++n) {
+            const auto pixels = VideoSupport::frame_bytes(n);
+            loom().upload_data(image, pixels.data(), pixels.size());
+            const uint32_t before = cycles;
+            for (int attempt = 0; attempt < 4 && cycles == before; ++attempt) {
+                frames->tick();
+            }
+            ASSERT_GT(cycles, before) << n;
+        }
+
+        EXPECT_EQ(array->get_write_head(), 2U);
+        EXPECT_EQ(layer_bytes(1), VideoSupport::frame_bytes(5));
+        EXPECT_EQ(layer_bytes(0), VideoSupport::frame_bytes(4));
+        EXPECT_EQ(layer_bytes(2), VideoSupport::frame_bytes(3));
+    }
+
+    TEST_F(ChimeraImageTest, ARingWhoseSourceHasNoTextureStaysEmpty)
+    {
+        const auto source = std::make_shared<Buffers::TextureBuffer>(VideoSupport::k_width, VideoSupport::k_height, Portal::Graphics::ImageFormat::RGBA8);
+        auto pipeline = BufferPipeline::create(*frames->scheduler, manager);
+        pipelines.push_back(pipeline);
+        *pipeline >> BufferOperation::capture_to_ring(source, array);
+        pipeline->execute_frame_rate();
+
+        frames->tick(4);
+
+        EXPECT_EQ(array->get_write_head(), 0U);
+    }
+
+    TEST_F(ChimeraImageTest, AnAsyncPushOfASmallerImageClearsTheLayerBeforeItIsFitted)
+    {
+        const auto ring = std::make_shared<TextureArrayBuffer>(VideoSupport::rgba8_spec(1), Portal::Graphics::FitMode::CONTAIN);
+        ASSERT_TRUE(ring->submit_layer(0, make_image(7)));
+        std::vector<uint8_t> small_pixels(16);
+        std::iota(small_pixels.begin(), small_pixels.end(), uint8_t { 1 });
+        const auto small = loom().create_2d(2, 2, Portal::Graphics::ImageFormat::RGBA8, small_pixels.data());
+        ASSERT_NE(small, nullptr);
+
+        ASSERT_TRUE(ring->submit_layer(0, small, Portal::Graphics::SubmitMode::ASYNC));
+
+        std::vector<uint8_t> out(k_frame_bytes);
+        loom().download_data(ring->get_texture(), out.data(), out.size());
+        std::vector<uint8_t> expected(k_frame_bytes, 0);
+        for (size_t y = 0; y < 2; ++y) {
+            for (size_t x = 0; x < 2; ++x) {
+                std::copy_n(small_pixels.begin() + static_cast<std::ptrdiff_t>((y * 2 + x) * 4), 4,
+                    expected.begin() + static_cast<std::ptrdiff_t>((y * 4 + x + 1) * 4));
+            }
+        }
+        EXPECT_EQ(out, expected);
+    }
+
     TEST_F(ChimeraImageTest, AGpuImageLayerFollowsTheImageItsSourceIsRewrittenWith)
     {
         const auto source = make_image(2);
