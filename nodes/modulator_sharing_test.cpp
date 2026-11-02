@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 
+#include "MayaFlux/Buffers/BufferUtils.hpp"
 #include "MayaFlux/Nodes/Generators/Phasor.hpp"
 #include "MayaFlux/Nodes/Generators/Polynomial.hpp"
 #include "MayaFlux/Nodes/Generators/Sine.hpp"
@@ -38,6 +39,19 @@ namespace {
         }
 
         RootNode second_root { Nodes::ProcessingToken::AUDIO_RATE, 1 };
+
+        static std::shared_ptr<Polynomial> link(const std::shared_ptr<Nodes::Node>& source, double rate = 25.0)
+        {
+            auto node = std::make_shared<Polynomial>(
+                [rate](double x) { return std::exp(-x * rate); });
+            node->set_input_node(source);
+            return node;
+        }
+
+        static bool processed(const Nodes::Node& node)
+        {
+            return (node.m_state.load() & Nodes::NodeState::PROCESSED) != 0;
+        }
 
         std::shared_ptr<Sine> routed_sine_on(RootNode& target, uint32_t channel)
         {
@@ -227,6 +241,178 @@ namespace {
         EXPECT_EQ(mask_of(*envelope), 0U);
         EXPECT_EQ(mask_of(*pitch), 0U);
         EXPECT_EQ(mask_of(*phasor), 0U);
+    }
+
+    TEST_F(ModulatorSharingTest, ExtractionBetweenRootCyclesDoesNotDisturbAModulatedNode)
+    {
+        auto routed_modulator = std::make_shared<Sine>(5.0F, 0.5);
+        auto routed = std::make_shared<Sine>(routed_modulator, 880.0F, 0.5);
+        auto reference_modulator = std::make_shared<Sine>(5.0F, 0.5);
+        auto reference = std::make_shared<Sine>(reference_modulator, 880.0F, 0.5);
+
+        routed->register_channel_usage(0);
+        root.register_node(routed);
+
+        for (int cycle = 0; cycle < 16; ++cycle) {
+            EXPECT_DOUBLE_EQ(root.process_sample(), reference->process_sample(0.0)) << "cycle " << cycle;
+            if (cycle == 2 || cycle == 6 || cycle == 9) {
+                Buffers::extract_single_sample(routed);
+                Buffers::extract_multiple_samples(routed, 5);
+            }
+        }
+    }
+
+    TEST_F(ModulatorSharingTest, ThreeLevelChainAdvancesItsLeafOncePerSample)
+    {
+        auto lower = link(phasor);
+        auto upper = link(lower);
+
+        auto tone = routed_sine();
+        tone->set_amplitude_modulator(upper);
+
+        run();
+
+        EXPECT_DOUBLE_EQ(phasor->get_phase(), reference_phase(k_samples));
+        EXPECT_EQ(mask_of(*upper), 0b1U);
+        EXPECT_EQ(mask_of(*lower), 0b1U);
+        EXPECT_EQ(mask_of(*phasor), 0b1U);
+    }
+
+    TEST_F(ModulatorSharingTest, DiamondWithUnevenPathsAdvancesTheLeafOncePerSample)
+    {
+        auto direct = link(phasor);
+        auto indirect = link(link(phasor));
+
+        auto tone = routed_sine();
+        tone->set_frequency_modulator(direct);
+        tone->set_amplitude_modulator(indirect);
+
+        run();
+
+        EXPECT_DOUBLE_EQ(phasor->get_phase(), reference_phase(k_samples));
+    }
+
+    TEST_F(ModulatorSharingTest, DiamondLeafIsCountedOncePerPath)
+    {
+        auto direct = link(phasor);
+        auto indirect = link(link(phasor));
+
+        auto tone = routed_sine();
+        tone->set_frequency_modulator(direct);
+        tone->set_amplitude_modulator(indirect);
+        ASSERT_EQ(mask_of(*phasor), 0b1U);
+
+        tone->set_frequency_modulator(nullptr);
+        EXPECT_EQ(mask_of(*phasor), 0b1U);
+
+        tone->set_amplitude_modulator(nullptr);
+        EXPECT_EQ(mask_of(*phasor), 0U);
+    }
+
+    TEST_F(ModulatorSharingTest, NestedShareAcrossChannelsAdvancesTheLeafOncePerFrame)
+    {
+        auto middle = link(phasor);
+        auto top = link(middle);
+
+        auto left = routed_sine_on(root, 0);
+        left->set_amplitude_modulator(top);
+        auto right = routed_sine_on(second_root, 1);
+        right->set_amplitude_modulator(middle);
+
+        for (uint32_t i = 0; i < k_samples; ++i) {
+            root.process_sample();
+            second_root.process_sample();
+        }
+
+        EXPECT_DOUBLE_EQ(phasor->get_phase(), reference_phase(k_samples));
+        EXPECT_EQ(mask_of(*top), 0b01U);
+        EXPECT_EQ(mask_of(*middle), 0b11U);
+        EXPECT_EQ(mask_of(*phasor), 0b11U);
+    }
+
+    TEST_F(ModulatorSharingTest, DeepSharedLeafKeepsItsChannelUntilTheLastConsumerLeaves)
+    {
+        auto middle = link(phasor);
+        auto top = link(middle);
+
+        auto through_top = routed_sine();
+        through_top->set_amplitude_modulator(top);
+        auto through_middle = routed_sine();
+        through_middle->set_amplitude_modulator(middle);
+
+        through_top->unregister_channel_usage(0);
+        EXPECT_EQ(mask_of(*top), 0U);
+        EXPECT_EQ(mask_of(*middle), 0b1U);
+        EXPECT_EQ(mask_of(*phasor), 0b1U);
+
+        through_middle->unregister_channel_usage(0);
+        EXPECT_EQ(mask_of(*middle), 0U);
+        EXPECT_EQ(mask_of(*phasor), 0U);
+    }
+
+    TEST_F(ModulatorSharingTest, AttachingBelowARoutedModulatorGivesTheNewNodeItsChannels)
+    {
+        auto middle = std::make_shared<Polynomial>([](double x) { return x; });
+        auto tone = routed_sine();
+        tone->set_amplitude_modulator(middle);
+        ASSERT_EQ(mask_of(*middle), 0b1U);
+
+        middle->set_input_node(phasor);
+
+        EXPECT_EQ(mask_of(*phasor), 0b1U);
+
+        middle->set_input_node(nullptr);
+
+        EXPECT_EQ(mask_of(*phasor), 0U);
+    }
+
+    TEST_F(ModulatorSharingTest, ClearingModulatorFlagsReachesEveryDepth)
+    {
+        auto lower = link(phasor);
+        auto upper = link(lower);
+        auto tone = std::make_shared<Sine>(0.0F, 0.0);
+        tone->set_amplitude_modulator(upper);
+
+        for (const auto& node : { std::static_pointer_cast<Nodes::Node>(upper),
+                 std::static_pointer_cast<Nodes::Node>(lower),
+                 std::static_pointer_cast<Nodes::Node>(phasor) }) {
+            Nodes::atomic_add_flag(node->m_state, Nodes::NodeState::PROCESSED);
+            ASSERT_TRUE(processed(*node));
+        }
+
+        tone->clear_modulator_processed_state();
+
+        EXPECT_FALSE(processed(*upper));
+        EXPECT_FALSE(processed(*lower));
+        EXPECT_FALSE(processed(*phasor));
+    }
+
+    TEST_F(ModulatorSharingTest, ExtractionBetweenRootCyclesDoesNotDisturbANestedChain)
+    {
+        const auto build = [] {
+            auto leaf = std::make_shared<Phasor>(500.0F, 1.0);
+            auto lower = std::make_shared<Polynomial>([](double x) { return std::exp(-x); });
+            lower->set_input_node(leaf);
+            auto upper = std::make_shared<Polynomial>([](double x) { return 0.5 * x; });
+            upper->set_input_node(lower);
+            auto tone = std::make_shared<Sine>(440.0F, 0.5);
+            tone->set_amplitude_modulator(upper);
+            return tone;
+        };
+
+        auto routed = build();
+        auto reference = build();
+
+        routed->register_channel_usage(0);
+        root.register_node(routed);
+
+        for (int cycle = 0; cycle < 16; ++cycle) {
+            EXPECT_DOUBLE_EQ(root.process_sample(), reference->process_sample(0.0)) << "cycle " << cycle;
+            if (cycle == 2 || cycle == 6 || cycle == 9) {
+                Buffers::extract_single_sample(routed);
+                Buffers::extract_multiple_samples(routed, 5);
+            }
+        }
     }
 
     TEST_F(ModulatorSharingTest, ModulatorAttachedToAnUnregisteredConsumerStaysUnclaimed)
