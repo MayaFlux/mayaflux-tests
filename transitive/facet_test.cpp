@@ -211,5 +211,111 @@ namespace {
         EXPECT_EQ(bag.size(), 1U);
     }
 
+    struct FacetFromSettings {
+        uint32_t window { 512 };
+        uint32_t hop { 256 };
+        double threshold { 0.1 };
+
+        static constexpr auto describe_facets()
+        {
+            return std::tuple {
+                FacetMember<&FacetFromSettings::window> {},
+                FacetMember<&FacetFromSettings::hop> {},
+                FacetMember<&FacetFromSettings::threshold> {},
+            };
+        }
+    };
+
+    struct FacetFromNothing {
+        static constexpr auto describe_facets()
+        {
+            return std::tuple<> {};
+        }
+    };
+
+    TEST(FacetFromTest, BuildsOneEntryPerMember)
+    {
+        const auto bag = Facets::from(FacetFromSettings {});
+
+        EXPECT_EQ(bag.size(), 3U);
+    }
+
+    TEST(FacetFromTest, EmptyDescriptionGivesAnEmptyBag)
+    {
+        const auto bag = Facets::from(FacetFromNothing {});
+
+        EXPECT_TRUE(bag.empty());
+    }
+
+    TEST(FacetFromTest, StoresTheCurrentValueOfEachMember)
+    {
+        FacetFromSettings s;
+        s.window = 1024;
+        s.hop = 128;
+        s.threshold = 0.5;
+
+        const auto bag = Facets::from(s);
+
+        ASSERT_NE(bag.get(FacetMember<&FacetFromSettings::window> {}), nullptr);
+        EXPECT_EQ(*bag.get(FacetMember<&FacetFromSettings::window> {}), 1024U);
+        EXPECT_EQ(*bag.get(FacetMember<&FacetFromSettings::hop> {}), 128U);
+        EXPECT_DOUBLE_EQ(*bag.get(FacetMember<&FacetFromSettings::threshold> {}), 0.5);
+    }
+
+    TEST(FacetFromTest, MembersOfTheSameTypeStayDistinct)
+    {
+        FacetFromSettings s;
+        s.window = 7;
+        s.hop = 9;
+
+        const auto bag = Facets::from(s);
+
+        EXPECT_EQ(*bag.get(FacetMember<&FacetFromSettings::window> {}), 7U);
+        EXPECT_EQ(*bag.get(FacetMember<&FacetFromSettings::hop> {}), 9U);
+    }
+
+    TEST(FacetFromTest, KeysAreTheSameForEveryInstance)
+    {
+        FacetFromSettings a;
+        a.window = 11;
+        FacetFromSettings b;
+        b.window = 22;
+
+        const auto from_a = Facets::from(a);
+        const auto from_b = Facets::from(b);
+
+        EXPECT_EQ(*from_a.get(FacetMember<&FacetFromSettings::window> {}), 11U);
+        EXPECT_EQ(*from_b.get(FacetMember<&FacetFromSettings::window> {}), 22U);
+    }
+
+    TEST(FacetFromTest, SetWritesAMemberKeyAndOverwritesIt)
+    {
+        Facets bag;
+
+        bag.set(FacetMember<&FacetFromSettings::hop> {}, 64U);
+        bag.set(FacetMember<&FacetFromSettings::hop> {}, 32U);
+
+        EXPECT_EQ(bag.size(), 1U);
+        ASSERT_NE(bag.get(FacetMember<&FacetFromSettings::hop> {}), nullptr);
+        EXPECT_EQ(*bag.get(FacetMember<&FacetFromSettings::hop> {}), 32U);
+    }
+
+    TEST(FacetFromTest, AbsentMemberKeyReturnsNull)
+    {
+        const Facets bag;
+
+        EXPECT_EQ(bag.get(FacetMember<&FacetFromSettings::window> {}), nullptr);
+    }
+
+    TEST(FacetFromTest, FromBagIsIndependentOfTheSource)
+    {
+        FacetFromSettings s;
+        auto bag = Facets::from(s);
+
+        s.window = 2048;
+
+        EXPECT_EQ(*bag.get(FacetMember<&FacetFromSettings::window> {}), 512U);
+    }
+
 } // namespace
 } // namespace MayaFlux::Test
