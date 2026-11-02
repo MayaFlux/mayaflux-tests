@@ -56,12 +56,12 @@ TEST_F(RegionTest, StaticFactoryMethods)
     auto time_point = Region::time_point(500, "onset");
     EXPECT_TRUE(time_point.is_point());
     EXPECT_EQ(time_point.start_coordinates[0], 500);
-    EXPECT_EQ(time_point.get_label(), "onset");
+    EXPECT_EQ(time_point.label, "onset");
 
     auto audio_point = Region::audio_point(100, 1, "transient");
     EXPECT_EQ(audio_point.start_coordinates[0], 100);
     EXPECT_EQ(audio_point.start_coordinates[1], 1);
-    EXPECT_EQ(audio_point.get_label(), "transient");
+    EXPECT_EQ(audio_point.label, "transient");
     auto type = audio_point.get_attribute<std::string>("type");
     EXPECT_TRUE(type.has_value());
 
@@ -74,7 +74,7 @@ TEST_F(RegionTest, StaticFactoryMethods)
     EXPECT_EQ(img_rect.start_coordinates[1], 20);
     EXPECT_EQ(img_rect.end_coordinates[0], 100);
     EXPECT_EQ(img_rect.end_coordinates[1], 200);
-    EXPECT_EQ(img_rect.get_label(), "roi");
+    EXPECT_EQ(img_rect.label, "roi");
 
     auto video_region = Region::video_region(0, 30, 50, 60, 150, 160, "scene");
     EXPECT_EQ(video_region.start_coordinates.size(), 3);
@@ -112,8 +112,8 @@ TEST_F(RegionTest, AttributeManagement)
     EXPECT_TRUE(wrong_type.has_value());
     EXPECT_EQ(wrong_type.value(), 0);
 
-    region.set_label("convenience_label");
-    EXPECT_EQ(region.get_label(), "convenience_label");
+    region.label = "convenience_label";
+    EXPECT_EQ(region.label, "convenience_label");
 }
 
 TEST_F(RegionTest, GeometryOperations)
@@ -238,7 +238,7 @@ TEST_F(RegionTest, DSPSpecificUseCases)
     onset_region.set_attribute("spectral_centroid", 2500.0);
     onset_region.set_attribute("detected_by", std::string("peak_picker"));
 
-    EXPECT_EQ(onset_region.get_label(), "onset");
+    EXPECT_EQ(onset_region.label, "onset");
     auto energy = onset_region.get_attribute<double>("energy");
     EXPECT_TRUE(energy.has_value());
     EXPECT_DOUBLE_EQ(*energy, 0.85);
@@ -485,9 +485,9 @@ TEST_F(RegionGroupTest, BasicConstruction)
 
     EXPECT_EQ(group.name, "test_group");
     EXPECT_EQ(group.regions.size(), 3);
-    EXPECT_EQ(group.regions[0].get_label(), "onset");
-    EXPECT_EQ(group.regions[1].get_label(), "sustain");
-    EXPECT_EQ(group.regions[2].get_label(), "release");
+    EXPECT_EQ(group.regions[0].label, "onset");
+    EXPECT_EQ(group.regions[1].label, "sustain");
+    EXPECT_EQ(group.regions[2].label, "release");
 
     std::unordered_map<std::string, std::any> attrs;
     attrs["volume"] = 0.8;
@@ -508,28 +508,28 @@ TEST_F(RegionGroupTest, RegionManagement)
     auto new_point = Region::time_point(500, "fade_out");
     group.add_region(new_point);
     EXPECT_EQ(group.regions.size(), 4);
-    EXPECT_EQ(group.regions[3].get_label(), "fade_out");
+    EXPECT_EQ(group.regions[3].label, "fade_out");
 
     auto insert_point = Region::time_point(150, "attack");
     group.insert_region(1, insert_point);
     EXPECT_EQ(group.regions.size(), 5);
-    EXPECT_EQ(group.regions[1].get_label(), "attack");
-    EXPECT_EQ(group.regions[2].get_label(), "sustain"); // shifted
+    EXPECT_EQ(group.regions[1].label, "attack");
+    EXPECT_EQ(group.regions[2].label, "sustain"); // shifted
 
     auto end_point = Region::time_point(600, "end");
     group.insert_region(group.regions.size(), end_point);
     EXPECT_EQ(group.regions.size(), 6);
-    EXPECT_EQ(group.regions[5].get_label(), "end");
+    EXPECT_EQ(group.regions[5].label, "end");
 
     // Fix: Check what happens when inserting at an invalid index
     auto invalid_insert = Region::time_point(700, "invalid");
     group.insert_region(100, invalid_insert);
     EXPECT_EQ(group.regions.size(), 7);
-    EXPECT_EQ(group.regions[group.regions.size() - 1].get_label(), "invalid");
+    EXPECT_EQ(group.regions[group.regions.size() - 1].label, "invalid");
 
     group.remove_region(1);
     EXPECT_EQ(group.regions.size(), 6);
-    EXPECT_EQ(group.regions[1].get_label(), "sustain"); // back to original
+    EXPECT_EQ(group.regions[1].label, "sustain"); // back to original
 
     group.current_region_index = 5;
     group.remove_region(5);
@@ -599,18 +599,18 @@ TEST_F(RegionGroupTest, SortingOperations)
     EXPECT_EQ(group.regions[0].start_coordinates[0], 100);
     EXPECT_EQ(group.regions[1].start_coordinates[0], 200);
     EXPECT_EQ(group.regions[2].start_coordinates[0], 300);
-    EXPECT_EQ(group.regions[0].get_label(), "first");
-    EXPECT_EQ(group.regions[1].get_label(), "second");
-    EXPECT_EQ(group.regions[2].get_label(), "third");
+    EXPECT_EQ(group.regions[0].label, "first");
+    EXPECT_EQ(group.regions[1].label, "second");
+    EXPECT_EQ(group.regions[2].label, "third");
 
     group.regions[0].set_attribute("priority", 3.0);
     group.regions[1].set_attribute("priority", 1.0);
     group.regions[2].set_attribute("priority", 2.0);
 
     group.sort_by_attribute("priority");
-    EXPECT_EQ(group.regions[0].get_label(), "second"); // priority 1.0
-    EXPECT_EQ(group.regions[1].get_label(), "third"); // priority 2.0
-    EXPECT_EQ(group.regions[2].get_label(), "first"); // priority 3.0
+    EXPECT_EQ(group.regions[0].label, "second"); // priority 1.0
+    EXPECT_EQ(group.regions[1].label, "third"); // priority 2.0
+    EXPECT_EQ(group.regions[2].label, "first"); // priority 3.0
 
     group.regions[0].set_attribute("energy", 0.5);
     // points[1] and points[2] don't have "energy" attribute
@@ -643,12 +643,12 @@ TEST_F(RegionGroupTest, SearchOperations)
 
     auto percussive_points = group.find_regions_with_attribute("type", std::string("percussive"));
     EXPECT_EQ(percussive_points.size(), 2);
-    EXPECT_EQ(percussive_points[0].get_label(), "onset");
-    EXPECT_EQ(percussive_points[1].get_label(), "release");
+    EXPECT_EQ(percussive_points[0].label, "onset");
+    EXPECT_EQ(percussive_points[1].label, "release");
 
     auto tonal_points = group.find_regions_with_attribute("type", std::string("tonal"));
     EXPECT_EQ(tonal_points.size(), 1);
-    EXPECT_EQ(tonal_points[0].get_label(), "sustain");
+    EXPECT_EQ(tonal_points[0].label, "sustain");
 
     group.regions[0].set_attribute("energy", 0.8);
     group.regions[1].set_attribute("energy", 0.8);
@@ -657,11 +657,11 @@ TEST_F(RegionGroupTest, SearchOperations)
 
     auto containing_250 = group.find_regions_containing_coordinates({ 250 });
     EXPECT_EQ(containing_250.size(), 1); // Only the sustain span (200-300) contains 250
-    EXPECT_EQ(containing_250[0].get_label(), "sustain");
+    EXPECT_EQ(containing_250[0].label, "sustain");
 
     auto containing_100 = group.find_regions_containing_coordinates({ 100 });
     EXPECT_EQ(containing_100.size(), 1); // Only the onset point at 100
-    EXPECT_EQ(containing_100[0].get_label(), "onset");
+    EXPECT_EQ(containing_100[0].label, "onset");
 
     auto containing_none = group.find_regions_containing_coordinates({ 1000 });
     EXPECT_TRUE(containing_none.empty()); // No points contain 1000
@@ -669,7 +669,7 @@ TEST_F(RegionGroupTest, SearchOperations)
     group.add_region(Region::audio_span(600, 700, 0, 1, "multi_dim"));
     auto containing_multi = group.find_regions_containing_coordinates({ 650, 0 });
     EXPECT_EQ(containing_multi.size(), 1);
-    EXPECT_EQ(containing_multi[0].get_label(), "multi_dim");
+    EXPECT_EQ(containing_multi[0].label, "multi_dim");
 
     auto dimension_mismatch = group.find_regions_containing_coordinates({ 250, 0, 0 }); // 3D coords
     EXPECT_TRUE(dimension_mismatch.empty()); // Sustain is 1D, won't match
@@ -1003,11 +1003,11 @@ TEST_F(RegionUtilityTest, PointSorting)
     EXPECT_EQ(points[4].start_coordinates[0], 350); // point2
 
     for (auto& point : points) {
-        if (point.get_label() == "region1") {
+        if (point.label == "region1") {
             point.set_attribute("priority", std::string("high"));
-        } else if (point.get_label() == "region2") {
+        } else if (point.label == "region2") {
             point.set_attribute("priority", std::string("low"));
-        } else if (point.get_label() == "region3") {
+        } else if (point.label == "region3") {
             point.set_attribute("priority", std::string("medium"));
         } else {
             point.set_attribute("priority", std::string("high"));
@@ -1039,8 +1039,8 @@ TEST_F(RegionUtilityTest, AttributeUtilities)
     EXPECT_TRUE(note.has_value());
     EXPECT_EQ(*note, "A4");
 
-    test_point.set_label("test_label");
-    EXPECT_EQ(test_point.get_label(), "test_label");
+    test_point.label = "test_label";
+    EXPECT_EQ(test_point.label, "test_label");
 
     test_group.regions[0].set_attribute("category", std::string("onset"));
     test_group.regions[1].set_attribute("category", std::string("sustain"));
@@ -1091,7 +1091,7 @@ protected:
 TEST_F(DSPRegionTest, OnsetDetectionAnalysis)
 {
 
-    EXPECT_EQ(onset_detection.get_label(), "onset");
+    EXPECT_EQ(onset_detection.label, "onset");
     EXPECT_EQ(onset_detection.start_coordinates[0], 1000);
 
     auto energy = onset_detection.get_attribute<double>("energy");
@@ -1144,7 +1144,7 @@ TEST_F(DSPRegionTest, OnsetDetectionAnalysis)
 TEST_F(DSPRegionTest, SpectralRegionAnalysis)
 {
 
-    EXPECT_EQ(formant_region.get_label(), "formant_f1");
+    EXPECT_EQ(formant_region.label, "formant_f1");
     EXPECT_EQ(formant_region.start_coordinates[0], 500); // time start
     EXPECT_EQ(formant_region.end_coordinates[0], 1500); // time end
     EXPECT_EQ(formant_region.start_coordinates[1], 800); // freq start
@@ -1203,13 +1203,13 @@ TEST_F(DSPRegionTest, SpectralRegionAnalysis)
 
     auto f2_formants = find_regions_containing_coordinates(formant_group, { 1000, 2000 });
     EXPECT_EQ(f2_formants.size(), 1);
-    EXPECT_EQ(f2_formants[0].get_label(), "formant_f2");
+    EXPECT_EQ(f2_formants[0].label, "formant_f2");
 }
 
 TEST_F(DSPRegionTest, TransientProcessing)
 {
 
-    EXPECT_EQ(transient_segment.source_region.get_label(), "transient");
+    EXPECT_EQ(transient_segment.source_region.label, "transient");
     EXPECT_EQ(transient_segment.source_region.start_coordinates[0], 0);
     EXPECT_EQ(transient_segment.source_region.end_coordinates[0], 512);
 
@@ -1285,7 +1285,7 @@ TEST_F(DSPRegionTest, TransientProcessing)
 TEST_F(DSPRegionTest, ZeroCrossingAnalysis)
 {
 
-    EXPECT_EQ(zero_crossing_cluster.get_label(), "zc_cluster");
+    EXPECT_EQ(zero_crossing_cluster.label, "zc_cluster");
     EXPECT_EQ(zero_crossing_cluster.start_coordinates[0], 2000);
     EXPECT_EQ(zero_crossing_cluster.end_coordinates[0], 2100);
 
