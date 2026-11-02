@@ -13,6 +13,9 @@ using Nodes::Network::WaveguideNetwork;
 namespace {
 
     using GuideType = WaveguideNetwork::WaveguideType;
+    using Termination = WaveguideNetwork::Termination;
+
+    constexpr double k_pass_latency = 1.5;
 
     std::vector<double> render(WaveguideNetwork& network, unsigned int samples)
     {
@@ -38,6 +41,18 @@ namespace {
         return result;
     }
 
+    double harmonic_magnitude(std::span<const double> samples, double fundamental, unsigned int harmonic)
+    {
+        const double omega = 2.0 * std::numbers::pi * fundamental * harmonic / 48000.0;
+        double real = 0.0;
+        double imag = 0.0;
+        for (size_t i = 0; i < samples.size(); ++i) {
+            real += samples[i] * std::cos(omega * static_cast<double>(i));
+            imag += samples[i] * std::sin(omega * static_cast<double>(i));
+        }
+        return std::hypot(real, imag) / static_cast<double>(samples.size());
+    }
+
     double rail_energy(const WaveguideNetwork& network)
     {
         double result = 0.0;
@@ -53,6 +68,31 @@ namespace {
     std::shared_ptr<Nodes::Filters::FIR> tap(double gain)
     {
         return std::make_shared<Nodes::Filters::FIR>(std::vector<double> { gain });
+    }
+
+    void set_unity_loops(WaveguideNetwork& network)
+    {
+        if (network.get_type() == GuideType::TUBE) {
+            network.set_loop_filters(tap(1.0), tap(1.0));
+        } else {
+            network.set_loop_filter(tap(1.0));
+        }
+    }
+
+    double memoryless_fundamental(GuideType type, double frequency)
+    {
+        const double passes = type == GuideType::TUBE ? 4.0 : 1.0;
+        return 48000.0 / (48000.0 / frequency - 0.5 * passes);
+    }
+
+    std::vector<double> lossless_ring(GuideType type, double frequency)
+    {
+        WaveguideNetwork network(type, frequency);
+        network.set_loss_factor(1.0);
+        set_unity_loops(network);
+        network.set_pickup_position(0.1);
+        network.pluck(0.3);
+        return render(network, 8704);
     }
 
     std::shared_ptr<Polynomial> constant(double value)
@@ -179,7 +219,7 @@ namespace {
     {
         WaveguideNetwork network(type, frequency);
         network.set_loss_factor(1.0);
-        network.set_loop_filter(tap(1.0));
+        set_unity_loops(network);
         network.set_pickup_position(0.1);
         network.pluck(0.3);
 
@@ -206,7 +246,7 @@ TEST_P(WaveguideGeometryTest, DelayCapacityAndPropagationFollowTheStructure)
 
     const auto& segment = network.get_segments().at(0);
     const double passes = config.type == GuideType::TUBE ? 4.0 : 1.0;
-    const auto delay = static_cast<size_t>(48000.0 / (passes * config.frequency) - 0.5);
+    const auto delay = static_cast<size_t>(48000.0 / (passes * config.frequency) - k_pass_latency);
     EXPECT_EQ(network.get_node_count(), 1U);
     EXPECT_EQ(segment.p_plus.capacity(), delay + 2);
     EXPECT_EQ(segment.p_minus.capacity(), delay + 2);
@@ -234,11 +274,12 @@ TEST(WaveguideTuningTest, LowerFrequencyExpandsTheDelayAndMinimumIsTwentyHertz)
     network.set_fundamental(110.0);
     EXPECT_GT(network.get_segments().at(0).p_plus.capacity(), old_capacity);
     EXPECT_EQ(network.get_segments().at(0).p_plus.capacity(),
-        static_cast<size_t>(48000.0 / 110.0 - 0.5) + 2);
+        static_cast<size_t>(48000.0 / 110.0 - k_pass_latency) + 2);
 
     network.set_fundamental(5.0);
     EXPECT_DOUBLE_EQ(network.get_fundamental(), 20.0);
-    EXPECT_EQ(network.get_segments().at(0).p_plus.capacity(), 2401U);
+    EXPECT_EQ(network.get_segments().at(0).p_plus.capacity(),
+        static_cast<size_t>(48000.0 / 20.0 - k_pass_latency) + 2);
 }
 
 class WaveguidePluckShapeTest : public ::testing::TestWithParam<double> { };
@@ -378,7 +419,7 @@ TEST(WaveguideReflectionTest, TubeOpenAndClosedEndsPropagateWithOppositeSigns)
 {
     WaveguideNetwork tube(GuideType::TUBE, 480.0);
     tube.set_loss_factor(1.0);
-    tube.set_loop_filter(tap(1.0));
+    set_unity_loops(tube);
     tube.pluck(0.5);
     render(tube, 3);
 
@@ -464,14 +505,10 @@ TEST_P(WaveguideTerminationTest, ZeroGainTerminationStopsTheLateRing)
     WaveguideNetwork blocked(config.type, 480.0);
     open.set_loss_factor(1.0);
     blocked.set_loss_factor(1.0);
-    open.set_loop_filter(tap(1.0));
-    blocked.set_loop_filter(tap(1.0));
+    set_unity_loops(open);
+    set_unity_loops(blocked);
     if (config.type == GuideType::TUBE) {
-        if (config.open_end) {
-            blocked.set_loop_filter_open(tap(0.0));
-        } else {
-            blocked.set_loop_filter_closed(tap(0.0));
-        }
+        blocked.set_loop_filter(tap(0.0), config.open_end ? Termination::OPEN : Termination::CLOSED);
     } else {
         blocked.set_loop_filter(tap(0.0));
     }
@@ -503,13 +540,12 @@ TEST(WaveguideTerminationTest, OpenAndClosedFiltersEachReduceTheRoundTrip)
 
     for (auto* tube : { &unfiltered, &open_only, &closed_only, &both }) {
         tube->set_loss_factor(1.0);
-        tube->set_loop_filter(tap(1.0));
+        set_unity_loops(*tube);
         tube->pluck(0.5);
     }
-    open_only.set_loop_filter_open(tap(0.5));
-    closed_only.set_loop_filter_closed(tap(0.5));
-    both.set_loop_filter_open(tap(0.5));
-    both.set_loop_filter_closed(tap(0.5));
+    open_only.set_loop_filter(tap(0.5), Termination::OPEN);
+    closed_only.set_loop_filter(tap(0.5), Termination::CLOSED);
+    both.set_loop_filters(tap(0.5), tap(0.5));
 
     render(unfiltered, 1024);
     render(open_only, 1024);
@@ -712,7 +748,7 @@ TEST(WaveguideMappingTest, BroadcastFrequencyRecomputesTheDelay)
 
     EXPECT_DOUBLE_EQ(network.get_fundamental(), 120.0);
     EXPECT_EQ(network.get_segments().at(0).p_plus.capacity(),
-        static_cast<size_t>(48000.0 / 120.0 - 0.5) + 2);
+        static_cast<size_t>(48000.0 / 120.0 - k_pass_latency) + 2);
 }
 
 class WaveguideLossMappingTest : public ::testing::TestWithParam<const char*> { };
@@ -797,22 +833,23 @@ TEST(WaveguideMappingTest, BroadcastFrequencyKeepsTheSelectedPickup)
 
 class WaveguidePitchTest : public ::testing::TestWithParam<PitchCase> { };
 
-TEST_P(WaveguidePitchTest, ALosslessRingRepeatsAtTheRequestedFundamental)
+TEST_P(WaveguidePitchTest, AMemorylessLoopRunsHalfASamplePerPassShortOfTheFundamental)
 {
     const auto& config = GetParam();
+    const double passes = config.type == GuideType::TUBE ? 4.0 : 1.0;
     WaveguideNetwork network(config.type, config.frequency);
     network.set_loss_factor(1.0);
-    network.set_loop_filter(tap(1.0));
+    set_unity_loops(network);
     network.set_pickup_position(0.1);
     network.pluck(0.3);
 
     const auto audio = render(network, 8704);
-    const double expected = 48000.0 / config.frequency;
+    const double requested = 48000.0 / config.frequency;
     const size_t period = dominant_period(
         std::span<const double>(audio).subspan(512),
-        static_cast<size_t>(5.0 * expected));
+        static_cast<size_t>(5.0 * requested));
 
-    EXPECT_NEAR(static_cast<double>(period), expected, std::max(2.0, 0.005 * expected));
+    EXPECT_NEAR(static_cast<double>(period), requested - 0.5 * passes, 1.0);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -824,6 +861,82 @@ INSTANTIATE_TEST_SUITE_P(
         PitchCase { "TubeLow", GuideType::TUBE, 220.0 },
         PitchCase { "TubeMid", GuideType::TUBE, 480.0 }),
     [](const ::testing::TestParamInfo<PitchCase>& info) { return std::string(info.param.name); });
+
+class WaveguideDefaultTuningTest : public ::testing::TestWithParam<PitchCase> { };
+
+TEST_P(WaveguideDefaultTuningTest, ADefaultRingRepeatsAtTheRequestedFundamental)
+{
+    const auto& config = GetParam();
+    WaveguideNetwork network(config.type, config.frequency);
+    network.set_loss_factor(1.0);
+    network.set_pickup_position(0.1);
+    network.pluck(0.3);
+
+    const auto audio = render(network, 8704);
+    const double expected = 48000.0 / config.frequency;
+    const size_t period = dominant_period(
+        std::span<const double>(audio).subspan(512),
+        static_cast<size_t>(5.0 * expected));
+
+    EXPECT_NEAR(static_cast<double>(period), expected, 0.75);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Fundamentals,
+    WaveguideDefaultTuningTest,
+    ::testing::Values(
+        PitchCase { "StringLow", GuideType::STRING, 220.0 },
+        PitchCase { "StringMid", GuideType::STRING, 480.0 },
+        PitchCase { "TubeLow", GuideType::TUBE, 220.0 },
+        PitchCase { "TubeMid", GuideType::TUBE, 480.0 }),
+    [](const ::testing::TestParamInfo<PitchCase>& info) { return std::string(info.param.name); });
+
+TEST(WaveguideSpectrumTest, ATubeResonatesOnlyAtOddHarmonics)
+{
+    const auto audio = lossless_ring(GuideType::TUBE, 480.0);
+    const auto window = std::span<const double>(audio).subspan(512, 8000);
+    const double fundamental = memoryless_fundamental(GuideType::TUBE, 480.0);
+
+    const double second = harmonic_magnitude(window, fundamental, 2);
+    const double third = harmonic_magnitude(window, fundamental, 3);
+
+    ASSERT_GT(third, 0.0);
+    EXPECT_LT(second / third, 0.25);
+}
+
+TEST(WaveguideSpectrumTest, AStringResonatesAtEveryHarmonic)
+{
+    const auto audio = lossless_ring(GuideType::STRING, 480.0);
+    const auto window = std::span<const double>(audio).subspan(512, 8000);
+    const double fundamental = memoryless_fundamental(GuideType::STRING, 480.0);
+
+    const double second = harmonic_magnitude(window, fundamental, 2);
+    const double third = harmonic_magnitude(window, fundamental, 3);
+
+    ASSERT_GT(third, 0.0);
+    EXPECT_GT(second / third, 2.0);
+}
+
+class WaveguidePassivityTest : public ::testing::TestWithParam<GuideType> { };
+
+TEST_P(WaveguidePassivityTest, TheRailsNeverGainEnergyWhileRinging)
+{
+    WaveguideNetwork network(GetParam(), 480.0);
+    network.pluck(0.5);
+
+    double previous = rail_energy(network);
+    for (size_t block = 0; block < 60; ++block) {
+        render(network, 100);
+        const double current = rail_energy(network);
+        EXPECT_LE(current, previous * (1.0 + 1e-12)) << "block " << block;
+        previous = current;
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    PropagationModes,
+    WaveguidePassivityTest,
+    ::testing::Values(GuideType::STRING, GuideType::TUBE));
 
 class WaveguideMetadataTypeTest : public ::testing::TestWithParam<TypeLabelCase> { };
 
@@ -1046,7 +1159,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 class WaveguideConstructionTest : public ::testing::TestWithParam<GuideType> { };
 
-TEST_P(WaveguideConstructionTest, ANewNetworkIsAnAudioSinkRingWithoutEndFilters)
+TEST_P(WaveguideConstructionTest, ANewNetworkIsAnAudioSinkRingWithItsOwnTerminationFilters)
 {
     WaveguideNetwork network(GetParam(), 220.0);
     const auto& segment = network.get_segments().at(0);
@@ -1056,9 +1169,16 @@ TEST_P(WaveguideConstructionTest, ANewNetworkIsAnAudioSinkRingWithoutEndFilters)
     EXPECT_EQ(network.get_output_mode(), Nodes::Network::OutputMode::AUDIO_SINK);
     EXPECT_EQ(network.get_topology(), Nodes::Network::Topology::RING);
     EXPECT_EQ(network.get_exciter_type(), WaveguideNetwork::ExciterType::NOISE_BURST);
-    EXPECT_NE(segment.loop_filter, nullptr);
-    EXPECT_EQ(segment.loop_filter_closed, nullptr);
-    EXPECT_EQ(segment.loop_filter_open, nullptr);
+    if (GetParam() == GuideType::TUBE) {
+        EXPECT_EQ(segment.loop_filter, nullptr);
+        ASSERT_NE(segment.loop_filter_open, nullptr);
+        ASSERT_NE(segment.loop_filter_closed, nullptr);
+        EXPECT_NE(segment.loop_filter_open, segment.loop_filter_closed);
+    } else {
+        EXPECT_NE(segment.loop_filter, nullptr);
+        EXPECT_EQ(segment.loop_filter_closed, nullptr);
+        EXPECT_EQ(segment.loop_filter_open, nullptr);
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -1117,17 +1237,93 @@ TEST(WaveguideMetadataTest, MetadataCarriesTheKeysAndTracksTheDelay)
     EXPECT_NE(network.get_metadata().at("delay_length"), before);
 }
 
-TEST(WaveguideTerminationTest, TubeEndsFallBackToTheSharedLoopFilter)
+TEST(WaveguideTerminationTest, ADefaultTubeKeepsRingingAfterTheFirstPeriods)
 {
     WaveguideNetwork tube(GuideType::TUBE, 480.0);
-    tube.set_loss_factor(1.0);
-    tube.set_loop_filter(tap(0.0));
     tube.pluck(0.5);
+    render(tube, 256);
 
     const auto audio = render(tube, 2048);
 
-    EXPECT_GT(peak(std::span<const double>(audio).first(256)), 1e-4);
-    EXPECT_DOUBLE_EQ(peak(std::span<const double>(audio).last(256)), 0.0);
+    EXPECT_GT(peak(std::span<const double>(audio).last(256)), 0.1);
+}
+
+TEST(WaveguideTerminationTest, EachTerminationOfATubeKeepsItsOwnFilterState)
+{
+    WaveguideNetwork tube(GuideType::TUBE, 480.0);
+    tube.set_loss_factor(1.0);
+    tube.pluck(0.5);
+    render(tube, 1024);
+
+    const auto& segment = tube.get_segments().at(0);
+    EXPECT_NE(segment.loop_filter_open->get_input_history(),
+        segment.loop_filter_closed->get_input_history());
+}
+
+TEST(WaveguideTerminationTest, SetLoopFilterChangesOnlyTheNamedEndOfATube)
+{
+    WaveguideNetwork tube(GuideType::TUBE, 480.0);
+    const auto open_before = tube.get_segments().at(0).loop_filter_open;
+    const auto closed_before = tube.get_segments().at(0).loop_filter_closed;
+
+    const auto replacement = tap(0.5);
+    tube.set_loop_filter(replacement, Termination::CLOSED);
+
+    EXPECT_EQ(tube.get_segments().at(0).loop_filter_open, open_before);
+    EXPECT_EQ(tube.get_segments().at(0).loop_filter_closed, replacement);
+    EXPECT_NE(tube.get_segments().at(0).loop_filter_closed, closed_before);
+
+    const auto open_replacement = tap(0.25);
+    tube.set_loop_filter(open_replacement);
+
+    EXPECT_EQ(tube.get_segments().at(0).loop_filter_open, open_replacement);
+    EXPECT_EQ(tube.get_segments().at(0).loop_filter_closed, replacement);
+}
+
+TEST(WaveguideTerminationTest, SetLoopFiltersReplacesBothEndsOfATube)
+{
+    WaveguideNetwork tube(GuideType::TUBE, 480.0);
+    const auto open = tap(0.5);
+    const auto closed = tap(0.25);
+
+    tube.set_loop_filters(open, closed);
+
+    EXPECT_EQ(tube.get_segments().at(0).loop_filter_open, open);
+    EXPECT_EQ(tube.get_segments().at(0).loop_filter_closed, closed);
+}
+
+TEST(WaveguideTerminationTest, ATubeRefusesOneFilterAtBothEnds)
+{
+    WaveguideNetwork tube(GuideType::TUBE, 480.0);
+    const auto shared = tap(0.5);
+
+    tube.set_loop_filter(shared, Termination::OPEN);
+    const auto closed_before = tube.get_segments().at(0).loop_filter_closed;
+    tube.set_loop_filter(shared, Termination::CLOSED);
+
+    EXPECT_EQ(tube.get_segments().at(0).loop_filter_open, shared);
+    EXPECT_EQ(tube.get_segments().at(0).loop_filter_closed, closed_before);
+
+    const auto open_before = tube.get_segments().at(0).loop_filter_open;
+    tube.set_loop_filters(shared, shared);
+
+    EXPECT_EQ(tube.get_segments().at(0).loop_filter_open, open_before);
+    EXPECT_EQ(tube.get_segments().at(0).loop_filter_closed, closed_before);
+}
+
+TEST(WaveguideTerminationTest, AStringTakesEveryLoopFilterAsItsOneTermination)
+{
+    WaveguideNetwork string(GuideType::STRING, 480.0);
+    const auto first = tap(0.5);
+    const auto second = tap(0.25);
+
+    string.set_loop_filter(first, Termination::CLOSED);
+    EXPECT_EQ(string.get_segments().at(0).loop_filter, first);
+
+    string.set_loop_filters(second, tap(1.0));
+    EXPECT_EQ(string.get_segments().at(0).loop_filter, second);
+    EXPECT_EQ(string.get_segments().at(0).loop_filter_open, nullptr);
+    EXPECT_EQ(string.get_segments().at(0).loop_filter_closed, nullptr);
 }
 
 }
