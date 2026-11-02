@@ -99,6 +99,36 @@ namespace {
         EXPECT_EQ(copy.find(1), copy.end());
     }
 
+    TEST(FlatMapTest, MovesTransferEntriesAndLeaveTheSourceUsable)
+    {
+        IntMap original;
+        original.insert_or_assign(1, 10);
+        original.insert_or_assign(2, 20);
+
+        IntMap moved = std::move(original);
+
+        EXPECT_EQ(moved.size(), 2U);
+        EXPECT_EQ(moved.find(2)->second, 20);
+
+        original.insert_or_assign(3, 30);
+        EXPECT_EQ(original.size(), 1U);
+        EXPECT_EQ(original.find(3)->second, 30);
+    }
+
+    TEST(FlatMapTest, HoldsMoveOnlyValues)
+    {
+        Memory::FlatMap<int, std::unique_ptr<int>> map;
+
+        map.insert_or_assign(1, std::make_unique<int>(7));
+        map.insert_or_assign(2, std::make_unique<int>(8));
+
+        Memory::FlatMap<int, std::unique_ptr<int>> moved = std::move(map);
+
+        ASSERT_NE(moved.find(1), moved.end());
+        EXPECT_EQ(*moved.find(1)->second, 7);
+        EXPECT_EQ(*moved.find(2)->second, 8);
+    }
+
     TEST(FlatMapTest, PointerKeysOrderAndLookUp)
     {
         std::array<int, 4> storage {};
