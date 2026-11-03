@@ -140,6 +140,30 @@ namespace {
         EXPECT_FALSE(bag.has(k));
     }
 
+    TEST(FacetsTest, MergePreservesDistinctKeysAndUsesIncomingValuesForSharedKeys)
+    {
+        const Facet<int> existing;
+        const Facet<int> shared;
+        const Facet<int> incoming;
+        Facets destination;
+        destination.set(existing, 1);
+        destination.set(shared, 2);
+        Facets source;
+        source.set(shared, 3);
+        source.set(incoming, 4);
+
+        destination.merge(source);
+
+        ASSERT_NE(destination.get(existing), nullptr);
+        ASSERT_NE(destination.get(shared), nullptr);
+        ASSERT_NE(destination.get(incoming), nullptr);
+        EXPECT_EQ(*destination.get(existing), 1);
+        EXPECT_EQ(*destination.get(shared), 3);
+        EXPECT_EQ(*destination.get(incoming), 4);
+        EXPECT_EQ(*source.get(shared), 3);
+        EXPECT_EQ(destination.size(), 3U);
+    }
+
     TEST(FacetsTest, StructValuesRoundTrip)
     {
         Facets bag;
@@ -260,6 +284,22 @@ namespace {
         EXPECT_EQ(*bag.get(FacetMember<&FacetFromSettings::window> {}), 1024U);
         EXPECT_EQ(*bag.get(FacetMember<&FacetFromSettings::hop> {}), 128U);
         EXPECT_DOUBLE_EQ(*bag.get(FacetMember<&FacetFromSettings::threshold> {}), 0.5);
+    }
+
+    TEST(FacetFromTest, MergeDescribedFieldsPreservesCustomKeys)
+    {
+        const Facet<std::string> custom;
+        Facets bag;
+        bag.set(custom, std::string { "audio" });
+        bag.set(FacetMember<&FacetFromSettings::hop> {}, 64U);
+
+        bag.merge(Facets::from(FacetFromSettings {}));
+
+        ASSERT_NE(bag.get(custom), nullptr);
+        ASSERT_NE(bag.get(FacetMember<&FacetFromSettings::hop> {}), nullptr);
+        EXPECT_EQ(*bag.get(custom), "audio");
+        EXPECT_EQ(*bag.get(FacetMember<&FacetFromSettings::hop> {}), 256U);
+        EXPECT_EQ(bag.size(), 4U);
     }
 
     TEST(FacetFromTest, MembersOfTheSameTypeStayDistinct)

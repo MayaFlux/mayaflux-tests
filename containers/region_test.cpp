@@ -1,6 +1,8 @@
 #include "gtest/gtest.h"
 
 #include "MayaFlux/Kakshya/KakshyaUtils.hpp"
+#include "MayaFlux/Kakshya/Region/OrganizedRegion.hpp"
+#include "MayaFlux/Kakshya/Region/RegionCacheManager.hpp"
 #include "MayaFlux/Kakshya/Region/RegionGroup.hpp"
 
 #include <chrono>
@@ -49,6 +51,133 @@ TEST_F(RegionTest, BasicConstruction)
     Region empty;
     EXPECT_TRUE(empty.start_coordinates.empty());
     EXPECT_TRUE(empty.end_coordinates.empty());
+}
+
+TEST_F(RegionTest, FacetValuesReplaceWithoutChangingLegacyAttributesOrLabel)
+{
+    const Facet<double> energy;
+    region.label = "onset";
+    region.set_attribute("legacy", 4);
+
+    EXPECT_EQ(region.get(energy), nullptr);
+    region.set(energy, 0.5);
+    region.set(energy, 0.75);
+
+    ASSERT_NE(region.get(energy), nullptr);
+    EXPECT_DOUBLE_EQ(*region.get(energy), 0.75);
+    EXPECT_EQ(region.get_attribute<int>("legacy"), 4);
+    EXPECT_EQ(region.label, "onset");
+}
+
+TEST_F(RegionTest, FacetWritesOnACopyLeaveTheOriginalAndIdentityUnchanged)
+{
+    const Facet<int> priority;
+    region.set(priority, 1);
+    Region copy = region;
+    copy.set(priority, 2);
+
+    ASSERT_NE(region.get(priority), nullptr);
+    ASSERT_NE(copy.get(priority), nullptr);
+    EXPECT_EQ(*region.get(priority), 1);
+    EXPECT_EQ(*copy.get(priority), 2);
+    EXPECT_EQ(copy, region);
+    EXPECT_EQ(RegionHash {}(copy), RegionHash {}(region));
+}
+
+TEST_F(RegionTest, ReplaceTransfersAllTypedKeysAndLeavesOtherMembersUntouched)
+{
+    const Facet<int> previous;
+    const Facet<int> first;
+    const Facet<std::string> second;
+    region.label = "marker";
+    region.set_attribute("legacy", 7);
+    region.set(previous, 1);
+    Facets source;
+    source.set(first, 2);
+    source.set(second, std::string { "chapter" });
+
+    region.replace(source);
+
+    EXPECT_EQ(region.get(previous), nullptr);
+    ASSERT_NE(region.get(first), nullptr);
+    ASSERT_NE(region.get(second), nullptr);
+    EXPECT_EQ(*region.get(first), 2);
+    EXPECT_EQ(*region.get(second), "chapter");
+    EXPECT_EQ(region.get_attribute<int>("legacy"), 7);
+    EXPECT_EQ(region.label, "marker");
+    EXPECT_EQ(region.start_coordinates, (std::vector<uint64_t> { 100 }));
+}
+
+TEST(RegionGroupFacetTest, TypedValuesStaySeparateFromLegacyAttributes)
+{
+    RegionGroup group("onsets");
+    const Facet<uint32_t> sample_rate;
+    group.set_attribute("legacy", 7);
+
+    EXPECT_EQ(group.get(sample_rate), nullptr);
+    group.set(sample_rate, 44100U);
+    group.set(sample_rate, 48000U);
+
+    ASSERT_NE(group.get(sample_rate), nullptr);
+    EXPECT_EQ(*group.get(sample_rate), 48000U);
+    EXPECT_EQ(group.get_attribute<int>("legacy"), 7);
+}
+
+TEST(RegionSegmentFacetTest, TypedValuesStaySeparateFromProcessingMetadata)
+{
+    RegionSegment segment(Region::time_span(0, 10));
+    const Facet<double> gain;
+    segment.set_processing_metadata("legacy", 2);
+
+    EXPECT_EQ(segment.get(gain), nullptr);
+    segment.set(gain, 0.25);
+    segment.set(gain, 0.5);
+
+    ASSERT_NE(segment.get(gain), nullptr);
+    EXPECT_DOUBLE_EQ(*segment.get(gain), 0.5);
+    EXPECT_EQ(segment.get_processing_metadata<int>("legacy"), 2);
+}
+
+TEST(OrganizedRegionFacetTest, TypedValuesStaySeparateFromLegacyAttributes)
+{
+    OrganizedRegion organized("onsets", 0);
+    const Facet<int> priority;
+    organized.set_attribute("legacy", 3);
+
+    EXPECT_EQ(organized.get(priority), nullptr);
+    organized.set(priority, 4);
+    organized.set(priority, 5);
+
+    ASSERT_NE(organized.get(priority), nullptr);
+    EXPECT_EQ(*organized.get(priority), 5);
+    EXPECT_EQ(organized.get_attribute<int>("legacy"), 3);
+}
+
+TEST(OrganizedRegionFacetTest, MergePreservesGroupKeysAndLetsRegionKeysWin)
+{
+    const Facet<int> group_only;
+    const Facet<int> region_only;
+    const Facet<int> shared;
+    RegionGroup group("chapters");
+    group.set(group_only, 1);
+    group.set(shared, 2);
+    Region region({ 10 });
+    region.set(region_only, 3);
+    region.set(shared, 4);
+    OrganizedRegion organized("chapters", 0);
+
+    organized.merge(group);
+    organized.merge(region);
+
+    ASSERT_NE(organized.get(group_only), nullptr);
+    ASSERT_NE(organized.get(region_only), nullptr);
+    ASSERT_NE(organized.get(shared), nullptr);
+    EXPECT_EQ(*organized.get(group_only), 1);
+    EXPECT_EQ(*organized.get(region_only), 3);
+    EXPECT_EQ(*organized.get(shared), 4);
+    EXPECT_EQ(*group.get(shared), 2);
+    EXPECT_EQ(organized.group_name, "chapters");
+    EXPECT_EQ(organized.region_index, 0U);
 }
 
 TEST_F(RegionTest, StaticFactoryMethods)

@@ -3,8 +3,79 @@
 #include "../mock_signalsourcecontainer.hpp"
 
 #include "MayaFlux/Kakshya/Processors/RegionProcessors.hpp"
+#include "MayaFlux/Kakshya/Processors/SpatialRegionProcessor.hpp"
 
 namespace MayaFlux::Test {
+
+class InspectableRegionOrganizationProcessor : public RegionOrganizationProcessor {
+public:
+    using RegionOrganizationProcessor::RegionOrganizationProcessor;
+
+    const std::vector<OrganizedRegion>& organized_regions() const { return m_organized_regions; }
+};
+
+class InspectableSpatialRegionProcessor : public SpatialRegionProcessor {
+public:
+    using SpatialRegionProcessor::organize_container_data;
+
+    const std::vector<OrganizedRegion>& organized_regions() const { return m_organized_regions; }
+};
+
+TEST(RegionProcessorFacetTest, OrganizationCopiesGroupAndRegionFacets)
+{
+    const Facet<int> group_only;
+    const Facet<int> region_only;
+    const Facet<int> shared;
+    auto container = std::make_shared<MockSignalSourceContainer>();
+    RegionGroup group("chapters");
+    group.set(group_only, 1);
+    group.set(shared, 2);
+    Region region({ 10 });
+    region.set(region_only, 3);
+    region.set(shared, 4);
+    group.add_region(region);
+    container->add_region_group(group);
+    InspectableRegionOrganizationProcessor processor(container);
+
+    processor.organize_container_data(container);
+
+    ASSERT_EQ(processor.organized_regions().size(), 1U);
+    const auto& organized = processor.organized_regions().front();
+    ASSERT_NE(organized.get(group_only), nullptr);
+    ASSERT_NE(organized.get(region_only), nullptr);
+    ASSERT_NE(organized.get(shared), nullptr);
+    EXPECT_EQ(*organized.get(group_only), 1);
+    EXPECT_EQ(*organized.get(region_only), 3);
+    EXPECT_EQ(*organized.get(shared), 4);
+}
+
+TEST(RegionProcessorFacetTest, SpatialOrganizationCopiesGroupAndRegionFacets)
+{
+    const Facet<int> group_only;
+    const Facet<int> region_only;
+    const Facet<int> shared;
+    auto container = std::make_shared<MockSignalSourceContainer>();
+    RegionGroup group("areas");
+    group.set(group_only, 1);
+    group.set(shared, 2);
+    Region region({ 10 });
+    region.set(region_only, 3);
+    region.set(shared, 4);
+    group.add_region(region);
+    container->add_region_group(group);
+    InspectableSpatialRegionProcessor processor;
+
+    processor.organize_container_data(container);
+
+    ASSERT_EQ(processor.organized_regions().size(), 1U);
+    const auto& organized = processor.organized_regions().front();
+    ASSERT_NE(organized.get(group_only), nullptr);
+    ASSERT_NE(organized.get(region_only), nullptr);
+    ASSERT_NE(organized.get(shared), nullptr);
+    EXPECT_EQ(*organized.get(group_only), 1);
+    EXPECT_EQ(*organized.get(region_only), 3);
+    EXPECT_EQ(*organized.get(shared), 4);
+}
 
 class RegionProcessorTest : public ::testing::Test {
 protected:
