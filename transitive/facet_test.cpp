@@ -257,6 +257,41 @@ namespace {
         }
     };
 
+    TEST(FacetFromTest, WholeStructUsesOneStableTypeFacet)
+    {
+        Facets bag;
+        const Facet<FacetFromSettings> explicit_key;
+        EXPECT_EQ(bag.get<FacetFromSettings>(), nullptr);
+
+        bag.set(FacetFromSettings { .window = 1024, .hop = 128, .threshold = 0.5 });
+        ASSERT_NE(bag.get<FacetFromSettings>(), nullptr);
+        EXPECT_EQ(bag.get<FacetFromSettings>()->window, 1024U);
+        EXPECT_EQ(bag.size(), 1U);
+        EXPECT_EQ(bag.get(FacetMember<&FacetFromSettings::window> {}), nullptr);
+
+        bag.set(FacetFromSettings { .window = 2048, .hop = 256, .threshold = 0.25 });
+        EXPECT_EQ(bag.get<FacetFromSettings>()->window, 2048U);
+        EXPECT_EQ(bag.size(), 1U);
+
+        bag.set(explicit_key, FacetFromSettings { .window = 4096 });
+        EXPECT_EQ(bag.get<FacetFromSettings>()->window, 2048U);
+        EXPECT_EQ(bag.get(explicit_key)->window, 4096U);
+        EXPECT_EQ(bag.size(), 2U);
+    }
+
+    TEST(FacetFromTest, MergeCopiesWholeStructValues)
+    {
+        Facets source;
+        source.set(FacetFromSettings { .window = 1024 });
+        Facets destination;
+
+        destination.merge(source);
+
+        ASSERT_NE(destination.get<FacetFromSettings>(), nullptr);
+        EXPECT_EQ(destination.get<FacetFromSettings>()->window, 1024U);
+        EXPECT_EQ(destination.size(), 1U);
+    }
+
     TEST(FacetFromTest, BuildsOneEntryPerMember)
     {
         const auto bag = Facets::from(FacetFromSettings {});

@@ -27,16 +27,6 @@ namespace {
         return bytes;
     }
 
-    std::string text_attribute(const Region& region, const std::string& key)
-    {
-        return std::any_cast<std::string>(region.attributes.at(key));
-    }
-
-    uint64_t number_attribute(const Region& region, const std::string& key)
-    {
-        return std::any_cast<uint64_t>(region.attributes.at(key));
-    }
-
     VertexLayout position_only_layout(uint32_t stride)
     {
         VertexLayout layout;
@@ -57,6 +47,7 @@ namespace {
 
     TEST(MeshSubrangeTest, RegionSpansTheIndexRange)
     {
+        EXPECT_EQ(Region({ 0 }).get<MeshSubrange>(), nullptr);
         MeshSubrange sub;
         sub.index_start = 12;
         sub.index_count = 30;
@@ -67,7 +58,32 @@ namespace {
         EXPECT_EQ(region.end_coordinates, (std::vector<uint64_t> { 42 }));
     }
 
-    TEST(MeshSubrangeTest, RegionCarriesTheSubrangeAttributes)
+    TEST(MeshSubrangeTest, DescribedMembersRoundTripThroughFacets)
+    {
+        static_assert(std::tuple_size_v<decltype(MeshSubrange::describe_facets())> == 7);
+
+        const MeshSubrange sub {
+            .index_start = 6,
+            .index_count = 9,
+            .vertex_offset = 100,
+            .name = "hull",
+            .material_name = "steel",
+            .diffuse_path = "steel.png",
+            .diffuse_embedded = true,
+        };
+        const auto facets = Facets::from(sub);
+
+        EXPECT_EQ(facets.size(), 7U);
+        EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::index_start> {}), 6U);
+        EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::index_count> {}), 9U);
+        EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::vertex_offset> {}), 100U);
+        EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::name> {}), "hull");
+        EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::material_name> {}), "steel");
+        EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::diffuse_path> {}), "steel.png");
+        EXPECT_TRUE(*facets.get(FacetMember<&MeshSubrange::diffuse_embedded> {}));
+    }
+
+    TEST(MeshSubrangeTest, RegionCarriesTheWholeSubrange)
     {
         MeshSubrange sub;
         sub.index_start = 6;
@@ -80,12 +96,15 @@ namespace {
 
         const Region region = sub.to_region();
 
-        EXPECT_EQ(text_attribute(region, "name"), "hull");
-        EXPECT_EQ(text_attribute(region, "material_name"), "steel");
-        EXPECT_EQ(text_attribute(region, "diffuse_path"), "steel.png");
-        EXPECT_EQ(number_attribute(region, "vertex_offset"), 100U);
-        EXPECT_EQ(number_attribute(region, "index_count"), 9U);
-        EXPECT_TRUE(std::any_cast<bool>(region.attributes.at("diffuse_embedded")));
+        const auto* stored = region.get<MeshSubrange>();
+        ASSERT_NE(stored, nullptr);
+        EXPECT_EQ(stored->index_start, 6U);
+        EXPECT_EQ(stored->index_count, 9U);
+        EXPECT_EQ(stored->vertex_offset, 100U);
+        EXPECT_EQ(stored->name, "hull");
+        EXPECT_EQ(stored->material_name, "steel");
+        EXPECT_EQ(stored->diffuse_path, "steel.png");
+        EXPECT_TRUE(stored->diffuse_embedded);
     }
 
     TEST(MeshSubrangeTest, DefaultSubrangeIsAnEmptyUnnamedRegionAtZero)
@@ -94,8 +113,48 @@ namespace {
 
         EXPECT_EQ(region.start_coordinates, (std::vector<uint64_t> { 0 }));
         EXPECT_EQ(region.end_coordinates, (std::vector<uint64_t> { 0 }));
-        EXPECT_TRUE(text_attribute(region, "name").empty());
-        EXPECT_FALSE(std::any_cast<bool>(region.attributes.at("diffuse_embedded")));
+        const auto* stored = region.get<MeshSubrange>();
+        ASSERT_NE(stored, nullptr);
+        EXPECT_TRUE(stored->name.empty());
+        EXPECT_FALSE(stored->diffuse_embedded);
+    }
+
+    TEST(MeshSubrangeTest, WholeSubrangeCanBeReplacedWithoutChangingTheRegionRange)
+    {
+        Region region = MeshSubrange {
+            .index_start = 6,
+            .index_count = 9,
+            .name = "hull",
+        }.to_region();
+        const auto* original = region.get<MeshSubrange>();
+        ASSERT_NE(original, nullptr);
+
+        auto updated = *original;
+        updated.diffuse_path = "steel.png";
+        region.set(updated);
+
+        const auto* stored = region.get<MeshSubrange>();
+        ASSERT_NE(stored, nullptr);
+        EXPECT_EQ(stored->name, "hull");
+        EXPECT_EQ(stored->diffuse_path, "steel.png");
+        EXPECT_EQ(region.start_coordinates, (std::vector<uint64_t> { 6 }));
+        EXPECT_EQ(region.end_coordinates, (std::vector<uint64_t> { 15 }));
+        EXPECT_TRUE(region.attributes.empty());
+    }
+
+    TEST(MeshSubrangeTest, ReplacingRegionFacetsTransfersTheWholeSubrange)
+    {
+        Facets source;
+        source.set(MeshSubrange { .index_start = 3, .index_count = 6, .name = "deck" });
+        Region region(std::vector<uint64_t> { 3 }, std::vector<uint64_t> { 9 });
+
+        region.replace(source);
+
+        const auto* stored = region.get<MeshSubrange>();
+        ASSERT_NE(stored, nullptr);
+        EXPECT_EQ(stored->name, "deck");
+        EXPECT_EQ(stored->index_count, 6U);
+        EXPECT_EQ(region.start_coordinates, (std::vector<uint64_t> { 3 }));
     }
 
     TEST(MeshAccessQueryTest, DefaultAccessIsInvalidAndEmpty)
@@ -232,7 +291,9 @@ namespace {
         ASSERT_TRUE(access.has_value());
         EXPECT_TRUE(access->has_submeshes());
         EXPECT_EQ(access->submeshes->name, "submeshes");
-        EXPECT_EQ(text_attribute(access->submeshes->regions[0], "name"), "only");
+        const auto* stored = access->submeshes->regions[0].get<MeshSubrange>();
+        ASSERT_NE(stored, nullptr);
+        EXPECT_EQ(stored->name, "only");
     }
 
     TEST(AsMeshAccessTest, WithoutSubmeshesTheyAreAbsent)
@@ -591,19 +652,23 @@ namespace {
         ASSERT_EQ(access->submeshes->regions.size(), 2U);
 
         const Region& hull = access->submeshes->regions[0];
-        EXPECT_EQ(text_attribute(hull, "name"), "hull");
-        EXPECT_EQ(text_attribute(hull, "material_name"), "steel");
+        const auto* hull_sub = hull.get<MeshSubrange>();
+        ASSERT_NE(hull_sub, nullptr);
+        EXPECT_EQ(hull_sub->name, "hull");
+        EXPECT_EQ(hull_sub->material_name, "steel");
         EXPECT_EQ(hull.start_coordinates, (std::vector<uint64_t> { 0 }));
         EXPECT_EQ(hull.end_coordinates, (std::vector<uint64_t> { 3 }));
-        EXPECT_EQ(number_attribute(hull, "vertex_offset"), 0U);
+        EXPECT_EQ(hull_sub->vertex_offset, 0U);
 
         const Region& deck = access->submeshes->regions[1];
-        EXPECT_EQ(text_attribute(deck, "name"), "deck");
-        EXPECT_EQ(text_attribute(deck, "material_name"), "wood");
+        const auto* deck_sub = deck.get<MeshSubrange>();
+        ASSERT_NE(deck_sub, nullptr);
+        EXPECT_EQ(deck_sub->name, "deck");
+        EXPECT_EQ(deck_sub->material_name, "wood");
         EXPECT_EQ(deck.start_coordinates, (std::vector<uint64_t> { 3 }));
         EXPECT_EQ(deck.end_coordinates, (std::vector<uint64_t> { 9 }));
-        EXPECT_EQ(number_attribute(deck, "vertex_offset"), 3U);
-        EXPECT_EQ(number_attribute(deck, "index_count"), 6U);
+        EXPECT_EQ(deck_sub->vertex_offset, 3U);
+        EXPECT_EQ(deck_sub->index_count, 6U);
     }
 
     TEST(MeshInsertionSubmeshTest, BuildTotalsAcrossSubmeshes)
@@ -628,8 +693,11 @@ namespace {
         const auto access = t.insertion.build();
 
         ASSERT_TRUE(access.has_value());
-        EXPECT_TRUE(text_attribute(access->submeshes->regions[0], "name").empty());
-        EXPECT_TRUE(text_attribute(access->submeshes->regions[0], "material_name").empty());
+        ASSERT_TRUE(access->submeshes.has_value());
+        const auto* stored = access->submeshes->regions[0].get<MeshSubrange>();
+        ASSERT_NE(stored, nullptr);
+        EXPECT_TRUE(stored->name.empty());
+        EXPECT_TRUE(stored->material_name.empty());
     }
 
     TEST(MeshInsertionSubmeshTest, StrideMismatchSkipsTheBatch)
