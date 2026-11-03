@@ -732,22 +732,25 @@ TEST_F(RegionGroupTest, SortingOperations)
     EXPECT_EQ(group.regions[1].label, "second");
     EXPECT_EQ(group.regions[2].label, "third");
 
-    group.regions[0].set_attribute("priority", 3.0);
-    group.regions[1].set_attribute("priority", 1.0);
-    group.regions[2].set_attribute("priority", 2.0);
+    const Facet<double> priority;
+    group.regions[0].set(priority, 3.0);
+    group.regions[1].set(priority, 1.0);
+    group.regions[2].set(priority, 2.0);
 
-    group.sort_by_attribute("priority");
+    group.sort(priority);
     EXPECT_EQ(group.regions[0].label, "second"); // priority 1.0
     EXPECT_EQ(group.regions[1].label, "third"); // priority 2.0
     EXPECT_EQ(group.regions[2].label, "first"); // priority 3.0
 
-    group.regions[0].set_attribute("energy", 0.5);
+    const Facet<double> energy;
+    group.regions[0].set(energy, 0.5);
     // points[1] and points[2] don't have "energy" attribute
-    group.sort_by_attribute("energy");
+    group.sort(energy);
 
     RegionGroup empty_group;
     empty_group.sort_by_dimension(0);
-    empty_group.sort_by_attribute("nonexistent");
+    const Facet<double> nonexistent;
+    empty_group.sort(nonexistent);
 
     group.sort_by_dimension(10);
 }
@@ -765,23 +768,25 @@ TEST_F(RegionGroupTest, SearchOperations)
     auto multiple_onsets = group.find_regions_with_label("onset");
     EXPECT_EQ(multiple_onsets.size(), 2);
 
-    group.regions[0].set_attribute("type", std::string("percussive"));
-    group.regions[1].set_attribute("type", std::string("tonal"));
-    group.regions[2].set_attribute("type", std::string("percussive"));
-    group.regions[3].set_attribute("type", std::string("noise"));
+    const Facet<std::string> type;
+    group.regions[0].set(type, std::string("percussive"));
+    group.regions[1].set(type, std::string("tonal"));
+    group.regions[2].set(type, std::string("percussive"));
+    group.regions[3].set(type, std::string("noise"));
 
-    auto percussive_points = group.find_regions_with_attribute("type", std::string("percussive"));
+    auto percussive_points = group.find_regions(type, std::string("percussive"));
     EXPECT_EQ(percussive_points.size(), 2);
     EXPECT_EQ(percussive_points[0].label, "onset");
     EXPECT_EQ(percussive_points[1].label, "release");
 
-    auto tonal_points = group.find_regions_with_attribute("type", std::string("tonal"));
+    auto tonal_points = group.find_regions(type, std::string("tonal"));
     EXPECT_EQ(tonal_points.size(), 1);
     EXPECT_EQ(tonal_points[0].label, "sustain");
 
-    group.regions[0].set_attribute("energy", 0.8);
-    group.regions[1].set_attribute("energy", 0.8);
-    auto high_energy = group.find_regions_with_attribute("energy", 0.8);
+    const Facet<double> energy;
+    group.regions[0].set(energy, 0.8);
+    group.regions[1].set(energy, 0.8);
+    auto high_energy = group.find_regions(energy, 0.8);
     EXPECT_EQ(high_energy.size(), 2);
 
     auto containing_250 = group.find_regions_containing_coordinates({ 250 });
@@ -1171,14 +1176,15 @@ TEST_F(RegionUtilityTest, AttributeUtilities)
     test_point.label = "test_label";
     EXPECT_EQ(test_point.label, "test_label");
 
-    test_group.regions[0].set_attribute("category", std::string("onset"));
-    test_group.regions[1].set_attribute("category", std::string("sustain"));
-    test_group.regions[2].set_attribute("category", std::string("release"));
+    const Facet<std::string> category;
+    test_group.regions[0].set(category, std::string("onset"));
+    test_group.regions[1].set(category, std::string("sustain"));
+    test_group.regions[2].set(category, std::string("release"));
 
     auto onset_points = find_regions_with_label(test_group, "region1");
     EXPECT_EQ(onset_points.size(), 1);
 
-    auto category_points = find_regions_with_attribute(test_group, "category", std::string("onset"));
+    auto category_points = test_group.find_regions(category, std::string("onset"));
     EXPECT_EQ(category_points.size(), 1);
 
     auto containing_points = find_regions_containing_coordinates(test_group, { 175 });
