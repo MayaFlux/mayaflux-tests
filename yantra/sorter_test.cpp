@@ -63,8 +63,8 @@ protected:
         eigen_sorter = std::make_shared<TestStandardSorter<Eigen::MatrixXd>>();
 
         test_group.name = "test_group";
-        Region r1 { { 0 }, { 5 }, {} };
-        Region r2 { { 5 }, { 10 }, {} };
+        Region r1 { { 0 }, { 5 } };
+        Region r2 { { 5 }, { 10 } };
         test_group.add_region(r1);
         test_group.add_region(r2);
     }

@@ -139,7 +139,6 @@ namespace {
         EXPECT_EQ(stored->diffuse_path, "steel.png");
         EXPECT_EQ(region.start_coordinates, (std::vector<uint64_t> { 6 }));
         EXPECT_EQ(region.end_coordinates, (std::vector<uint64_t> { 15 }));
-        EXPECT_TRUE(region.attributes.empty());
     }
 
     TEST(MeshSubrangeTest, ReplacingRegionFacetsTransfersTheWholeSubrange)

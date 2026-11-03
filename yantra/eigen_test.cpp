@@ -23,8 +23,8 @@ protected:
         container = std::make_shared<MockSignalSourceContainer>();
         container->set_test_data(test_data);
 
-        Region r1 { { 0 }, { 4 }, {} };
-        Region r2 { { 4 }, { 8 }, {} };
+        Region r1 { { 0 }, { 4 } };
+        Region r2 { { 4 }, { 8 } };
         test_regions = { r1, r2 };
 
         transformed_matrix = Eigen::MatrixXd::Identity(2, 2);
@@ -184,8 +184,8 @@ TEST_F(MatrixHelperTest, CrossfadeRegionsInPlace)
     auto data_copy = multi_channel_data;
     std::vector<std::pair<Region, Region>> fade_pairs;
 
-    Region fade_a { { 0 }, { 2 }, {} };
-    Region fade_b { { 2 }, { 4 }, {} };
+    Region fade_a { { 0 }, { 2 } };
+    Region fade_b { { 2 }, { 4 } };
     fade_pairs.emplace_back(fade_a, fade_b);
 
     auto result = transform_crossfade_regions(data_copy, fade_pairs, 1);
@@ -202,8 +202,8 @@ TEST_F(MatrixHelperTest, CrossfadeRegionsOutOfPlace)
     std::vector<std::vector<double>> working_buffer;
     std::vector<std::pair<Region, Region>> fade_pairs;
 
-    Region fade_a { { 0 }, { 2 }, {} };
-    Region fade_b { { 2 }, { 4 }, {} };
+    Region fade_a { { 0 }, { 2 } };
+    Region fade_b { { 2 }, { 4 } };
     fade_pairs.emplace_back(fade_a, fade_b);
 
     auto result = transform_crossfade_regions(data_copy, fade_pairs, 1, working_buffer);

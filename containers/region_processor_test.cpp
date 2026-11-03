@@ -150,12 +150,11 @@ TEST_F(RegionProcessorTest, AddSegmentToRegion)
 {
     processor->organize_container_data(container);
 
-    std::vector<uint64_t> start_coords = { 100 };
-    std::vector<uint64_t> end_coords = { 200 };
-    std::unordered_map<std::string, std::any> attributes;
-    attributes["gain"] = 0.5;
+    const Facet<double> gain;
+    Region segment_region = Region::time_span(100, 200);
+    segment_region.set(gain, 0.5);
 
-    processor->add_segment_to_region("perc", 0, start_coords, end_coords, attributes);
+    processor->add_segment_to_region("perc", 0, segment_region);
 
     processor->process(container);
     EXPECT_EQ(container->get_processing_state(), ProcessingState::PROCESSED);
@@ -269,31 +268,14 @@ TEST_F(DynamicRegionProcessorTest, PriorityBasedReorganization)
 {
     processor->organize_container_data(container);
 
+    const Facet<int> priority;
     processor->set_reorganization_callback(
-        [](std::vector<OrganizedRegion>& regions, const std::shared_ptr<SignalSourceContainer>&) {
+        [&priority](std::vector<OrganizedRegion>& regions, const std::shared_ptr<SignalSourceContainer>&) {
             std::ranges::sort(regions,
-                [](const OrganizedRegion& a, const OrganizedRegion& b) {
-                    auto a_priority_it = a.attributes.find("priority");
-                    auto b_priority_it = b.attributes.find("priority");
-
-                    int a_priority = 0;
-                    int b_priority = 0;
-
-                    if (a_priority_it != a.attributes.end()) {
-                        try {
-                            a_priority = std::any_cast<int>(a_priority_it->second);
-                        } catch (const std::bad_any_cast&) {
-                        }
-                    }
-
-                    if (b_priority_it != b.attributes.end()) {
-                        try {
-                            b_priority = std::any_cast<int>(b_priority_it->second);
-                        } catch (const std::bad_any_cast&) {
-                        }
-                    }
-
-                    return a_priority > b_priority;
+                [&priority](const OrganizedRegion& a, const OrganizedRegion& b) {
+                    const int* a_priority = a.get(priority);
+                    const int* b_priority = b.get(priority);
+                    return (a_priority ? *a_priority : 0) > (b_priority ? *b_priority : 0);
                 });
         });
 
@@ -437,17 +419,20 @@ TEST_F(RegionProcessorTest, SpectralRegionProcessing)
 
     container->add_test_region_group("spectral");
 
+    const Facet<double> center_frequency;
+    const Facet<double> bandwidth;
+
     auto formant1 = Region::audio_span(0, 1024, 100, 150, "formant1");
-    formant1.set_attribute("center_frequency", 125.0);
-    formant1.set_attribute("bandwidth", 50.0);
+    formant1.set(center_frequency, 125.0);
+    formant1.set(bandwidth, 50.0);
 
     auto formant2 = Region::audio_span(0, 1024, 300, 350, "formant2");
-    formant2.set_attribute("center_frequency", 325.0);
-    formant2.set_attribute("bandwidth", 50.0);
+    formant2.set(center_frequency, 325.0);
+    formant2.set(bandwidth, 50.0);
 
     auto formant3 = Region::audio_span(0, 1024, 700, 750, "formant3");
-    formant3.set_attribute("center_frequency", 725.0);
-    formant3.set_attribute("bandwidth", 50.0);
+    formant3.set(center_frequency, 725.0);
+    formant3.set(bandwidth, 50.0);
 
     container->add_test_region_to_group("spectral", formant1);
     container->add_test_region_to_group("spectral", formant2);

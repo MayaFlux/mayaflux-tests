@@ -90,7 +90,7 @@ namespace {
 
         EXPECT_EQ(slice.region.start_coordinates, (std::vector<uint64_t> { 2, 0 }));
         EXPECT_EQ(slice.region.end_coordinates, (std::vector<uint64_t> { 4, 1 }));
-        EXPECT_EQ(std::any_cast<const char*>(slice.region.attributes.at("type")), std::string_view("audio_region"));
+        EXPECT_EQ(slice.region.modality, Kakshya::DataModality::AUDIO_MULTICHANNEL);
     }
 
     TEST(StreamSliceTest, BuilderCallsSetTheirFieldAndChain)

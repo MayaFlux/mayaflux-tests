@@ -839,11 +839,12 @@ namespace {
         EXPECT_EQ(slice->at(0)->text("name"), "Nia");
     }
 
-    TEST(CompositeSliceTest, RegionSlicesRetainTheRegionAndItsAttributes)
+    TEST(CompositeSliceTest, RegionSlicesRetainTheRegionAndItsTypedValues)
     {
         const CompositeArray people = make_people();
         Region region(std::vector<uint64_t> { 0 }, std::vector<uint64_t> { 1 });
-        region.set_attribute("label", std::string("top"));
+        const Facet<std::string> top;
+        region.set(top, std::string("top"));
 
         const auto slice = people.slice(region);
 
@@ -851,7 +852,8 @@ namespace {
         ASSERT_NE(slice->region(), nullptr);
         EXPECT_EQ(slice->region()->start_coordinates, region.start_coordinates);
         EXPECT_EQ(slice->region()->end_coordinates, region.end_coordinates);
-        EXPECT_EQ(std::any_cast<std::string>(slice->region()->attributes.at("label")), "top");
+        ASSERT_NE(slice->region()->get(top), nullptr);
+        EXPECT_EQ(*slice->region()->get(top), "top");
     }
 
     TEST(CompositeSliceTest, InvalidRegionsAreRefused)
