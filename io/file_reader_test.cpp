@@ -1,5 +1,8 @@
 #include "file_contract_fixture.hpp"
 
+#include "MayaFlux/IO/CodecContext/AudioStreamContext.hpp"
+#include "MayaFlux/IO/CodecContext/FFmpegDemuxContext.hpp"
+#include "MayaFlux/IO/CodecContext/VideoStreamContext.hpp"
 #include "MayaFlux/IO/FileReader.hpp"
 
 namespace MayaFlux::Test {
@@ -41,14 +44,56 @@ namespace {
         EXPECT_EQ(IO::FileReader::resolve_path(path.string()), path.string());
     }
 
-    TEST(FileMetadataTest, ReturnsPresentValuesAndReportsAbsentOrMismatchedValues)
+    TEST(FileMetadataTest, TagsStayWholeAndInFileOrder)
     {
         IO::FileMetadata metadata;
-        metadata.attributes["sample_rate"] = uint32_t { 48000 };
+        EXPECT_EQ(metadata.get<IO::ContainerTags>(), nullptr);
 
-        EXPECT_EQ(metadata.get_attribute<uint32_t>("sample_rate"), 48000U);
-        EXPECT_FALSE(metadata.get_attribute<uint32_t>("channels").has_value());
-        EXPECT_FALSE(metadata.get_attribute<std::string>("sample_rate").has_value());
+        IO::ContainerTags tags;
+        tags.entries = { { "title", "take 1" }, { "artist", "mf" } };
+        metadata.set(tags);
+
+        const auto* stored = metadata.get<IO::ContainerTags>();
+        ASSERT_NE(stored, nullptr);
+        EXPECT_EQ(stored->entries, tags.entries);
+    }
+
+    TEST(FileMetadataTest, WholeInfoStructIsStoredAndReplacedByType)
+    {
+        IO::FileMetadata metadata;
+        EXPECT_EQ(metadata.get<IO::ContainerInfo>(), nullptr);
+
+        metadata.set(IO::ContainerInfo { .duration_seconds = 2.5, .bit_rate = 128000 });
+        metadata.set(IO::ContainerInfo { .duration_seconds = std::nullopt, .bit_rate = 64000 });
+
+        const auto* container = metadata.get<IO::ContainerInfo>();
+        ASSERT_NE(container, nullptr);
+        EXPECT_FALSE(container->duration_seconds.has_value());
+        EXPECT_EQ(container->bit_rate, 64000);
+    }
+
+    TEST(FileMetadataTest, IdenticallyNamedFieldsOfDifferentInfoStructsStayDistinct)
+    {
+        IO::FileMetadata metadata;
+        metadata.set(IO::ContainerInfo { .bit_rate = 256000 });
+        metadata.set(IO::AudioStreamInfo { .sample_rate = 48000, .channels = 2, .bit_rate = 192000 });
+
+        ASSERT_NE(metadata.get<IO::ContainerInfo>(), nullptr);
+        ASSERT_NE(metadata.get<IO::AudioStreamInfo>(), nullptr);
+        EXPECT_EQ(metadata.get<IO::ContainerInfo>()->bit_rate, 256000);
+        EXPECT_EQ(metadata.get<IO::AudioStreamInfo>()->bit_rate, 192000);
+    }
+
+    TEST(FileMetadataTest, UnknownVideoFieldsStayAbsentInsideTheStruct)
+    {
+        IO::FileMetadata metadata;
+        metadata.set(IO::VideoStreamInfo { .codec = "h264", .width = 640, .height = 480, .frame_rate = 25.0 });
+
+        const auto* video = metadata.get<IO::VideoStreamInfo>();
+        ASSERT_NE(video, nullptr);
+        EXPECT_EQ(video->width, 640U);
+        EXPECT_FALSE(video->pixel_format.has_value());
+        EXPECT_FALSE(video->sar_num.has_value());
     }
 
     struct FileRegionCase {
@@ -83,17 +128,50 @@ namespace {
             FileRegionCase { { 7 }, { 15 }, "chapter" },
             FileRegionCase { { 2, 3 }, { 5, 8 }, "crop" }));
 
-    TEST(FileRegionTest, MultidimensionalConversionCopiesAttributes)
+    TEST(FileRegionTest, ChapterInfoReachesRegionOnEveryCoordinateShape)
     {
-        IO::FileRegion file_region;
-        file_region.start_coordinates = { 2, 3 };
-        file_region.end_coordinates = { 5, 8 };
-        file_region.attributes["quality"] = 0.75;
+        const std::vector<std::pair<std::vector<uint64_t>, std::vector<uint64_t>>> shapes {
+            { { 7 }, { 7 } },
+            { { 7 }, { 15 } },
+            { { 2, 3 }, { 5, 8 } },
+        };
 
-        const auto region = file_region.to_region();
+        for (const auto& [start, end] : shapes) {
+            IO::FileRegion file_region;
+            file_region.type = "chapter";
+            file_region.start_coordinates = start;
+            file_region.end_coordinates = end;
+            file_region.set(IO::ChapterInfo { .chapter_index = 4 });
 
-        ASSERT_TRUE(region.get_attribute<double>("quality").has_value());
-        EXPECT_DOUBLE_EQ(*region.get_attribute<double>("quality"), 0.75);
+            const auto region = file_region.to_region();
+            const auto* chapter = region.get<IO::ChapterInfo>();
+            ASSERT_NE(chapter, nullptr);
+            EXPECT_EQ(chapter->chapter_index, 4U);
+        }
+    }
+
+    TEST(FileRegionTest, KeyframeInfoReachesRegionAndAbsentInfoStaysAbsent)
+    {
+        IO::FileRegion keyframe;
+        keyframe.type = "keyframe";
+        keyframe.start_coordinates = { 50 };
+        keyframe.end_coordinates = { 50 };
+        keyframe.set(IO::KeyframeInfo { .pts = 90000, .timestamp_seconds = 1.0, .keyframe_index = 2 });
+
+        const auto keyframe_region = keyframe.to_region();
+        const auto* info = keyframe_region.get<IO::KeyframeInfo>();
+        ASSERT_NE(info, nullptr);
+        EXPECT_EQ(info->pts, 90000);
+        EXPECT_EQ(info->keyframe_index, 2);
+        EXPECT_EQ(keyframe_region.get<IO::ChapterInfo>(), nullptr);
+
+        IO::FileRegion cue;
+        cue.type = "cue";
+        cue.start_coordinates = { 10 };
+        cue.end_coordinates = { 10 };
+        const auto cue_region = cue.to_region();
+        EXPECT_EQ(cue_region.get<IO::KeyframeInfo>(), nullptr);
+        EXPECT_EQ(cue_region.get<IO::ChapterInfo>(), nullptr);
     }
 
 }
