@@ -79,7 +79,7 @@ public:
         grammar->add_operation_rule<MathematicalTransformer<>>(
             "auto_gain",
             ComputationContext::PARAMETRIC,
-            UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
+            Matcher::create_type_matcher<std::vector<DataVariant>>(),
             gain_cfg,
             90);
 

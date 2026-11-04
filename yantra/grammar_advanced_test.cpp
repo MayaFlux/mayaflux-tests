@@ -222,7 +222,7 @@ TEST_F(PipelineGrammarPrepassTest, GrammarPrepassAppliedBeforeOpChain)
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "prepass_gain",
         ComputationContext::PARAMETRIC,
-        UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
+        Matcher::create_type_matcher<std::vector<DataVariant>>(),
         rule_cfg_1,
         100);
 
@@ -246,7 +246,7 @@ TEST_F(PipelineGrammarPrepassTest, NoMatchingRuleFallsThroughToOpChain)
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "spectral_only",
         ComputationContext::SPECTRAL,
-        UniversalMatcher::create_context_matcher(ComputationContext::SPECTRAL),
+        Matcher::create_context_matcher(ComputationContext::SPECTRAL),
         rule_cfg_2,
         100);
 
@@ -269,7 +269,7 @@ TEST_F(PipelineGrammarPrepassTest, GrammarOnlyPipelineNoOps)
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "double",
         ComputationContext::PARAMETRIC,
-        UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
+        Matcher::create_type_matcher<std::vector<DataVariant>>(),
         rule_cfg_3,
         100);
 
@@ -290,7 +290,7 @@ TEST_F(PipelineGrammarPrepassTest, HigherPriorityGrammarRuleWins)
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "low_gain",
         ComputationContext::PARAMETRIC,
-        UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
+        Matcher::create_type_matcher<std::vector<DataVariant>>(),
         rule_cfg_4,
         10);
 
@@ -299,7 +299,7 @@ TEST_F(PipelineGrammarPrepassTest, HigherPriorityGrammarRuleWins)
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "high_gain",
         ComputationContext::PARAMETRIC,
-        UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
+        Matcher::create_type_matcher<std::vector<DataVariant>>(),
         rule_cfg_5,
         100);
 
@@ -334,7 +334,7 @@ TEST_F(GrammarAwareMatrixTest, ExecuteWithGrammarAppliesMatchingRule)
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "double",
         ComputationContext::PARAMETRIC,
-        UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
+        Matcher::create_type_matcher<std::vector<DataVariant>>(),
         rule_cfg_6,
         50);
 
@@ -354,7 +354,7 @@ TEST_F(GrammarAwareMatrixTest, ExecuteWithGrammarNoMatchReturnsOriginal)
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "spectral_only",
         ComputationContext::SPECTRAL,
-        UniversalMatcher::create_context_matcher(ComputationContext::SPECTRAL),
+        Matcher::create_context_matcher(ComputationContext::SPECTRAL),
         rule_cfg_7,
         50);
 
@@ -374,7 +374,7 @@ TEST_F(GrammarAwareMatrixTest, RuleApplicationIsDeterministic)
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "triple",
         ComputationContext::PARAMETRIC,
-        UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
+        Matcher::create_type_matcher<std::vector<DataVariant>>(),
         rule_cfg_8,
         50);
 
@@ -398,7 +398,7 @@ TEST_F(GrammarAwareMatrixTest, GrammarCanBeSwappedAtRuntime)
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "double",
         ComputationContext::PARAMETRIC,
-        UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
+        Matcher::create_type_matcher<std::vector<DataVariant>>(),
         rule_cfg_9,
         50);
 
@@ -414,7 +414,7 @@ TEST_F(GrammarAwareMatrixTest, GrammarCanBeSwappedAtRuntime)
     grammar2->add_operation_rule<MathematicalTransformer<>>(
         "quadruple",
         ComputationContext::PARAMETRIC,
-        UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
+        Matcher::create_type_matcher<std::vector<DataVariant>>(),
         rule_cfg_10,
         50);
 
@@ -440,9 +440,9 @@ protected:
         grammar->add_operation_rule<MathematicalTransformer<>>(
             "double",
             ComputationContext::PARAMETRIC,
-            UniversalMatcher::combine_and({
-                UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-                UniversalMatcher::create_context_matcher(ComputationContext::PARAMETRIC),
+            Matcher::combine_and({
+                Matcher::create_type_matcher<std::vector<DataVariant>>(),
+                Matcher::create_context_matcher(ComputationContext::PARAMETRIC),
             }),
             rule_cfg_11,
             50);
@@ -488,7 +488,7 @@ TEST_F(SharedGrammarTest, AddingRuleAffectsBothPipelines)
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "spectral_double",
         ComputationContext::SPECTRAL,
-        UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
+        Matcher::create_type_matcher<std::vector<DataVariant>>(),
         rule_cfg_12,
         50);
 

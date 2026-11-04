@@ -47,7 +47,7 @@ public:
 // UNIVERSAL MATCHER TESTS
 // =========================================================================
 
-class UniversalMatcherTest : public ::testing::Test {
+class MatcherTest : public ::testing::Test {
 protected:
     void SetUp() override
     {
@@ -59,9 +59,9 @@ protected:
     Datum<std::vector<DataVariant>> test_input;
 };
 
-TEST_F(UniversalMatcherTest, ContextMatcherWorks)
+TEST_F(MatcherTest, ContextMatcherWorks)
 {
-    auto matcher = UniversalMatcher::create_context_matcher(ComputationContext::TEMPORAL);
+    auto matcher = Matcher::create_context_matcher(ComputationContext::TEMPORAL);
 
     auto temporal_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::TEMPORAL);
     EXPECT_TRUE(matcher(test_input, temporal_ctx)) << "Should match temporal context";
@@ -70,9 +70,9 @@ TEST_F(UniversalMatcherTest, ContextMatcherWorks)
     EXPECT_FALSE(matcher(test_input, spectral_ctx)) << "Should not match spectral context";
 }
 
-TEST_F(UniversalMatcherTest, ParameterMatcherWorks)
+TEST_F(MatcherTest, ParameterMatcherWorks)
 {
-    auto matcher = UniversalMatcher::create_parameter_matcher("test_param", std::any(42.0));
+    auto matcher = Matcher::create_parameter_matcher("test_param", std::any(42.0));
 
     ExecutionContext ctx_with_param {
         .dependencies = {},
@@ -90,11 +90,11 @@ TEST_F(UniversalMatcherTest, ParameterMatcherWorks)
     EXPECT_FALSE(matcher(test_input, ctx_wrong_type)) << "Should not match wrong parameter type";
 }
 
-TEST_F(UniversalMatcherTest, CombineAndWorks)
+TEST_F(MatcherTest, CombineAndWorks)
 {
-    auto type_matcher = UniversalMatcher::create_type_matcher<std::vector<DataVariant>>();
-    auto context_matcher = UniversalMatcher::create_context_matcher(ComputationContext::TEMPORAL);
-    auto combined_matcher = UniversalMatcher::combine_and({ type_matcher, context_matcher });
+    auto type_matcher = Matcher::create_type_matcher<std::vector<DataVariant>>();
+    auto context_matcher = Matcher::create_context_matcher(ComputationContext::TEMPORAL);
+    auto combined_matcher = Matcher::combine_and({ type_matcher, context_matcher });
 
     auto temporal_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::TEMPORAL);
     EXPECT_TRUE(combined_matcher(test_input, temporal_ctx)) << "Should match both conditions";
@@ -103,11 +103,11 @@ TEST_F(UniversalMatcherTest, CombineAndWorks)
     EXPECT_FALSE(combined_matcher(test_input, spectral_ctx)) << "Should fail if one condition fails";
 }
 
-TEST_F(UniversalMatcherTest, CombineOrWorks)
+TEST_F(MatcherTest, CombineOrWorks)
 {
-    auto temporal_matcher = UniversalMatcher::create_context_matcher(ComputationContext::TEMPORAL);
-    auto spectral_matcher = UniversalMatcher::create_context_matcher(ComputationContext::SPECTRAL);
-    auto combined_matcher = UniversalMatcher::combine_or({ temporal_matcher, spectral_matcher });
+    auto temporal_matcher = Matcher::create_context_matcher(ComputationContext::TEMPORAL);
+    auto spectral_matcher = Matcher::create_context_matcher(ComputationContext::SPECTRAL);
+    auto combined_matcher = Matcher::combine_or({ temporal_matcher, spectral_matcher });
 
     auto temporal_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::TEMPORAL);
     EXPECT_TRUE(combined_matcher(test_input, temporal_ctx)) << "Should match first condition";
@@ -178,7 +178,7 @@ TEST_F(ComputationGrammarTest, BasicRuleCreation)
     rule.name = "test_rule";
     rule.context = ComputationContext::TEMPORAL;
     rule.priority = 100;
-    rule.matcher = UniversalMatcher::create_type_matcher<std::vector<DataVariant>>();
+    rule.matcher = Matcher::create_type_matcher<std::vector<DataVariant>>();
     rule.executor = [](const std::any& input, const ExecutionContext& /*ctx*/) -> std::any {
         return input;
     };
@@ -198,7 +198,7 @@ TEST_F(ComputationGrammarTest, RulePriorityOrdering)
     low_priority_rule.name = "low_priority";
     low_priority_rule.context = ComputationContext::TEMPORAL;
     low_priority_rule.priority = 10;
-    low_priority_rule.matcher = UniversalMatcher::create_type_matcher<std::vector<DataVariant>>();
+    low_priority_rule.matcher = Matcher::create_type_matcher<std::vector<DataVariant>>();
     low_priority_rule.executor = [](const std::any& /*input*/, const ExecutionContext& /*ctx*/) -> std::any {
         return std::string("low");
     };
@@ -208,7 +208,7 @@ TEST_F(ComputationGrammarTest, RulePriorityOrdering)
     high_priority_rule.name = "high_priority";
     high_priority_rule.context = ComputationContext::TEMPORAL;
     high_priority_rule.priority = 100;
-    high_priority_rule.matcher = UniversalMatcher::create_type_matcher<std::vector<DataVariant>>();
+    high_priority_rule.matcher = Matcher::create_type_matcher<std::vector<DataVariant>>();
     high_priority_rule.executor = [](const std::any& /*input*/, const ExecutionContext& /*ctx*/) -> std::any {
         return std::string("high");
     };
@@ -227,7 +227,7 @@ TEST_F(ComputationGrammarTest, RuleExecutionWorks)
     rule.name = "echo_rule";
     rule.context = ComputationContext::TEMPORAL;
     rule.priority = 50;
-    rule.matcher = UniversalMatcher::create_type_matcher<std::vector<DataVariant>>();
+    rule.matcher = Matcher::create_type_matcher<std::vector<DataVariant>>();
     rule.executor = [](const std::any& input, const ExecutionContext& /*ctx*/) -> std::any {
         return input;
     };
@@ -257,7 +257,7 @@ TEST_F(ComputationGrammarTest, OperationRuleWorks)
 {
     MathematicalTransformerConfig rule_cfg_1;
     rule_cfg_1.gain_factor = 2.0;
-    grammar->add_operation_rule<MathematicalTransformer<>>("gain_rule", ComputationContext::PARAMETRIC, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_1, 80);
+    grammar->add_operation_rule<MathematicalTransformer<>>("gain_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_1, 80);
 
     auto parametric_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::PARAMETRIC);
     auto result = grammar->execute_rule("gain_rule", test_input, parametric_ctx);
@@ -326,10 +326,10 @@ TEST_F(ComputationGrammarTest, RuleBuilderWorks)
 TEST_F(ComputationGrammarTest, ContextIndexingWorks)
 {
     MathematicalTransformerConfig rule_cfg_2;
-    grammar->add_operation_rule<MathematicalTransformer<>>("math_rule", ComputationContext::PARAMETRIC, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_2, 50);
+    grammar->add_operation_rule<MathematicalTransformer<>>("math_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_2, 50);
 
     TemporalTransformerConfig rule_cfg_3;
-    grammar->add_operation_rule<TemporalTransformer<>>("temporal_rule", ComputationContext::TEMPORAL, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_3, 50);
+    grammar->add_operation_rule<TemporalTransformer<>>("temporal_rule", ComputationContext::TEMPORAL, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_3, 50);
 
     auto parametric_rules = grammar->get_rules_by_context(ComputationContext::PARAMETRIC);
     auto temporal_rules = grammar->get_rules_by_context(ComputationContext::TEMPORAL);
@@ -346,14 +346,14 @@ TEST_F(ComputationGrammarTest, ContextIndexingWorks)
 TEST_F(ComputationGrammarTest, OperationTypeDiscovery)
 {
     MathematicalTransformerConfig rule_cfg_4;
-    grammar->add_operation_rule<MathematicalTransformer<>>("math_rule1", ComputationContext::PARAMETRIC, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_4, 50);
+    grammar->add_operation_rule<MathematicalTransformer<>>("math_rule1", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_4, 50);
 
     MathematicalTransformerConfig rule_cfg_5;
     rule_cfg_5.operation = MathematicalOperation::POWER;
-    grammar->add_operation_rule<MathematicalTransformer<>>("math_rule2", ComputationContext::PARAMETRIC, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_5, 50);
+    grammar->add_operation_rule<MathematicalTransformer<>>("math_rule2", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_5, 50);
 
     TemporalTransformerConfig rule_cfg_6;
-    grammar->add_operation_rule<TemporalTransformer<>>("temporal_rule", ComputationContext::TEMPORAL, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_6, 50);
+    grammar->add_operation_rule<TemporalTransformer<>>("temporal_rule", ComputationContext::TEMPORAL, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_6, 50);
 
     auto math_rules = grammar->get_rules_for_operation_type<MathematicalTransformer<>>();
     auto temporal_rules = grammar->get_rules_for_operation_type<TemporalTransformer<>>();
@@ -397,7 +397,7 @@ TEST_F(GrammarEdgeCaseTest, NoMatchingRules)
 TEST_F(GrammarEdgeCaseTest, EmptyInput)
 {
     MathematicalTransformerConfig rule_cfg_7;
-    grammar->add_operation_rule<MathematicalTransformer<>>("test_rule", ComputationContext::PARAMETRIC, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_7, 50);
+    grammar->add_operation_rule<MathematicalTransformer<>>("test_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_7, 50);
 
     std::vector<DataVariant> empty_multichannel;
     Datum<std::vector<DataVariant>> empty_input { empty_multichannel };
@@ -411,7 +411,7 @@ TEST_F(GrammarEdgeCaseTest, EmptyInput)
 TEST_F(GrammarEdgeCaseTest, EmptyChannelsInput)
 {
     MathematicalTransformerConfig rule_cfg_8;
-    grammar->add_operation_rule<MathematicalTransformer<>>("test_rule", ComputationContext::PARAMETRIC, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_8, 50);
+    grammar->add_operation_rule<MathematicalTransformer<>>("test_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_8, 50);
 
     std::vector<DataVariant> empty_channels = {
         DataVariant(std::vector<double> {}),
@@ -428,7 +428,7 @@ TEST_F(GrammarEdgeCaseTest, EmptyChannelsInput)
 TEST_F(GrammarEdgeCaseTest, InvalidContextMetadata)
 {
     MathematicalTransformerConfig rule_cfg_9;
-    grammar->add_operation_rule<MathematicalTransformer<>>("test_rule", ComputationContext::PARAMETRIC, UniversalMatcher::create_context_matcher(ComputationContext::PARAMETRIC), rule_cfg_9, 50);
+    grammar->add_operation_rule<MathematicalTransformer<>>("test_rule", ComputationContext::PARAMETRIC, Matcher::create_context_matcher(ComputationContext::PARAMETRIC), rule_cfg_9, 50);
 
     std::vector<DataVariant> multichannel_test = {
         DataVariant(std::vector<double> { 1.0, 2.0, 3.0 }),
@@ -451,7 +451,7 @@ TEST_F(GrammarEdgeCaseTest, ExceptionInRuleExecution)
     rule.name = "throwing_rule";
     rule.context = ComputationContext::TEMPORAL;
     rule.priority = 50;
-    rule.matcher = UniversalMatcher::create_type_matcher<std::vector<DataVariant>>();
+    rule.matcher = Matcher::create_type_matcher<std::vector<DataVariant>>();
     rule.executor = [](const std::any& /*input*/, const ExecutionContext& /*ctx*/) -> std::any {
         throw std::runtime_error("Test exception");
     };
@@ -482,7 +482,7 @@ protected:
         for (int i = 0; i < 10; ++i) {
             MathematicalTransformerConfig rule_cfg_10;
             rule_cfg_10.gain_factor = static_cast<double>(i + 1);
-            grammar->add_operation_rule<MathematicalTransformer<>>("rule_" + std::to_string(i), ComputationContext::PARAMETRIC, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_10, 100 - i);
+            grammar->add_operation_rule<MathematicalTransformer<>>("rule_" + std::to_string(i), ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_10, 100 - i);
         }
     }
 
@@ -557,7 +557,7 @@ TEST_F(GrammarMultiChannelTest, HandlesVariableChannelCounts)
 {
     MathematicalTransformerConfig rule_cfg_11;
     rule_cfg_11.gain_factor = 1.5;
-    grammar->add_operation_rule<MathematicalTransformer<>>("multichannel_rule", ComputationContext::PARAMETRIC, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_11, 50);
+    grammar->add_operation_rule<MathematicalTransformer<>>("multichannel_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_11, 50);
 
     std::vector<size_t> channel_counts = { 1, 2, 6, 8 };
 
@@ -582,7 +582,7 @@ TEST_F(GrammarMultiChannelTest, HandlesMixedChannelSizes)
 {
     MathematicalTransformerConfig rule_cfg_12;
     rule_cfg_12.gain_factor = 0.8;
-    grammar->add_operation_rule<MathematicalTransformer<>>("mixed_size_rule", ComputationContext::PARAMETRIC, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_12, 50);
+    grammar->add_operation_rule<MathematicalTransformer<>>("mixed_size_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_12, 50);
 
     std::vector<DataVariant> mixed_size_data = {
         DataVariant(std::vector<double>(256, 0.5)),
@@ -617,7 +617,7 @@ TEST_F(GrammarMultiChannelTest, HandlesDifferentDataTypes)
 {
     MathematicalTransformerConfig rule_cfg_13;
     rule_cfg_13.gain_factor = 1.2;
-    grammar->add_operation_rule<MathematicalTransformer<>>("mixed_type_rule", ComputationContext::PARAMETRIC, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_13, 50);
+    grammar->add_operation_rule<MathematicalTransformer<>>("mixed_type_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_13, 50);
 
     std::vector<DataVariant> mixed_type_data = {
         DataVariant(std::vector<double> { 1.0, 2.0, 3.0 }),
@@ -649,7 +649,7 @@ TEST_F(GrammarMultiChannelTest, PerformanceWithLargeMultiChannel)
 {
     MathematicalTransformerConfig rule_cfg_14;
     rule_cfg_14.gain_factor = 1.0;
-    grammar->add_operation_rule<MathematicalTransformer<>>("large_multichannel_rule", ComputationContext::PARAMETRIC, UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_14, 50);
+    grammar->add_operation_rule<MathematicalTransformer<>>("large_multichannel_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_14, 50);
 
     auto large_multichannel = GrammarTestDataGenerator::create_test_multichannel_signal(8, 44100);
     Datum<std::vector<DataVariant>> test_input { large_multichannel };
@@ -680,7 +680,7 @@ TEST_F(GrammarMultiChannelTest, PerformanceWithLargeMultiChannel)
 
 TEST_F(GrammarMultiChannelTest, ComplexMultiChannelMatcher)
 {
-    auto complex_matcher = UniversalMatcher::combine_and({ UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
+    auto complex_matcher = Matcher::combine_and({ Matcher::create_type_matcher<std::vector<DataVariant>>(),
         [](const std::any& input, const ExecutionContext&) -> bool {
             try {
                 auto io_input = std::any_cast<Datum<std::vector<DataVariant>>>(input);

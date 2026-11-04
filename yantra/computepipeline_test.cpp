@@ -41,16 +41,16 @@ public:
         grammar->add_operation_rule<MathematicalTransformer<>>(
             "auto_gain",
             ComputationContext::PARAMETRIC,
-            UniversalMatcher::combine_and({ UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-                UniversalMatcher::create_context_matcher(ComputationContext::PARAMETRIC) }),
+            Matcher::combine_and({ Matcher::create_type_matcher<std::vector<DataVariant>>(),
+                Matcher::create_context_matcher(ComputationContext::PARAMETRIC) }),
             gain_cfg,
             90);
 
         grammar->add_operation_rule<TemporalTransformer<>>(
             "auto_reverse",
             ComputationContext::TEMPORAL,
-            UniversalMatcher::combine_and({ UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-                UniversalMatcher::create_context_matcher(ComputationContext::TEMPORAL) }),
+            Matcher::combine_and({ Matcher::create_type_matcher<std::vector<DataVariant>>(),
+                Matcher::create_context_matcher(ComputationContext::TEMPORAL) }),
             TemporalTransformerConfig {},
             80);
 
@@ -792,7 +792,7 @@ TEST_F(PipelineMultiChannelTest, MultiChannelWithGrammarIntegration)
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "multichannel_auto_gain",
         ComputationContext::PARAMETRIC,
-        UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
+        Matcher::create_type_matcher<std::vector<DataVariant>>(),
         multichannel_cfg,
         90);
 

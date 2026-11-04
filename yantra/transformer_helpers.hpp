@@ -1,6 +1,6 @@
 #pragma once
 
-#include "MayaFlux/Yantra/Transformers/UniversalTransformer.hpp"
+#include "MayaFlux/Yantra/Transformers/Transformer.hpp"
 
 #include <cmath>
 #include <cstddef>
