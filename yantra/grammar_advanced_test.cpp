@@ -75,9 +75,9 @@ protected:
 TEST_F(PipelineOperationChainTest, SingleOperationExecutes)
 {
     auto pipeline = std::make_shared<ComputationPipeline<>>();
-    pipeline->create_operation<MathematicalTransformer<>>("gain", MathematicalOperation::GAIN);
+    pipeline->create_operation<MathematicalTransformer<>>("gain");
     pipeline->configure_operation<MathematicalTransformer<>>("gain",
-        [](auto op) { op->set_parameter("gain_factor", 2.0); });
+        [](auto op) { MathematicalTransformerConfig cfg; cfg.gain_factor = 2.0; op->set_config(cfg); });
 
     auto result = pipeline->process(input);
 
@@ -90,10 +90,10 @@ TEST_F(PipelineOperationChainTest, OperationChainExecutesInOrder)
 {
     // gain x2 then reverse — result should be reversed AND doubled
     auto pipeline = std::make_shared<ComputationPipeline<>>();
-    pipeline->create_operation<MathematicalTransformer<>>("gain", MathematicalOperation::GAIN);
+    pipeline->create_operation<MathematicalTransformer<>>("gain");
     pipeline->configure_operation<MathematicalTransformer<>>("gain",
-        [](auto op) { op->set_parameter("gain_factor", 2.0); });
-    pipeline->create_operation<TemporalTransformer<>>("reverse", TemporalOperation::TIME_REVERSE);
+        [](auto op) { MathematicalTransformerConfig cfg; cfg.gain_factor = 2.0; op->set_config(cfg); });
+    pipeline->create_operation<TemporalTransformer<>>("reverse");
 
     auto result = pipeline->process(input);
 
@@ -119,9 +119,9 @@ TEST_F(PipelineOperationChainTest, IntermediateStateFlowsCorrectly)
     auto pipeline = std::make_shared<ComputationPipeline<>>();
     for (auto [name, factor] : std::initializer_list<std::pair<const char*, double>> {
              { "g1", 2.0 }, { "g2", 3.0 }, { "g3", 0.5 } }) {
-        pipeline->create_operation<MathematicalTransformer<>>(name, MathematicalOperation::GAIN);
+        pipeline->create_operation<MathematicalTransformer<>>(name);
         pipeline->configure_operation<MathematicalTransformer<>>(name,
-            [factor](auto op) { op->set_parameter("gain_factor", factor); });
+            [factor](auto op) { MathematicalTransformerConfig cfg; cfg.gain_factor = factor; op->set_config(cfg); });
     }
 
     auto result = pipeline->process(input);
@@ -147,10 +147,10 @@ TEST_F(PipelineOperationChainTest, EmptyPipelineReturnsInput)
 TEST_F(PipelineOperationChainTest, RemoveOperationShortensPipeline)
 {
     auto pipeline = std::make_shared<ComputationPipeline<>>();
-    pipeline->create_operation<MathematicalTransformer<>>("gain", MathematicalOperation::GAIN);
+    pipeline->create_operation<MathematicalTransformer<>>("gain");
     pipeline->configure_operation<MathematicalTransformer<>>("gain",
-        [](auto op) { op->set_parameter("gain_factor", 4.0); });
-    pipeline->create_operation<TemporalTransformer<>>("reverse", TemporalOperation::TIME_REVERSE);
+        [](auto op) { MathematicalTransformerConfig cfg; cfg.gain_factor = 4.0; op->set_config(cfg); });
+    pipeline->create_operation<TemporalTransformer<>>("reverse");
 
     EXPECT_EQ(pipeline->operation_count(), 2u);
     bool removed = pipeline->remove_operation("reverse");
@@ -165,7 +165,7 @@ TEST_F(PipelineOperationChainTest, RemoveOperationShortensPipeline)
 TEST_F(PipelineOperationChainTest, GetOperationByNameReturnsCorrectType)
 {
     auto pipeline = std::make_shared<ComputationPipeline<>>();
-    pipeline->create_operation<MathematicalTransformer<>>("gain", MathematicalOperation::GAIN);
+    pipeline->create_operation<MathematicalTransformer<>>("gain");
 
     auto op = pipeline->get_operation<MathematicalTransformer<>>("gain");
     ASSERT_NE(op, nullptr);
@@ -181,14 +181,14 @@ TEST_F(PipelineOperationChainTest, GetOperationByNameReturnsCorrectType)
 TEST_F(PipelineOperationChainTest, ConfigureOperationMutatesLiveInstance)
 {
     auto pipeline = std::make_shared<ComputationPipeline<>>();
-    pipeline->create_operation<MathematicalTransformer<>>("gain", MathematicalOperation::GAIN);
+    pipeline->create_operation<MathematicalTransformer<>>("gain");
     pipeline->configure_operation<MathematicalTransformer<>>("gain",
-        [](auto op) { op->set_parameter("gain_factor", 1.0); });
+        [](auto op) { MathematicalTransformerConfig cfg; cfg.gain_factor = 1.0; op->set_config(cfg); });
 
     auto r1 = pipeline->process(input);
 
     pipeline->configure_operation<MathematicalTransformer<>>("gain",
-        [](auto op) { op->set_parameter("gain_factor", 4.0); });
+        [](auto op) { MathematicalTransformerConfig cfg; cfg.gain_factor = 4.0; op->set_config(cfg); });
 
     auto r2 = pipeline->process(input);
 
@@ -217,18 +217,19 @@ protected:
 TEST_F(PipelineGrammarPrepassTest, GrammarPrepassAppliedBeforeOpChain)
 {
     // Grammar: gain x2 pre-pass. Op chain: gain x3. Net = x6.
+    MathematicalTransformerConfig rule_cfg_1;
+    rule_cfg_1.gain_factor = 2.0;
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "prepass_gain",
         ComputationContext::PARAMETRIC,
         UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-        { { "gain_factor", 2.0 } },
-        100,
-        MathematicalOperation::GAIN);
+        rule_cfg_1,
+        100);
 
     auto pipeline = std::make_shared<ComputationPipeline<>>(grammar);
-    pipeline->create_operation<MathematicalTransformer<>>("chain_gain", MathematicalOperation::GAIN);
+    pipeline->create_operation<MathematicalTransformer<>>("chain_gain");
     pipeline->configure_operation<MathematicalTransformer<>>("chain_gain",
-        [](auto op) { op->set_parameter("gain_factor", 3.0); });
+        [](auto op) { MathematicalTransformerConfig cfg; cfg.gain_factor = 3.0; op->set_config(cfg); });
 
     auto ctx = make_context(ComputationContext::PARAMETRIC);
     auto result = pipeline->process(input, ctx);
@@ -240,18 +241,19 @@ TEST_F(PipelineGrammarPrepassTest, GrammarPrepassAppliedBeforeOpChain)
 
 TEST_F(PipelineGrammarPrepassTest, NoMatchingRuleFallsThroughToOpChain)
 {
+    MathematicalTransformerConfig rule_cfg_2;
+    rule_cfg_2.gain_factor = 99.0;
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "spectral_only",
         ComputationContext::SPECTRAL,
         UniversalMatcher::create_context_matcher(ComputationContext::SPECTRAL),
-        { { "gain_factor", 99.0 } },
-        100,
-        MathematicalOperation::GAIN);
+        rule_cfg_2,
+        100);
 
     auto pipeline = std::make_shared<ComputationPipeline<>>(grammar);
-    pipeline->create_operation<MathematicalTransformer<>>("chain_gain", MathematicalOperation::GAIN);
+    pipeline->create_operation<MathematicalTransformer<>>("chain_gain");
     pipeline->configure_operation<MathematicalTransformer<>>("chain_gain",
-        [](auto op) { op->set_parameter("gain_factor", 2.0); });
+        [](auto op) { MathematicalTransformerConfig cfg; cfg.gain_factor = 2.0; op->set_config(cfg); });
 
     auto ctx = make_context(ComputationContext::TEMPORAL); // grammar will not match
     auto result = pipeline->process(input, ctx);
@@ -262,13 +264,14 @@ TEST_F(PipelineGrammarPrepassTest, NoMatchingRuleFallsThroughToOpChain)
 
 TEST_F(PipelineGrammarPrepassTest, GrammarOnlyPipelineNoOps)
 {
+    MathematicalTransformerConfig rule_cfg_3;
+    rule_cfg_3.gain_factor = 2.0;
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "double",
         ComputationContext::PARAMETRIC,
         UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-        { { "gain_factor", 2.0 } },
-        100,
-        MathematicalOperation::GAIN);
+        rule_cfg_3,
+        100);
 
     auto pipeline = std::make_shared<ComputationPipeline<>>(grammar);
     // no add_operation calls
@@ -282,21 +285,23 @@ TEST_F(PipelineGrammarPrepassTest, GrammarOnlyPipelineNoOps)
 
 TEST_F(PipelineGrammarPrepassTest, HigherPriorityGrammarRuleWins)
 {
+    MathematicalTransformerConfig rule_cfg_4;
+    rule_cfg_4.gain_factor = 10.0;
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "low_gain",
         ComputationContext::PARAMETRIC,
         UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-        { { "gain_factor", 10.0 } },
-        10,
-        MathematicalOperation::GAIN);
+        rule_cfg_4,
+        10);
 
+    MathematicalTransformerConfig rule_cfg_5;
+    rule_cfg_5.gain_factor = 2.0;
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "high_gain",
         ComputationContext::PARAMETRIC,
         UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-        { { "gain_factor", 2.0 } },
-        100,
-        MathematicalOperation::GAIN);
+        rule_cfg_5,
+        100);
 
     auto pipeline = std::make_shared<ComputationPipeline<>>(grammar);
     auto ctx = make_context(ComputationContext::PARAMETRIC);
@@ -324,13 +329,14 @@ protected:
 
 TEST_F(GrammarAwareMatrixTest, ExecuteWithGrammarAppliesMatchingRule)
 {
+    MathematicalTransformerConfig rule_cfg_6;
+    rule_cfg_6.gain_factor = 2.0;
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "double",
         ComputationContext::PARAMETRIC,
         UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-        { { "gain_factor", 2.0 } },
-        50,
-        MathematicalOperation::GAIN);
+        rule_cfg_6,
+        50);
 
     GrammarAwareComputeMatrix matrix(grammar);
     auto ctx = make_context(ComputationContext::PARAMETRIC);
@@ -343,13 +349,14 @@ TEST_F(GrammarAwareMatrixTest, ExecuteWithGrammarAppliesMatchingRule)
 
 TEST_F(GrammarAwareMatrixTest, ExecuteWithGrammarNoMatchReturnsOriginal)
 {
+    MathematicalTransformerConfig rule_cfg_7;
+    rule_cfg_7.gain_factor = 100.0;
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "spectral_only",
         ComputationContext::SPECTRAL,
         UniversalMatcher::create_context_matcher(ComputationContext::SPECTRAL),
-        { { "gain_factor", 100.0 } },
-        50,
-        MathematicalOperation::GAIN);
+        rule_cfg_7,
+        50);
 
     GrammarAwareComputeMatrix matrix(grammar);
     auto ctx = make_context(ComputationContext::TEMPORAL);
@@ -362,13 +369,14 @@ TEST_F(GrammarAwareMatrixTest, ExecuteWithGrammarNoMatchReturnsOriginal)
 
 TEST_F(GrammarAwareMatrixTest, RuleApplicationIsDeterministic)
 {
+    MathematicalTransformerConfig rule_cfg_8;
+    rule_cfg_8.gain_factor = 3.0;
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "triple",
         ComputationContext::PARAMETRIC,
         UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-        { { "gain_factor", 3.0 } },
-        50,
-        MathematicalOperation::GAIN);
+        rule_cfg_8,
+        50);
 
     GrammarAwareComputeMatrix matrix(grammar);
     auto ctx = make_context(ComputationContext::PARAMETRIC);
@@ -385,13 +393,14 @@ TEST_F(GrammarAwareMatrixTest, RuleApplicationIsDeterministic)
 
 TEST_F(GrammarAwareMatrixTest, GrammarCanBeSwappedAtRuntime)
 {
+    MathematicalTransformerConfig rule_cfg_9;
+    rule_cfg_9.gain_factor = 2.0;
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "double",
         ComputationContext::PARAMETRIC,
         UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-        { { "gain_factor", 2.0 } },
-        50,
-        MathematicalOperation::GAIN);
+        rule_cfg_9,
+        50);
 
     GrammarAwareComputeMatrix matrix(grammar);
     auto ctx = make_context(ComputationContext::PARAMETRIC);
@@ -400,13 +409,14 @@ TEST_F(GrammarAwareMatrixTest, GrammarCanBeSwappedAtRuntime)
     EXPECT_NEAR(channel_peak(r1, 0), 1.0, 1e-9);
 
     auto grammar2 = std::make_shared<ComputationGrammar>();
+    MathematicalTransformerConfig rule_cfg_10;
+    rule_cfg_10.gain_factor = 4.0;
     grammar2->add_operation_rule<MathematicalTransformer<>>(
         "quadruple",
         ComputationContext::PARAMETRIC,
         UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-        { { "gain_factor", 4.0 } },
-        50,
-        MathematicalOperation::GAIN);
+        rule_cfg_10,
+        50);
 
     matrix.set_grammar(grammar2);
     auto r2 = matrix.execute_with_grammar(signal, ctx);
@@ -425,6 +435,8 @@ protected:
         signal = make_signal(2, 256, 0.5);
         input = Datum<std::vector<DataVariant>> { signal };
         grammar = std::make_shared<ComputationGrammar>();
+        MathematicalTransformerConfig rule_cfg_11;
+        rule_cfg_11.gain_factor = 2.0;
         grammar->add_operation_rule<MathematicalTransformer<>>(
             "double",
             ComputationContext::PARAMETRIC,
@@ -432,9 +444,8 @@ protected:
                 UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
                 UniversalMatcher::create_context_matcher(ComputationContext::PARAMETRIC),
             }),
-            { { "gain_factor", 2.0 } },
-            50,
-            MathematicalOperation::GAIN);
+            rule_cfg_11,
+            50);
     }
 
     std::vector<DataVariant> signal;
@@ -447,9 +458,9 @@ TEST_F(SharedGrammarTest, TwoPipelinesShareGrammarIndependently)
     auto p1 = std::make_shared<ComputationPipeline<>>(grammar);
     auto p2 = std::make_shared<ComputationPipeline<>>(grammar);
 
-    p1->create_operation<MathematicalTransformer<>>("gain", MathematicalOperation::GAIN);
+    p1->create_operation<MathematicalTransformer<>>("gain");
     p1->configure_operation<MathematicalTransformer<>>("gain",
-        [](auto op) { op->set_parameter("gain_factor", 3.0); });
+        [](auto op) { MathematicalTransformerConfig cfg; cfg.gain_factor = 3.0; op->set_config(cfg); });
 
     auto ctx = make_context(ComputationContext::PARAMETRIC);
     auto r1 = p1->process(input, ctx);
@@ -472,13 +483,14 @@ TEST_F(SharedGrammarTest, AddingRuleAffectsBothPipelines)
     EXPECT_NEAR(channel_peak(r_before_1, 0), 0.5, 1e-9) << "no spectral rule yet";
     EXPECT_NEAR(channel_peak(r_before_2, 0), 0.5, 1e-9) << "no spectral rule yet";
 
+    MathematicalTransformerConfig rule_cfg_12;
+    rule_cfg_12.gain_factor = 2.0;
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "spectral_double",
         ComputationContext::SPECTRAL,
         UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-        { { "gain_factor", 2.0 } },
-        50,
-        MathematicalOperation::GAIN);
+        rule_cfg_12,
+        50);
 
     auto r_after_1 = p1->process(input, ctx);
     auto r_after_2 = p2->process(input, ctx);
@@ -497,8 +509,8 @@ TEST_F(PipelineIntrospectionTest, OperationCountReflectsAddAndRemove)
     auto pipeline = std::make_shared<ComputationPipeline<>>();
     EXPECT_EQ(pipeline->operation_count(), 0u);
 
-    pipeline->create_operation<MathematicalTransformer<>>("a", MathematicalOperation::GAIN);
-    pipeline->create_operation<TemporalTransformer<>>("b", TemporalOperation::TIME_REVERSE);
+    pipeline->create_operation<MathematicalTransformer<>>("a");
+    pipeline->create_operation<TemporalTransformer<>>("b");
     EXPECT_EQ(pipeline->operation_count(), 2u);
 
     pipeline->remove_operation("a");
@@ -508,9 +520,11 @@ TEST_F(PipelineIntrospectionTest, OperationCountReflectsAddAndRemove)
 TEST_F(PipelineIntrospectionTest, GetOperationNamesReturnsInOrder)
 {
     auto pipeline = std::make_shared<ComputationPipeline<>>();
-    pipeline->create_operation<MathematicalTransformer<>>("first", MathematicalOperation::GAIN);
-    pipeline->create_operation<TemporalTransformer<>>("second", TemporalOperation::TIME_REVERSE);
-    pipeline->create_operation<MathematicalTransformer<>>("third", MathematicalOperation::NORMALIZE);
+    pipeline->create_operation<MathematicalTransformer<>>("first");
+    pipeline->create_operation<TemporalTransformer<>>("second");
+    MathematicalTransformerConfig third_cfg;
+    third_cfg.operation = MathematicalOperation::NORMALIZE;
+    pipeline->create_operation<MathematicalTransformer<>>("third", third_cfg);
 
     auto names = pipeline->get_operation_names();
     ASSERT_EQ(names.size(), 3u);
@@ -522,8 +536,8 @@ TEST_F(PipelineIntrospectionTest, GetOperationNamesReturnsInOrder)
 TEST_F(PipelineIntrospectionTest, ClearOperationsEmptiesPipeline)
 {
     auto pipeline = std::make_shared<ComputationPipeline<>>();
-    pipeline->create_operation<MathematicalTransformer<>>("a", MathematicalOperation::GAIN);
-    pipeline->create_operation<TemporalTransformer<>>("b", TemporalOperation::TIME_REVERSE);
+    pipeline->create_operation<MathematicalTransformer<>>("a");
+    pipeline->create_operation<TemporalTransformer<>>("b");
     ASSERT_EQ(pipeline->operation_count(), 2u);
 
     pipeline->clear_operations();
@@ -548,12 +562,12 @@ TEST_F(PipelineIntrospectionTest, RemoveNonexistentReturnsFalse)
 TEST_F(PipelineIntrospectionTest, RemoveDuplicateNameRemovesFirst)
 {
     auto pipeline = std::make_shared<ComputationPipeline<>>();
-    pipeline->create_operation<MathematicalTransformer<>>("gain", MathematicalOperation::GAIN);
+    pipeline->create_operation<MathematicalTransformer<>>("gain");
     pipeline->configure_operation<MathematicalTransformer<>>("gain",
-        [](auto op) { op->set_parameter("gain_factor", 2.0); });
-    pipeline->create_operation<MathematicalTransformer<>>("gain", MathematicalOperation::GAIN);
+        [](auto op) { MathematicalTransformerConfig cfg; cfg.gain_factor = 2.0; op->set_config(cfg); });
+    pipeline->create_operation<MathematicalTransformer<>>("gain");
     pipeline->configure_operation<MathematicalTransformer<>>("gain",
-        [](auto op) { op->set_parameter("gain_factor", 4.0); });
+        [](auto op) { MathematicalTransformerConfig cfg; cfg.gain_factor = 4.0; op->set_config(cfg); });
 
     EXPECT_EQ(pipeline->operation_count(), 2u);
     pipeline->remove_operation("gain");

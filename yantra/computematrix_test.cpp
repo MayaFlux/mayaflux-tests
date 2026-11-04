@@ -74,13 +74,14 @@ public:
     {
         auto grammar = std::make_shared<ComputationGrammar>();
 
+        MathematicalTransformerConfig gain_cfg;
+        gain_cfg.gain_factor = 2.0;
         grammar->add_operation_rule<MathematicalTransformer<>>(
             "auto_gain",
             ComputationContext::PARAMETRIC,
             UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-            { { "gain_factor", 2.0 } },
-            90,
-            MathematicalOperation::GAIN);
+            gain_cfg,
+            90);
 
         return grammar;
     }
@@ -196,8 +197,9 @@ TEST_F(ComputeMatrixTest, MatrixCreation)
 
 TEST_F(ComputeMatrixTest, BasicOperationManagement)
 {
-    auto math_op = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
-    math_op->set_parameter("gain_factor", 2.0);
+    MathematicalTransformerConfig math_op_cfg;
+    math_op_cfg.gain_factor = 2.0;
+    auto math_op = std::make_shared<MathematicalTransformer<>>(math_op_cfg);
 
     EXPECT_TRUE(matrix->add_operation("gain", math_op)) << "Should add operation successfully";
     EXPECT_FALSE(matrix->add_operation("gain", math_op)) << "Should reject duplicate names";
@@ -213,7 +215,7 @@ TEST_F(ComputeMatrixTest, BasicOperationManagement)
 
 TEST_F(ComputeMatrixTest, CreateOperationInMatrix)
 {
-    auto created = matrix->create_operation<MathematicalTransformer<>>("created_gain", MathematicalOperation::GAIN);
+    auto created = matrix->create_operation<MathematicalTransformer<>>("created_gain");
     EXPECT_NE(created, nullptr) << "Should create operation successfully";
     EXPECT_EQ(matrix->list_operations().size(), 1) << "Should have one operation";
 
@@ -223,8 +225,8 @@ TEST_F(ComputeMatrixTest, CreateOperationInMatrix)
 
 TEST_F(ComputeMatrixTest, RemoveOperations)
 {
-    matrix->create_operation<MathematicalTransformer<>>("op1", MathematicalOperation::GAIN);
-    matrix->create_operation<TemporalTransformer<>>("op2", TemporalOperation::TIME_REVERSE);
+    matrix->create_operation<MathematicalTransformer<>>("op1");
+    matrix->create_operation<TemporalTransformer<>>("op2");
 
     EXPECT_EQ(matrix->list_operations().size(), 2) << "Should have two operations";
 
@@ -256,7 +258,7 @@ protected:
 
 TEST_F(MatrixExecutionTest, DirectExecution)
 {
-    auto result = matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input, MathematicalOperation::GAIN);
+    auto result = matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input);
     EXPECT_TRUE(result.has_value()) << "Should execute operation successfully";
 
     try {
@@ -274,8 +276,9 @@ TEST_F(MatrixExecutionTest, DirectExecution)
 
 TEST_F(MatrixExecutionTest, NamedExecution)
 {
-    auto math_op = matrix->create_operation<MathematicalTransformer<>>("named_gain", MathematicalOperation::GAIN);
-    math_op->set_parameter("gain_factor", 3.0);
+    MathematicalTransformerConfig math_op_cfg;
+    math_op_cfg.gain_factor = 3.0;
+    auto math_op = matrix->create_operation<MathematicalTransformer<>>("named_gain", math_op_cfg);
 
     auto result = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("named_gain", test_input);
     EXPECT_TRUE(result.has_value()) << "Should execute named operation successfully";
@@ -308,7 +311,7 @@ TEST_F(MatrixExecutionTest, NamedExecution)
 
 TEST_F(MatrixExecutionTest, AsynchronousExecution)
 {
-    auto future = matrix->execute_async<MathematicalTransformer<>, std::vector<DataVariant>>(test_input, MathematicalOperation::GAIN);
+    auto future = matrix->execute_async<MathematicalTransformer<>, std::vector<DataVariant>>(test_input);
     EXPECT_TRUE(future.valid()) << "Should return valid future";
 
     auto result = future.get();
@@ -329,7 +332,7 @@ TEST_F(MatrixExecutionTest, AsynchronousExecution)
 
 TEST_F(MatrixExecutionTest, NamedAsyncExecution)
 {
-    matrix->create_operation<MathematicalTransformer<>>("async_gain", MathematicalOperation::GAIN);
+    matrix->create_operation<MathematicalTransformer<>>("async_gain");
 
     auto future = matrix->execute_named_async<MathematicalTransformer<>, std::vector<DataVariant>>("async_gain", test_input);
     EXPECT_TRUE(future.valid()) << "Should return valid future";
@@ -363,8 +366,10 @@ protected:
 
 TEST_F(MatrixParallelTest, ParallelNamedExecution)
 {
-    matrix->create_operation<MathematicalTransformer<>>("gain1", MathematicalOperation::GAIN);
-    matrix->create_operation<MathematicalTransformer<>>("gain2", MathematicalOperation::POWER);
+    matrix->create_operation<MathematicalTransformer<>>("gain1");
+    MathematicalTransformerConfig power_cfg;
+    power_cfg.operation = MathematicalOperation::POWER;
+    matrix->create_operation<MathematicalTransformer<>>("gain2", power_cfg);
 
     std::vector<std::string> operation_names = { "gain1", "gain2" };
     auto results = matrix->execute_parallel_named<MathematicalTransformer<>, std::vector<DataVariant>>(operation_names, test_input);
@@ -435,9 +440,10 @@ TEST_F(MatrixChainTest, BasicChainExecution)
 
 TEST_F(MatrixChainTest, NamedChainExecution)
 {
-    auto gain_op = matrix->create_operation<MathematicalTransformer<>>("chain_gain", MathematicalOperation::GAIN);
-    gain_op->set_parameter("gain_factor", 2.0);
-    auto reverse_op = matrix->create_operation<TemporalTransformer<>>("chain_reverse", TemporalOperation::TIME_REVERSE);
+    MathematicalTransformerConfig gain_op_cfg;
+    gain_op_cfg.gain_factor = 2.0;
+    auto gain_op = matrix->create_operation<MathematicalTransformer<>>("chain_gain", gain_op_cfg);
+    auto reverse_op = matrix->create_operation<TemporalTransformer<>>("chain_reverse");
 
     auto result = matrix->execute_chain_named<MathematicalTransformer<>, TemporalTransformer<>, std::vector<DataVariant>, std::vector<DataVariant>, std::vector<DataVariant>>(
         "chain_gain", "chain_reverse", test_input);
@@ -485,7 +491,7 @@ protected:
 
 TEST_F(MatrixBatchTest, SequentialBatchExecution)
 {
-    auto results = matrix->execute_batch<MathematicalTransformer<>, std::vector<DataVariant>>(test_inputs, MathematicalOperation::GAIN);
+    auto results = matrix->execute_batch<MathematicalTransformer<>, std::vector<DataVariant>>(test_inputs);
 
     EXPECT_EQ(results.size(), test_inputs.size()) << "Should return result for each input";
 
@@ -509,7 +515,7 @@ TEST_F(MatrixBatchTest, SequentialBatchExecution)
 
 TEST_F(MatrixBatchTest, ParallelBatchExecution)
 {
-    auto results = matrix->execute_batch_parallel<MathematicalTransformer<>, std::vector<DataVariant>>(test_inputs, MathematicalOperation::GAIN);
+    auto results = matrix->execute_batch_parallel<MathematicalTransformer<>, std::vector<DataVariant>>(test_inputs);
 
     EXPECT_EQ(results.size(), test_inputs.size()) << "Should return result for each input";
 
@@ -564,8 +570,8 @@ TEST_F(MatrixConfigurationTest, ProfilingConfiguration)
 {
     matrix->set_profiling(true);
 
-    matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input, MathematicalOperation::GAIN);
-    matrix->execute<TemporalTransformer<>, std::vector<DataVariant>>(test_input, TemporalOperation::TIME_REVERSE);
+    matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input);
+    matrix->execute<TemporalTransformer<>, std::vector<DataVariant>>(test_input);
 
     auto stats = matrix->get_statistics();
 
@@ -590,7 +596,7 @@ TEST_F(MatrixConfigurationTest, ContextConfiguratorSettings)
         ctx.timeout = std::chrono::milliseconds(1000);
     });
 
-    matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input, MathematicalOperation::GAIN);
+    matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input);
 
     EXPECT_TRUE(configurator_called) << "Context configurator should be called during execution";
 }
@@ -622,8 +628,9 @@ protected:
         test_data = MatrixTestDataGenerator::create_test_signal();
         test_input = DataVariant(test_data);
 
-        auto gain_op = matrix->create_operation<MathematicalTransformer<>>("fluent_gain", MathematicalOperation::GAIN);
-        gain_op->set_parameter("gain_factor", 1.5);
+        MathematicalTransformerConfig gain_op_cfg;
+        gain_op_cfg.gain_factor = 1.5;
+        auto gain_op = matrix->create_operation<MathematicalTransformer<>>("fluent_gain", gain_op_cfg);
     }
 
     std::shared_ptr<ComputeMatrix> matrix;
@@ -656,7 +663,7 @@ TEST_F(MatrixEdgeCaseTest, EmptyInputProcessing)
     Datum<std::vector<DataVariant>> empty_multichannel;
 
     EXPECT_NO_THROW({
-        auto result = matrix->execute<MathematicalTransformer<>>(empty_multichannel, MathematicalOperation::GAIN);
+        auto result = matrix->execute<MathematicalTransformer<>>(empty_multichannel);
     }) << "Should handle empty multichannel input gracefully";
 }
 
@@ -667,7 +674,7 @@ TEST_F(MatrixEdgeCaseTest, EmptyChannelProcessing)
         DataVariant(std::vector<double> {}) });
 
     EXPECT_NO_THROW({
-        auto result = matrix->execute<MathematicalTransformer<>>(empty_channels, MathematicalOperation::GAIN);
+        auto result = matrix->execute<MathematicalTransformer<>>(empty_channels);
     }) << "Should handle empty channels gracefully";
 }
 
@@ -686,7 +693,7 @@ TEST_F(MatrixEdgeCaseTest, NonexistentOperationAccess)
 
 TEST_F(MatrixEdgeCaseTest, TypeMismatchHandling)
 {
-    auto math_op = matrix->create_operation<MathematicalTransformer<>>("math_op", MathematicalOperation::GAIN);
+    auto math_op = matrix->create_operation<MathematicalTransformer<>>("math_op");
 
     auto wrong_type = matrix->get_operation<TemporalTransformer<>>("math_op");
     EXPECT_EQ(wrong_type, nullptr) << "Should return nullptr for type mismatch";
@@ -698,7 +705,7 @@ TEST_F(MatrixEdgeCaseTest, SingleChannelToMultiChannelCompatibility)
         DataVariant(std::vector<double> { 1.0, 2.0, 3.0 }) });
 
     EXPECT_NO_THROW({
-        auto result = matrix->execute<MathematicalTransformer<>>(single_channel, MathematicalOperation::GAIN);
+        auto result = matrix->execute<MathematicalTransformer<>>(single_channel);
         EXPECT_TRUE(result.has_value()) << "Should handle single-channel as multichannel";
         if (result.has_value()) {
             EXPECT_EQ(result->data.size(), 1) << "Should preserve single channel structure";
@@ -714,7 +721,7 @@ TEST_F(MatrixEdgeCaseTest, MixedChannelSizeHandling)
         DataVariant(std::vector<double>(512, 0.7)) });
 
     EXPECT_NO_THROW({
-        auto result = matrix->execute<MathematicalTransformer<>>(mixed_sizes, MathematicalOperation::GAIN);
+        auto result = matrix->execute<MathematicalTransformer<>>(mixed_sizes);
         if (result.has_value()) {
             EXPECT_EQ(result->data.size(), 3) << "Should preserve channel count";
 
@@ -742,9 +749,10 @@ protected:
         large_input = large_data;
 
         for (int i = 0; i < 5; ++i) {
+            MathematicalTransformerConfig gain_op_cfg;
+            gain_op_cfg.gain_factor = 1.0 + i * 0.1;
             auto gain_op = matrix->create_operation<MathematicalTransformer<>>(
-                "perf_gain_" + std::to_string(i), MathematicalOperation::GAIN);
-            gain_op->set_parameter("gain_factor", 1.0 + i * 0.1);
+                "perf_gain_" + std::to_string(i), gain_op_cfg);
         }
     }
 
@@ -756,7 +764,7 @@ protected:
 TEST_F(MatrixPerformanceTest, LargeDataProcessing)
 {
     EXPECT_NO_THROW({
-        auto result = matrix->execute<MathematicalTransformer<>>(large_input, MathematicalOperation::GAIN);
+        auto result = matrix->execute<MathematicalTransformer<>>(large_input);
         EXPECT_TRUE(result.has_value()) << "Should handle large multichannel data successfully";
 
         try {
@@ -862,7 +870,7 @@ TEST_F(MatrixPerformanceTest, HighChannelCountPerformance)
     Datum<std::vector<DataVariant>> high_channel_data(MatrixTestDataGenerator::create_test_multichannel_signal(16, 1024, 1.0));
 
     auto start = std::chrono::high_resolution_clock::now();
-    auto result = matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(high_channel_data, MathematicalOperation::GAIN);
+    auto result = matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(high_channel_data);
     auto end = std::chrono::high_resolution_clock::now();
 
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
@@ -888,7 +896,7 @@ TEST_F(MatrixPerformanceTest, BatchPerformanceScaling)
     }
 
     auto start = std::chrono::high_resolution_clock::now();
-    auto results = matrix->execute_batch<MathematicalTransformer<>, std::vector<DataVariant>>(batch_inputs, MathematicalOperation::GAIN);
+    auto results = matrix->execute_batch<MathematicalTransformer<>, std::vector<DataVariant>>(batch_inputs);
     auto end = std::chrono::high_resolution_clock::now();
 
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
@@ -922,11 +930,12 @@ protected:
 
 TEST_F(MatrixIntegrationTest, MultipleTransformerTypes)
 {
-    auto math_op = matrix->create_operation<MathematicalTransformer<>>("integration_gain", MathematicalOperation::GAIN);
-    math_op->set_parameter("gain_factor", 1.5); // Explicit gain factor
+    MathematicalTransformerConfig math_op_cfg;
+    math_op_cfg.gain_factor = 1.5;
+    auto math_op = matrix->create_operation<MathematicalTransformer<>>("integration_gain", math_op_cfg); // Explicit gain factor
 
     auto math_result = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("integration_gain", test_input);
-    auto temporal_result = matrix->execute<TemporalTransformer<>, std::vector<DataVariant>>(test_input, TemporalOperation::TIME_REVERSE);
+    auto temporal_result = matrix->execute<TemporalTransformer<>, std::vector<DataVariant>>(test_input);
 
     EXPECT_TRUE(math_result.has_value()) << "Mathematical transformer should execute";
     EXPECT_TRUE(temporal_result.has_value()) << "Temporal transformer should execute";
@@ -968,9 +977,10 @@ TEST_F(MatrixIntegrationTest, MultipleTransformerTypes)
 
 TEST_F(MatrixIntegrationTest, ChainWithDifferentOperationTypes)
 {
-    auto math_op = matrix->create_operation<MathematicalTransformer<>>("chain_math", MathematicalOperation::POWER);
-    math_op->set_parameter("power_factor", 2.0);
-    auto temporal_op = matrix->create_operation<TemporalTransformer<>>("chain_temporal", TemporalOperation::TIME_REVERSE);
+    MathematicalTransformerConfig math_op_cfg;
+    math_op_cfg.operation = MathematicalOperation::POWER;
+    auto math_op = matrix->create_operation<MathematicalTransformer<>>("chain_math", math_op_cfg);
+    auto temporal_op = matrix->create_operation<TemporalTransformer<>>("chain_temporal");
 
     auto intermediate = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("chain_math", test_input);
     EXPECT_TRUE(intermediate.has_value()) << "First operation in chain should succeed";
@@ -1006,8 +1016,8 @@ TEST_F(MatrixIntegrationTest, ChainWithDifferentOperationTypes)
 
 TEST_F(MatrixIntegrationTest, MixedSyncAsyncExecution)
 {
-    auto sync_result = matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input, MathematicalOperation::GAIN);
-    auto async_future = matrix->execute_async<TemporalTransformer<>, std::vector<DataVariant>>(test_input, TemporalOperation::TIME_REVERSE);
+    auto sync_result = matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input);
+    auto async_future = matrix->execute_async<TemporalTransformer<>, std::vector<DataVariant>>(test_input);
 
     EXPECT_TRUE(sync_result.has_value()) << "Synchronous execution should complete";
     EXPECT_TRUE(async_future.valid()) << "Asynchronous execution should start";
@@ -1043,8 +1053,8 @@ protected:
         matrix = ComputeMatrix::create();
 
         for (int i = 0; i < 3; ++i) {
-            matrix->create_operation<MathematicalTransformer<>>("math_" + std::to_string(i), MathematicalOperation::GAIN);
-            matrix->create_operation<TemporalTransformer<>>("temporal_" + std::to_string(i), TemporalOperation::TIME_REVERSE);
+            matrix->create_operation<MathematicalTransformer<>>("math_" + std::to_string(i));
+            matrix->create_operation<TemporalTransformer<>>("temporal_" + std::to_string(i));
         }
     }
 
@@ -1115,7 +1125,7 @@ TEST_F(MatrixResilienceTest, TimeoutConfiguration)
 {
     matrix->set_default_timeout(std::chrono::milliseconds(1000));
 
-    auto result = matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input, MathematicalOperation::GAIN);
+    auto result = matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input);
     EXPECT_TRUE(result.has_value()) << "Normal multichannel execution should complete within timeout";
 
     if (result.has_value()) {
@@ -1133,8 +1143,9 @@ TEST_F(MatrixResilienceTest, ErrorRecovery)
     auto bad_result = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("nonexistent", test_input);
     EXPECT_FALSE(bad_result.has_value()) << "Bad execution should fail";
 
-    auto gain_op = matrix->create_operation<MathematicalTransformer<>>("recovery_gain", MathematicalOperation::GAIN);
-    gain_op->set_parameter("gain_factor", 1.2);
+    MathematicalTransformerConfig gain_op_cfg;
+    gain_op_cfg.gain_factor = 1.2;
+    auto gain_op = matrix->create_operation<MathematicalTransformer<>>("recovery_gain", gain_op_cfg);
 
     auto good_result = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("recovery_gain", test_input);
     EXPECT_TRUE(good_result.has_value()) << "Matrix should recover from errors";
@@ -1148,11 +1159,13 @@ TEST_F(MatrixResilienceTest, StatisticsAfterErrors)
 {
     matrix->set_profiling(true);
 
-    auto gain_op = matrix->create_operation<MathematicalTransformer<>>("stats_gain", MathematicalOperation::GAIN);
-    gain_op->set_parameter("gain_factor", 1.1);
+    MathematicalTransformerConfig gain_op_cfg;
+    gain_op_cfg.gain_factor = 1.1;
+    auto gain_op = matrix->create_operation<MathematicalTransformer<>>("stats_gain", gain_op_cfg);
 
-    auto power_op = matrix->create_operation<MathematicalTransformer<>>("stats_power", MathematicalOperation::POWER);
-    power_op->set_parameter("power_factor", 2.0);
+    MathematicalTransformerConfig power_op_cfg;
+    power_op_cfg.operation = MathematicalOperation::POWER;
+    auto power_op = matrix->create_operation<MathematicalTransformer<>>("stats_power", power_op_cfg);
 
     matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("stats_gain", test_input);
     matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("stats_power", test_input);
@@ -1180,8 +1193,8 @@ TEST_F(MatrixResilienceTest, MultiChannelErrorHandling)
         DataVariant(std::vector<double> {}) });
 
     EXPECT_NO_THROW({
-        auto result1 = matrix->execute<MathematicalTransformer<>>(empty_multichannel, MathematicalOperation::GAIN);
-        auto result2 = matrix->execute<MathematicalTransformer<>>(empty_channels, MathematicalOperation::GAIN);
+        auto result1 = matrix->execute<MathematicalTransformer<>>(empty_multichannel);
+        auto result2 = matrix->execute<MathematicalTransformer<>>(empty_channels);
     }) << "Should handle edge case multichannel inputs gracefully";
 }
 
@@ -1189,8 +1202,9 @@ TEST_F(MatrixResilienceTest, ConcurrentErrorHandling)
 {
     std::vector<std::future<std::optional<Datum<std::vector<DataVariant>>>>> futures;
 
-    auto valid_op = matrix->create_operation<MathematicalTransformer<>>("concurrent_valid", MathematicalOperation::GAIN);
-    valid_op->set_parameter("gain_factor", 1.3);
+    MathematicalTransformerConfig valid_op_cfg;
+    valid_op_cfg.gain_factor = 1.3;
+    auto valid_op = matrix->create_operation<MathematicalTransformer<>>("concurrent_valid", valid_op_cfg);
 
     for (int i = 0; i < 3; ++i) {
         futures.push_back(matrix->execute_named_async<MathematicalTransformer<>, std::vector<DataVariant>>("concurrent_valid", test_input));

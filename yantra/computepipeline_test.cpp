@@ -36,23 +36,23 @@ public:
     {
         auto grammar = std::make_shared<ComputationGrammar>();
 
+        MathematicalTransformerConfig gain_cfg;
+        gain_cfg.gain_factor = 2.0;
         grammar->add_operation_rule<MathematicalTransformer<>>(
             "auto_gain",
             ComputationContext::PARAMETRIC,
             UniversalMatcher::combine_and({ UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
                 UniversalMatcher::create_context_matcher(ComputationContext::PARAMETRIC) }),
-            { { "gain_factor", 2.0 } },
-            90,
-            MathematicalOperation::GAIN);
+            gain_cfg,
+            90);
 
         grammar->add_operation_rule<TemporalTransformer<>>(
             "auto_reverse",
             ComputationContext::TEMPORAL,
             UniversalMatcher::combine_and({ UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
                 UniversalMatcher::create_context_matcher(ComputationContext::TEMPORAL) }),
-            {},
-            80,
-            TemporalOperation::TIME_REVERSE);
+            TemporalTransformerConfig {},
+            80);
 
         return grammar;
     }
@@ -110,8 +110,10 @@ TEST_F(ComputationPipelineTest, EmptyPipelineProcessing)
 
 TEST_F(ComputationPipelineTest, SingleOperationProcessing)
 {
-    auto math_transformer = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
-    math_transformer->set_parameter("gain_factor", 3.0);
+    MathematicalTransformerConfig math_transformer_cfg;
+    math_transformer_cfg.operation = MathematicalOperation::GAIN;
+    math_transformer_cfg.gain_factor = 3.0;
+    auto math_transformer = std::make_shared<MathematicalTransformer<>>(math_transformer_cfg);
 
     pipeline->add_operation(math_transformer, "gain_stage");
 
@@ -146,10 +148,12 @@ TEST_F(ComputationPipelineTest, SingleOperationProcessing)
 
 TEST_F(ComputationPipelineTest, MultipleOperationChaining)
 {
-    auto math_transformer = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
-    math_transformer->set_parameter("gain_factor", 2.0);
+    MathematicalTransformerConfig math_transformer_cfg;
+    math_transformer_cfg.operation = MathematicalOperation::GAIN;
+    math_transformer_cfg.gain_factor = 2.0;
+    auto math_transformer = std::make_shared<MathematicalTransformer<>>(math_transformer_cfg);
 
-    auto temporal_transformer = std::make_shared<TemporalTransformer<>>(TemporalOperation::TIME_REVERSE);
+    auto temporal_transformer = std::make_shared<TemporalTransformer<>>();
 
     pipeline->add_operation(math_transformer, "gain_stage");
     pipeline->add_operation(temporal_transformer, "reverse_stage");
@@ -178,7 +182,9 @@ TEST_F(ComputationPipelineTest, MultipleOperationChaining)
 
 TEST_F(ComputationPipelineTest, CreateOperationByType)
 {
-    pipeline->create_operation<MathematicalTransformer<>>("math_op", MathematicalOperation::POWER);
+    MathematicalTransformerConfig power_cfg;
+    power_cfg.operation = MathematicalOperation::POWER;
+    pipeline->create_operation<MathematicalTransformer<>>("math_op", power_cfg);
 
     EXPECT_EQ(pipeline->operation_count(), 1) << "Should have one operation";
 
@@ -190,7 +196,7 @@ TEST_F(ComputationPipelineTest, CreateOperationByType)
 
 TEST_F(ComputationPipelineTest, OperationRetrieval)
 {
-    auto math_transformer = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
+    auto math_transformer = std::make_shared<MathematicalTransformer<>>();
     pipeline->add_operation(math_transformer, "test_math");
 
     auto retrieved = pipeline->get_operation<MathematicalTransformer<>>("test_math");
@@ -203,12 +209,14 @@ TEST_F(ComputationPipelineTest, OperationRetrieval)
 
 TEST_F(ComputationPipelineTest, OperationConfiguration)
 {
-    auto math_transformer = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
+    auto math_transformer = std::make_shared<MathematicalTransformer<>>();
     pipeline->add_operation(math_transformer, "configurable");
 
     bool configured = pipeline->configure_operation<MathematicalTransformer<>>("configurable",
         [](const std::shared_ptr<MathematicalTransformer<>>& op) {
-            op->set_parameter("gain_factor", 5.0);
+            MathematicalTransformerConfig cfg;
+            cfg.gain_factor = 5.0;
+            op->set_config(cfg);
         });
 
     EXPECT_TRUE(configured) << "Should successfully configure operation";
@@ -319,8 +327,10 @@ TEST_F(PipelineGrammarTest, ContextSensitiveProcessing)
 
 TEST_F(PipelineGrammarTest, GrammarPlusManualOperations)
 {
-    auto additional_gain = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
-    additional_gain->set_parameter("gain_factor", 3.0);
+    MathematicalTransformerConfig additional_gain_cfg;
+    additional_gain_cfg.operation = MathematicalOperation::GAIN;
+    additional_gain_cfg.gain_factor = 3.0;
+    auto additional_gain = std::make_shared<MathematicalTransformer<>>(additional_gain_cfg);
     pipeline->add_operation(additional_gain, "manual_gain");
 
     auto parametric_ctx = PipelineTestDataGenerator::create_test_context(ComputationContext::PARAMETRIC);
@@ -475,7 +485,7 @@ TEST_F(PipelineEdgeCaseTest, EmptyInput)
     std::vector<DataVariant> empty_multichannel;
     Datum<std::vector<DataVariant>> empty_input { empty_multichannel };
 
-    auto math_transformer = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
+    auto math_transformer = std::make_shared<MathematicalTransformer<>>();
     pipeline->add_operation(math_transformer, "gain");
 
     EXPECT_NO_THROW({
@@ -491,7 +501,7 @@ TEST_F(PipelineEdgeCaseTest, EmptyChannelsInput)
     };
     Datum<std::vector<DataVariant>> empty_channels_input { empty_channels };
 
-    auto math_transformer = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
+    auto math_transformer = std::make_shared<MathematicalTransformer<>>();
     pipeline->add_operation(math_transformer, "gain");
 
     EXPECT_NO_THROW({
@@ -501,7 +511,7 @@ TEST_F(PipelineEdgeCaseTest, EmptyChannelsInput)
 
 TEST_F(PipelineEdgeCaseTest, InvalidOperationName)
 {
-    auto math_transformer = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
+    auto math_transformer = std::make_shared<MathematicalTransformer<>>();
     pipeline->add_operation(math_transformer, "valid_name");
 
     auto retrieved = pipeline->get_operation<MathematicalTransformer<>>("invalid_name");
@@ -514,7 +524,7 @@ TEST_F(PipelineEdgeCaseTest, InvalidOperationName)
 
 TEST_F(PipelineEdgeCaseTest, WrongOperationType)
 {
-    auto math_transformer = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
+    auto math_transformer = std::make_shared<MathematicalTransformer<>>();
     pipeline->add_operation(math_transformer, "math_op");
 
     auto wrong_type = pipeline->get_operation<TemporalTransformer<>>("math_op");
@@ -534,15 +544,19 @@ protected:
         test_data = PipelineTestDataGenerator::create_test_multichannel_signal(2, 1024);
         test_input = Datum<std::vector<DataVariant>> { test_data };
 
-        auto gain1 = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
-        gain1->set_parameter("gain_factor", 1.1);
+        MathematicalTransformerConfig gain1_cfg;
+        gain1_cfg.operation = MathematicalOperation::GAIN;
+        gain1_cfg.gain_factor = 1.1;
+        auto gain1 = std::make_shared<MathematicalTransformer<>>(gain1_cfg);
         pipeline->add_operation(gain1, "gain1");
 
-        auto gain2 = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
-        gain2->set_parameter("gain_factor", 1.2);
+        MathematicalTransformerConfig gain2_cfg;
+        gain2_cfg.operation = MathematicalOperation::GAIN;
+        gain2_cfg.gain_factor = 1.2;
+        auto gain2 = std::make_shared<MathematicalTransformer<>>(gain2_cfg);
         pipeline->add_operation(gain2, "gain2");
 
-        auto reverse = std::make_shared<TemporalTransformer<>>(TemporalOperation::TIME_REVERSE);
+        auto reverse = std::make_shared<TemporalTransformer<>>();
         pipeline->add_operation(reverse, "reverse");
     }
 
@@ -641,8 +655,10 @@ protected:
 
 TEST_F(PipelineMultiChannelTest, HandlesVariableChannelCounts)
 {
-    auto gain_op = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
-    gain_op->set_parameter("gain_factor", 1.5);
+    MathematicalTransformerConfig gain_op_cfg;
+    gain_op_cfg.operation = MathematicalOperation::GAIN;
+    gain_op_cfg.gain_factor = 1.5;
+    auto gain_op = std::make_shared<MathematicalTransformer<>>(gain_op_cfg);
     pipeline->add_operation(gain_op, "multichannel_gain");
 
     std::vector<size_t> channel_counts = { 1, 2, 4, 6, 8 };
@@ -665,8 +681,10 @@ TEST_F(PipelineMultiChannelTest, HandlesVariableChannelCounts)
 
 TEST_F(PipelineMultiChannelTest, HandlesMixedChannelSizes)
 {
-    auto gain_op = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
-    gain_op->set_parameter("gain_factor", 2.0);
+    MathematicalTransformerConfig gain_op_cfg;
+    gain_op_cfg.operation = MathematicalOperation::GAIN;
+    gain_op_cfg.gain_factor = 2.0;
+    auto gain_op = std::make_shared<MathematicalTransformer<>>(gain_op_cfg);
     pipeline->add_operation(gain_op, "mixed_size_gain");
 
     std::vector<DataVariant> mixed_size_data = {
@@ -691,19 +709,25 @@ TEST_F(PipelineMultiChannelTest, HandlesMixedChannelSizes)
 
 TEST_F(PipelineMultiChannelTest, ComplexMultiChannelPipeline)
 {
-    auto normalize_op = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::NORMALIZE);
-    normalize_op->set_parameter("target_peak", 0.8);
+    MathematicalTransformerConfig normalize_op_cfg;
+    normalize_op_cfg.operation = MathematicalOperation::NORMALIZE;
+    normalize_op_cfg.target_peak = 0.8;
+    auto normalize_op = std::make_shared<MathematicalTransformer<>>(normalize_op_cfg);
     pipeline->add_operation(normalize_op, "normalize");
 
-    auto gain1_op = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
-    gain1_op->set_parameter("gain_factor", 1.5);
+    MathematicalTransformerConfig gain1_op_cfg;
+    gain1_op_cfg.operation = MathematicalOperation::GAIN;
+    gain1_op_cfg.gain_factor = 1.5;
+    auto gain1_op = std::make_shared<MathematicalTransformer<>>(gain1_op_cfg);
     pipeline->add_operation(gain1_op, "gain1");
 
-    auto reverse_op = std::make_shared<TemporalTransformer<>>(TemporalOperation::TIME_REVERSE);
+    auto reverse_op = std::make_shared<TemporalTransformer<>>();
     pipeline->add_operation(reverse_op, "reverse");
 
-    auto gain2_op = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
-    gain2_op->set_parameter("gain_factor", 0.8);
+    MathematicalTransformerConfig gain2_op_cfg;
+    gain2_op_cfg.operation = MathematicalOperation::GAIN;
+    gain2_op_cfg.gain_factor = 0.8;
+    auto gain2_op = std::make_shared<MathematicalTransformer<>>(gain2_op_cfg);
     pipeline->add_operation(gain2_op, "gain2");
 
     auto test_data = PipelineTestDataGenerator::create_test_multichannel_signal(6, 256);
@@ -734,8 +758,10 @@ TEST_F(PipelineMultiChannelTest, ComplexMultiChannelPipeline)
 
 TEST_F(PipelineMultiChannelTest, PerformanceWithHighChannelCount)
 {
-    auto gain_op = std::make_shared<MathematicalTransformer<>>(MathematicalOperation::GAIN);
-    gain_op->set_parameter("gain_factor", 1.2);
+    MathematicalTransformerConfig gain_op_cfg;
+    gain_op_cfg.operation = MathematicalOperation::GAIN;
+    gain_op_cfg.gain_factor = 1.2;
+    auto gain_op = std::make_shared<MathematicalTransformer<>>(gain_op_cfg);
     pipeline->add_operation(gain_op, "high_channel_gain");
 
     auto large_multichannel = PipelineTestDataGenerator::create_test_multichannel_signal(32, 1024);
@@ -761,17 +787,18 @@ TEST_F(PipelineMultiChannelTest, MultiChannelWithGrammarIntegration)
 {
     auto grammar = std::make_shared<ComputationGrammar>();
 
+    MathematicalTransformerConfig multichannel_cfg;
+    multichannel_cfg.gain_factor = 1.8;
     grammar->add_operation_rule<MathematicalTransformer<>>(
         "multichannel_auto_gain",
         ComputationContext::PARAMETRIC,
         UniversalMatcher::create_type_matcher<std::vector<DataVariant>>(),
-        { { "gain_factor", 1.8 } },
-        90,
-        MathematicalOperation::GAIN);
+        multichannel_cfg,
+        90);
 
     auto pipeline_with_grammar = std::make_shared<ComputationPipeline<std::vector<DataVariant>>>(grammar);
 
-    auto manual_op = std::make_shared<TemporalTransformer<>>(TemporalOperation::TIME_REVERSE);
+    auto manual_op = std::make_shared<TemporalTransformer<>>();
     pipeline_with_grammar->add_operation(manual_op, "manual_reverse");
 
     auto test_data = PipelineTestDataGenerator::create_test_multichannel_signal(4, 256);
