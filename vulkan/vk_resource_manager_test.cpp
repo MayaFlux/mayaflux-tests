@@ -587,16 +587,58 @@ TEST_F(BackendResourceManagerTest, HostImageTransfersDoNotWaitForUnrelatedBlocke
     resources().cleanup_image(image);
 }
 
-TEST_F(BackendResourceManagerTest, TransitionsBetweenCommonLayoutsComplete)
+TEST_F(BackendResourceManagerTest, TransitionsBetweenCommonLayoutsInEveryModeTrackTheLayout)
 {
     auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm, VKImage::Usage::STORAGE);
-    const auto handle = image->get_image();
+    const std::array steps {
+        std::pair { vk::ImageLayout::eTransferDstOptimal, Core::SubmitMode::DEFERRED },
+        std::pair { vk::ImageLayout::eShaderReadOnlyOptimal, Core::SubmitMode::ASYNC },
+        std::pair { vk::ImageLayout::eGeneral, Core::SubmitMode::IMMEDIATE },
+        std::pair { vk::ImageLayout::eShaderReadOnlyOptimal, Core::SubmitMode::DEFERRED },
+        std::pair { vk::ImageLayout::eTransferSrcOptimal, Core::SubmitMode::ASYNC },
+    };
 
-    EXPECT_NO_THROW(resources().transition_image_layout(handle, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal));
-    EXPECT_NO_THROW(resources().transition_image_layout(handle, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal));
-    EXPECT_NO_THROW(resources().transition_image_layout(handle, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral));
-    EXPECT_NO_THROW(resources().transition_image_layout(handle, vk::ImageLayout::eGeneral, vk::ImageLayout::eShaderReadOnlyOptimal));
-    EXPECT_NO_THROW(resources().transition_image_layout(handle, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferSrcOptimal));
+    for (const auto& [layout, mode] : steps) {
+        EXPECT_NO_THROW(resources().transition_image_layout(image, layout, mode));
+        EXPECT_EQ(image->get_current_layout(), layout);
+    }
+
+    auto& commands = backend().get_command_manager();
+    resources().flush_deferred_commands();
+    commands.wait(commands.submitted());
+    resources().cleanup_image(image);
+}
+
+TEST_F(BackendResourceManagerTest, TransitionToTheTrackedLayoutRecordsNothing)
+{
+    auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm, VKImage::Usage::STORAGE);
+    resources().transition_image_layout(image, vk::ImageLayout::eGeneral, Core::SubmitMode::IMMEDIATE);
+
+    auto& commands = backend().get_command_manager();
+    const auto graphics = commands.timeline_index(backend().get_context().get_graphics_queue());
+    const auto before = commands.submitted_value(graphics);
+
+    resources().transition_image_layout(image, vk::ImageLayout::eGeneral);
+
+    EXPECT_FALSE(commands.has_deferred_commands());
+    EXPECT_EQ(commands.submitted_value(graphics), before);
+    resources().cleanup_image(image);
+}
+
+TEST_F(BackendResourceManagerTest, DeferredTransitionOfAnUploadedImageIsSeenByALaterDownload)
+{
+    auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
+    const auto bytes = pattern(64, 3);
+    resources().upload_image_data(image, bytes.data(), bytes.size());
+
+    resources().transition_image_layout(image, vk::ImageLayout::eGeneral);
+    EXPECT_EQ(image->get_current_layout(), vk::ImageLayout::eGeneral);
+
+    std::vector<uint8_t> out(64, 0);
+    resources().download_image_data(image, out.data(), out.size());
+
+    EXPECT_EQ(out, bytes);
+    EXPECT_FALSE(backend().get_command_manager().has_deferred_commands());
     resources().cleanup_image(image);
 }
 

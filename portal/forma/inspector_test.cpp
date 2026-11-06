@@ -26,6 +26,7 @@
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Vruta/BroadcastSource.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
+#include "MayaFlux/Portal/Graphics/SamplerForge.hpp"
 
 namespace MayaFlux::Test {
 
@@ -67,7 +68,9 @@ protected:
         auto borrowed = std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) { });
         Portal::Graphics::get_shader_foundry().shutdown();
         Portal::Graphics::get_texture_manager().shutdown();
+        Portal::Graphics::SamplerForge::instance().shutdown();
         s_ready = Portal::Graphics::get_shader_foundry().initialize(borrowed)
+            && Portal::Graphics::SamplerForge::instance().initialize(borrowed)
             && Portal::Graphics::get_texture_manager().initialize(borrowed);
     }
 
@@ -75,6 +78,7 @@ protected:
     {
         if (s_ready) {
             Portal::Graphics::get_texture_manager().shutdown();
+            Portal::Graphics::SamplerForge::instance().shutdown();
             Portal::Graphics::get_shader_foundry().shutdown();
         }
         s_ready = false;

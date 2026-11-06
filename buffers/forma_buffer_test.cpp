@@ -17,6 +17,7 @@
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 #include "MayaFlux/Portal/Graphics/ComputePress.hpp"
 #include "MayaFlux/Portal/Graphics/RenderFlow.hpp"
+#include "MayaFlux/Portal/Graphics/SamplerForge.hpp"
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 #include "MayaFlux/Portal/Forma/Element.hpp"
 #include "MayaFlux/Portal/Forma/Layer.hpp"
@@ -548,11 +549,14 @@ protected:
         auto borrowed = std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) {});
         Portal::Graphics::get_render_flow().shutdown();
         Portal::Graphics::get_texture_manager().shutdown();
+        Portal::Graphics::SamplerForge::instance().shutdown();
         Portal::Graphics::get_shader_foundry().shutdown();
         ASSERT_TRUE(Portal::Graphics::get_shader_foundry().initialize(borrowed));
         foundry_ready = true;
         ASSERT_TRUE(Portal::Graphics::get_render_flow().initialize());
         flow_ready = true;
+        ASSERT_TRUE(Portal::Graphics::SamplerForge::instance().initialize(borrowed));
+        forge_ready = true;
         ASSERT_TRUE(Portal::Graphics::get_texture_manager().initialize(borrowed));
         loom_ready = true;
 
@@ -583,6 +587,8 @@ protected:
         buffer.reset();
         if (loom_ready)
             Portal::Graphics::get_texture_manager().shutdown();
+        if (forge_ready)
+            Portal::Graphics::SamplerForge::instance().shutdown();
         if (flow_ready)
             Portal::Graphics::get_render_flow().shutdown();
         if (foundry_ready)
@@ -665,6 +671,7 @@ protected:
     std::shared_ptr<Buffers::FormaBindingsProcessor> bindings;
     bool foundry_ready {};
     bool flow_ready {};
+    bool forge_ready {};
     bool loom_ready {};
 };
 

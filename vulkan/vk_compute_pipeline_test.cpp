@@ -221,8 +221,7 @@ void main()
 
             auto image = std::make_shared<Core::VKImage>(2, 2, 1, vk::Format::eR8G8B8A8Unorm, Core::VKImage::Usage::STORAGE);
             resources.initialize_image(image);
-            resources.transition_image_layout(image->get_image(), vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-            image->set_current_layout(vk::ImageLayout::eGeneral);
+            resources.transition_image_layout(image, vk::ImageLayout::eGeneral);
 
             const auto set = descriptors.allocate_set(device(), layout);
             if (via_batch) {

@@ -518,7 +518,7 @@ namespace {
         const ImagePtr image = loom().create_2d(4, 4);
         ASSERT_NE(image, nullptr);
 
-        loom().transition_layout(image, image->get_current_layout(), vk::ImageLayout::eGeneral);
+        loom().transition_layout(image, vk::ImageLayout::eGeneral);
 
         EXPECT_EQ(image->get_current_layout(), vk::ImageLayout::eGeneral);
     }
@@ -527,7 +527,7 @@ namespace {
     {
         ASSERT_TRUE(loom().initialize(backend()));
 
-        EXPECT_NO_THROW(loom().transition_layout(nullptr, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral));
+        EXPECT_NO_THROW(loom().transition_layout(nullptr, vk::ImageLayout::eGeneral));
     }
 
     TEST_F(TextureLoomTest, SampledImagesAreReadableAndWritableInTheirOwnFormat)

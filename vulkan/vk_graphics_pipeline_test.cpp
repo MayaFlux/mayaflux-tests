@@ -224,8 +224,7 @@ TEST_F(VKGraphicsPipelineTest, DrawsAFullTriangleIntoAnOffscreenImage)
     auto& resources = backend().get_resource_manager();
     auto image = std::make_shared<VKImage>(k_extent, k_extent, 1, k_color_format, VKImage::Usage::RENDER_TARGET);
     resources.initialize_image(image);
-    resources.transition_image_layout(image->get_image(),
-        vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
+    resources.transition_image_layout(image, vk::ImageLayout::eColorAttachmentOptimal);
 
     const std::array<float, 4> color { 1.0F, 0.0F, 0.5F, 1.0F };
     resources.execute_immediate_commands([&](vk::CommandBuffer cmd) {
@@ -282,8 +281,7 @@ TEST_F(VKGraphicsPipelineTest, PerPipelineSpecializationPreservesExistingShaderC
                                     const std::array<uint8_t, 4>& expected) {
         auto image = std::make_shared<VKImage>(k_extent, k_extent, 1, k_color_format, VKImage::Usage::RENDER_TARGET);
         resources.initialize_image(image);
-        resources.transition_image_layout(image->get_image(),
-            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
+        resources.transition_image_layout(image, vk::ImageLayout::eColorAttachmentOptimal);
 
         resources.execute_immediate_commands([&](vk::CommandBuffer cmd) {
             vk::RenderingAttachmentInfo attachment {};
