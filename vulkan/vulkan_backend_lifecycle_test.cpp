@@ -74,6 +74,24 @@ TEST(VulkanBackendLifecycleTest, RejectsNonVulkanApiWithoutRegisteringServices)
     EXPECT_FALSE(display_service_registered());
 }
 
+TEST(VulkanBackendLifecycleTest, CleanupWithPendingDeferredCommandsReleasesTheirKeepAlives)
+{
+    REQUIRE_VULKAN();
+
+    VulkanBackend backend;
+    ASSERT_TRUE(initialize_or_fail(backend, headless_graphics_config()));
+
+    auto held = std::make_shared<int>(1);
+    const std::weak_ptr<int> watch = held;
+    backend.get_resource_manager().record_deferred_commands([](vk::CommandBuffer) { }, { held });
+    held.reset();
+    ASSERT_TRUE(backend.get_command_manager().has_deferred_commands());
+    EXPECT_FALSE(watch.expired());
+
+    EXPECT_NO_THROW(backend.cleanup());
+    EXPECT_TRUE(watch.expired());
+}
+
 TEST(VulkanBackendLifecycleTest, InitializeRegistersAllServices)
 {
     REQUIRE_VULKAN();

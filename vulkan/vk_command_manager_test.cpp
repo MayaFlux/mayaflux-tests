@@ -836,6 +836,149 @@ TEST_F(VKCommandManagerTest, OneThreadRecordingDeferredCommandsKeepsOneBatchAcro
     commands().wait(point);
 }
 
+TEST_F(VKCommandManagerTest, SubmitFlushesPendingDeferredCommandsBeforeItsOwnWork)
+{
+    const auto graphics = commands().timeline_index(context().get_graphics_queue());
+    commands().record_deferred_commands([](vk::CommandBuffer) { });
+    ASSERT_TRUE(commands().has_deferred_commands());
+
+    const auto before = commands().submitted_value(graphics);
+    const auto point = commands().submit(context().get_graphics_queue(), {});
+    ASSERT_TRUE(point);
+
+    EXPECT_FALSE(commands().has_deferred_commands());
+    EXPECT_EQ(point.timeline, graphics);
+    EXPECT_EQ(point.value, before + 2);
+    commands().wait(point);
+}
+
+TEST_F(VKCommandManagerTest, SubmitWithNoDeferredCommandsSubmitsOnce)
+{
+    const auto graphics = commands().timeline_index(context().get_graphics_queue());
+    ASSERT_FALSE(commands().has_deferred_commands());
+
+    const auto before = commands().submitted_value(graphics);
+    const auto point = commands().submit(context().get_graphics_queue(), {});
+    ASSERT_TRUE(point);
+
+    EXPECT_EQ(point.value, before + 1);
+    commands().wait(point);
+}
+
+TEST_F(VKCommandManagerTest, SubmitToAnotherQueueWaitsForTheFlushedDeferredCommands)
+{
+    const auto graphics = commands().timeline_index(context().get_graphics_queue());
+    const auto compute = commands().timeline_index(context().get_compute_queue());
+    if (graphics == compute) {
+        GTEST_SKIP() << "Compute shares the graphics timeline";
+    }
+
+    commands().record_deferred_commands([](vk::CommandBuffer) { });
+    const auto before = commands().submitted_value(graphics);
+
+    const auto point = commands().submit(context().get_compute_queue(), {});
+    ASSERT_TRUE(point);
+    EXPECT_FALSE(commands().has_deferred_commands());
+    EXPECT_EQ(point.timeline, compute);
+    EXPECT_EQ(commands().submitted_value(graphics), before + 1);
+
+    commands().wait(point);
+    EXPECT_TRUE(commands().is_complete(Core::TimelinePoint { .timeline = graphics, .value = before + 1 }));
+}
+
+TEST_F(VKCommandManagerTest, DeferredKeepAliveIsHeldUntilTheFlushCompletes)
+{
+    auto held = std::make_shared<int>(1);
+    const std::weak_ptr<int> watch = held;
+
+    commands().record_deferred_commands([](vk::CommandBuffer) { }, { held });
+    held.reset();
+    EXPECT_FALSE(watch.expired());
+
+    const auto point = commands().flush_deferred(context().get_graphics_queue());
+    ASSERT_TRUE(point);
+    commands().wait(point);
+    commands().collect();
+
+    EXPECT_TRUE(watch.expired());
+}
+
+TEST_F(VKCommandManagerTest, KeepAlivesOfEveryRecordingIntoOneBatchAreReleasedByOneFlush)
+{
+    auto first = std::make_shared<int>(1);
+    auto second = std::make_shared<int>(2);
+    const std::weak_ptr<int> first_watch = first;
+    const std::weak_ptr<int> second_watch = second;
+
+    std::set<VkCommandBuffer> seen;
+    commands().record_deferred_commands([&seen](vk::CommandBuffer batch) { seen.insert(static_cast<VkCommandBuffer>(batch)); }, { first });
+    commands().record_deferred_commands([&seen](vk::CommandBuffer batch) { seen.insert(static_cast<VkCommandBuffer>(batch)); }, { second });
+    first.reset();
+    second.reset();
+    ASSERT_EQ(seen.size(), 1U);
+    EXPECT_FALSE(first_watch.expired());
+    EXPECT_FALSE(second_watch.expired());
+
+    const auto point = commands().flush_deferred(context().get_graphics_queue());
+    ASSERT_TRUE(point);
+    commands().wait(point);
+    commands().collect();
+
+    EXPECT_TRUE(first_watch.expired());
+    EXPECT_TRUE(second_watch.expired());
+}
+
+TEST_F(VKCommandManagerTest, KeepAlivesRecordedFromManyThreadsAreAllReleasedByOneFlush)
+{
+    constexpr size_t threads_count = 4;
+    constexpr int per_thread = 40;
+
+    std::vector<std::weak_ptr<int>> watches(threads_count * per_thread);
+    std::vector<std::thread> threads;
+    threads.reserve(threads_count);
+    for (size_t t = 0; t < threads_count; ++t) {
+        threads.emplace_back([&watches, t] {
+            for (int i = 0; i < per_thread; ++i) {
+                auto held = std::make_shared<int>(i);
+                watches[(t * per_thread) + static_cast<size_t>(i)] = held;
+                commands().record_deferred_commands([](vk::CommandBuffer) { }, { std::move(held) });
+            }
+        });
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    for (const auto& watch : watches) {
+        EXPECT_FALSE(watch.expired());
+    }
+
+    const auto point = commands().flush_deferred(context().get_graphics_queue());
+    ASSERT_TRUE(point);
+    commands().wait(point);
+    commands().collect();
+
+    for (const auto& watch : watches) {
+        EXPECT_TRUE(watch.expired());
+    }
+}
+
+TEST_F(VKCommandManagerTest, DeferredKeepAliveIsReleasedWhenTheBatchIsFlushedBySubmit)
+{
+    auto held = std::make_shared<int>(1);
+    const std::weak_ptr<int> watch = held;
+
+    commands().record_deferred_commands([](vk::CommandBuffer) { }, { held });
+    held.reset();
+
+    const auto point = commands().submit(context().get_graphics_queue(), {});
+    ASSERT_TRUE(point);
+    commands().wait(point);
+    commands().collect();
+
+    EXPECT_TRUE(watch.expired());
+}
+
 TEST(VKCommandManagerUninitializedTest, CleanupWithoutInitializeIsSafe)
 {
     Core::VKCommandManager manager;

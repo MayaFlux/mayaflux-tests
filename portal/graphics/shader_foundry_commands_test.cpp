@@ -5,6 +5,7 @@
 
 #include "../../support/vulkan_test_support.hpp"
 
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 
 namespace MayaFlux::Test {
@@ -659,6 +660,17 @@ namespace {
         EXPECT_NO_THROW(foundry().end_timestamp(9999, "x"));
         EXPECT_NO_THROW(foundry().end_timestamp(id, "never_begun"));
         foundry().submit_and_wait(id);
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, FlushDeferredSubmitsPendingCommandsOnce)
+    {
+        backend()->get_resource_manager().record_deferred_commands([](vk::CommandBuffer) { });
+
+        const auto point = foundry().flush_deferred();
+        EXPECT_TRUE(point);
+        EXPECT_FALSE(foundry().flush_deferred());
+        EXPECT_FALSE(backend()->get_command_manager().has_deferred_commands());
+        backend()->get_command_manager().wait(point);
     }
 
 } // namespace

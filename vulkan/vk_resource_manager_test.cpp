@@ -6,6 +6,7 @@
 #include "../support/vulkan_test_support.hpp"
 
 #include "MayaFlux/Buffers/VKBuffer.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKEnumUtils.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
@@ -251,6 +252,68 @@ TEST_F(BackendResourceManagerTest, FencedCopyCompletesAfterWait)
     service()->release_fenced(handle);
 
     EXPECT_EQ(std::memcmp(dst.mapped(), bytes.data(), bytes.size()), 0);
+}
+
+TEST_F(BackendResourceManagerTest, DeferredFillIsVisibleToALaterImmediateCopyWithoutAWindow)
+{
+    RawVulkanBuffer src(backend(), 128, k_transfer_usage, false);
+    RawVulkanBuffer dst(backend(), 128, k_transfer_usage, true);
+    std::memset(dst.mapped(), 0, 128);
+
+    resources().record_deferred_commands([&src](vk::CommandBuffer cmd) {
+        cmd.fillBuffer(src.buffer(), 0, 128, 0xA5A5A5A5U);
+    });
+
+    resources().execute_immediate_commands([&src, &dst](vk::CommandBuffer cmd) {
+        const vk::BufferCopy region { 0, 0, 128 };
+        cmd.copyBuffer(src.buffer(), dst.buffer(), 1, &region);
+
+        const vk::MemoryBarrier2 to_host {
+            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+            vk::PipelineStageFlagBits2::eHost, vk::AccessFlagBits2::eHostRead
+        };
+        vk::DependencyInfo dependency {};
+        dependency.memoryBarrierCount = 1;
+        dependency.pMemoryBarriers = &to_host;
+        cmd.pipelineBarrier2(dependency);
+    });
+
+    EXPECT_FALSE(backend().get_command_manager().has_deferred_commands());
+    const std::vector<uint8_t> expected(128, 0xA5);
+    EXPECT_EQ(std::memcmp(dst.mapped(), expected.data(), expected.size()), 0);
+}
+
+TEST_F(BackendResourceManagerTest, BackendFlushSubmitsDeferredCommandsWithoutAWindow)
+{
+    auto& commands = backend().get_command_manager();
+    const auto graphics = commands.timeline_index(backend().get_context().get_graphics_queue());
+
+    resources().record_deferred_commands([](vk::CommandBuffer) { });
+    ASSERT_TRUE(commands.has_deferred_commands());
+    const auto before = commands.submitted_value(graphics);
+
+    backend().flush_deferred();
+
+    EXPECT_FALSE(commands.has_deferred_commands());
+    EXPECT_EQ(commands.submitted_value(graphics), before + 1);
+    commands.wait(commands.submitted());
+}
+
+TEST_F(BackendResourceManagerTest, BufferServiceFlushSubmitsDeferredCommandsOnce)
+{
+    ASSERT_NE(service(), nullptr);
+    ASSERT_TRUE(service()->flush_deferred);
+
+    int calls = 0;
+    service()->record_deferred([&calls](void*) { ++calls; });
+    EXPECT_EQ(calls, 1);
+
+    const auto [timeline, value] = service()->flush_deferred();
+    EXPECT_NE(value, 0U);
+    EXPECT_FALSE(backend().get_command_manager().has_deferred_commands());
+    service()->await_point(timeline, value);
+
+    EXPECT_EQ(service()->flush_deferred().second, 0U);
 }
 
 TEST_F(BackendResourceManagerTest, ExecuteFencedRunsTheRecorderOnce)
@@ -621,6 +684,88 @@ TEST_F(BackendResourceManagerTest, TheServiceHookSubmitsWithoutAHandleAndItsPoin
     ASSERT_NE(value, 0U);
     service()->await_point(timeline, value);
     EXPECT_EQ(static_cast<const uint8_t*>(buffer.mapped())[0], 0xCD);
+}
+
+TEST_F(BackendResourceManagerTest, DeferredBlitIsSeenByALaterAsyncBlitOfItsDestination)
+{
+    auto first = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
+    auto middle = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
+    auto last = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
+    const auto bytes = pattern(64, 11);
+    resources().upload_image_data(first, bytes.data(), bytes.size());
+
+    vk::ImageBlit region {};
+    region.srcSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+    region.srcOffsets = std::array<vk::Offset3D, 2> { vk::Offset3D { 0, 0, 0 }, vk::Offset3D { 4, 4, 1 } };
+    region.dstSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+    region.dstOffsets = std::array<vk::Offset3D, 2> { vk::Offset3D { 0, 0, 0 }, vk::Offset3D { 4, 4, 1 } };
+
+    ASSERT_TRUE(resources().blit_image(first, middle, region, vk::Filter::eNearest, Core::SubmitMode::DEFERRED));
+    ASSERT_TRUE(backend().get_command_manager().has_deferred_commands());
+    ASSERT_TRUE(resources().blit_image(middle, last, region, vk::Filter::eNearest, Core::SubmitMode::ASYNC));
+    EXPECT_FALSE(backend().get_command_manager().has_deferred_commands());
+
+    std::vector<uint8_t> out(64, 0);
+    resources().download_image_data(last, out.data(), out.size());
+
+    EXPECT_EQ(out, bytes);
+    resources().cleanup_image(first);
+    resources().cleanup_image(middle);
+    resources().cleanup_image(last);
+}
+
+TEST_F(BackendResourceManagerTest, DeferredBlitHoldsItsImagesUntilTheFlushCompletes)
+{
+    auto src = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
+    auto dst = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
+    const auto src_count = src.use_count();
+    const auto dst_count = dst.use_count();
+
+    vk::ImageBlit region {};
+    region.srcSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+    region.srcOffsets = std::array<vk::Offset3D, 2> { vk::Offset3D { 0, 0, 0 }, vk::Offset3D { 4, 4, 1 } };
+    region.dstSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+    region.dstOffsets = std::array<vk::Offset3D, 2> { vk::Offset3D { 0, 0, 0 }, vk::Offset3D { 4, 4, 1 } };
+
+    ASSERT_TRUE(resources().blit_image(src, dst, region, vk::Filter::eNearest, Core::SubmitMode::DEFERRED));
+    EXPECT_EQ(src.use_count(), src_count + 1);
+    EXPECT_EQ(dst.use_count(), dst_count + 1);
+
+    auto& commands = backend().get_command_manager();
+    const auto point = resources().flush_deferred_commands();
+    ASSERT_TRUE(point);
+    commands.wait(point);
+    commands.collect();
+
+    EXPECT_EQ(src.use_count(), src_count);
+    EXPECT_EQ(dst.use_count(), dst_count);
+    resources().cleanup_image(src);
+    resources().cleanup_image(dst);
+}
+
+TEST_F(BackendResourceManagerTest, DeferredUploadThroughStagingIsSeenByALaterDownloadAndReleasesTheStaging)
+{
+    auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
+    auto staging = staging_buffer();
+    const auto staging_count = staging.use_count();
+    const auto bytes = pattern(64, 5);
+
+    resources().upload_image_data(image, bytes.data(), bytes.size(), staging, true);
+    ASSERT_TRUE(backend().get_command_manager().has_deferred_commands());
+    EXPECT_EQ(staging.use_count(), staging_count + 1);
+
+    std::vector<uint8_t> out(64, 0);
+    resources().download_image_data(image, out.data(), out.size());
+    EXPECT_EQ(out, bytes);
+    EXPECT_FALSE(backend().get_command_manager().has_deferred_commands());
+
+    auto& commands = backend().get_command_manager();
+    commands.wait(commands.submitted());
+    commands.collect();
+    EXPECT_EQ(staging.use_count(), staging_count);
+
+    resources().cleanup_image(image);
+    resources().cleanup_buffer(staging);
 }
 
 TEST_F(BackendResourceManagerTest, SameFormatBlitIsSupportedAndUndefinedIsNot)

@@ -5,6 +5,7 @@
 #include "../support/vulkan_test_support.hpp"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
 #include "MayaFlux/Core/ProcessingArchitecture.hpp"
 #include "MayaFlux/Core/Subsystems/GraphicsSubsystem.hpp"
 #include "MayaFlux/Nodes/NodeGraphManager.hpp"
@@ -202,6 +203,26 @@ TEST(GraphicsSubsystemTest, ProcessRunsPreAndPostHooksOncePerCall)
 
     EXPECT_EQ(pre_calls, 2);
     EXPECT_EQ(post_calls, 2);
+}
+
+TEST(GraphicsSubsystemTest, ProcessSubmitsDeferredCommandsWithoutAWindow)
+{
+    REQUIRE_VULKAN();
+
+    GraphicsSubsystemRig rig;
+    ASSERT_NO_THROW(rig.subsystem->initialize(rig.handle));
+
+    auto* vulkan = dynamic_cast<Core::VulkanBackend*>(rig.subsystem->get_backend());
+    ASSERT_NE(vulkan, nullptr);
+    auto& commands = vulkan->get_command_manager();
+
+    vulkan->get_resource_manager().record_deferred_commands([](vk::CommandBuffer) { });
+    ASSERT_TRUE(commands.has_deferred_commands());
+
+    rig.subsystem->process();
+
+    EXPECT_FALSE(commands.has_deferred_commands());
+    commands.wait(commands.submitted());
 }
 
 TEST(GraphicsSubsystemTest, StartRunsGraphicsThreadThatAdvancesFrameClock)
