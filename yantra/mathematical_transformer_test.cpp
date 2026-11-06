@@ -145,6 +145,26 @@ namespace {
         }
     }
 
+    TEST_F(MathTransformerTest, GainPreservesExplicitFrequencyAxesAndNames)
+    {
+        using Dimension = Kakshya::DataDimension;
+        auto bins = Dimension::frequency(3, "selected_bins");
+        Yantra::DataIO input(std::vector<Kakshya::DataVariant> {
+                                std::vector<double> { 1, 2, 3 }, std::vector<double> { 11, 12, 13 } },
+            { Dimension::channel(2), bins }, Kakshya::DataModality::SPECTRAL_2D);
+        MathematicalTransformer<> transformer(MathematicalTransformerConfig { .gain_factor = 2.0 });
+        const auto output = transformer.apply_operation(input);
+        ASSERT_EQ(output.dimensions.size(), 2);
+        EXPECT_EQ(output.modality, Kakshya::DataModality::SPECTRAL_2D);
+        EXPECT_EQ(output.dimensions[0].role, Dimension::Role::CHANNEL);
+        EXPECT_EQ(output.dimensions[0].size, 2);
+        EXPECT_EQ(output.dimensions[1].role, Dimension::Role::FREQUENCY);
+        EXPECT_EQ(output.dimensions[1].name, "selected_bins");
+        EXPECT_EQ(output.dimensions[1].size, 3);
+        EXPECT_EQ(channel_samples(output, 0), (std::vector<double> { 2, 4, 6 }));
+        EXPECT_EQ(channel_samples(output, 1), (std::vector<double> { 22, 24, 26 }));
+    }
+
     TEST_F(MathTransformerTest, OffsetAddsConstant)
     {
         MathematicalTransformerConfig cfg;

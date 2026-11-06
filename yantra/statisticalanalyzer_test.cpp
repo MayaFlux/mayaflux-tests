@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 
 #include "MayaFlux/Yantra/Analyzers/StatisticalAnalyzer.hpp"
+#include "MayaFlux/Yantra/Transformers/MathematicalTransformer.hpp"
 
 #include "audio_container.hpp"
 
@@ -354,6 +355,114 @@ namespace {
         EXPECT_EQ(stats.config.hop_size, 256U);
         EXPECT_TRUE(stats.config.classification_enabled);
     }
+
+    enum class StatisticInputPath { Inferred, Explicit, Container };
+
+    class StatisticPipelineOutputTest : public ::testing::TestWithParam<std::tuple<StatisticInputPath, size_t>> {
+    protected:
+        using Samples = std::vector<double>;
+        using Channels = std::vector<Samples>;
+        using Variants = std::vector<DataVariant>;
+        using Dimension = Kakshya::DataDimension;
+
+        VariantStatisticalMatrix variants { config_for(StatisticalMethod::MEAN, 2, 2) };
+        ContainerStatisticalMatrix containers { config_for(StatisticalMethod::MEAN, 2, 2) };
+
+        Datum<Eigen::MatrixXd> run(const Samples& samples, size_t count)
+        {
+            Channels channels(count, samples);
+            for (size_t channel = 0; channel < count; ++channel)
+                for (auto& sample : channels[channel])
+                    sample += 10.0 * channel;
+            if (std::get<0>(GetParam()) == StatisticInputPath::Container) {
+                std::shared_ptr<Kakshya::SignalSourceContainer> source = make_audio_container(channels);
+                return containers.apply_operation(Datum<std::shared_ptr<Kakshya::SignalSourceContainer>>(source));
+            }
+            Variants data;
+            for (auto& channel : channels)
+                data.emplace_back(std::move(channel));
+            if (std::get<0>(GetParam()) == StatisticInputPath::Explicit)
+                return variants.apply_operation(Datum<Variants>(std::move(data),
+                    { Dimension::time(samples.size()), Dimension::channel(count) },
+                    Kakshya::DataModality::AUDIO_MULTICHANNEL));
+            return variants.apply_operation(Datum<Variants>(std::move(data)));
+        }
+
+        void expect_output(const Datum<Eigen::MatrixXd>& output, const Samples& expected, size_t count,
+            StatisticalMethod method = StatisticalMethod::MEAN)
+        {
+            ASSERT_EQ(output.data.rows(), expected.size());
+            ASSERT_EQ(output.data.cols(), count);
+            EXPECT_EQ(output.get_total_elements(), expected.size() * count);
+            const int time = output.find_dimension_by_role(Dimension::Role::TIME);
+            ASSERT_GE(time, 0);
+            EXPECT_EQ(output.dimensions[time].size, expected.size());
+            if (count > 1) {
+                const int channels = output.find_dimension_by_role(Dimension::Role::CHANNEL);
+                ASSERT_GE(channels, 0);
+                EXPECT_EQ(output.dimensions[channels].size, count);
+            }
+            const auto* record = output.facets.get<StatisticalAnalysis>();
+            ASSERT_NE(record, nullptr);
+            ASSERT_EQ(record->channel_statistics.size(), count);
+            EXPECT_EQ(static_cast<StatisticalMethod>(record->config.method), method);
+            EXPECT_EQ(record->config.window_size, 2);
+            EXPECT_EQ(record->config.hop_size, 2);
+            const double factor = method == StatisticalMethod::SUM ? 2.0 : 1.0;
+            for (size_t channel = 0; channel < count; ++channel) {
+                SCOPED_TRACE(channel);
+                const auto& values = record->channel_statistics[channel].statistical_values;
+                ASSERT_EQ(values.size(), expected.size());
+                for (size_t row = 0; row < expected.size(); ++row) {
+                    EXPECT_NEAR(output.data(row, channel), factor * (expected[row] + 10.0 * channel), 1e-12);
+                    EXPECT_NEAR(values[row], output.data(row, channel), 1e-12);
+                }
+            }
+        }
+    };
+
+    TEST_P(StatisticPipelineOutputTest, WindowedMatrixAndFacetDescribeTheSameResult)
+    {
+        const auto count = std::get<1>(GetParam());
+        expect_output(run({ 1, 1, 3, 3, 5, 5, 99 }, count), { 1, 3, 5 }, count);
+    }
+
+    TEST_P(StatisticPipelineOutputTest, ReuseUpdatesOutputShapeFacetsAndMethod)
+    {
+        const auto count = std::get<1>(GetParam());
+        expect_output(run({ 1, 1, 3, 3, 5, 5 }, count), { 1, 3, 5 }, count);
+        expect_output(run({ 7, 7, 9, 9 }, 1), { 7, 9 }, 1);
+        variants.set_config(config_for(StatisticalMethod::SUM, 2, 2));
+        containers.set_config(config_for(StatisticalMethod::SUM, 2, 2));
+        expect_output(run({ 2, 2, 4, 4, 6, 6, 8, 8 }, count + 1), { 2, 4, 6, 8 }, count + 1, StatisticalMethod::SUM);
+    }
+
+    TEST_P(StatisticPipelineOutputTest, MatrixCanFeedAnotherNumericalOperation)
+    {
+        const auto count = std::get<1>(GetParam());
+        const auto output = run({ 1, 1, 3, 3, 5, 5 }, count);
+        ASSERT_EQ(output.data.rows(), 3);
+        ASSERT_EQ(output.data.cols(), count);
+        Yantra::MathematicalTransformer<Eigen::MatrixXd> gain(
+            Yantra::MathematicalTransformerConfig { .gain_factor = 2.0 });
+        const auto transformed = gain.apply_operation(output);
+        ASSERT_EQ(transformed.data.rows(), 3);
+        ASSERT_EQ(transformed.data.cols(), count);
+        EXPECT_EQ(transformed.get_total_elements(), 3 * count);
+        const Samples expected { 2, 6, 10 };
+        for (size_t channel = 0; channel < count; ++channel)
+            for (size_t row = 0; row < expected.size(); ++row)
+                EXPECT_NEAR(transformed.data(row, channel), expected[row] + 20.0 * channel, 1e-12);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(Inputs, StatisticPipelineOutputTest,
+        ::testing::Combine(::testing::Values(StatisticInputPath::Inferred, StatisticInputPath::Explicit, StatisticInputPath::Container),
+            ::testing::Values(size_t { 1 }, size_t { 2 }, size_t { 3 })),
+        [](const auto& info) {
+            const auto path = std::get<0>(info.param);
+            return std::string(path == StatisticInputPath::Inferred ? "Inferred" : path == StatisticInputPath::Explicit ? "Explicit" : "Container")
+                + std::to_string(std::get<1>(info.param)) + "Channels";
+        });
 
 } // namespace
 } // namespace MayaFlux::Test

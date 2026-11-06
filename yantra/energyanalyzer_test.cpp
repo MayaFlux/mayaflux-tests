@@ -1,5 +1,6 @@
 #include "MayaFlux/Kakshya/SignalSourceContainer.hpp"
 #include "MayaFlux/Yantra/Analyzers/EnergyAnalyzer.hpp"
+#include "MayaFlux/Yantra/Transformers/MathematicalTransformer.hpp"
 #include "audio_container.hpp"
 
 #include <gtest/gtest.h>
@@ -366,6 +367,108 @@ namespace {
         EXPECT_EQ(result.config.window_size, 128U);
         EXPECT_EQ(result.config.hop_size, 64U);
     }
+
+    enum class EnergyInputPath { Inferred, Explicit, Container };
+
+    class EnergyPipelineOutputTest : public ::testing::TestWithParam<std::tuple<EnergyInputPath, size_t>> {
+    protected:
+        using Samples = std::vector<double>;
+        using Channels = std::vector<Samples>;
+        using Variants = std::vector<Kakshya::DataVariant>;
+        using Dimension = Kakshya::DataDimension;
+
+        Yantra::StandardEnergyAnalyzer variants { config_for(EnergyMethod::RMS, 2, 2) };
+        ContainerEnergyMatrix containers { config_for(EnergyMethod::RMS, 2, 2) };
+
+        Datum<Eigen::MatrixXd> run(const Samples& samples, size_t count)
+        {
+            Channels channels(count, samples);
+            for (size_t channel = 0; channel < count; ++channel)
+                for (auto& sample : channels[channel])
+                    sample += 10.0 * channel;
+            if (std::get<0>(GetParam()) == EnergyInputPath::Container) {
+                std::shared_ptr<SignalSourceContainer> source = make_audio_container(channels);
+                return containers.apply_operation(Datum<std::shared_ptr<SignalSourceContainer>>(source));
+            }
+            Variants data;
+            for (auto& channel : channels)
+                data.emplace_back(std::move(channel));
+            if (std::get<0>(GetParam()) == EnergyInputPath::Explicit)
+                return variants.apply_operation(Datum<Variants>(std::move(data),
+                    { Dimension::time(samples.size()), Dimension::channel(count) },
+                    Kakshya::DataModality::AUDIO_MULTICHANNEL));
+            return variants.apply_operation(Datum<Variants>(std::move(data)));
+        }
+
+        void expect_output(const Datum<Eigen::MatrixXd>& output, const Samples& expected, size_t count)
+        {
+            ASSERT_EQ(output.data.rows(), expected.size());
+            ASSERT_EQ(output.data.cols(), count);
+            EXPECT_EQ(output.get_total_elements(), expected.size() * count);
+            const int time = output.find_dimension_by_role(Dimension::Role::TIME);
+            ASSERT_GE(time, 0);
+            EXPECT_EQ(output.dimensions[time].size, expected.size());
+            if (count > 1) {
+                const int channels = output.find_dimension_by_role(Dimension::Role::CHANNEL);
+                ASSERT_GE(channels, 0);
+                EXPECT_EQ(output.dimensions[channels].size, count);
+            }
+            const auto* record = output.facets.get<EnergyAnalysis>();
+            ASSERT_NE(record, nullptr);
+            ASSERT_EQ(record->channels.size(), count);
+            EXPECT_EQ(record->config.window_size, 2);
+            EXPECT_EQ(record->config.hop_size, 2);
+            for (size_t channel = 0; channel < count; ++channel) {
+                SCOPED_TRACE(channel);
+                ASSERT_EQ(record->channels[channel].energy_values.size(), expected.size());
+                for (size_t row = 0; row < expected.size(); ++row) {
+                    EXPECT_NEAR(output.data(row, channel), expected[row] + 10.0 * channel, 1e-12);
+                    EXPECT_NEAR(record->channels[channel].energy_values[row], output.data(row, channel), 1e-12);
+                }
+            }
+        }
+    };
+
+    TEST_P(EnergyPipelineOutputTest, WindowedMatrixAndFacetDescribeTheSameResult)
+    {
+        const auto count = std::get<1>(GetParam());
+        expect_output(run({ 1, 1, 3, 3, 5, 5, 99 }, count), { 1, 3, 5 }, count);
+    }
+
+    TEST_P(EnergyPipelineOutputTest, ReuseUpdatesOutputShapeAndFacetsForEveryInput)
+    {
+        const auto count = std::get<1>(GetParam());
+        expect_output(run({ 1, 1, 3, 3, 5, 5 }, count), { 1, 3, 5 }, count);
+        expect_output(run({ 7, 7, 9, 9 }, 1), { 7, 9 }, 1);
+        expect_output(run({ 2, 2, 4, 4, 6, 6, 8, 8 }, count + 1), { 2, 4, 6, 8 }, count + 1);
+    }
+
+    TEST_P(EnergyPipelineOutputTest, MatrixCanFeedAnotherNumericalOperation)
+    {
+        const auto count = std::get<1>(GetParam());
+        const auto output = run({ 1, 1, 3, 3, 5, 5 }, count);
+        ASSERT_EQ(output.data.rows(), 3);
+        ASSERT_EQ(output.data.cols(), count);
+        Yantra::MathematicalTransformer<Eigen::MatrixXd> gain(
+            Yantra::MathematicalTransformerConfig { .gain_factor = 2.0 });
+        const auto transformed = gain.apply_operation(output);
+        ASSERT_EQ(transformed.data.rows(), 3);
+        ASSERT_EQ(transformed.data.cols(), count);
+        EXPECT_EQ(transformed.get_total_elements(), 3 * count);
+        const Samples expected { 2, 6, 10 };
+        for (size_t channel = 0; channel < count; ++channel)
+            for (size_t row = 0; row < expected.size(); ++row)
+                EXPECT_NEAR(transformed.data(row, channel), expected[row] + 20.0 * channel, 1e-12);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(Inputs, EnergyPipelineOutputTest,
+        ::testing::Combine(::testing::Values(EnergyInputPath::Inferred, EnergyInputPath::Explicit, EnergyInputPath::Container),
+            ::testing::Values(size_t { 1 }, size_t { 2 }, size_t { 3 })),
+        [](const auto& info) {
+            const auto path = std::get<0>(info.param);
+            return std::string(path == EnergyInputPath::Inferred ? "Inferred" : path == EnergyInputPath::Explicit ? "Explicit" : "Container")
+                + std::to_string(std::get<1>(info.param)) + "Channels";
+        });
 
 } // namespace
 } // namespace MayaFlux::Test

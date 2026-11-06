@@ -133,6 +133,33 @@ namespace {
         EXPECT_EQ(out, expected);
     }
 
+    TEST_F(TemporalTransformerTest, SliceResizesTimeWithoutReplacingExplicitAxes)
+    {
+        using Dimension = Kakshya::DataDimension;
+        Yantra::DataIO input(std::vector<Kakshya::DataVariant> {
+                                std::vector<double> { 0, 1, 2, 3, 4, 5, 6, 7 },
+                                std::vector<double> { 10, 11, 12, 13, 14, 15, 16, 17 } },
+            { Dimension::time(8, "source_frames"), Dimension::channel(2) },
+            Kakshya::DataModality::AUDIO_MULTICHANNEL);
+        TemporalTransformerConfig config;
+        config.operation = TemporalOperation::SLICE;
+        config.start_ratio = 0.25;
+        config.end_ratio = 0.75;
+        TemporalTransformer<> transformer(config);
+        const auto output = transformer.apply_operation(input);
+        ASSERT_EQ(output.dimensions.size(), 2);
+        EXPECT_EQ(output.dimensions[0].role, Dimension::Role::TIME);
+        EXPECT_EQ(output.dimensions[0].name, "source_frames");
+        EXPECT_EQ(output.dimensions[0].size, 4);
+        EXPECT_EQ(output.dimensions[1].role, Dimension::Role::CHANNEL);
+        EXPECT_EQ(output.dimensions[1].size, 2);
+        EXPECT_EQ(output.get_total_elements(), 8);
+        EXPECT_EQ(channel_samples(output, 0), (std::vector<double> { 2, 3, 4, 5 }));
+        EXPECT_EQ(channel_samples(output, 1), (std::vector<double> { 12, 13, 14, 15 }));
+        EXPECT_EQ(input.dimensions[0].size, 8);
+        EXPECT_EQ(channel_samples(input, 0), (std::vector<double> { 0, 1, 2, 3, 4, 5, 6, 7 }));
+    }
+
     TEST_F(TemporalTransformerTest, InterpolateToZeroLengthLeavesInputUnchanged)
     {
         TemporalTransformerConfig cfg;
