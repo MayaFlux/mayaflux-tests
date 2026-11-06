@@ -1,1230 +1,707 @@
-#include "gtest/gtest.h"
-
-#include "MayaFlux/Yantra/ComputeGrammar.hpp"
 #include "MayaFlux/Yantra/ComputeMatrix.hpp"
-#include "MayaFlux/Yantra/ComputePipeline.hpp"
 #include "MayaFlux/Yantra/Transformers/MathematicalTransformer.hpp"
-#include "MayaFlux/Yantra/Transformers/TemporalTransformer.hpp"
-#include <random>
+#include "transformer_helpers.hpp"
 
-using namespace MayaFlux::Yantra;
-using namespace MayaFlux::Kakshya;
+#include <gtest/gtest.h>
 
 namespace MayaFlux::Test {
+namespace {
 
-// =========================================================================
-// TEST DATA GENERATORS
-// =========================================================================
+    using namespace Yantra;
+    using Samples = std::vector<double>;
+    using SampleDatum = Datum<Samples>;
+    using Variants = std::vector<Kakshya::DataVariant>;
+    using Channels = std::vector<Samples>;
 
-class MatrixTestDataGenerator {
-public:
-    static std::vector<DataVariant> create_test_multichannel_signal(size_t channels = 2, size_t size = 256, double amplitude = 1.0)
-    {
-        std::vector<DataVariant> multichannel_data;
-        multichannel_data.reserve(channels);
+    enum class ExecutionPath { Direct, Named, Supplied, Async, NamedAsync, Fluent };
+    enum class Lifetime { Fresh, Named, Supplied, AsyncFresh, AsyncNamed };
+    enum class PoolMutation { DuplicateAdd, DuplicateCreate, WrongType, Remove, Clear, Null };
+    enum class ChainPath { Direct, Named, Fluent };
 
-        for (size_t ch = 0; ch < channels; ++ch) {
-            std::vector<double> channel_data(size);
-            for (size_t i = 0; i < size; ++i) {
-                double phase_offset = (double)ch * M_PI / 4.0;
-                double frequency = 2.0 * M_PI * i / 32.0;
-                channel_data[i] = amplitude * std::sin(frequency + phase_offset) + 0.1 * (double)(ch + 1);
+    class AffineOperation final : public ComputeOperation<Samples> {
+    public:
+        explicit AffineOperation(double scale = 2.0, double offset = 1.0, bool reject_negative = false)
+            : m_scale(scale)
+            , m_offset(offset)
+            , m_reject_negative(reject_negative)
+        {
+        }
+
+        OperationType get_operation_type() const override { return OperationType::TRANSFORMER; }
+
+    protected:
+        output_type operation_function(const input_type& input) override
+        {
+            auto output = input;
+            for (double& sample : output.data) {
+                if (!std::isfinite(sample) || (m_reject_negative && sample < 0.0)) {
+                    throw std::domain_error("Sample is outside the operation domain");
+                }
+                sample = sample * m_scale + m_offset;
             }
-            multichannel_data.emplace_back(std::move(channel_data));
+            return output;
         }
-        return multichannel_data;
-    }
 
-    static std::vector<DataVariant> create_ramp_multichannel_signal(size_t channels = 2, size_t size = 128)
-    {
-        std::vector<DataVariant> multichannel_data;
-        multichannel_data.reserve(channels);
+    private:
+        const double m_scale;
+        const double m_offset;
+        const bool m_reject_negative;
+    };
 
-        for (size_t ch = 0; ch < channels; ++ch) {
-            std::vector<double> channel_data(size);
-            for (size_t i = 0; i < size; ++i) {
-                double base_ramp = static_cast<double>(i) / size;
-                double channel_multiplier = 1.0 + (double)ch * 0.5;
-                channel_data[i] = base_ramp * channel_multiplier;
+    class RunningOffset final : public ComputeOperation<Samples> {
+    public:
+        explicit RunningOffset(double delta = 2.0)
+            : m_delta(delta)
+        {
+        }
+
+        OperationType get_operation_type() const override { return OperationType::CUSTOM; }
+
+    protected:
+        output_type operation_function(const input_type& input) override
+        {
+            auto output = input;
+            const double offset = m_delta * static_cast<double>(++m_calls);
+            for (double& sample : output.data) {
+                sample += offset;
             }
-            multichannel_data.emplace_back(std::move(channel_data));
+            return output;
         }
-        return multichannel_data;
-    }
 
-    static std::vector<double> create_test_signal(size_t size = 256, double amplitude = 1.0)
-    {
-        std::vector<double> signal(size);
-        for (size_t i = 0; i < size; ++i) {
-            signal[i] = amplitude * std::sin(2.0 * M_PI * i / 32.0) + 0.1;
+    private:
+        double m_delta;
+        size_t m_calls {};
+    };
+
+    class Summarize final : public ComputeOperation<Samples, Eigen::VectorXd> {
+    public:
+        OperationType get_operation_type() const override { return OperationType::ANALYZER; }
+
+    protected:
+        output_type operation_function(const input_type& input) override
+        {
+            if (input.data.empty()) {
+                throw std::domain_error("Cannot summarize an empty input");
+            }
+            Eigen::VectorXd result(2);
+            result[0] = std::accumulate(input.data.begin(), input.data.end(), 0.0);
+            result[1] = static_cast<double>(input.data.size());
+            return output_type(std::move(result));
         }
-        return signal;
-    }
+    };
 
-    static std::vector<double> create_ramp_signal(size_t size = 128)
-    {
-        std::vector<double> signal(size);
-        for (size_t i = 0; i < size; ++i) {
-            signal[i] = static_cast<double>(i) / size;
+    class MeanAndSum final : public ComputeOperation<Eigen::VectorXd, Samples> {
+    public:
+        OperationType get_operation_type() const override { return OperationType::TRANSFORMER; }
+
+    protected:
+        output_type operation_function(const input_type& input) override
+        {
+            if (input.data.size() != 2 || input.data[1] <= 0.0) {
+                throw std::domain_error("Invalid summary");
+            }
+            return output_type(Samples { input.data[0] / input.data[1], input.data[0] });
         }
-        return signal;
+    };
+
+    void expect_channels(const DataIO& actual, const Channels& expected)
+    {
+        ASSERT_EQ(actual.data.size(), expected.size());
+        for (size_t channel = 0; channel < expected.size(); ++channel) {
+            SCOPED_TRACE(channel);
+            ASSERT_TRUE(std::holds_alternative<Samples>(actual.data[channel]));
+            const auto& samples = std::get<Samples>(actual.data[channel]);
+            ASSERT_EQ(samples.size(), expected[channel].size());
+            for (size_t i = 0; i < samples.size(); ++i) {
+                EXPECT_NEAR(samples[i], expected[channel][i], 1e-12) << "Sample " << i;
+            }
+        }
     }
 
-    static std::shared_ptr<ComputationGrammar> create_test_grammar()
+    struct ChannelCase {
+        const char* name;
+        Channels input;
+        Channels expected;
+    };
+
+    const ChannelCase channel_cases[] {
+        { "Mono", { { -3.0, 1.0, 4.0, 0.5 } }, { { -6.0, 2.0, 8.0, 1.0 } } },
+        { "UnequalChannels", { { -2.0, 0.0, 3.0 }, { 5.0, -1.0 } }, { { -4.0, 0.0, 6.0 }, { 10.0, -2.0 } } },
+        { "SingleSamples", { { 2.0 }, { -3.0 } }, { { 4.0 }, { -6.0 } } },
+    };
+
+    using ExecutionParam = std::tuple<ExecutionPath, ChannelCase>;
+
+    class MatrixExecutionTest : public ::testing::TestWithParam<ExecutionParam> {
+    protected:
+        std::optional<DataIO> execute(const std::shared_ptr<ComputeMatrix>& matrix, const DataIO& input)
+        {
+            const MathematicalTransformerConfig config { .gain_factor = 2.0 };
+            switch (std::get<0>(GetParam())) {
+            case ExecutionPath::Direct:
+                return matrix->execute<MathematicalTransformer<>, Variants>(input, config);
+            case ExecutionPath::Named:
+                return matrix->execute_named<MathematicalTransformer<>, Variants>("gain", input);
+            case ExecutionPath::Supplied:
+                return matrix->execute_with(std::make_shared<MathematicalTransformer<>>(config), input);
+            case ExecutionPath::Async:
+                return matrix->execute_async<MathematicalTransformer<>, Variants>(input, config).get();
+            case ExecutionPath::NamedAsync:
+                return matrix->execute_named_async<MathematicalTransformer<>, Variants>("gain", input).get();
+            case ExecutionPath::Fluent:
+                return matrix->with(input).then<MathematicalTransformer<>>("gain").to_io();
+            }
+            throw std::logic_error("Unknown execution path");
+        }
+    };
+
+    INSTANTIATE_TEST_SUITE_P(PathsAndChannels, MatrixExecutionTest,
+        ::testing::Combine(
+            ::testing::Values(ExecutionPath::Direct, ExecutionPath::Named, ExecutionPath::Supplied,
+                ExecutionPath::Async, ExecutionPath::NamedAsync, ExecutionPath::Fluent),
+            ::testing::ValuesIn(channel_cases)),
+        [](const ::testing::TestParamInfo<ExecutionParam>& info) {
+            return std::string(Reflect::enum_to_string(std::get<0>(info.param))) + "_" + std::get<1>(info.param).name;
+        });
+
+    TEST_P(MatrixExecutionTest, EveryExecutionPathProducesEveryExpectedSample)
     {
-        auto grammar = std::make_shared<ComputationGrammar>();
+        const auto matrix = ComputeMatrix::create();
+        matrix->create_operation<MathematicalTransformer<>>("gain",
+            MathematicalTransformerConfig { .gain_factor = 2.0 });
+        const auto& data = std::get<1>(GetParam());
 
-        MathematicalTransformerConfig gain_cfg;
-        gain_cfg.gain_factor = 2.0;
-        grammar->add_operation_rule<MathematicalTransformer<>>(
-            "auto_gain",
-            ComputationContext::PARAMETRIC,
-            Matcher::create_type_matcher<std::vector<DataVariant>>(),
-            gain_cfg,
-            90);
+        const auto result = execute(matrix, to_datum(data.input));
 
-        return grammar;
+        ASSERT_TRUE(result.has_value());
+        expect_channels(*result, data.expected);
     }
 
-    static std::vector<DataVariant> create_mixed_type_multichannel(size_t size = 256)
+    TEST_P(MatrixExecutionTest, BufferedExecutionLeavesInputUnchangedAndCanBeRepeated)
     {
-        return {
-            DataVariant(std::vector<double>(size, 0.5)),
-            DataVariant(std::vector<float>(size, 0.3F)),
-            DataVariant(std::vector<double>(size, 0.7))
+        const auto matrix = ComputeMatrix::create();
+        matrix->create_operation<MathematicalTransformer<>>("gain",
+            MathematicalTransformerConfig { .gain_factor = 2.0 });
+        const auto& data = std::get<1>(GetParam());
+        const auto input = to_datum(data.input);
+
+        const auto first = execute(matrix, input);
+        const auto second = execute(matrix, input);
+
+        ASSERT_TRUE(first.has_value());
+        ASSERT_TRUE(second.has_value());
+        expect_channels(*first, data.expected);
+        expect_channels(*second, data.expected);
+        expect_channels(input, data.input);
+    }
+
+    class MatrixLifetimeTest : public ::testing::TestWithParam<Lifetime> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(InstanceLifetimes, MatrixLifetimeTest,
+        ::testing::Values(Lifetime::Fresh, Lifetime::Named, Lifetime::Supplied, Lifetime::AsyncFresh, Lifetime::AsyncNamed),
+        [](const ::testing::TestParamInfo<Lifetime>& info) { return std::string(Reflect::enum_to_string(info.param)); });
+
+    TEST_P(MatrixLifetimeTest, FreshExecutionAndPersistentExecutionHaveDistinctStateLifetimes)
+    {
+        const auto matrix = ComputeMatrix::create();
+        matrix->create_operation<RunningOffset>("state");
+        const auto supplied = std::make_shared<RunningOffset>();
+        const SampleDatum input(Samples { 10.0, -2.0 });
+        auto execute = [&]() -> std::optional<SampleDatum> {
+            switch (GetParam()) {
+            case Lifetime::Fresh:
+                return matrix->execute<RunningOffset, Samples>(input);
+            case Lifetime::Named:
+                return matrix->execute_named<RunningOffset, Samples>("state", input);
+            case Lifetime::Supplied:
+                return matrix->execute_with(supplied, input);
+            case Lifetime::AsyncFresh:
+                return matrix->execute_async<RunningOffset, Samples>(input).get();
+            case Lifetime::AsyncNamed:
+                return matrix->execute_named_async<RunningOffset, Samples>("state", input).get();
+            }
+            throw std::logic_error("Unknown lifetime");
         };
+
+        const auto first = execute();
+        const auto second = execute();
+
+        ASSERT_TRUE(first.has_value());
+        ASSERT_TRUE(second.has_value());
+        EXPECT_EQ(first->data, (Samples { 12.0, 0.0 }));
+        const bool fresh = GetParam() == Lifetime::Fresh || GetParam() == Lifetime::AsyncFresh;
+        EXPECT_EQ(second->data, (fresh ? Samples { 12.0, 0.0 } : Samples { 14.0, 2.0 }));
     }
 
-    static std::vector<DataVariant> create_variable_size_multichannel()
+    class MatrixPoolTest : public ::testing::TestWithParam<PoolMutation> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(OwnershipBoundaries, MatrixPoolTest,
+        ::testing::Values(PoolMutation::DuplicateAdd, PoolMutation::DuplicateCreate, PoolMutation::WrongType,
+            PoolMutation::Remove, PoolMutation::Clear, PoolMutation::Null),
+        [](const ::testing::TestParamInfo<PoolMutation>& info) { return std::string(Reflect::enum_to_string(info.param)); });
+
+    TEST_P(MatrixPoolTest, PoolMutationsPreserveOrRemoveTheIntendedLiveOperation)
     {
-        return {
-            DataVariant(std::vector<double>(256, 0.4)),
-            DataVariant(std::vector<double>(128, 0.6)),
-            DataVariant(std::vector<double>(512, 0.8)),
-            DataVariant(std::vector<double>(64, 0.2))
+        const auto matrix = ComputeMatrix::create();
+        matrix->create_operation<AffineOperation>("active", 2.0, 1.0);
+        matrix->create_operation<AffineOperation>("other", 3.0, -2.0);
+        const SampleDatum input(Samples { -2.0, 1.0, 3.0 });
+
+        switch (GetParam()) {
+        case PoolMutation::DuplicateAdd:
+            EXPECT_FALSE(matrix->add_operation("active", std::make_shared<AffineOperation>(100.0, 100.0)));
+            break;
+        case PoolMutation::DuplicateCreate:
+            EXPECT_EQ(matrix->create_operation<AffineOperation>("active", 100.0, 100.0), nullptr);
+            break;
+        case PoolMutation::WrongType:
+            EXPECT_FALSE((matrix->execute_named<RunningOffset, Samples>("active", input)).has_value());
+            break;
+        case PoolMutation::Remove:
+            ASSERT_TRUE(matrix->remove_operation("active"));
+            EXPECT_FALSE((matrix->execute_named<AffineOperation, Samples>("active", input)).has_value());
+            ASSERT_NE(matrix->create_operation<AffineOperation>("active", 2.0, 1.0), nullptr);
+            break;
+        case PoolMutation::Clear:
+            matrix->clear_operations();
+            EXPECT_FALSE((matrix->execute_named<AffineOperation, Samples>("active", input)).has_value());
+            EXPECT_FALSE((matrix->execute_named<AffineOperation, Samples>("other", input)).has_value());
+            return;
+        case PoolMutation::Null: {
+            std::shared_ptr<AffineOperation> absent;
+            EXPECT_FALSE(matrix->add_operation("null", absent));
+            EXPECT_FALSE(matrix->execute_with(absent, input).has_value());
+            break;
+        }
+        }
+        const auto active = matrix->execute_named<AffineOperation, Samples>("active", input);
+        const auto other = matrix->execute_named<AffineOperation, Samples>("other", input);
+
+        ASSERT_TRUE(active.has_value());
+        ASSERT_TRUE(other.has_value());
+        EXPECT_EQ(active->data, (Samples { -3.0, 3.0, 7.0 }));
+        EXPECT_EQ(other->data, (Samples { -8.0, 1.0, 7.0 }));
+    }
+
+    class MatrixDetachedOperationTest : public ::testing::TestWithParam<bool> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(RemovalForms, MatrixDetachedOperationTest, ::testing::Bool(),
+        [](const ::testing::TestParamInfo<bool>& info) { return info.param ? "Clear" : "Remove"; });
+
+    TEST_P(MatrixDetachedOperationTest, RemovingThePoolEntryPreservesAnExternallyHeldLiveInstance)
+    {
+        const auto matrix = ComputeMatrix::create();
+        matrix->create_operation<RunningOffset>("state");
+        const auto retained = matrix->get_operation<RunningOffset>("state");
+        ASSERT_NE(retained, nullptr);
+        const SampleDatum input(Samples { 10.0 });
+        const auto first = matrix->execute_named<RunningOffset, Samples>("state", input);
+        ASSERT_TRUE(first.has_value());
+        EXPECT_EQ(first->data, (Samples { 12.0 }));
+
+        if (GetParam()) {
+            matrix->clear_operations();
+        } else {
+            ASSERT_TRUE(matrix->remove_operation("state"));
+        }
+        EXPECT_FALSE((matrix->execute_named<RunningOffset, Samples>("state", input)).has_value());
+        const auto second = matrix->execute_with(retained, input);
+
+        ASSERT_TRUE(second.has_value());
+        EXPECT_EQ(second->data, (Samples { 14.0 }));
+    }
+
+    struct BatchCase {
+        const char* name;
+        std::vector<Samples> inputs;
+        std::vector<std::optional<Samples>> expected;
+        bool reject_negative;
+    };
+
+    const BatchCase batch_cases[] {
+        { "Empty", {}, {}, false },
+        { "VariedSizes", { { 1.0, -2.0 }, {}, { 3.0 } },
+            { Samples { 3.0, -3.0 }, Samples {}, Samples { 7.0 } }, false },
+        { "FailureFirst", { { -1.0 }, { 3.0, 4.0 }, { 5.0, 6.0 } },
+            { std::nullopt, Samples { 7.0, 9.0 }, Samples { 11.0, 13.0 } }, true },
+        { "FailureMiddle", { { 1.0, 2.0 }, { -1.0 }, { 5.0, 6.0 } },
+            { Samples { 3.0, 5.0 }, std::nullopt, Samples { 11.0, 13.0 } }, true },
+        { "FailureLast", { { 1.0, 2.0 }, { 3.0, 4.0 }, { -1.0 } },
+            { Samples { 3.0, 5.0 }, Samples { 7.0, 9.0 }, std::nullopt }, true },
+    };
+
+    using BatchParam = std::tuple<bool, BatchCase>;
+
+    class MatrixBatchTest : public ::testing::TestWithParam<BatchParam> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(ExecutionAndFailurePositions, MatrixBatchTest,
+        ::testing::Combine(::testing::Bool(), ::testing::ValuesIn(batch_cases)),
+        [](const ::testing::TestParamInfo<BatchParam>& info) {
+            return std::string(std::get<0>(info.param) ? "Parallel_" : "Sequential_") + std::get<1>(info.param).name;
+        });
+
+    TEST_P(MatrixBatchTest, PreservesInputOrderAndFailureHolesWithoutDroppingSuccessfulResults)
+    {
+        const auto matrix = ComputeMatrix::create();
+        const auto& data = std::get<1>(GetParam());
+        std::vector<SampleDatum> inputs;
+        for (const auto& samples : data.inputs) {
+            inputs.emplace_back(samples);
+        }
+
+        const auto results = std::get<0>(GetParam())
+            ? matrix->execute_batch_parallel<AffineOperation, Samples>(inputs, 2.0, 1.0, data.reject_negative)
+            : matrix->execute_batch<AffineOperation, Samples>(inputs, 2.0, 1.0, data.reject_negative);
+
+        ASSERT_EQ(results.size(), data.expected.size());
+        for (size_t i = 0; i < results.size(); ++i) {
+            SCOPED_TRACE(i);
+            ASSERT_EQ(results[i].has_value(), data.expected[i].has_value());
+            if (data.expected[i]) {
+                EXPECT_EQ(results[i]->data, *data.expected[i]);
+            }
+            EXPECT_EQ(inputs[i].data, data.inputs[i]);
+        }
+        const auto stats = matrix->get_statistics();
+        EXPECT_EQ(std::any_cast<size_t>(stats.at("total_executions")), data.inputs.size());
+        EXPECT_EQ(std::any_cast<size_t>(stats.at("failed_executions")), data.reject_negative ? 1U : 0U);
+    }
+
+    class MatrixParallelNamedTest : public ::testing::TestWithParam<bool> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(NameLists, MatrixParallelNamedTest, ::testing::Bool(),
+        [](const ::testing::TestParamInfo<bool>& info) { return info.param ? "MissingMiddle" : "RepeatedName"; });
+
+    TEST_P(MatrixParallelNamedTest, ResultSlotsFollowTheRequestedNamesRatherThanCompletionOrPoolOrder)
+    {
+        const auto matrix = ComputeMatrix::create();
+        matrix->create_operation<AffineOperation>("a", 2.0, 1.0);
+        matrix->create_operation<AffineOperation>("b", -1.0, 3.0);
+        matrix->create_operation<AffineOperation>("c", 0.5, 0.0);
+        const std::vector<std::string> names = GetParam()
+            ? std::vector<std::string> { "b", "missing", "a" }
+            : std::vector<std::string> { "b", "a", "b", "c" };
+        const std::vector<std::optional<Samples>> expected = GetParam()
+            ? std::vector<std::optional<Samples>> { Samples { 1.0, 7.0 }, std::nullopt, Samples { 5.0, -7.0 } }
+            : std::vector<std::optional<Samples>> {
+                  Samples { 1.0, 7.0 }, Samples { 5.0, -7.0 }, Samples { 1.0, 7.0 }, Samples { 1.0, -2.0 } };
+
+        const auto results = matrix->execute_parallel_named<AffineOperation, Samples>(
+            names, SampleDatum(Samples { 2.0, -4.0 }));
+
+        ASSERT_EQ(results.size(), expected.size());
+        for (size_t i = 0; i < results.size(); ++i) {
+            SCOPED_TRACE(i);
+            ASSERT_EQ(results[i].has_value(), expected[i].has_value());
+            if (expected[i]) {
+                EXPECT_EQ(results[i]->data, *expected[i]);
+            }
+        }
+    }
+
+    struct ChainCase {
+        const char* name;
+        Samples input;
+        Samples expected;
+    };
+
+    const ChainCase chain_cases[] {
+        { "SeveralSamples", { 1.0, 3.0, 5.0 }, { 3.0, 9.0 } },
+        { "MixedSigns", { -2.0, 8.0 }, { 3.0, 6.0 } },
+        { "Singleton", { 4.0 }, { 4.0, 4.0 } },
+    };
+
+    using ChainParam = std::tuple<ChainPath, ChainCase>;
+
+    class MatrixChainTest : public ::testing::TestWithParam<ChainParam> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(ExecutionAndTypeTransitions, MatrixChainTest,
+        ::testing::Combine(::testing::Values(ChainPath::Direct, ChainPath::Named, ChainPath::Fluent),
+            ::testing::ValuesIn(chain_cases)),
+        [](const ::testing::TestParamInfo<ChainParam>& info) {
+            return std::string(Reflect::enum_to_string(std::get<0>(info.param))) + "_" + std::get<1>(info.param).name;
+        });
+
+    TEST_P(MatrixChainTest, PassesTheActualTypedIntermediateToTheNextStage)
+    {
+        const auto matrix = ComputeMatrix::create();
+        matrix->create_operation<Summarize>("summary");
+        matrix->create_operation<MeanAndSum>("projection");
+        const auto& data = std::get<1>(GetParam());
+        const SampleDatum input(data.input);
+        std::optional<SampleDatum> result;
+
+        switch (std::get<0>(GetParam())) {
+        case ChainPath::Direct:
+            result = matrix->execute_chain<Summarize, MeanAndSum, Samples, Eigen::VectorXd, Samples>(input);
+            break;
+        case ChainPath::Named:
+            result = matrix->execute_chain_named<Summarize, MeanAndSum, Samples, Eigen::VectorXd, Samples>(
+                "summary", "projection", input);
+            break;
+        case ChainPath::Fluent:
+            result = matrix->with(input)
+                         .then<Summarize, Eigen::VectorXd>("summary")
+                         .then<MeanAndSum, Samples>("projection")
+                         .to_io();
+            break;
+        }
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->data, data.expected);
+        EXPECT_EQ(input.data, data.input);
+    }
+
+    class MatrixChainFailureTest : public ::testing::TestWithParam<ChainPath> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(ChainFailurePaths, MatrixChainFailureTest,
+        ::testing::Values(ChainPath::Direct, ChainPath::Named, ChainPath::Fluent),
+        [](const ::testing::TestParamInfo<ChainPath>& info) { return std::string(Reflect::enum_to_string(info.param)); });
+
+    TEST_P(MatrixChainFailureTest, StopsAfterTheFirstFailureAndCanExecuteAValidChainAfterward)
+    {
+        const auto matrix = ComputeMatrix::create();
+        matrix->create_operation<Summarize>("summary");
+        matrix->create_operation<MeanAndSum>("projection");
+        const SampleDatum empty(Samples {});
+
+        switch (GetParam()) {
+        case ChainPath::Direct:
+            EXPECT_FALSE((matrix->execute_chain<Summarize, MeanAndSum, Samples, Eigen::VectorXd, Samples>(empty)).has_value());
+            break;
+        case ChainPath::Named:
+            EXPECT_FALSE((matrix->execute_chain_named<Summarize, MeanAndSum, Samples, Eigen::VectorXd, Samples>(
+                              "summary", "projection", empty)).has_value());
+            break;
+        case ChainPath::Fluent:
+            EXPECT_THROW((matrix->with(empty).then<Summarize, Eigen::VectorXd>("summary")), std::runtime_error);
+            break;
+        }
+        const auto failed_stats = matrix->get_statistics();
+        EXPECT_EQ(std::any_cast<size_t>(failed_stats.at("total_executions")), 1U);
+        EXPECT_EQ(std::any_cast<size_t>(failed_stats.at("failed_executions")), 1U);
+
+        const auto recovered = matrix->execute_chain_named<Summarize, MeanAndSum, Samples, Eigen::VectorXd, Samples>(
+            "summary", "projection", SampleDatum(Samples { 1.0, 3.0, 5.0 }));
+
+        ASSERT_TRUE(recovered.has_value());
+        EXPECT_EQ(recovered->data, (Samples { 3.0, 9.0 }));
+    }
+
+    class MatrixForkTest : public ::testing::TestWithParam<bool> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(ForkForms, MatrixForkTest, ::testing::Bool(),
+        [](const ::testing::TestParamInfo<bool>& info) { return info.param ? "Fluent" : "Parallel"; });
+
+    TEST_P(MatrixForkTest, BranchesReceiveTheOriginalInputRatherThanAnotherBranchesOutput)
+    {
+        const auto matrix = ComputeMatrix::create();
+        const SampleDatum input(Samples { -2.0, 1.0, 3.0 });
+
+        const auto results = GetParam()
+            ? matrix->with(input).fork<AffineOperation, RunningOffset>()
+            : matrix->execute_parallel<Samples, AffineOperation, RunningOffset>(input);
+
+        ASSERT_TRUE(std::get<0>(results).has_value());
+        ASSERT_TRUE(std::get<1>(results).has_value());
+        EXPECT_EQ(std::get<0>(results)->data, (Samples { -3.0, 3.0, 7.0 }));
+        EXPECT_EQ(std::get<1>(results)->data, (Samples { 0.0, 3.0, 5.0 }));
+        EXPECT_EQ(input.data, (Samples { -2.0, 1.0, 3.0 }));
+    }
+
+    struct RuntimeScale {
+        static constexpr auto describe_facets()
+        {
+            return std::tuple { FacetMember<&RuntimeScale::factor> {} };
+        }
+
+        double factor { 1.0 };
+    };
+
+    struct ObservedContext {
+        static constexpr auto describe_facets()
+        {
+            return std::tuple { FacetMember<&ObservedContext::mode> {}, FacetMember<&ObservedContext::timeout> {} };
+        }
+
+        ExecutionMode mode;
+        std::chrono::milliseconds timeout;
+    };
+
+    class ContextualOperation final : public ComputeOperation<Samples> {
+    public:
+        OperationType get_operation_type() const override { return OperationType::CUSTOM; }
+
+        output_type apply_operation_internal(const input_type& input, const ExecutionContext& context) override
+        {
+            auto output = input;
+            const auto* scale = context.facets.get<RuntimeScale>();
+            for (double& sample : output.data) {
+                sample *= scale ? scale->factor : 1.0;
+            }
+            output.facets.set(ObservedContext { context.mode, context.timeout });
+            return output;
+        }
+
+    protected:
+        output_type operation_function(const input_type& input) override { return input; }
+    };
+
+    using ContextParam = std::tuple<ExecutionPolicy, bool>;
+
+    class MatrixContextTest : public ::testing::TestWithParam<ContextParam> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(PoliciesAndOverrides, MatrixContextTest,
+        ::testing::Combine(::testing::Values(ExecutionPolicy::CONSERVATIVE, ExecutionPolicy::BALANCED, ExecutionPolicy::AGGRESSIVE),
+            ::testing::Bool()),
+        [](const ::testing::TestParamInfo<ContextParam>& info) {
+            return std::string(Reflect::enum_to_string(std::get<0>(info.param)))
+                + (std::get<1>(info.param) ? "_Override" : "_Default");
+        });
+
+    TEST_P(MatrixContextTest, ConfiguresTheCorrectOperationWithTypedSettingsAndSchedulingAnnotations)
+    {
+        const auto matrix = ComputeMatrix::create();
+        matrix->set_execution_policy(std::get<0>(GetParam()));
+        matrix->set_default_timeout(std::chrono::milliseconds(17));
+        const bool custom_context = std::get<1>(GetParam());
+        matrix->set_context_configurator([custom_context](ExecutionContext& context, const std::type_index& type) {
+            context.facets.set(RuntimeScale { type == typeid(ContextualOperation) ? 3.0 : -99.0 });
+            if (custom_context) {
+                context.mode = ExecutionMode::CHAINED;
+                context.timeout = std::chrono::milliseconds(29);
+            }
+        });
+
+        const auto result = matrix->execute_async<ContextualOperation, Samples>(SampleDatum(Samples { -2.0, 3.0 })).get();
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->data, (Samples { -6.0, 9.0 }));
+        const auto* observed = result->facets.get<ObservedContext>();
+        ASSERT_NE(observed, nullptr);
+        const auto policy_mode = std::get<0>(GetParam()) == ExecutionPolicy::AGGRESSIVE
+            ? ExecutionMode::PARALLEL : ExecutionMode::SYNC;
+        EXPECT_EQ(observed->mode, custom_context ? ExecutionMode::CHAINED : policy_mode);
+        EXPECT_EQ(observed->timeout, std::chrono::milliseconds(custom_context ? 29 : 17));
+    }
+
+    class MatrixConfiguratorFailureTest : public ::testing::TestWithParam<bool> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(ExecutionForms, MatrixConfiguratorFailureTest, ::testing::Bool(),
+        [](const ::testing::TestParamInfo<bool>& info) { return info.param ? "Async" : "Sync"; });
+
+    TEST_P(MatrixConfiguratorFailureTest, AConfigurationFailureDoesNotExecuteOrAdvanceTheOperation)
+    {
+        const auto matrix = ComputeMatrix::create();
+        matrix->create_operation<RunningOffset>("state");
+        matrix->set_context_configurator([](ExecutionContext&, const std::type_index&) {
+            throw std::domain_error("Context configuration failed");
+        });
+        const SampleDatum input(Samples { 10.0 });
+
+        const auto failed = GetParam()
+            ? matrix->execute_named_async<RunningOffset, Samples>("state", input).get()
+            : matrix->execute_named<RunningOffset, Samples>("state", input);
+        EXPECT_FALSE(failed.has_value());
+        matrix->set_context_configurator({});
+        const auto recovered = matrix->execute_named<RunningOffset, Samples>("state", input);
+
+        ASSERT_TRUE(recovered.has_value());
+        EXPECT_EQ(recovered->data, (Samples { 12.0 }));
+        const auto stats = matrix->get_statistics();
+        EXPECT_EQ(std::any_cast<size_t>(stats.at("total_executions")), 2U);
+        EXPECT_EQ(std::any_cast<size_t>(stats.at("failed_executions")), 1U);
+    }
+
+    using AccountingParam = std::tuple<bool, bool>;
+
+    class MatrixAccountingTest : public ::testing::TestWithParam<AccountingParam> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(ExecutionAndProfiling, MatrixAccountingTest,
+        ::testing::Combine(::testing::Bool(), ::testing::Bool()),
+        [](const ::testing::TestParamInfo<AccountingParam>& info) {
+            return std::string(std::get<0>(info.param) ? "Async_" : "Sync_")
+                + (std::get<1>(info.param) ? "Profiled" : "Unprofiled");
+        });
+
+    TEST_P(MatrixAccountingTest, ReportsOnlyActualExecutionFailuresAndRecoversWithoutInflatingCounts)
+    {
+        const auto matrix = ComputeMatrix::create();
+        matrix->set_profiling(std::get<1>(GetParam()));
+        size_t errors = 0;
+        std::type_index failed_type { typeid(void) };
+        std::string message;
+        matrix->set_error_callback([&](const std::exception& error, const std::type_index& type) {
+            ++errors;
+            failed_type = type;
+            message = error.what();
+        });
+        auto execute = [&](const SampleDatum& input) {
+            return std::get<0>(GetParam())
+                ? matrix->execute_async<AffineOperation, Samples>(input, 2.0, 1.0, true).get()
+                : matrix->execute<AffineOperation, Samples>(input, 2.0, 1.0, true);
         };
+
+        const auto first = execute(SampleDatum(Samples { 1.0, 3.0 }));
+        const auto failed = execute(SampleDatum(Samples { -1.0 }));
+        const auto missing = matrix->execute_named<AffineOperation, Samples>("missing", SampleDatum(Samples { 1.0 }));
+        const auto absent = matrix->execute_with(std::shared_ptr<AffineOperation> {}, SampleDatum(Samples { 1.0 }));
+        const auto recovered = execute(SampleDatum(Samples { 4.0 }));
+
+        ASSERT_TRUE(first.has_value());
+        EXPECT_EQ(first->data, (Samples { 3.0, 7.0 }));
+        EXPECT_FALSE(failed.has_value());
+        EXPECT_FALSE(missing.has_value());
+        EXPECT_FALSE(absent.has_value());
+        ASSERT_TRUE(recovered.has_value());
+        EXPECT_EQ(recovered->data, (Samples { 9.0 }));
+        EXPECT_EQ(errors, 1U);
+        EXPECT_EQ(failed_type, std::type_index(typeid(AffineOperation)));
+        EXPECT_EQ(message, "Sample is outside the operation domain");
+        EXPECT_EQ(matrix->get_last_error(), message);
+        const auto stats = matrix->get_statistics();
+        EXPECT_EQ(std::any_cast<size_t>(stats.at("total_executions")), 3U);
+        EXPECT_EQ(std::any_cast<size_t>(stats.at("failed_executions")), 1U);
+        EXPECT_EQ(stats.contains("average_execution_time_ms"), std::get<1>(GetParam()));
     }
 
-    static std::vector<DataVariant> create_silence_multichannel(size_t channels = 2, size_t size = 256)
+    class MatrixAsyncChainTest : public ::testing::TestWithParam<bool> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(CompletionOutcomes, MatrixAsyncChainTest, ::testing::Bool(),
+        [](const ::testing::TestParamInfo<bool>& info) { return info.param ? "Failure" : "Success"; });
+
+    TEST_P(MatrixAsyncChainTest, DrainDeliversCompletedResultsOrReportsTheChainFailure)
     {
-        std::vector<DataVariant> multichannel_data;
-        multichannel_data.reserve(channels);
-
-        for (size_t ch = 0; ch < channels; ++ch) {
-            multichannel_data.emplace_back(std::vector<double>(size, 0.0));
-        }
-        return multichannel_data;
-    }
-
-    static std::vector<DataVariant> create_noise_multichannel(size_t channels = 2, size_t size = 256, double amplitude = 0.1)
-    {
-        std::vector<DataVariant> multichannel_data;
-        multichannel_data.reserve(channels);
-
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_real_distribution<> dis(-amplitude, amplitude);
-
-        for (size_t ch = 0; ch < channels; ++ch) {
-            std::vector<double> channel_data(size);
-            for (size_t i = 0; i < size; ++i) {
-                channel_data[i] = dis(gen) + 0.05 * (double)(ch + 1);
-            }
-            multichannel_data.emplace_back(std::move(channel_data));
-        }
-        return multichannel_data;
-    }
-
-    static std::vector<DataVariant> create_frequency_sweep_multichannel(size_t channels = 2, size_t size = 512)
-    {
-        std::vector<DataVariant> multichannel_data;
-        multichannel_data.reserve(channels);
-
-        for (size_t ch = 0; ch < channels; ++ch) {
-            std::vector<double> channel_data(size);
-            double freq_start = 1.0 + ch * 0.5;
-            double freq_end = freq_start * 4.0;
-
-            for (size_t i = 0; i < size; ++i) {
-                double t = static_cast<double>(i) / size;
-                double freq = freq_start + (freq_end - freq_start) * t;
-                channel_data[i] = 0.5 * std::sin(2.0 * M_PI * freq * t) + 0.1 * (double)(ch + 1);
-            }
-            multichannel_data.emplace_back(std::move(channel_data));
-        }
-        return multichannel_data;
-    }
-
-    static std::vector<DataVariant> create_impulse_multichannel(size_t channels = 2, size_t size = 256, size_t impulse_position = 64)
-    {
-        std::vector<DataVariant> multichannel_data;
-        multichannel_data.reserve(channels);
-
-        for (size_t ch = 0; ch < channels; ++ch) {
-            std::vector<double> channel_data(size, 0.0);
-            if (impulse_position < size) {
-                channel_data[impulse_position] = 1.0 * (ch + 1);
-            }
-            multichannel_data.emplace_back(std::move(channel_data));
-        }
-        return multichannel_data;
-    }
-};
-
-// =========================================================================
-// BASIC COMPUTE MATRIX TESTS
-// =========================================================================
-
-class ComputeMatrixTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        matrix = ComputeMatrix::create();
-        test_data = MatrixTestDataGenerator::create_test_multichannel_signal();
-        test_input = test_data;
-    }
-    std::shared_ptr<ComputeMatrix> matrix;
-    std::vector<DataVariant> test_data;
-    std::vector<DataVariant> test_input;
-};
-
-TEST_F(ComputeMatrixTest, MatrixCreation)
-{
-    EXPECT_NE(matrix, nullptr) << "Should create matrix instance";
-    EXPECT_EQ(matrix->list_operations().size(), 0) << "Matrix should start empty";
-    EXPECT_EQ(matrix->get_execution_policy(), ExecutionPolicy::BALANCED) << "Should have default execution policy";
-}
-
-TEST_F(ComputeMatrixTest, BasicOperationManagement)
-{
-    MathematicalTransformerConfig math_op_cfg;
-    math_op_cfg.gain_factor = 2.0;
-    auto math_op = std::make_shared<MathematicalTransformer<>>(math_op_cfg);
-
-    EXPECT_TRUE(matrix->add_operation("gain", math_op)) << "Should add operation successfully";
-    EXPECT_FALSE(matrix->add_operation("gain", math_op)) << "Should reject duplicate names";
-
-    auto retrieved = matrix->get_operation<MathematicalTransformer<>>("gain");
-    EXPECT_NE(retrieved, nullptr) << "Should retrieve added operation";
-    EXPECT_EQ(retrieved.get(), math_op.get()) << "Should return same instance";
-
-    auto operations = matrix->list_operations();
-    EXPECT_EQ(operations.size(), 1) << "Should list one operation";
-    EXPECT_EQ(operations[0], "gain") << "Should list correct name";
-}
-
-TEST_F(ComputeMatrixTest, CreateOperationInMatrix)
-{
-    auto created = matrix->create_operation<MathematicalTransformer<>>("created_gain");
-    EXPECT_NE(created, nullptr) << "Should create operation successfully";
-    EXPECT_EQ(matrix->list_operations().size(), 1) << "Should have one operation";
-
-    auto retrieved = matrix->get_operation<MathematicalTransformer<>>("created_gain");
-    EXPECT_EQ(retrieved.get(), created.get()) << "Should retrieve same instance";
-}
-
-TEST_F(ComputeMatrixTest, RemoveOperations)
-{
-    matrix->create_operation<MathematicalTransformer<>>("op1");
-    matrix->create_operation<TemporalTransformer<>>("op2");
-
-    EXPECT_EQ(matrix->list_operations().size(), 2) << "Should have two operations";
-
-    EXPECT_TRUE(matrix->remove_operation("op1")) << "Should remove existing operation";
-    EXPECT_FALSE(matrix->remove_operation("nonexistent")) << "Should fail to remove nonexistent operation";
-
-    EXPECT_EQ(matrix->list_operations().size(), 1) << "Should have one operation after removal";
-
-    matrix->clear_operations();
-    EXPECT_EQ(matrix->list_operations().size(), 0) << "Should have no operations after clear";
-}
-
-// =========================================================================
-// EXECUTION INTERFACE TESTS
-// =========================================================================
-
-class MatrixExecutionTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        matrix = ComputeMatrix::create();
-        test_data = MatrixTestDataGenerator::create_test_multichannel_signal();
-        test_input = test_data;
-    }
-    std::shared_ptr<ComputeMatrix> matrix;
-    std::vector<DataVariant> test_data;
-    Datum<std::vector<DataVariant>> test_input;
-};
-
-TEST_F(MatrixExecutionTest, DirectExecution)
-{
-    auto result = matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input);
-    EXPECT_TRUE(result.has_value()) << "Should execute operation successfully";
-
-    try {
-        EXPECT_EQ(result->data.size(), test_data.size()) << "Should preserve channel count";
-
-        for (size_t ch = 0; ch < result->data.size(); ++ch) {
-            auto original_channel = std::get<std::vector<double>>(test_data[ch]);
-            auto result_channel = std::get<std::vector<double>>(result->data[ch]);
-            EXPECT_EQ(result_channel.size(), original_channel.size()) << "Should preserve channel " << ch << " size";
-        }
-    } catch (const std::exception& e) {
-        SUCCEED() << "Direct execution test failed with: " << e.what();
-    }
-}
-
-TEST_F(MatrixExecutionTest, NamedExecution)
-{
-    MathematicalTransformerConfig math_op_cfg;
-    math_op_cfg.gain_factor = 3.0;
-    auto math_op = matrix->create_operation<MathematicalTransformer<>>("named_gain", math_op_cfg);
-
-    auto result = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("named_gain", test_input);
-    EXPECT_TRUE(result.has_value()) << "Should execute named operation successfully";
-
-    try {
-        EXPECT_EQ(result->data.size(), test_data.size()) << "Should preserve channel count";
-
-        for (size_t ch = 0; ch < result->data.size(); ++ch) {
-            auto original_channel = std::get<std::vector<double>>(test_data[ch]);
-            auto result_channel = std::get<std::vector<double>>(result->data[ch]);
-            EXPECT_EQ(result_channel.size(), original_channel.size()) << "Should preserve channel " << ch << " size";
-
-            bool values_changed = false;
-            for (size_t i = 0; i < std::min(original_channel.size(), result_channel.size()); ++i) {
-                if (std::abs(result_channel[i] - original_channel[i]) > 1e-10) {
-                    values_changed = true;
-                    if (std::abs(original_channel[i]) > 1e-10) {
-                        double gain_applied = result_channel[i] / original_channel[i];
-                        EXPECT_NEAR(gain_applied, 3.0, 0.1) << "Should apply 3x gain on channel " << ch;
-                        break;
-                    }
-                }
-            }
-            EXPECT_TRUE(values_changed) << "Channel " << ch << " should be modified by gain operation";
-        }
-    } catch (const std::exception& e) {
-        SUCCEED() << "Named execution test failed with: " << e.what();
-    }
-}
-
-TEST_F(MatrixExecutionTest, AsynchronousExecution)
-{
-    auto future = matrix->execute_async<MathematicalTransformer<>, std::vector<DataVariant>>(test_input);
-    EXPECT_TRUE(future.valid()) << "Should return valid future";
-
-    auto result = future.get();
-    EXPECT_TRUE(result.has_value()) << "Should complete asynchronously";
-
-    try {
-        EXPECT_EQ(result->data.size(), test_data.size()) << "Should preserve channel count";
-
-        for (size_t ch = 0; ch < result->data.size(); ++ch) {
-            auto original_channel = std::get<std::vector<double>>(test_data[ch]);
-            auto result_channel = std::get<std::vector<double>>(result->data[ch]);
-            EXPECT_EQ(result_channel.size(), original_channel.size()) << "Should preserve channel " << ch << " size";
-        }
-    } catch (const std::exception& e) {
-        SUCCEED() << "Async execution test failed with: " << e.what();
-    }
-}
-
-TEST_F(MatrixExecutionTest, NamedAsyncExecution)
-{
-    matrix->create_operation<MathematicalTransformer<>>("async_gain");
-
-    auto future = matrix->execute_named_async<MathematicalTransformer<>, std::vector<DataVariant>>("async_gain", test_input);
-    EXPECT_TRUE(future.valid()) << "Should return valid future";
-
-    auto result = future.get();
-    EXPECT_TRUE(result.has_value()) << "Should complete named async execution";
-
-    try {
-        EXPECT_EQ(result->data.size(), test_data.size()) << "Should preserve channel count in async execution";
-    } catch (const std::exception& e) {
-        SUCCEED() << "Named async execution test failed with: " << e.what();
-    }
-}
-
-// =========================================================================
-// PARALLEL EXECUTION TESTS
-// =========================================================================
-
-class MatrixParallelTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        matrix = ComputeMatrix::create();
-        test_data = MatrixTestDataGenerator::create_test_multichannel_signal();
-        test_input = test_data;
-    }
-    std::shared_ptr<ComputeMatrix> matrix;
-    std::vector<DataVariant> test_data;
-    Datum<std::vector<DataVariant>> test_input;
-};
-
-TEST_F(MatrixParallelTest, ParallelNamedExecution)
-{
-    matrix->create_operation<MathematicalTransformer<>>("gain1");
-    MathematicalTransformerConfig power_cfg;
-    power_cfg.operation = MathematicalOperation::POWER;
-    matrix->create_operation<MathematicalTransformer<>>("gain2", power_cfg);
-
-    std::vector<std::string> operation_names = { "gain1", "gain2" };
-    auto results = matrix->execute_parallel_named<MathematicalTransformer<>, std::vector<DataVariant>>(operation_names, test_input);
-
-    EXPECT_EQ(results.size(), 2) << "Should return results for both named operations";
-
-    for (size_t i = 0; i < results.size(); ++i) {
-        if (results[i].has_value()) {
-            try {
-                EXPECT_EQ(results[i]->data.size(), test_data.size()) << "Result " << i << " should preserve channel count";
-
-                for (size_t ch = 0; ch < results[i]->data.size(); ++ch) {
-                    auto original_channel = std::get<std::vector<double>>(test_data[ch]);
-                    auto result_channel = std::get<std::vector<double>>(results[i]->data[ch]);
-                    EXPECT_EQ(result_channel.size(), original_channel.size())
-                        << "Result " << i << ", channel " << ch << " should preserve size";
-                }
-            } catch (const std::exception& e) {
-                SUCCEED() << "Parallel named execution " << i << " failed with: " << e.what();
-            }
-        }
-    }
-}
-
-// =========================================================================
-// CHAIN EXECUTION TESTS
-// =========================================================================
-
-class MatrixChainTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        matrix = ComputeMatrix::create();
-        test_data = MatrixTestDataGenerator::create_test_multichannel_signal();
-        test_input = test_data;
-    }
-    std::shared_ptr<ComputeMatrix> matrix;
-    std::vector<DataVariant> test_data;
-    Datum<std::vector<DataVariant>> test_input;
-};
-
-TEST_F(MatrixChainTest, BasicChainExecution)
-{
-    auto result = matrix->execute_chain<MathematicalTransformer<>, TemporalTransformer<>, std::vector<DataVariant>, std::vector<DataVariant>, std::vector<DataVariant>>(test_input);
-    EXPECT_TRUE(result.has_value()) << "Should execute chain successfully";
-
-    try {
-        EXPECT_EQ(result->data.size(), test_data.size()) << "Should preserve channel count";
-
-        for (size_t ch = 0; ch < result->data.size(); ++ch) {
-            auto original_channel = std::get<std::vector<double>>(test_data[ch]);
-            auto result_channel = std::get<std::vector<double>>(result->data[ch]);
-            EXPECT_EQ(result_channel.size(), original_channel.size()) << "Should preserve channel " << ch << " size";
-
-            bool values_changed = false;
-            for (size_t i = 0; i < std::min(original_channel.size(), result_channel.size()); ++i) {
-                if (std::abs(result_channel[i] - original_channel[i]) > 1e-10) {
-                    values_changed = true;
-                    break;
-                }
-            }
-            EXPECT_TRUE(values_changed) << "Channel " << ch << " should apply both transformations";
-        }
-    } catch (const std::exception& e) {
-        SUCCEED() << "Chain execution test failed with: " << e.what();
-    }
-}
-
-TEST_F(MatrixChainTest, NamedChainExecution)
-{
-    MathematicalTransformerConfig gain_op_cfg;
-    gain_op_cfg.gain_factor = 2.0;
-    auto gain_op = matrix->create_operation<MathematicalTransformer<>>("chain_gain", gain_op_cfg);
-    auto reverse_op = matrix->create_operation<TemporalTransformer<>>("chain_reverse");
-
-    auto result = matrix->execute_chain_named<MathematicalTransformer<>, TemporalTransformer<>, std::vector<DataVariant>, std::vector<DataVariant>, std::vector<DataVariant>>(
-        "chain_gain", "chain_reverse", test_input);
-
-    EXPECT_TRUE(result.has_value()) << "Should execute named chain successfully";
-
-    try {
-        EXPECT_EQ(result->data.size(), test_data.size()) << "Should preserve channel count";
-
-        for (size_t ch = 0; ch < result->data.size(); ++ch) {
-            auto original_channel = std::get<std::vector<double>>(test_data[ch]);
-            auto result_channel = std::get<std::vector<double>>(result->data[ch]);
-            EXPECT_EQ(result_channel.size(), original_channel.size()) << "Should preserve channel " << ch << " size";
-
-            if (!original_channel.empty()) {
-                // After gain (2x) and reverse, first sample should be last sample * 2
-                double expected_first = original_channel.back() * 2.0;
-                EXPECT_NEAR(result_channel[0], expected_first, 0.01)
-                    << "Channel " << ch << " should apply gain then reverse";
-            }
-        }
-    } catch (const std::exception& e) {
-        SUCCEED() << "Named chain execution test failed with: " << e.what();
-    }
-}
-
-// =========================================================================
-// BATCH EXECUTION TESTS
-// =========================================================================
-
-class MatrixBatchTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        matrix = ComputeMatrix::create();
-
-        test_inputs.emplace_back(Datum<std::vector<DataVariant>>(MatrixTestDataGenerator::create_test_multichannel_signal(2, 128, 1.0)));
-        test_inputs.emplace_back(Datum<std::vector<DataVariant>>(MatrixTestDataGenerator::create_test_multichannel_signal(2, 128, 0.5)));
-        test_inputs.emplace_back(Datum<std::vector<DataVariant>>(MatrixTestDataGenerator::create_ramp_multichannel_signal(2, 128)));
-    }
-
-    std::shared_ptr<ComputeMatrix> matrix;
-    std::vector<Datum<std::vector<DataVariant>>> test_inputs;
-};
-
-TEST_F(MatrixBatchTest, SequentialBatchExecution)
-{
-    auto results = matrix->execute_batch<MathematicalTransformer<>, std::vector<DataVariant>>(test_inputs);
-
-    EXPECT_EQ(results.size(), test_inputs.size()) << "Should return result for each input";
-
-    for (size_t i = 0; i < results.size(); ++i) {
-        if (results[i].has_value()) {
-            try {
-                EXPECT_EQ(results[i]->data.size(), test_inputs[i].data.size()) << "Result " << i << " should preserve channel count";
-
-                for (size_t ch = 0; ch < results[i]->data.size(); ++ch) {
-                    auto result_channel = std::get<std::vector<double>>(results[i]->data[ch]);
-                    auto input_channel = std::get<std::vector<double>>(test_inputs[i].data[ch]);
-                    EXPECT_EQ(result_channel.size(), input_channel.size())
-                        << "Result " << i << ", channel " << ch << " should preserve size";
-                }
-            } catch (const std::exception& e) {
-                SUCCEED() << "Batch execution " << i << " failed with: " << e.what();
-            }
-        }
-    }
-}
-
-TEST_F(MatrixBatchTest, ParallelBatchExecution)
-{
-    auto results = matrix->execute_batch_parallel<MathematicalTransformer<>, std::vector<DataVariant>>(test_inputs);
-
-    EXPECT_EQ(results.size(), test_inputs.size()) << "Should return result for each input";
-
-    for (size_t i = 0; i < results.size(); ++i) {
-        if (results[i].has_value()) {
-            try {
-                EXPECT_EQ(results[i]->data.size(), test_inputs[i].data.size()) << "Parallel result " << i << " should preserve channel count";
-
-                for (size_t ch = 0; ch < results[i]->data.size(); ++ch) {
-                    auto result_channel = std::get<std::vector<double>>(results[i]->data[ch]);
-                    auto input_channel = std::get<std::vector<double>>(test_inputs[i].data[ch]);
-                    EXPECT_EQ(result_channel.size(), input_channel.size())
-                        << "Parallel result " << i << ", channel " << ch << " should preserve size";
-                }
-            } catch (const std::exception& e) {
-                SUCCEED() << "Parallel batch execution " << i << " failed with: " << e.what();
-            }
-        }
-    }
-}
-
-// =========================================================================
-// CONFIGURATION AND STATISTICS TESTS
-// =========================================================================
-
-class MatrixConfigurationTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        matrix = ComputeMatrix::create();
-        test_data = MatrixTestDataGenerator::create_test_multichannel_signal();
-        test_input = test_data;
-    }
-
-    std::shared_ptr<ComputeMatrix> matrix;
-    std::vector<DataVariant> test_data;
-    Datum<std::vector<DataVariant>> test_input;
-};
-
-TEST_F(MatrixConfigurationTest, ExecutionPolicyConfiguration)
-{
-    EXPECT_EQ(matrix->get_execution_policy(), ExecutionPolicy::BALANCED) << "Should have default policy";
-
-    matrix->set_execution_policy(ExecutionPolicy::AGGRESSIVE);
-    EXPECT_EQ(matrix->get_execution_policy(), ExecutionPolicy::AGGRESSIVE) << "Should update policy";
-
-    matrix->set_execution_policy(ExecutionPolicy::CONSERVATIVE);
-    EXPECT_EQ(matrix->get_execution_policy(), ExecutionPolicy::CONSERVATIVE) << "Should update policy again";
-}
-
-TEST_F(MatrixConfigurationTest, ProfilingConfiguration)
-{
-    matrix->set_profiling(true);
-
-    matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input);
-    matrix->execute<TemporalTransformer<>, std::vector<DataVariant>>(test_input);
-
-    auto stats = matrix->get_statistics();
-
-    EXPECT_TRUE(stats.contains("total_executions")) << "Should track total executions";
-    EXPECT_TRUE(stats.contains("failed_executions")) << "Should track failed executions";
-    EXPECT_TRUE(stats.contains("average_execution_time_ms")) << "Should track execution time when profiling enabled";
-
-    try {
-        auto total_executions = std::any_cast<size_t>(stats["total_executions"]);
-        EXPECT_GE(total_executions, 2) << "Should have executed at least 2 operations";
-    } catch (const std::bad_any_cast&) {
-        SUCCEED() << "Statistics tracking active but cast failed";
-    }
-}
-
-TEST_F(MatrixConfigurationTest, ContextConfiguratorSettings)
-{
-    bool configurator_called = false;
-
-    matrix->set_context_configurator([&configurator_called](ExecutionContext& ctx, const std::type_index& /*op_type*/) {
-        configurator_called = true;
-        ctx.timeout = std::chrono::milliseconds(1000);
-    });
-
-    matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input);
-
-    EXPECT_TRUE(configurator_called) << "Context configurator should be called during execution";
-}
-
-TEST_F(MatrixConfigurationTest, ErrorHandling)
-{
-    bool error_callback_called = false;
-    std::string captured_error;
-
-    matrix->set_error_callback([&error_callback_called, &captured_error](const std::exception& e, const std::type_index& /*op_type*/) {
-        error_callback_called = true;
-        captured_error = e.what();
-    });
-
-    auto result = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("nonexistent_operation", test_input);
-
-    EXPECT_FALSE(result.has_value()) << "Should fail for nonexistent operation";
-}
-
-// =========================================================================
-// FLUENT INTERFACE TESTS
-// =========================================================================
-
-/* class MatrixFluentTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        matrix = ComputeMatrix::create();
-        test_data = MatrixTestDataGenerator::create_test_signal();
-        test_input = DataVariant(test_data);
-
-        MathematicalTransformerConfig gain_op_cfg;
-        gain_op_cfg.gain_factor = 1.5;
-        auto gain_op = matrix->create_operation<MathematicalTransformer<>>("fluent_gain", gain_op_cfg);
-    }
-
-    std::shared_ptr<ComputeMatrix> matrix;
-    std::vector<double> test_data;
-    DataVariant test_input;
-};
-*/
-
-// =========================================================================
-// EDGE CASE AND ERROR HANDLING TESTS
-// =========================================================================
-
-class MatrixEdgeCaseTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        matrix = ComputeMatrix::create();
-    }
-    std::shared_ptr<ComputeMatrix> matrix;
-};
-
-TEST_F(MatrixEdgeCaseTest, NullOperationHandling)
-{
-    std::shared_ptr<MathematicalTransformer<>> null_op = nullptr;
-    EXPECT_FALSE(matrix->add_operation("null_test", null_op)) << "Should reject null operations";
-}
-
-TEST_F(MatrixEdgeCaseTest, EmptyInputProcessing)
-{
-    Datum<std::vector<DataVariant>> empty_multichannel;
-
-    EXPECT_NO_THROW({
-        auto result = matrix->execute<MathematicalTransformer<>>(empty_multichannel);
-    }) << "Should handle empty multichannel input gracefully";
-}
-
-TEST_F(MatrixEdgeCaseTest, EmptyChannelProcessing)
-{
-    Datum<std::vector<DataVariant>> empty_channels(std::vector<DataVariant> {
-        DataVariant(std::vector<double> {}),
-        DataVariant(std::vector<double> {}) });
-
-    EXPECT_NO_THROW({
-        auto result = matrix->execute<MathematicalTransformer<>>(empty_channels);
-    }) << "Should handle empty channels gracefully";
-}
-
-TEST_F(MatrixEdgeCaseTest, NonexistentOperationAccess)
-{
-    auto result = matrix->get_operation<MathematicalTransformer<>>("nonexistent");
-    EXPECT_EQ(result, nullptr) << "Should return nullptr for nonexistent operation";
-
-    Datum<std::vector<DataVariant>> test_multichannel(std::vector<DataVariant> {
-        DataVariant(std::vector<double> { 1.0, 2.0 }),
-        DataVariant(std::vector<double> { 3.0, 4.0 }) });
-
-    auto exec_result = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("nonexistent", test_multichannel);
-    EXPECT_FALSE(exec_result.has_value()) << "Should fail gracefully for nonexistent operation";
-}
-
-TEST_F(MatrixEdgeCaseTest, TypeMismatchHandling)
-{
-    auto math_op = matrix->create_operation<MathematicalTransformer<>>("math_op");
-
-    auto wrong_type = matrix->get_operation<TemporalTransformer<>>("math_op");
-    EXPECT_EQ(wrong_type, nullptr) << "Should return nullptr for type mismatch";
-}
-
-TEST_F(MatrixEdgeCaseTest, SingleChannelToMultiChannelCompatibility)
-{
-    Datum<std::vector<DataVariant>> single_channel(std::vector<DataVariant> {
-        DataVariant(std::vector<double> { 1.0, 2.0, 3.0 }) });
-
-    EXPECT_NO_THROW({
-        auto result = matrix->execute<MathematicalTransformer<>>(single_channel);
-        EXPECT_TRUE(result.has_value()) << "Should handle single-channel as multichannel";
-        if (result.has_value()) {
-            EXPECT_EQ(result->data.size(), 1) << "Should preserve single channel structure";
-        }
-    }) << "Should process single-channel data as multichannel";
-}
-
-TEST_F(MatrixEdgeCaseTest, MixedChannelSizeHandling)
-{
-    Datum<std::vector<DataVariant>> mixed_sizes(std::vector<DataVariant> {
-        DataVariant(std::vector<double>(256, 0.5)),
-        DataVariant(std::vector<double>(128, 0.3)),
-        DataVariant(std::vector<double>(512, 0.7)) });
-
-    EXPECT_NO_THROW({
-        auto result = matrix->execute<MathematicalTransformer<>>(mixed_sizes);
-        if (result.has_value()) {
-            EXPECT_EQ(result->data.size(), 3) << "Should preserve channel count";
-
-            auto ch0 = std::get<std::vector<double>>(result->data[0]);
-            auto ch1 = std::get<std::vector<double>>(result->data[1]);
-            auto ch2 = std::get<std::vector<double>>(result->data[2]);
-
-            EXPECT_EQ(ch0.size(), 256) << "Channel 0 should preserve size";
-            EXPECT_EQ(ch1.size(), 128) << "Channel 1 should preserve size";
-            EXPECT_EQ(ch2.size(), 512) << "Channel 2 should preserve size";
-        }
-    }) << "Should handle mixed channel sizes";
-}
-
-// =========================================================================
-// PERFORMANCE AND CONSISTENCY TESTS
-// =========================================================================
-
-class MatrixPerformanceTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        matrix = ComputeMatrix::create();
-        large_data = MatrixTestDataGenerator::create_test_multichannel_signal(4, 2048, 1.0); // 4 channels, 2048 samples each
-        large_input = large_data;
-
-        for (int i = 0; i < 5; ++i) {
-            MathematicalTransformerConfig gain_op_cfg;
-            gain_op_cfg.gain_factor = 1.0 + i * 0.1;
-            auto gain_op = matrix->create_operation<MathematicalTransformer<>>(
-                "perf_gain_" + std::to_string(i), gain_op_cfg);
-        }
-    }
-
-    std::shared_ptr<ComputeMatrix> matrix;
-    std::vector<DataVariant> large_data;
-    Datum<std::vector<DataVariant>> large_input;
-};
-
-TEST_F(MatrixPerformanceTest, LargeDataProcessing)
-{
-    EXPECT_NO_THROW({
-        auto result = matrix->execute<MathematicalTransformer<>>(large_input);
-        EXPECT_TRUE(result.has_value()) << "Should handle large multichannel data successfully";
-
-        try {
-            EXPECT_EQ(result->data.size(), large_data.size()) << "Should preserve channel count for large data";
-
-            for (size_t ch = 0; ch < result->data.size(); ++ch) {
-                auto original_channel = std::get<std::vector<double>>(large_data[ch]);
-                auto result_channel = std::get<std::vector<double>>(result->data[ch]);
-                EXPECT_EQ(result_channel.size(), original_channel.size())
-                    << "Should preserve large channel " << ch << " size (" << original_channel.size() << " samples)";
-            }
-        } catch (const std::exception& e) {
-            SUCCEED() << "Large data processing completed but verification failed: " << e.what();
-        }
-    }) << "Should process large multichannel data without issues";
-}
-
-TEST_F(MatrixPerformanceTest, ConsistentResults)
-{
-    auto result1 = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("perf_gain_0", large_input);
-    auto result2 = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("perf_gain_0", large_input);
-
-    EXPECT_TRUE(result1.has_value()) << "First execution should succeed";
-    EXPECT_TRUE(result2.has_value()) << "Second execution should succeed";
-
-    try {
-        EXPECT_EQ(result1->data.size(), result2->data.size()) << "Results should have same channel count";
-
-        for (size_t ch = 0; ch < std::min(result1->data.size(), result2->data.size()); ++ch) {
-            auto data1 = std::get<std::vector<double>>(result1->data[ch]);
-            auto data2 = std::get<std::vector<double>>(result2->data[ch]);
-
-            EXPECT_EQ(data1.size(), data2.size()) << "Channel " << ch << " should have same size";
-
-            for (size_t i = 0; i < std::min(data1.size(), data2.size()); ++i) {
-                EXPECT_NEAR(data1[i], data2[i], 1e-10)
-                    << "Results should be deterministic at channel " << ch << ", index " << i;
-            }
-        }
-    } catch (const std::exception& e) {
-        SUCCEED() << "Consistency test failed with: " << e.what();
-    }
-}
-
-TEST_F(MatrixPerformanceTest, ConcurrentExecution)
-{
-    std::vector<std::future<std::optional<Datum<std::vector<DataVariant>>>>> futures;
-
-    for (int i = 0; i < 5; ++i) {
-        futures.push_back(matrix->execute_named_async<MathematicalTransformer<>, std::vector<DataVariant>>(
-            "perf_gain_" + std::to_string(i), large_input));
-    }
-
-    for (size_t i = 0; i < futures.size(); ++i) {
-        EXPECT_TRUE(futures[i].valid()) << "Future " << i << " should be valid";
-        auto result = futures[i].get();
-        EXPECT_TRUE(result.has_value()) << "Concurrent execution " << i << " should succeed";
-
-        if (result.has_value()) {
-            EXPECT_EQ(result->data.size(), large_data.size())
-                << "Concurrent result " << i << " should preserve channel count";
-        }
-    }
-}
-
-TEST_F(MatrixPerformanceTest, StatisticsAccuracy)
-{
-    matrix->set_profiling(true);
-
-    const int num_executions = 10;
-    for (int i = 0; i < num_executions; ++i) {
-        matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("perf_gain_0", large_input);
-    }
-
-    auto stats = matrix->get_statistics();
-
-    try {
-        auto total_executions = std::any_cast<size_t>(stats["total_executions"]);
-        auto failed_executions = std::any_cast<size_t>(stats["failed_executions"]);
-
-        EXPECT_GE(total_executions, num_executions) << "Should track total executions accurately";
-        EXPECT_EQ(failed_executions, 0) << "Should have no failed executions in normal case";
-
-        if (stats.contains("average_execution_time_ms")) {
-            auto avg_time = std::any_cast<double>(stats["average_execution_time_ms"]);
-            EXPECT_GE(avg_time, 0.0) << "Should track non-negative execution time";
-
-            if (avg_time == 0.0) {
-                SUCCEED() << "Execution time is 0 - multichannel operations may be too fast to measure accurately";
-            } else {
-                EXPECT_GT(avg_time, 0.0) << "Should track positive execution time for measurable multichannel operations";
-            }
+        const auto matrix = ComputeMatrix::create();
+        matrix->create_operation<AffineOperation>("affine", 2.0, 1.0, GetParam());
+        std::optional<SampleDatum> completed;
+        const SampleDatum input(GetParam() ? Samples { -1.0 } : Samples { 1.0, 3.0 });
+
+        matrix->with_async(input,
+            [](auto chain) { return chain.template then<AffineOperation>("affine").to_io(); },
+            [&completed](SampleDatum result) { completed = std::move(result); });
+        matrix->drain_async();
+
+        if (GetParam()) {
+            EXPECT_FALSE(completed.has_value());
+            EXPECT_FALSE(matrix->get_last_error().empty());
         } else {
-            SUCCEED() << "Average execution time not available in statistics";
-        }
-    } catch (const std::bad_any_cast&) {
-        SUCCEED() << "Statistics collection active but type casting failed";
-    }
-}
-
-TEST_F(MatrixPerformanceTest, HighChannelCountPerformance)
-{
-    Datum<std::vector<DataVariant>> high_channel_data(MatrixTestDataGenerator::create_test_multichannel_signal(16, 1024, 1.0));
-
-    auto start = std::chrono::high_resolution_clock::now();
-    auto result = matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(high_channel_data);
-    auto end = std::chrono::high_resolution_clock::now();
-
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-    EXPECT_TRUE(result.has_value()) << "Should handle high channel count successfully";
-    EXPECT_LT(duration.count(), 1000) << "Should process 16 channels in reasonable time (< 1s)";
-
-    if (result.has_value()) {
-        EXPECT_EQ(result->data.size(), 16) << "Should preserve all 16 channels";
-
-        for (size_t ch = 0; ch < std::min(size_t(4), result->data.size()); ch += 4) {
-            auto result_channel = std::get<std::vector<double>>(result->data[ch]);
-            EXPECT_EQ(result_channel.size(), 1024) << "Channel " << ch << " should preserve sample count";
-        }
-    }
-}
-
-TEST_F(MatrixPerformanceTest, BatchPerformanceScaling)
-{
-    std::vector<Datum<std::vector<DataVariant>>> batch_inputs;
-    for (int i = 0; i < 8; ++i) {
-        batch_inputs.emplace_back(MatrixTestDataGenerator::create_test_multichannel_signal(2, 1024, 0.5 + i * 0.1));
-    }
-
-    auto start = std::chrono::high_resolution_clock::now();
-    auto results = matrix->execute_batch<MathematicalTransformer<>, std::vector<DataVariant>>(batch_inputs);
-    auto end = std::chrono::high_resolution_clock::now();
-
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-    EXPECT_EQ(results.size(), batch_inputs.size()) << "Should return result for each batch input";
-    EXPECT_LT(duration.count(), 2000) << "Should process batch of 8 multichannel inputs in reasonable time (< 2s)";
-
-    for (size_t i = 0; i < results.size(); ++i) {
-        if (results[i].has_value()) {
-            EXPECT_EQ(results[i]->data.size(), 2) << "Batch result " << i << " should preserve 2 channels";
-        }
-    }
-}
-
-// =========================================================================
-// INTEGRATION WITH EXISTING ECOSYSTEM TESTS
-// =========================================================================
-
-class MatrixIntegrationTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        matrix = ComputeMatrix::create();
-        test_data = MatrixTestDataGenerator::create_test_multichannel_signal();
-        test_input = test_data;
-    }
-    std::shared_ptr<ComputeMatrix> matrix;
-    std::vector<DataVariant> test_data;
-    Datum<std::vector<DataVariant>> test_input;
-};
-
-TEST_F(MatrixIntegrationTest, MultipleTransformerTypes)
-{
-    MathematicalTransformerConfig math_op_cfg;
-    math_op_cfg.gain_factor = 1.5;
-    auto math_op = matrix->create_operation<MathematicalTransformer<>>("integration_gain", math_op_cfg); // Explicit gain factor
-
-    auto math_result = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("integration_gain", test_input);
-    auto temporal_result = matrix->execute<TemporalTransformer<>, std::vector<DataVariant>>(test_input);
-
-    EXPECT_TRUE(math_result.has_value()) << "Mathematical transformer should execute";
-    EXPECT_TRUE(temporal_result.has_value()) << "Temporal transformer should execute";
-
-    try {
-        EXPECT_EQ(math_result->data.size(), test_data.size()) << "Math result should preserve channel count";
-        EXPECT_EQ(temporal_result->data.size(), test_data.size()) << "Temporal result should preserve channel count";
-
-        for (size_t ch = 0; ch < math_result->data.size(); ++ch) {
-            auto original_channel = std::get<std::vector<double>>(test_data[ch]);
-            auto math_channel = std::get<std::vector<double>>(math_result->data[ch]);
-            auto temporal_channel = std::get<std::vector<double>>(temporal_result->data[ch]);
-
-            EXPECT_EQ(math_channel.size(), original_channel.size()) << "Math channel " << ch << " should preserve size";
-            EXPECT_EQ(temporal_channel.size(), original_channel.size()) << "Temporal channel " << ch << " should preserve size";
-
-            // Verify transformations were applied
-            bool math_changed = false, temporal_changed = false;
-            for (size_t i = 0; i < std::min(original_channel.size(), math_channel.size()); ++i) {
-                if (std::abs(math_channel[i] - original_channel[i]) > 1e-10) {
-                    math_changed = true;
-                    break;
-                }
-            }
-            for (size_t i = 0; i < std::min(original_channel.size(), temporal_channel.size()); ++i) {
-                if (std::abs(temporal_channel[i] - original_channel[i]) > 1e-10) {
-                    temporal_changed = true;
-                    break;
-                }
-            }
-
-            EXPECT_TRUE(math_changed) << "Math transformation should modify channel " << ch << " data";
-            EXPECT_TRUE(temporal_changed) << "Temporal transformation should modify channel " << ch << " data";
-        }
-    } catch (const std::exception& e) {
-        SUCCEED() << "Multiple transformer integration test failed with: " << e.what();
-    }
-}
-
-TEST_F(MatrixIntegrationTest, ChainWithDifferentOperationTypes)
-{
-    MathematicalTransformerConfig math_op_cfg;
-    math_op_cfg.operation = MathematicalOperation::POWER;
-    auto math_op = matrix->create_operation<MathematicalTransformer<>>("chain_math", math_op_cfg);
-    auto temporal_op = matrix->create_operation<TemporalTransformer<>>("chain_temporal");
-
-    auto intermediate = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("chain_math", test_input);
-    EXPECT_TRUE(intermediate.has_value()) << "First operation in chain should succeed";
-
-    if (intermediate.has_value()) {
-        auto final_result = matrix->execute_named<TemporalTransformer<>, std::vector<DataVariant>>("chain_temporal", *intermediate);
-
-        EXPECT_TRUE(final_result.has_value()) << "Second operation in chain should succeed";
-
-        try {
-            EXPECT_EQ(final_result->data.size(), test_data.size()) << "Final result should preserve channel count";
-
-            for (size_t ch = 0; ch < final_result->data.size(); ++ch) {
-                auto original_channel = std::get<std::vector<double>>(test_data[ch]);
-                auto final_channel = std::get<std::vector<double>>(final_result->data[ch]);
-
-                EXPECT_EQ(final_channel.size(), original_channel.size()) << "Final channel " << ch << " should preserve size";
-
-                bool values_changed = false;
-                for (size_t i = 0; i < std::min(original_channel.size(), final_channel.size()); ++i) {
-                    if (std::abs(final_channel[i] - original_channel[i]) > 1e-10) {
-                        values_changed = true;
-                        break;
-                    }
-                }
-                EXPECT_TRUE(values_changed) << "Chain should modify channel " << ch << " data";
-            }
-        } catch (const std::exception& e) {
-            SUCCEED() << "Chain integration test failed with: " << e.what();
-        }
-    }
-}
-
-TEST_F(MatrixIntegrationTest, MixedSyncAsyncExecution)
-{
-    auto sync_result = matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input);
-    auto async_future = matrix->execute_async<TemporalTransformer<>, std::vector<DataVariant>>(test_input);
-
-    EXPECT_TRUE(sync_result.has_value()) << "Synchronous execution should complete";
-    EXPECT_TRUE(async_future.valid()) << "Asynchronous execution should start";
-
-    auto async_result = async_future.get();
-    EXPECT_TRUE(async_result.has_value()) << "Asynchronous execution should complete";
-
-    try {
-        EXPECT_EQ(sync_result->data.size(), test_data.size()) << "Sync result should preserve channel count";
-        EXPECT_EQ(async_result->data.size(), test_data.size()) << "Async result should preserve channel count";
-
-        for (size_t ch = 0; ch < std::min(sync_result->data.size(), async_result->data.size()); ++ch) {
-            auto original_channel = std::get<std::vector<double>>(test_data[ch]);
-            auto sync_channel = std::get<std::vector<double>>(sync_result->data[ch]);
-            auto async_channel = std::get<std::vector<double>>(async_result->data[ch]);
-
-            EXPECT_EQ(sync_channel.size(), original_channel.size()) << "Sync channel " << ch << " should preserve size";
-            EXPECT_EQ(async_channel.size(), original_channel.size()) << "Async channel " << ch << " should preserve size";
-        }
-    } catch (const std::exception& e) {
-        SUCCEED() << "Mixed sync/async test failed with: " << e.what();
-    }
-}
-
-// =========================================================================
-// ADVANCED OPERATION POOL TESTS
-// =========================================================================
-
-class MatrixPoolTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        matrix = ComputeMatrix::create();
-
-        for (int i = 0; i < 3; ++i) {
-            matrix->create_operation<MathematicalTransformer<>>("math_" + std::to_string(i));
-            matrix->create_operation<TemporalTransformer<>>("temporal_" + std::to_string(i));
+            ASSERT_TRUE(completed.has_value());
+            EXPECT_EQ(completed->data, (Samples { 3.0, 7.0 }));
         }
     }
 
-    std::shared_ptr<ComputeMatrix> matrix;
-};
-
-TEST_F(MatrixPoolTest, OperationPoolManagement)
-{
-    auto operations = matrix->list_operations();
-    EXPECT_EQ(operations.size(), 6) << "Should have 6 operations in pool";
-
-    int math_count = 0, temporal_count = 0;
-    for (const auto& name : operations) {
-        if (name.starts_with("math_"))
-            math_count++;
-
-        if (name.starts_with("temporal_"))
-            temporal_count++;
-    }
-
-    EXPECT_EQ(math_count, 3) << "Should have 3 mathematical operations";
-    EXPECT_EQ(temporal_count, 3) << "Should have 3 temporal operations";
 }
-
-TEST_F(MatrixPoolTest, OperationRetrieval)
-{
-    auto math_op = matrix->get_operation<MathematicalTransformer<>>("math_0");
-    auto temporal_op = matrix->get_operation<TemporalTransformer<>>("temporal_0");
-
-    EXPECT_NE(math_op, nullptr) << "Should retrieve mathematical operation";
-    EXPECT_NE(temporal_op, nullptr) << "Should retrieve temporal operation";
-
-    auto wrong_type = matrix->get_operation<TemporalTransformer<>>("math_0");
-    EXPECT_EQ(wrong_type, nullptr) << "Should return nullptr for wrong type";
-}
-
-TEST_F(MatrixPoolTest, SelectiveOperationRemoval)
-{
-    EXPECT_TRUE(matrix->remove_operation("math_1")) << "Should remove existing operation";
-    EXPECT_FALSE(matrix->remove_operation("math_1")) << "Should fail to remove already removed operation";
-
-    auto operations = matrix->list_operations();
-    EXPECT_EQ(operations.size(), 5) << "Should have 5 operations after removal";
-
-    auto removed_op = matrix->get_operation<MathematicalTransformer<>>("math_1");
-    EXPECT_EQ(removed_op, nullptr) << "Removed operation should not be retrievable";
-}
-
-// =========================================================================
-// TIMEOUT AND ERROR RESILIENCE TESTS
-// =========================================================================
-
-class MatrixResilienceTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        matrix = ComputeMatrix::create();
-        test_data = MatrixTestDataGenerator::create_test_multichannel_signal();
-        test_input = test_data;
-    }
-
-    std::shared_ptr<ComputeMatrix> matrix;
-    std::vector<DataVariant> test_data;
-    Datum<std::vector<DataVariant>> test_input;
-};
-
-TEST_F(MatrixResilienceTest, TimeoutConfiguration)
-{
-    matrix->set_default_timeout(std::chrono::milliseconds(1000));
-
-    auto result = matrix->execute<MathematicalTransformer<>, std::vector<DataVariant>>(test_input);
-    EXPECT_TRUE(result.has_value()) << "Normal multichannel execution should complete within timeout";
-
-    if (result.has_value()) {
-        EXPECT_EQ(result->data.size(), test_data.size()) << "Should preserve channel count within timeout";
-    }
-}
-
-TEST_F(MatrixResilienceTest, ErrorRecovery)
-{
-    size_t error_count = 0;
-    matrix->set_error_callback([&error_count](const std::exception& /*e*/, const std::type_index& /*op_type*/) {
-        error_count++;
-    });
-
-    auto bad_result = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("nonexistent", test_input);
-    EXPECT_FALSE(bad_result.has_value()) << "Bad execution should fail";
-
-    MathematicalTransformerConfig gain_op_cfg;
-    gain_op_cfg.gain_factor = 1.2;
-    auto gain_op = matrix->create_operation<MathematicalTransformer<>>("recovery_gain", gain_op_cfg);
-
-    auto good_result = matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("recovery_gain", test_input);
-    EXPECT_TRUE(good_result.has_value()) << "Matrix should recover from errors";
-
-    if (good_result.has_value()) {
-        EXPECT_EQ(good_result->data.size(), test_data.size()) << "Recovery should preserve multichannel structure";
-    }
-}
-
-TEST_F(MatrixResilienceTest, StatisticsAfterErrors)
-{
-    matrix->set_profiling(true);
-
-    MathematicalTransformerConfig gain_op_cfg;
-    gain_op_cfg.gain_factor = 1.1;
-    auto gain_op = matrix->create_operation<MathematicalTransformer<>>("stats_gain", gain_op_cfg);
-
-    MathematicalTransformerConfig power_op_cfg;
-    power_op_cfg.operation = MathematicalOperation::POWER;
-    auto power_op = matrix->create_operation<MathematicalTransformer<>>("stats_power", power_op_cfg);
-
-    matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("stats_gain", test_input);
-    matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("stats_power", test_input);
-
-    matrix->execute_named<MathematicalTransformer<>, std::vector<DataVariant>>("nonexistent", test_input);
-
-    auto stats = matrix->get_statistics();
-
-    try {
-        auto total_executions = std::any_cast<size_t>(stats["total_executions"]);
-        auto failed_executions = std::any_cast<size_t>(stats["failed_executions"]);
-
-        EXPECT_GE(total_executions, 2) << "Should count successful multichannel executions";
-        EXPECT_GE(failed_executions, 0) << "Should track failed multichannel executions";
-    } catch (const std::bad_any_cast&) {
-        SUCCEED() << "Statistics tracking after errors completed";
-    }
-}
-
-TEST_F(MatrixResilienceTest, MultiChannelErrorHandling)
-{
-    Datum<std::vector<DataVariant>> empty_multichannel;
-    Datum<std::vector<DataVariant>> empty_channels(std::vector<DataVariant> {
-        DataVariant(std::vector<double> {}),
-        DataVariant(std::vector<double> {}) });
-
-    EXPECT_NO_THROW({
-        auto result1 = matrix->execute<MathematicalTransformer<>>(empty_multichannel);
-        auto result2 = matrix->execute<MathematicalTransformer<>>(empty_channels);
-    }) << "Should handle edge case multichannel inputs gracefully";
-}
-
-TEST_F(MatrixResilienceTest, ConcurrentErrorHandling)
-{
-    std::vector<std::future<std::optional<Datum<std::vector<DataVariant>>>>> futures;
-
-    MathematicalTransformerConfig valid_op_cfg;
-    valid_op_cfg.gain_factor = 1.3;
-    auto valid_op = matrix->create_operation<MathematicalTransformer<>>("concurrent_valid", valid_op_cfg);
-
-    for (int i = 0; i < 3; ++i) {
-        futures.push_back(matrix->execute_named_async<MathematicalTransformer<>, std::vector<DataVariant>>("concurrent_valid", test_input));
-        futures.push_back(matrix->execute_named_async<MathematicalTransformer<>, std::vector<DataVariant>>("nonexistent_" + std::to_string(i), test_input));
-    }
-
-    int successful = 0, failed = 0;
-    for (auto& future : futures) {
-        EXPECT_TRUE(future.valid()) << "All futures should be valid";
-        auto result = future.get();
-        if (result.has_value()) {
-            successful++;
-            EXPECT_EQ(result->data.size(), test_data.size()) << "Successful concurrent result should preserve channels";
-        } else {
-            failed++;
-        }
-    }
-
-    EXPECT_EQ(successful, 3) << "Should have 3 successful concurrent operations";
-    EXPECT_EQ(failed, 3) << "Should have 3 failed concurrent operations";
-}
-
 }

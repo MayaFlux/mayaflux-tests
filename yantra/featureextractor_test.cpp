@@ -150,7 +150,7 @@ namespace {
         ContainerFeatureExtractor extractor(config_for(GetParam()));
         extractor.extract_data(two_channels());
 
-        EXPECT_EQ(ExtractionMethod(extractor.config().method), GetParam());
+        EXPECT_EQ(ExtractionMethod(extractor.config<FeatureExtractorConfig>().method), GetParam());
     }
 
     TEST_P(FeatureExtractorMethodTest, SetConfigSelectsTheMethodUsed)
@@ -311,7 +311,7 @@ namespace {
         const auto channels = extractor.extract_with_scope(two_channels(), GetParam());
 
         EXPECT_EQ(channels.size(), 2U);
-        EXPECT_EQ(extractor.config().scope, ExtractionScope::FULL_DATA);
+        EXPECT_EQ(extractor.config<FeatureExtractorConfig>().scope, ExtractionScope::FULL_DATA);
     }
 
 } // namespace

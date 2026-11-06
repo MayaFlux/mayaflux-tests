@@ -103,7 +103,7 @@ namespace {
         const auto cfg = config_for(GetParam());
         MathematicalTransformer<> transformer(cfg);
 
-        EXPECT_EQ(static_cast<MathematicalOperation>(transformer.config().operation), GetParam());
+        EXPECT_EQ(static_cast<MathematicalOperation>(transformer.config<MathematicalTransformerConfig>().operation), GetParam());
     }
 
     class MathTransformerTest : public ::testing::Test {
@@ -345,7 +345,7 @@ namespace {
         cfg.gain_factor = 2.5;
         MathematicalTransformer<> transformer(cfg);
 
-        EXPECT_EQ(transformer.config().gain_factor, 2.5);
+        EXPECT_EQ(transformer.config<MathematicalTransformerConfig>().gain_factor, 2.5);
     }
 
 }

@@ -136,8 +136,8 @@ namespace {
     {
         SpectralTransformer<> transformer;
 
-        EXPECT_EQ(transformer.config().window_size, 1024U);
-        EXPECT_EQ(transformer.config().hop_size, 512U);
+        EXPECT_EQ(transformer.config<SpectralTransformerConfig>().window_size, 1024U);
+        EXPECT_EQ(transformer.config<SpectralTransformerConfig>().hop_size, 512U);
     }
 
     TEST_F(SpectralTransformerTest, SetConfigReplacesTheOperation)
@@ -171,7 +171,7 @@ namespace {
         cfg.pitch_ratio = 1.5;
         SpectralTransformer<> transformer(cfg);
 
-        EXPECT_EQ(transformer.config().pitch_ratio, 1.5);
+        EXPECT_EQ(transformer.config<SpectralTransformerConfig>().pitch_ratio, 1.5);
     }
 
 }

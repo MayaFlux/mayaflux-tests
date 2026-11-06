@@ -81,7 +81,7 @@ namespace {
     {
         TemporalTransformer<> transformer(config_for(GetParam()));
 
-        EXPECT_EQ(static_cast<TemporalOperation>(transformer.config().operation), GetParam());
+        EXPECT_EQ(static_cast<TemporalOperation>(transformer.config<TemporalTransformerConfig>().operation), GetParam());
     }
 
     class TemporalTransformerTest : public ::testing::Test {
@@ -251,7 +251,7 @@ namespace {
         cfg.delay_samples = 77;
         TemporalTransformer<> transformer(cfg);
 
-        EXPECT_EQ(transformer.config().delay_samples, 77U);
+        EXPECT_EQ(transformer.config<TemporalTransformerConfig>().delay_samples, 77U);
     }
 
 }

@@ -1,724 +1,824 @@
-#include "gtest/gtest.h"
-
-#include "MayaFlux/Yantra/ComputeGrammar.hpp"
-#include "MayaFlux/Yantra/Extractors/FeatureExtractor.hpp"
+#include "MayaFlux/Yantra/ComputePipeline.hpp"
+#include "MayaFlux/Yantra/FunctionalOperation.hpp"
 #include "MayaFlux/Yantra/Transformers/MathematicalTransformer.hpp"
 #include "MayaFlux/Yantra/Transformers/TemporalTransformer.hpp"
+#include "transformer_helpers.hpp"
 
-using namespace MayaFlux::Yantra;
-using namespace MayaFlux::Kakshya;
+#include <gtest/gtest.h>
 
 namespace MayaFlux::Test {
+namespace {
 
-// =========================================================================
-// TEST DATA GENERATORS
-// =========================================================================
+    using namespace Yantra;
+    using Channels = std::vector<std::vector<double>>;
+    using Samples = std::vector<double>;
+    using SampleDatum = Datum<Samples>;
 
-class GrammarTestDataGenerator {
-public:
-    static std::vector<DataVariant> create_test_multichannel_signal(size_t channels = 2, size_t size = 256)
-    {
-        std::vector<DataVariant> multichannel_data;
-        multichannel_data.reserve(channels);
+    enum class Construction { Fluent, InitializerList, Vector };
+    enum class UserMethod { Accumulate, Missing };
+    enum class ForeignMethod { Accumulate };
+    enum class BridgeMethod { Summarize, Project, Fail };
 
-        for (size_t ch = 0; ch < channels; ++ch) {
-            std::vector<double> channel_data(size);
-            for (size_t i = 0; i < size; ++i) {
-                double phase_offset = (double)ch * M_PI / 4.0;
-                channel_data[i] = 0.5 * std::sin(2.0 * M_PI * (double)i / 32.0 + phase_offset);
+    const Facet<int> implementation_id {};
+
+    struct AccumulatorConfig : OperationConfig {
+        static constexpr auto describe_facets()
+        {
+            return std::tuple { FacetMember<&AccumulatorConfig::delta> {} };
+        }
+
+        double delta { 2.0 };
+    };
+
+    class Accumulator final : public ComputeOperation<Samples> {
+    public:
+        using supports = Supports<AccumulatorConfig>;
+
+        explicit Accumulator(AccumulatorConfig config = {}, size_t minimum_samples = 1, int implementation = 1)
+            : m_minimum_samples(minimum_samples)
+            , m_implementation(implementation)
+        {
+            set_config(std::move(config));
+        }
+
+        OperationType get_operation_type() const override { return OperationType::CUSTOM; }
+
+        bool validate_input(const input_type& input) const override
+        {
+            return input.data.size() >= m_minimum_samples
+                && std::ranges::all_of(input.data, [](double value) { return std::isfinite(value); });
+        }
+
+    protected:
+        output_type operation_function(const input_type& input) override
+        {
+            auto output = input;
+            const double offset = config<AccumulatorConfig>().delta *static_cast<double>(++m_calls);
+            for (double& sample : output.data) {
+                sample += offset;
             }
-            multichannel_data.emplace_back(std::move(channel_data));
+            output.facets.set(implementation_id, m_implementation);
+            return output;
         }
-        return multichannel_data;
-    }
 
-    static ExecutionContext create_test_context(ComputationContext comp_context)
-    {
-        return ExecutionContext {
-            .mode = ExecutionMode::SYNC,
-            .dependencies = {},
-            .execution_metadata = {
-                { "computation_context", comp_context } }
-        };
-    }
-};
-
-// =========================================================================
-// UNIVERSAL MATCHER TESTS
-// =========================================================================
-
-class MatcherTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        test_data = GrammarTestDataGenerator::create_test_multichannel_signal();
-        test_input = Datum<std::vector<DataVariant>> { test_data };
-    }
-
-    std::vector<DataVariant> test_data;
-    Datum<std::vector<DataVariant>> test_input;
-};
-
-TEST_F(MatcherTest, ContextMatcherWorks)
-{
-    auto matcher = Matcher::create_context_matcher(ComputationContext::TEMPORAL);
-
-    auto temporal_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::TEMPORAL);
-    EXPECT_TRUE(matcher(test_input, temporal_ctx)) << "Should match temporal context";
-
-    auto spectral_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::SPECTRAL);
-    EXPECT_FALSE(matcher(test_input, spectral_ctx)) << "Should not match spectral context";
-}
-
-TEST_F(MatcherTest, ParameterMatcherWorks)
-{
-    auto matcher = Matcher::create_parameter_matcher("test_param", std::any(42.0));
-
-    ExecutionContext ctx_with_param {
-        .dependencies = {},
-        .execution_metadata = { { "test_param", 42.0 } }
-    };
-    EXPECT_TRUE(matcher(test_input, ctx_with_param)) << "Should match parameter";
-
-    ExecutionContext ctx_without_param;
-    EXPECT_FALSE(matcher(test_input, ctx_without_param)) << "Should not match without parameter";
-
-    ExecutionContext ctx_wrong_type {
-        .dependencies = {},
-        .execution_metadata = { { "test_param", std::string("wrong") } }
-    };
-    EXPECT_FALSE(matcher(test_input, ctx_wrong_type)) << "Should not match wrong parameter type";
-}
-
-TEST_F(MatcherTest, CombineAndWorks)
-{
-    auto type_matcher = Matcher::create_type_matcher<std::vector<DataVariant>>();
-    auto context_matcher = Matcher::create_context_matcher(ComputationContext::TEMPORAL);
-    auto combined_matcher = Matcher::combine_and({ type_matcher, context_matcher });
-
-    auto temporal_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::TEMPORAL);
-    EXPECT_TRUE(combined_matcher(test_input, temporal_ctx)) << "Should match both conditions";
-
-    auto spectral_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::SPECTRAL);
-    EXPECT_FALSE(combined_matcher(test_input, spectral_ctx)) << "Should fail if one condition fails";
-}
-
-TEST_F(MatcherTest, CombineOrWorks)
-{
-    auto temporal_matcher = Matcher::create_context_matcher(ComputationContext::TEMPORAL);
-    auto spectral_matcher = Matcher::create_context_matcher(ComputationContext::SPECTRAL);
-    auto combined_matcher = Matcher::combine_or({ temporal_matcher, spectral_matcher });
-
-    auto temporal_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::TEMPORAL);
-    EXPECT_TRUE(combined_matcher(test_input, temporal_ctx)) << "Should match first condition";
-
-    auto spectral_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::SPECTRAL);
-    EXPECT_TRUE(combined_matcher(test_input, spectral_ctx)) << "Should match second condition";
-
-    auto parametric_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::PARAMETRIC);
-    EXPECT_FALSE(combined_matcher(test_input, parametric_ctx)) << "Should fail if no conditions match";
-}
-
-// =========================================================================
-// GRAMMAR HELPERS TESTS
-// =========================================================================
-
-class GrammarHelpersTest : public ::testing::Test {
-};
-
-TEST_F(GrammarHelpersTest, CreateConfiguredOperationWorks)
-{
-    MathematicalTransformerConfig cfg;
-    cfg.gain_factor = 2.0;
-
-    auto math_transformer = create_configured_operation<MathematicalTransformer<>>(cfg);
-
-    EXPECT_NE(math_transformer, nullptr) << "Should create operation instance";
-    EXPECT_EQ(math_transformer->get_transformation_type(), TransformationType::MATHEMATICAL)
-        << "Should be mathematical transformer";
-    EXPECT_EQ(math_transformer->config().gain_factor, 2.0) << "Should carry the configured gain";
-}
-
-TEST_F(GrammarHelpersTest, ApplyContextParametersWorks)
-{
-    auto operation = std::make_shared<MathematicalTransformer<>>();
-
-    ExecutionContext ctx {
-        .dependencies = {},
-        .execution_metadata = {
-            { "gain_factor", 3.0 },
-            { "strategy", TransformationStrategy::IN_PLACE } }
+    private:
+        size_t m_minimum_samples;
+        int m_implementation;
+        size_t m_calls {};
     };
 
-    EXPECT_NO_THROW(apply_context_parameters(operation, ctx))
-        << "Should apply context parameters without throwing";
-}
-
-// =========================================================================
-// COMPUTATION GRAMMAR TESTS
-// =========================================================================
-
-class ComputationGrammarTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        grammar = std::make_shared<ComputationGrammar>();
-        test_data = GrammarTestDataGenerator::create_test_multichannel_signal();
-        test_input = Datum<std::vector<DataVariant>> { test_data };
-    }
-
-    std::shared_ptr<ComputationGrammar> grammar;
-    std::vector<DataVariant> test_data;
-    Datum<std::vector<DataVariant>> test_input;
-};
-
-TEST_F(ComputationGrammarTest, BasicRuleCreation)
-{
-    auto rule = ComputationGrammar::Rule();
-    rule.name = "test_rule";
-    rule.context = ComputationContext::TEMPORAL;
-    rule.priority = 100;
-    rule.matcher = Matcher::create_type_matcher<std::vector<DataVariant>>();
-    rule.executor = [](const std::any& input, const ExecutionContext& /*ctx*/) -> std::any {
-        return input;
-    };
-
-    grammar->add_rule(std::move(rule));
-
-    auto temporal_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::TEMPORAL);
-    auto best_match = grammar->find_best_match(test_input, temporal_ctx);
-
-    EXPECT_TRUE(best_match.has_value()) << "Should find matching rule";
-    EXPECT_EQ(best_match->name, "test_rule") << "Should return correct rule";
-}
-
-TEST_F(ComputationGrammarTest, RulePriorityOrdering)
-{
-    auto low_priority_rule = ComputationGrammar::Rule();
-    low_priority_rule.name = "low_priority";
-    low_priority_rule.context = ComputationContext::TEMPORAL;
-    low_priority_rule.priority = 10;
-    low_priority_rule.matcher = Matcher::create_type_matcher<std::vector<DataVariant>>();
-    low_priority_rule.executor = [](const std::any& /*input*/, const ExecutionContext& /*ctx*/) -> std::any {
-        return std::string("low");
-    };
-    grammar->add_rule(std::move(low_priority_rule));
-
-    auto high_priority_rule = ComputationGrammar::Rule();
-    high_priority_rule.name = "high_priority";
-    high_priority_rule.context = ComputationContext::TEMPORAL;
-    high_priority_rule.priority = 100;
-    high_priority_rule.matcher = Matcher::create_type_matcher<std::vector<DataVariant>>();
-    high_priority_rule.executor = [](const std::any& /*input*/, const ExecutionContext& /*ctx*/) -> std::any {
-        return std::string("high");
-    };
-    grammar->add_rule(std::move(high_priority_rule));
-
-    auto temporal_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::TEMPORAL);
-    auto best_match = grammar->find_best_match(test_input, temporal_ctx);
-
-    EXPECT_TRUE(best_match.has_value()) << "Should find matching rule";
-    EXPECT_EQ(best_match->name, "high_priority") << "Should return higher priority rule";
-}
-
-TEST_F(ComputationGrammarTest, RuleExecutionWorks)
-{
-    auto rule = ComputationGrammar::Rule();
-    rule.name = "echo_rule";
-    rule.context = ComputationContext::TEMPORAL;
-    rule.priority = 50;
-    rule.matcher = Matcher::create_type_matcher<std::vector<DataVariant>>();
-    rule.executor = [](const std::any& input, const ExecutionContext& /*ctx*/) -> std::any {
-        return input;
-    };
-    grammar->add_rule(std::move(rule));
-
-    auto temporal_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::TEMPORAL);
-    auto result = grammar->execute_rule("echo_rule", test_input, temporal_ctx);
-
-    EXPECT_TRUE(result.has_value()) << "Should execute rule successfully";
-
-    try {
-        auto output = std::any_cast<Datum<std::vector<DataVariant>>>(*result);
-        EXPECT_EQ(output.data.size(), test_data.size()) << "Should preserve channel count";
-
-        for (size_t ch = 0; ch < output.data.size(); ++ch) {
-            auto original_channel = std::get<std::vector<double>>(test_data[ch]);
-            auto output_channel = std::get<std::vector<double>>(output.data[ch]);
-            EXPECT_EQ(original_channel.size(), output_channel.size())
-                << "Should preserve channel " << ch << " size";
+    struct Admission {
+        static constexpr auto describe_facets()
+        {
+            return std::tuple { FacetMember<&Admission::enabled> {} };
         }
-    } catch (const std::exception& e) {
-        SUCCEED() << "Rule executed but result conversion failed: " << e.what();
+
+        bool enabled {};
+    };
+
+    bool admitted(const std::any&, const ExecutionContext& context)
+    {
+        const auto* admission = context.facets.get<Admission>();
+        return admission && admission->enabled;
     }
-}
 
-TEST_F(ComputationGrammarTest, OperationRuleWorks)
-{
-    MathematicalTransformerConfig rule_cfg_1;
-    rule_cfg_1.gain_factor = 2.0;
-    grammar->add_operation_rule<MathematicalTransformer<>>("gain_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_1, 80);
+    std::shared_ptr<OperationRegistry> registry()
+    {
+        auto result = std::make_shared<OperationRegistry>();
+        result->catalog<MathematicalOperation, MathematicalTransformer<>>();
+        result->catalog<TemporalOperation, TemporalTransformer<>>();
+        result->catalog<Accumulator>(UserMethod::Accumulate);
+        return result;
+    }
 
-    auto parametric_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::PARAMETRIC);
-    auto result = grammar->execute_rule("gain_rule", test_input, parametric_ctx);
+    std::shared_ptr<ComputationGrammar> construct(
+        Construction construction,
+        std::shared_ptr<const OperationRegistry> operations,
+        ComputationSignature signature,
+        std::initializer_list<OperationConfig> configs)
+    {
+        switch (construction) {
+        case Construction::Fluent: {
+            ComputationGrammar::Builder builder(std::move(operations));
+            size_t stage = 0;
+            for (const auto& config : configs) {
+                builder.rule(signature.at(stage++), config);
+            }
+            return builder.build();
+        }
+        case Construction::InitializerList:
+            return ComputationGrammar::assemble(std::move(operations), std::move(signature), configs);
+        case Construction::Vector: {
+            std::vector<OperationConfig> retained(configs);
+            return ComputationGrammar::assemble(std::move(operations), std::move(signature), retained);
+        }
+        }
+        throw std::logic_error("Unknown construction form");
+    }
 
-    EXPECT_TRUE(result.has_value()) << "Should execute operation rule successfully";
+    std::string construction_name(Construction construction)
+    {
+        switch (construction) {
+        case Construction::Fluent:
+            return "Fluent";
+        case Construction::InitializerList:
+            return "InitializerList";
+        case Construction::Vector:
+            return "Vector";
+        }
+        return "Unknown";
+    }
 
-    try {
-        auto output = std::any_cast<Datum<std::vector<DataVariant>>>(*result);
-        EXPECT_EQ(output.data.size(), test_data.size()) << "Should preserve channel count";
+    void expect_channels(const DataIO& actual, const Channels& expected)
+    {
+        ASSERT_EQ(actual.data.size(), expected.size());
+        for (size_t channel = 0; channel < expected.size(); ++channel) {
+            SCOPED_TRACE(channel);
+            ASSERT_TRUE(std::holds_alternative<Samples>(actual.data[channel]));
+            const auto& samples = std::get<Samples>(actual.data[channel]);
+            ASSERT_EQ(samples.size(), expected[channel].size());
+            for (size_t i = 0; i < samples.size(); ++i) {
+                EXPECT_NEAR(samples[i], expected[channel][i], 1e-12) << "Sample " << i;
+            }
+        }
+    }
 
-        for (size_t ch = 0; ch < output.data.size(); ++ch) {
-            auto original_channel = std::get<std::vector<double>>(test_data[ch]);
-            auto output_channel = std::get<std::vector<double>>(output.data[ch]);
-            EXPECT_EQ(original_channel.size(), output_channel.size())
-                << "Should preserve channel " << ch << " size";
+    struct ChannelCase {
+        const char* name;
+        Channels input;
+        Channels expected;
+    };
 
-            bool values_changed = false;
-            for (size_t i = 0; i < std::min(original_channel.size(), output_channel.size()); ++i) {
-                if (std::abs(output_channel[i] - original_channel[i]) > 1e-10) {
-                    values_changed = true;
-                    break;
+    const ChannelCase channel_cases[] {
+        { "Mono", { { -3.0, 1.0, 4.0, 0.5 } }, { { 0.0, 7.0, 1.0, -7.0 } } },
+        { "UnequalChannels", { { -2.0, 0.0, 3.0 }, { 5.0, -1.0 } }, { { 5.0, -1.0, -5.0 }, { -3.0, 9.0 } } },
+        { "SingleSamples", { { 2.0 }, { -3.0 } }, { { 3.0 }, { -7.0 } } },
+    };
+
+    using CompositionParam = std::tuple<Construction, ChannelCase>;
+
+    class GrammarCompositionTest : public ::testing::TestWithParam<CompositionParam> {
+    protected:
+        std::shared_ptr<ComputationGrammar> grammar() const
+        {
+            return construct(std::get<0>(GetParam()), registry(),
+                MathematicalOperation::OFFSET | MathematicalOperation::GAIN
+                    | TemporalOperation::TIME_REVERSE | MathematicalOperation::OFFSET,
+                {
+                    MathematicalTransformerConfig { .operation = MathematicalOperation::POWER, .offset_value = 1.0 },
+                    MathematicalTransformerConfig { .operation = MathematicalOperation::OFFSET, .gain_factor = 2.0 },
+                    TemporalTransformerConfig {},
+                    MathematicalTransformerConfig { .operation = MathematicalOperation::GAIN, .offset_value = -3.0 },
+                });
+        }
+    };
+
+    INSTANTIATE_TEST_SUITE_P(ConstructionAndChannels, GrammarCompositionTest,
+        ::testing::Combine(
+            ::testing::Values(Construction::Fluent, Construction::InitializerList, Construction::Vector),
+            ::testing::ValuesIn(channel_cases)),
+        [](const ::testing::TestParamInfo<CompositionParam>& info) {
+            return construction_name(std::get<0>(info.param)) + "_" + std::get<1>(info.param).name;
+        });
+
+    TEST_P(GrammarCompositionTest, ExecutesInOrderWithDistinctConfigsForRepeatedSelections)
+    {
+        const auto& data = std::get<1>(GetParam());
+        const auto result = grammar()->process(to_datum(data.input));
+
+        expect_channels(result, data.expected);
+    }
+
+    TEST_P(GrammarCompositionTest, BufferedStagesLeaveEveryInputSampleUnchanged)
+    {
+        const auto& data = std::get<1>(GetParam());
+        const auto input = to_datum(data.input);
+
+        const auto result = grammar()->process(input);
+
+        expect_channels(input, data.input);
+        expect_channels(result, data.expected);
+    }
+
+    TEST_P(GrammarCompositionTest, PipelineConsumesTheAssembledSignatureWithoutRepeatingIt)
+    {
+        const auto& data = std::get<1>(GetParam());
+        ComputationPipeline<> pipeline(grammar());
+
+        expect_channels(pipeline.process(to_datum(data.input)), data.expected);
+    }
+
+    TEST_P(GrammarCompositionTest, RetainsConfigsAfterTheirSourceCollectionsHaveExpired)
+    {
+        const auto& data = std::get<1>(GetParam());
+        const auto assembled = grammar();
+
+        expect_channels(assembled->process(to_datum(data.input)), data.expected);
+        expect_channels(assembled->process(to_datum(data.input)), data.expected);
+    }
+
+    class GrammarLifecycleTest : public ::testing::TestWithParam<Construction> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(ConstructionForms, GrammarLifecycleTest,
+        ::testing::Values(Construction::Fluent, Construction::InitializerList, Construction::Vector),
+        [](const ::testing::TestParamInfo<Construction>& info) { return construction_name(info.param); });
+
+    TEST_P(GrammarLifecycleTest, CustomRegisteredOperationRetainsStateAcrossCalls)
+    {
+        const auto grammar = construct(GetParam(), registry(), UserMethod::Accumulate,
+            { AccumulatorConfig { .delta = 2.0 } });
+        const SampleDatum input(Samples { 10.0, -2.0 });
+
+        EXPECT_EQ(grammar->process(input).data, (Samples { 12.0, 0.0 }));
+        EXPECT_EQ(grammar->process(input).data, (Samples { 14.0, 2.0 }));
+    }
+
+    TEST_P(GrammarLifecycleTest, RepeatedSelectionsOwnIndependentStateAndSettings)
+    {
+        const auto grammar = construct(GetParam(), registry(),
+            UserMethod::Accumulate | UserMethod::Accumulate,
+            { AccumulatorConfig { .delta = 2.0 }, AccumulatorConfig { .delta = 5.0 } });
+        const SampleDatum input(Samples { 10.0, -2.0 });
+
+        EXPECT_EQ(grammar->process(input).data, (Samples { 17.0, 5.0 }));
+        EXPECT_EQ(grammar->process(input).data, (Samples { 24.0, 12.0 }));
+    }
+
+    TEST_P(GrammarLifecycleTest, GrammarsSharingARegistryDoNotShareMutableInstances)
+    {
+        const auto operations = registry();
+        const auto first = construct(GetParam(), operations, UserMethod::Accumulate,
+            { AccumulatorConfig { .delta = 2.0 } });
+        const auto second = construct(GetParam(), operations, UserMethod::Accumulate,
+            { AccumulatorConfig { .delta = 5.0 } });
+        const SampleDatum input(Samples { 10.0, -2.0 });
+
+        EXPECT_EQ(first->process(input).data, (Samples { 12.0, 0.0 }));
+        EXPECT_EQ(second->process(input).data, (Samples { 15.0, 3.0 }));
+        EXPECT_EQ(first->process(input).data, (Samples { 14.0, 2.0 }));
+        EXPECT_EQ(second->process(input).data, (Samples { 20.0, 8.0 }));
+    }
+
+    TEST_P(GrammarLifecycleTest, TypedExecutionSettingsReachTheSelectedLiveOperation)
+    {
+        const auto grammar = construct(GetParam(), registry(), UserMethod::Accumulate,
+            { AccumulatorConfig { .delta = 2.0 } });
+        ExecutionContext context;
+        context.facets.set(AccumulatorConfig { .delta = 7.0 });
+
+        EXPECT_EQ(grammar->process(SampleDatum(Samples { 1.0, -1.0 }), context).data,
+            (Samples { 8.0, 6.0 }));
+    }
+
+    TEST_P(GrammarLifecycleTest, UnknownSignaturesCannotExecuteAnOtherwiseCompatibleOperation)
+    {
+        const auto grammar = construct(GetParam(), registry(), UserMethod::Accumulate,
+            { AccumulatorConfig {} });
+        const SampleDatum input(Samples { 10.0 });
+
+        EXPECT_THROW(grammar->process<Samples>(input, ForeignMethod::Accumulate), std::runtime_error);
+        EXPECT_THROW(grammar->process<Samples>(input, UserMethod::Missing), std::runtime_error);
+        EXPECT_EQ(grammar->process(input).data, (Samples { 12.0 }));
+    }
+
+    struct RoutingCase {
+        const char* name;
+        Samples input;
+        Samples expected;
+        int implementation;
+    };
+
+    const RoutingCase routing_cases[] {
+        { "BelowBoundary", { 1.0, 2.0, 3.0 }, { 3.0, 4.0, 5.0 }, 1 },
+        { "AtBoundary", { 1.0, 2.0, 3.0, 4.0 }, { 3.0, 4.0, 5.0, 6.0 }, 2 },
+        { "AboveBoundary", { 1.0, 2.0, 3.0, 4.0, 5.0 }, { 3.0, 4.0, 5.0, 6.0, 7.0 }, 2 },
+    };
+
+    using RoutingParam = std::tuple<Construction, RoutingCase>;
+
+    class GrammarRoutingTest : public ::testing::TestWithParam<RoutingParam> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(ConstructionAndApplicability, GrammarRoutingTest,
+        ::testing::Combine(
+            ::testing::Values(Construction::Fluent, Construction::InitializerList, Construction::Vector),
+            ::testing::ValuesIn(routing_cases)),
+        [](const ::testing::TestParamInfo<RoutingParam>& info) {
+            return construction_name(std::get<0>(info.param)) + "_" + std::get<1>(info.param).name;
+        });
+
+    TEST_P(GrammarRoutingTest, ChoosesTheHighestPriorityCandidateThatActuallyAcceptsInput)
+    {
+        auto operations = registry();
+        operations->catalog<Accumulator>(UserMethod::Accumulate,
+            [](AccumulatorConfig config) { return std::make_shared<Accumulator>(config, 4, 2); }, 100);
+        const auto grammar = construct(std::get<0>(GetParam()), operations, UserMethod::Accumulate,
+            { AccumulatorConfig {} });
+        const auto& data = std::get<1>(GetParam());
+
+        const auto result = grammar->process(SampleDatum(data.input));
+
+        EXPECT_EQ(result.data, data.expected);
+        const auto* implementation = result.facets.get(implementation_id);
+        ASSERT_NE(implementation, nullptr);
+        EXPECT_EQ(*implementation, data.implementation);
+    }
+
+    TEST_P(GrammarLifecycleTest, UnselectedCandidatesDoNotAdvanceTheirState)
+    {
+        auto operations = registry();
+        operations->catalog<Accumulator>(UserMethod::Accumulate,
+            [](AccumulatorConfig config) { return std::make_shared<Accumulator>(config, 4, 2); }, 100);
+        const auto grammar = construct(GetParam(), operations, UserMethod::Accumulate,
+            { AccumulatorConfig {} });
+
+        EXPECT_EQ(grammar->process(SampleDatum(Samples { 1.0 })).data, (Samples { 3.0 }));
+        EXPECT_EQ(grammar->process(SampleDatum(Samples { 1.0, 2.0, 3.0, 4.0 })).data,
+            (Samples { 3.0, 4.0, 5.0, 6.0 }));
+        EXPECT_EQ(grammar->process(SampleDatum(Samples { 1.0 })).data, (Samples { 5.0 }));
+    }
+
+    enum class InvalidAssembly {
+        TooFewConfigs,
+        TooManyConfigs,
+        ReversedConfigTypes,
+        UnknownEnumWithSameInteger,
+        UncatalogedMember,
+        WrongConfigType,
+        MissingLaterStage,
+        NullRegistry,
+        NullFactoryResult
+    };
+
+    using InvalidAssemblyParam = std::tuple<bool, InvalidAssembly>;
+
+    class GrammarInvalidAssemblyTest : public ::testing::TestWithParam<InvalidAssemblyParam> {
+    protected:
+        void assemble(std::shared_ptr<const OperationRegistry> operations,
+            ComputationSignature signature, std::initializer_list<OperationConfig> configs)
+        {
+            if (std::get<0>(GetParam())) {
+                const std::vector<OperationConfig> retained(configs);
+                static_cast<void>(ComputationGrammar::assemble(std::move(operations), std::move(signature), retained));
+            } else {
+                static_cast<void>(ComputationGrammar::assemble(std::move(operations), std::move(signature), configs));
+            }
+        }
+    };
+
+    INSTANTIATE_TEST_SUITE_P(ConfigCollections, GrammarInvalidAssemblyTest,
+        ::testing::Combine(::testing::Bool(),
+            ::testing::Values(
+                InvalidAssembly::TooFewConfigs,
+                InvalidAssembly::TooManyConfigs,
+                InvalidAssembly::ReversedConfigTypes,
+                InvalidAssembly::UnknownEnumWithSameInteger,
+                InvalidAssembly::UncatalogedMember,
+                InvalidAssembly::WrongConfigType,
+                InvalidAssembly::MissingLaterStage,
+                InvalidAssembly::NullRegistry,
+                InvalidAssembly::NullFactoryResult)),
+        [](const ::testing::TestParamInfo<InvalidAssemblyParam>& info) {
+            return std::string(std::get<0>(info.param) ? "Vector_" : "InitializerList_")
+                + std::string(Reflect::enum_to_string(std::get<1>(info.param)));
+        });
+
+    TEST_P(GrammarInvalidAssemblyTest, RejectsDeclarationsThatCannotProduceAnExecutableGrammar)
+    {
+        const auto operations = registry();
+        switch (std::get<1>(GetParam())) {
+        case InvalidAssembly::TooFewConfigs:
+            EXPECT_THROW(assemble(operations, MathematicalOperation::GAIN | TemporalOperation::TIME_REVERSE,
+                             { MathematicalTransformerConfig {} }),
+                std::invalid_argument);
+            break;
+        case InvalidAssembly::TooManyConfigs:
+            EXPECT_THROW(assemble(operations, MathematicalOperation::GAIN,
+                             { MathematicalTransformerConfig {}, MathematicalTransformerConfig {} }),
+                std::invalid_argument);
+            break;
+        case InvalidAssembly::ReversedConfigTypes:
+            EXPECT_THROW(assemble(operations, MathematicalOperation::GAIN | TemporalOperation::TIME_REVERSE,
+                             { TemporalTransformerConfig {}, MathematicalTransformerConfig {} }),
+                std::invalid_argument);
+            break;
+        case InvalidAssembly::UnknownEnumWithSameInteger:
+            EXPECT_THROW(assemble(operations, ForeignMethod::Accumulate, { AccumulatorConfig {} }),
+                std::invalid_argument);
+            break;
+        case InvalidAssembly::UncatalogedMember:
+            EXPECT_THROW(assemble(operations, UserMethod::Missing, { AccumulatorConfig {} }),
+                std::invalid_argument);
+            break;
+        case InvalidAssembly::WrongConfigType:
+            EXPECT_THROW(assemble(operations, UserMethod::Accumulate, { TemporalTransformerConfig {} }),
+                std::invalid_argument);
+            break;
+        case InvalidAssembly::MissingLaterStage:
+            EXPECT_THROW(assemble(operations, MathematicalOperation::GAIN | ForeignMethod::Accumulate,
+                             { MathematicalTransformerConfig {}, AccumulatorConfig {} }),
+                std::invalid_argument);
+            break;
+        case InvalidAssembly::NullRegistry:
+            EXPECT_THROW(assemble(nullptr, UserMethod::Accumulate, { AccumulatorConfig {} }),
+                std::invalid_argument);
+            break;
+        case InvalidAssembly::NullFactoryResult:
+            operations->catalog<Accumulator>(UserMethod::Accumulate,
+                [](AccumulatorConfig) -> std::shared_ptr<Accumulator> { return nullptr; });
+            EXPECT_THROW(assemble(operations, UserMethod::Accumulate, { AccumulatorConfig {} }),
+                std::invalid_argument);
+            break;
+        }
+    }
+
+    class GrammarRefinementTest : public ::testing::TestWithParam<bool> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(Admission, GrammarRefinementTest, ::testing::Bool(),
+        [](const ::testing::TestParamInfo<bool>& info) { return info.param ? "Admitted" : "Rejected"; });
+
+    TEST_P(GrammarRefinementTest, WhenGuardsExecutionWithoutDiscardingTheInputContract)
+    {
+        const auto grammar = ComputationGrammar::Builder(registry())
+            .rule(UserMethod::Accumulate, AccumulatorConfig {})
+            .when(Matcher::combine_and({ Matcher::create_type_matcher<Samples>(), admitted }))
+            .build();
+        ExecutionContext context;
+        context.facets.set(Admission { GetParam() });
+        const SampleDatum input(Samples { 10.0 });
+
+        if (GetParam()) {
+            EXPECT_EQ(grammar->process(input, context).data, (Samples { 12.0 }));
+        } else {
+            EXPECT_THROW(grammar->process(input, context), std::runtime_error);
+        }
+
+        context.facets.set(Admission { true });
+        EXPECT_EQ(grammar->process(input, context).data,
+            (GetParam() ? Samples { 14.0 } : Samples { 12.0 }));
+        EXPECT_THROW(grammar->process(DataIO {}, context), std::runtime_error);
+    }
+
+    TEST_P(GrammarRefinementTest, CombinedRuleConsumesExactlyItsSignatureOrFallsBackToIndividualStages)
+    {
+        ComputationGrammar grammar;
+        grammar.add_operation_rule<MathematicalTransformer<>>(
+            "gain", MathematicalOperation::GAIN, MathematicalTransformerConfig { .gain_factor = 2.0 });
+        grammar.add_operation_rule<MathematicalTransformer<>>(
+            "offset", MathematicalOperation::OFFSET, MathematicalTransformerConfig { .offset_value = 3.0 });
+        auto combined = std::make_shared<FunctionalOperation<>>([](const DataIO& input) {
+            auto output = input;
+            for (auto& channel : output.data) {
+                Kinesis::Discrete::linear(std::get<Samples>(channel), 2.0, 3.0);
+            }
+            output.facets.set(implementation_id, 2);
+            return output;
+        });
+        grammar.create_rule("combined")
+            .matches(MathematicalOperation::GAIN | MathematicalOperation::OFFSET)
+            .matches_custom(admitted)
+            .with_priority(100)
+            .uses(combined)
+            .build();
+        ExecutionContext context;
+        context.facets.set(Admission { GetParam() });
+
+        const auto result = grammar.process<std::vector<Kakshya::DataVariant>>(
+            to_datum({ { -2.0, 0.0, 3.0 } }),
+            MathematicalOperation::GAIN | MathematicalOperation::OFFSET, context);
+
+        expect_channels(result, { { -1.0, 3.0, 9.0 } });
+        const auto* implementation = result.facets.get(implementation_id);
+        if (GetParam()) {
+            ASSERT_NE(implementation, nullptr);
+            EXPECT_EQ(*implementation, 2);
+        } else {
+            EXPECT_EQ(implementation, nullptr);
+        }
+    }
+
+    TEST_P(GrammarRefinementTest, UsesReplacesTheRegisteredImplementationAndKeepsItsCondition)
+    {
+        const auto replacement = std::make_shared<Accumulator>(AccumulatorConfig {}, 1, 9);
+        const auto grammar = ComputationGrammar::Builder(registry())
+            .rule(UserMethod::Accumulate, AccumulatorConfig { .delta = 7.0 })
+            .when(admitted)
+            .uses(replacement)
+            .build();
+        ExecutionContext context;
+        context.facets.set(Admission { GetParam() });
+
+        if (!GetParam()) {
+            EXPECT_THROW(grammar->process(SampleDatum(Samples { 1.0 }), context), std::runtime_error);
+            context.facets.set(Admission { true });
+        }
+        const auto result = grammar->process(SampleDatum(Samples { 1.0 }), context);
+
+        EXPECT_EQ(result.data, (Samples { 8.0 }));
+        const auto* implementation = result.facets.get(implementation_id);
+        ASSERT_NE(implementation, nullptr);
+        EXPECT_EQ(*implementation, 9);
+    }
+
+    TEST_P(GrammarRefinementTest, PriorityRefinementAppliesToEveryRegisteredCandidate)
+    {
+        auto operations = registry();
+        operations->catalog<Accumulator>(UserMethod::Accumulate,
+            [](AccumulatorConfig config) { return std::make_shared<Accumulator>(config, 1, 2); }, 100);
+        const auto grammar = ComputationGrammar::Builder(operations)
+            .rule(UserMethod::Accumulate, AccumulatorConfig {})
+            .priority(10)
+            .build();
+        grammar->create_rule("override")
+            .matches(UserMethod::Accumulate)
+            .matches_custom(admitted)
+            .with_priority(50)
+            .uses(std::make_shared<Accumulator>(AccumulatorConfig {}, 1, 9))
+            .build();
+        ExecutionContext context;
+        context.facets.set(Admission { GetParam() });
+
+        const auto result = grammar->process(SampleDatum(Samples { 1.0 }), context);
+
+        EXPECT_EQ(result.data, (Samples { 3.0 }));
+        const auto* implementation = result.facets.get(implementation_id);
+        ASSERT_NE(implementation, nullptr);
+        EXPECT_EQ(*implementation, GetParam() ? 9 : 1);
+    }
+
+    class GrammarDefaultsTest : public ::testing::TestWithParam<bool> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(ConstructionForms, GrammarDefaultsTest, ::testing::Bool(),
+        [](const ::testing::TestParamInfo<bool>& info) { return info.param ? "Fluent" : "Assembled"; });
+
+    TEST_P(GrammarDefaultsTest, EnumOnlyStagesReceiveTheSelectedMethodsAndTheirDefaultSettings)
+    {
+        const auto operations = registry();
+        const auto grammar = GetParam()
+            ? ComputationGrammar::Builder(operations)
+                  .rule(MathematicalOperation::NORMALIZE)
+                  .rule(TemporalOperation::TIME_REVERSE)
+                  .build()
+            : ComputationGrammar::assemble(operations,
+                  MathematicalOperation::NORMALIZE | TemporalOperation::TIME_REVERSE);
+
+        expect_channels(grammar->process(to_datum({ { -2.0, 0.0, 2.0 } })), { { 1.0, 0.0, -1.0 } });
+    }
+
+    enum class InvalidInput { NoChannels, NotANumber, Infinity };
+    using InvalidInputParam = std::tuple<Construction, InvalidInput>;
+
+    class GrammarInvalidInputTest : public ::testing::TestWithParam<InvalidInputParam> {
+    };
+
+    INSTANTIATE_TEST_SUITE_P(ConstructionAndInvalidData, GrammarInvalidInputTest,
+        ::testing::Combine(
+            ::testing::Values(Construction::Fluent, Construction::InitializerList, Construction::Vector),
+            ::testing::Values(InvalidInput::NoChannels, InvalidInput::NotANumber, InvalidInput::Infinity)),
+        [](const ::testing::TestParamInfo<InvalidInputParam>& info) {
+            return construction_name(std::get<0>(info.param)) + "_"
+                + std::string(Reflect::enum_to_string(std::get<1>(info.param)));
+        });
+
+    TEST_P(GrammarInvalidInputTest, RejectsInvalidDataInsteadOfReturningAnUnprocessedSuccess)
+    {
+        const auto grammar = construct(std::get<0>(GetParam()), registry(), MathematicalOperation::GAIN,
+            { MathematicalTransformerConfig { .gain_factor = 2.0 } });
+        DataIO input;
+        switch (std::get<1>(GetParam())) {
+        case InvalidInput::NoChannels:
+            break;
+        case InvalidInput::NotANumber:
+            input = to_datum({ { 1.0, std::numeric_limits<double>::quiet_NaN() } });
+            break;
+        case InvalidInput::Infinity:
+            input = to_datum({ { 1.0, std::numeric_limits<double>::infinity() } });
+            break;
+        }
+
+        EXPECT_THROW(grammar->process(input), std::runtime_error);
+    }
+
+    enum class GrammarConsumer { Pipeline, Matrix };
+
+    class GrammarConsumerTest : public ::testing::TestWithParam<GrammarConsumer> {
+    protected:
+        void SetUp() override
+        {
+            shared = std::make_shared<ComputationGrammar>();
+            for (size_t i = 0; i < 2; ++i) {
+                if (GetParam() == GrammarConsumer::Pipeline) {
+                    pipelines[i] = std::make_unique<ComputationPipeline<>>(shared);
+                } else {
+                    matrices[i] = std::make_unique<GrammarAwareComputeMatrix>(shared);
                 }
             }
-            EXPECT_TRUE(values_changed)
-                << "Channel " << ch << " should be modified by gain operation (gain_factor=2.0)";
+        }
 
-            if (!original_channel.empty() && !output_channel.empty()) {
-                for (size_t i = 0; i < original_channel.size(); ++i) {
-                    if (std::abs(original_channel[i]) > 1e-10) {
-                        double expected_value = original_channel[i] * 2.0;
-                        EXPECT_NEAR(output_channel[i], expected_value, 1e-9)
-                            << "Channel " << ch << " sample " << i << " should be doubled by gain";
-                        break;
-                    }
-                }
+        DataIO process(size_t consumer, const DataIO& input, const ExecutionContext& context = {})
+        {
+            return GetParam() == GrammarConsumer::Pipeline
+                ? pipelines[consumer]->process(input, context)
+                : matrices[consumer]->execute_with_grammar(input, context);
+        }
+
+        void replace(size_t consumer, std::shared_ptr<ComputationGrammar> grammar)
+        {
+            if (GetParam() == GrammarConsumer::Pipeline) {
+                pipelines[consumer]->set_grammar(std::move(grammar));
+            } else {
+                matrices[consumer]->set_grammar(std::move(grammar));
             }
         }
-    } catch (const std::exception& e) {
-        SUCCEED() << "Operation rule executed but verification failed: " << e.what();
-    }
-}
 
-TEST_F(ComputationGrammarTest, RuleBuilderWorks)
-{
-    grammar->create_rule("builder_rule")
-        .with_context(ComputationContext::SPECTRAL)
-        .with_priority(75)
-        .with_description("Test rule created with builder")
-        .matches_type<std::vector<DataVariant>>()
-        .executes([](const std::any& input, const ExecutionContext& /*ctx*/) -> std::any {
-            return input;
-        })
-        .targets_operation<MathematicalTransformer<>>()
-        .with_tags({ "test", "builder" })
-        .build();
+        std::shared_ptr<ComputationGrammar> shared;
+        std::array<std::unique_ptr<ComputationPipeline<>>, 2> pipelines;
+        std::array<std::unique_ptr<GrammarAwareComputeMatrix>, 2> matrices;
+    };
 
-    auto spectral_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::SPECTRAL);
-    auto best_match = grammar->find_best_match(test_input, spectral_ctx);
+    INSTANTIATE_TEST_SUITE_P(Consumers, GrammarConsumerTest,
+        ::testing::Values(GrammarConsumer::Pipeline, GrammarConsumer::Matrix),
+        [](const ::testing::TestParamInfo<GrammarConsumer>& info) {
+            return info.param == GrammarConsumer::Pipeline ? "Pipeline" : "Matrix";
+        });
 
-    EXPECT_TRUE(best_match.has_value()) << "Should find rule created with builder";
-    EXPECT_EQ(best_match->name, "builder_rule") << "Should have correct name";
-    EXPECT_EQ(best_match->context, ComputationContext::SPECTRAL) << "Should have correct context";
-    EXPECT_EQ(best_match->priority, 75) << "Should have correct priority";
-}
-
-TEST_F(ComputationGrammarTest, ContextIndexingWorks)
-{
-    MathematicalTransformerConfig rule_cfg_2;
-    grammar->add_operation_rule<MathematicalTransformer<>>("math_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_2, 50);
-
-    TemporalTransformerConfig rule_cfg_3;
-    grammar->add_operation_rule<TemporalTransformer<>>("temporal_rule", ComputationContext::TEMPORAL, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_3, 50);
-
-    auto parametric_rules = grammar->get_rules_by_context(ComputationContext::PARAMETRIC);
-    auto temporal_rules = grammar->get_rules_by_context(ComputationContext::TEMPORAL);
-    auto spectral_rules = grammar->get_rules_by_context(ComputationContext::SPECTRAL);
-
-    EXPECT_EQ(parametric_rules.size(), 1) << "Should have one parametric rule";
-    EXPECT_EQ(temporal_rules.size(), 1) << "Should have one temporal rule";
-    EXPECT_EQ(spectral_rules.size(), 0) << "Should have no spectral rules";
-
-    EXPECT_EQ(parametric_rules[0], "math_rule") << "Should index math rule in parametric context";
-    EXPECT_EQ(temporal_rules[0], "temporal_rule") << "Should index temporal rule in temporal context";
-}
-
-TEST_F(ComputationGrammarTest, OperationTypeDiscovery)
-{
-    MathematicalTransformerConfig rule_cfg_4;
-    grammar->add_operation_rule<MathematicalTransformer<>>("math_rule1", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_4, 50);
-
-    MathematicalTransformerConfig rule_cfg_5;
-    rule_cfg_5.operation = MathematicalOperation::POWER;
-    grammar->add_operation_rule<MathematicalTransformer<>>("math_rule2", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_5, 50);
-
-    TemporalTransformerConfig rule_cfg_6;
-    grammar->add_operation_rule<TemporalTransformer<>>("temporal_rule", ComputationContext::TEMPORAL, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_6, 50);
-
-    auto math_rules = grammar->get_rules_for_operation_type<MathematicalTransformer<>>();
-    auto temporal_rules = grammar->get_rules_for_operation_type<TemporalTransformer<>>();
-    auto feature_rules = grammar->get_rules_for_operation_type<FeatureExtractor<>>();
-
-    EXPECT_EQ(math_rules.size(), 2) << "Should find two mathematical transformer rules";
-    EXPECT_EQ(temporal_rules.size(), 1) << "Should find one temporal transformer rule";
-    EXPECT_EQ(feature_rules.size(), 0) << "Should find no feature extractor rules";
-}
-
-// =========================================================================
-// EDGE CASE AND ERROR HANDLING TESTS
-// =========================================================================
-
-class GrammarEdgeCaseTest : public ::testing::Test {
-protected:
-    void SetUp() override
+    TEST_P(GrammarConsumerTest, LiveRuleUpdatesReachEveryConsumerSharingTheGrammar)
     {
-        grammar = std::make_shared<ComputationGrammar>();
+        const auto input = to_datum({ { -2.0, 1.0, 3.0 } });
+        shared->add_operation_rule<MathematicalTransformer<>>(
+            "double", Matcher::create_type_matcher<std::vector<Kakshya::DataVariant>>(),
+            MathematicalTransformerConfig { .gain_factor = 2.0 }, 50);
+
+        expect_channels(process(0, input), { { -4.0, 2.0, 6.0 } });
+        expect_channels(process(1, input), { { -4.0, 2.0, 6.0 } });
+
+        shared->add_operation_rule<MathematicalTransformer<>>(
+            "quadruple", Matcher::create_type_matcher<std::vector<Kakshya::DataVariant>>(),
+            MathematicalTransformerConfig { .gain_factor = 4.0 }, 100);
+
+        expect_channels(process(0, input), { { -8.0, 4.0, 12.0 } });
+        expect_channels(process(1, input), { { -8.0, 4.0, 12.0 } });
     }
 
-    std::shared_ptr<ComputationGrammar> grammar;
-};
-
-TEST_F(GrammarEdgeCaseTest, NoMatchingRules)
-{
-    std::vector<DataVariant> multichannel_test = {
-        DataVariant(std::vector<double> { 1.0, 2.0, 3.0 }),
-        DataVariant(std::vector<double> { 4.0, 5.0, 6.0 })
-    };
-    Datum<std::vector<DataVariant>> test_input { multichannel_test };
-    ExecutionContext ctx;
-
-    auto best_match = grammar->find_best_match(test_input, ctx);
-    EXPECT_FALSE(best_match.has_value()) << "Should return no match for empty grammar";
-
-    auto result = grammar->execute_rule("nonexistent", test_input, ctx);
-    EXPECT_FALSE(result.has_value()) << "Should return no result for nonexistent rule";
-}
-
-TEST_F(GrammarEdgeCaseTest, EmptyInput)
-{
-    MathematicalTransformerConfig rule_cfg_7;
-    grammar->add_operation_rule<MathematicalTransformer<>>("test_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_7, 50);
-
-    std::vector<DataVariant> empty_multichannel;
-    Datum<std::vector<DataVariant>> empty_input { empty_multichannel };
-    auto parametric_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::PARAMETRIC);
-
-    EXPECT_NO_THROW({
-        auto result = grammar->execute_rule("test_rule", empty_input, parametric_ctx);
-    }) << "Should handle empty multichannel input gracefully";
-}
-
-TEST_F(GrammarEdgeCaseTest, EmptyChannelsInput)
-{
-    MathematicalTransformerConfig rule_cfg_8;
-    grammar->add_operation_rule<MathematicalTransformer<>>("test_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_8, 50);
-
-    std::vector<DataVariant> empty_channels = {
-        DataVariant(std::vector<double> {}),
-        DataVariant(std::vector<double> {})
-    };
-    Datum<std::vector<DataVariant>> empty_channels_input { empty_channels };
-    auto parametric_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::PARAMETRIC);
-
-    EXPECT_NO_THROW({
-        auto result = grammar->execute_rule("test_rule", empty_channels_input, parametric_ctx);
-    }) << "Should handle empty channels gracefully";
-}
-
-TEST_F(GrammarEdgeCaseTest, InvalidContextMetadata)
-{
-    MathematicalTransformerConfig rule_cfg_9;
-    grammar->add_operation_rule<MathematicalTransformer<>>("test_rule", ComputationContext::PARAMETRIC, Matcher::create_context_matcher(ComputationContext::PARAMETRIC), rule_cfg_9, 50);
-
-    std::vector<DataVariant> multichannel_test = {
-        DataVariant(std::vector<double> { 1.0, 2.0, 3.0 }),
-        DataVariant(std::vector<double> { 4.0, 5.0, 6.0 })
-    };
-    Datum<std::vector<DataVariant>> test_input { multichannel_test };
-
-    ExecutionContext invalid_ctx {
-        .dependencies = {},
-        .execution_metadata = { { "some_other_param", 42 } }
-    };
-
-    auto best_match = grammar->find_best_match(test_input, invalid_ctx);
-    EXPECT_FALSE(best_match.has_value()) << "Should not match without proper context metadata";
-}
-
-TEST_F(GrammarEdgeCaseTest, ExceptionInRuleExecution)
-{
-    auto rule = ComputationGrammar::Rule();
-    rule.name = "throwing_rule";
-    rule.context = ComputationContext::TEMPORAL;
-    rule.priority = 50;
-    rule.matcher = Matcher::create_type_matcher<std::vector<DataVariant>>();
-    rule.executor = [](const std::any& /*input*/, const ExecutionContext& /*ctx*/) -> std::any {
-        throw std::runtime_error("Test exception");
-    };
-    grammar->add_rule(std::move(rule));
-
-    std::vector<DataVariant> multichannel_test = {
-        DataVariant(std::vector<double> { 1.0, 2.0, 3.0 }),
-        DataVariant(std::vector<double> { 4.0, 5.0, 6.0 })
-    };
-    Datum<std::vector<DataVariant>> test_input { multichannel_test };
-    auto temporal_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::TEMPORAL);
-
-    EXPECT_THROW({ grammar->execute_rule("throwing_rule", test_input, temporal_ctx); }, std::runtime_error) << "Should propagate exceptions from rule execution";
-}
-
-// =========================================================================
-// PERFORMANCE AND CONSISTENCY TESTS
-// =========================================================================
-
-class GrammarPerformanceTest : public ::testing::Test {
-protected:
-    void SetUp() override
+    TEST_P(GrammarConsumerTest, ReplacingOneConsumersGrammarLeavesTheOtherConsumerUnchanged)
     {
-        grammar = std::make_shared<ComputationGrammar>();
-        test_data = GrammarTestDataGenerator::create_test_multichannel_signal(2, 1024);
-        test_input = Datum<std::vector<DataVariant>> { test_data };
+        const auto input = to_datum({ { -2.0, 1.0, 3.0 } });
+        shared->add_operation_rule<MathematicalTransformer<>>(
+            "double", Matcher::create_type_matcher<std::vector<Kakshya::DataVariant>>(),
+            MathematicalTransformerConfig { .gain_factor = 2.0 });
+        auto replacement = std::make_shared<ComputationGrammar>();
+        replacement->add_operation_rule<MathematicalTransformer<>>(
+            "quintuple", Matcher::create_type_matcher<std::vector<Kakshya::DataVariant>>(),
+            MathematicalTransformerConfig { .gain_factor = 5.0 });
 
-        for (int i = 0; i < 10; ++i) {
-            MathematicalTransformerConfig rule_cfg_10;
-            rule_cfg_10.gain_factor = static_cast<double>(i + 1);
-            grammar->add_operation_rule<MathematicalTransformer<>>("rule_" + std::to_string(i), ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_10, 100 - i);
-        }
+        replace(0, replacement);
+
+        expect_channels(process(0, input), { { -10.0, 5.0, 15.0 } });
+        expect_channels(process(1, input), { { -4.0, 2.0, 6.0 } });
     }
 
-    std::shared_ptr<ComputationGrammar> grammar;
-    std::vector<DataVariant> test_data;
-    Datum<std::vector<DataVariant>> test_input;
-};
-
-TEST_F(GrammarPerformanceTest, ConsistentRuleSelection)
-{
-    auto parametric_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::PARAMETRIC);
-
-    auto match1 = grammar->find_best_match(test_input, parametric_ctx);
-    auto match2 = grammar->find_best_match(test_input, parametric_ctx);
-    auto match3 = grammar->find_best_match(test_input, parametric_ctx);
-
-    EXPECT_TRUE(match1.has_value()) << "Should find a match";
-    EXPECT_TRUE(match2.has_value()) << "Should find a match";
-    EXPECT_TRUE(match3.has_value()) << "Should find a match";
-
-    EXPECT_EQ(match1->name, match2->name) << "Should consistently select same rule";
-    EXPECT_EQ(match2->name, match3->name) << "Should consistently select same rule";
-    EXPECT_EQ(match1->name, "rule_0") << "Should select highest priority rule";
-}
-
-TEST_F(GrammarPerformanceTest, RuleExecutionDeterministic)
-{
-    auto parametric_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::PARAMETRIC);
-
-    auto result1 = grammar->execute_rule("rule_0", test_input, parametric_ctx);
-    auto result2 = grammar->execute_rule("rule_0", test_input, parametric_ctx);
-
-    EXPECT_TRUE(result1.has_value()) << "Should execute rule successfully";
-    EXPECT_TRUE(result2.has_value()) << "Should execute rule successfully";
-
-    try {
-        auto output1 = std::any_cast<Datum<std::vector<DataVariant>>>(*result1);
-        auto output2 = std::any_cast<Datum<std::vector<DataVariant>>>(*result2);
-
-        EXPECT_EQ(output1.data.size(), output2.data.size()) << "Results should have same channel count";
-
-        for (size_t ch = 0; ch < std::min(output1.data.size(), output2.data.size()); ++ch) {
-            auto data1 = std::get<std::vector<double>>(output1.data[ch]);
-            auto data2 = std::get<std::vector<double>>(output2.data[ch]);
-
-            EXPECT_EQ(data1.size(), data2.size()) << "Channel " << ch << " should have same size";
-            for (size_t i = 0; i < std::min(data1.size(), data2.size()); ++i) {
-                EXPECT_NEAR(data1[i], data2[i], 1e-10)
-                    << "Results should be deterministic at channel " << ch << ", index " << i;
-            }
-        }
-    } catch (const std::exception& e) {
-        SUCCEED() << "Rule execution deterministic test failed with: " << e.what();
-    }
-}
-
-// =========================================================================
-// MULTICHANNEL-SPECIFIC TESTS
-// =========================================================================
-
-class GrammarMultiChannelTest : public ::testing::Test {
-protected:
-    void SetUp() override
+    TEST_P(GrammarConsumerTest, ARejectedPrepassPreservesInputUntilItsConditionIsSatisfied)
     {
-        grammar = std::make_shared<ComputationGrammar>();
+        shared->create_rule("gated")
+            .matches_custom(admitted)
+            .uses(std::make_shared<MathematicalTransformer<>>(
+                MathematicalTransformerConfig { .gain_factor = 2.0 }))
+            .build();
+        const auto input = to_datum({ { -2.0, 1.0, 3.0 } });
+
+        expect_channels(process(0, input), { { -2.0, 1.0, 3.0 } });
+        ExecutionContext context;
+        context.facets.set(Admission { true });
+        expect_channels(process(0, input, context), { { -4.0, 2.0, 6.0 } });
     }
 
-    std::shared_ptr<ComputationGrammar> grammar;
-};
+    enum class PipelineMutation { Reconfigure, RemoveFirstDuplicate, Clear };
+    using PipelineMutationParam = std::tuple<bool, PipelineMutation>;
 
-TEST_F(GrammarMultiChannelTest, HandlesVariableChannelCounts)
-{
-    MathematicalTransformerConfig rule_cfg_11;
-    rule_cfg_11.gain_factor = 1.5;
-    grammar->add_operation_rule<MathematicalTransformer<>>("multichannel_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_11, 50);
-
-    std::vector<size_t> channel_counts = { 1, 2, 6, 8 };
-
-    for (auto channels : channel_counts) {
-        auto test_data = GrammarTestDataGenerator::create_test_multichannel_signal(channels, 128);
-        Datum<std::vector<DataVariant>> test_input { test_data };
-        auto parametric_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::PARAMETRIC);
-
-        auto result = grammar->execute_rule("multichannel_rule", test_input, parametric_ctx);
-        EXPECT_TRUE(result.has_value()) << "Should handle " << channels << " channels";
-
-        try {
-            auto output = std::any_cast<Datum<std::vector<DataVariant>>>(*result);
-            EXPECT_EQ(output.data.size(), channels) << "Should preserve channel count for " << channels << " channels";
-        } catch (const std::exception& e) {
-            FAIL() << "Failed to process " << channels << " channels: " << e.what();
-        }
-    }
-}
-
-TEST_F(GrammarMultiChannelTest, HandlesMixedChannelSizes)
-{
-    MathematicalTransformerConfig rule_cfg_12;
-    rule_cfg_12.gain_factor = 0.8;
-    grammar->add_operation_rule<MathematicalTransformer<>>("mixed_size_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_12, 50);
-
-    std::vector<DataVariant> mixed_size_data = {
-        DataVariant(std::vector<double>(256, 0.5)),
-        DataVariant(std::vector<double>(128, 0.3)),
-        DataVariant(std::vector<double>(512, 0.7))
+    class GrammarPipelineMutationTest : public ::testing::TestWithParam<PipelineMutationParam> {
     };
 
-    Datum<std::vector<DataVariant>> test_input { mixed_size_data };
-    auto parametric_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::PARAMETRIC);
+    INSTANTIATE_TEST_SUITE_P(PrepassAndMutation, GrammarPipelineMutationTest,
+        ::testing::Combine(::testing::Bool(),
+            ::testing::Values(PipelineMutation::Reconfigure, PipelineMutation::RemoveFirstDuplicate,
+                PipelineMutation::Clear)),
+        [](const ::testing::TestParamInfo<PipelineMutationParam>& info) {
+            return std::string(std::get<0>(info.param) ? "WithPrepass_" : "WithoutPrepass_")
+                + std::string(Reflect::enum_to_string(std::get<1>(info.param)));
+        });
 
-    auto result = grammar->execute_rule("mixed_size_rule", test_input, parametric_ctx);
-    EXPECT_TRUE(result.has_value()) << "Should handle mixed channel sizes";
+    TEST_P(GrammarPipelineMutationTest, MutatingTheLiveChainChangesResultsWithoutRemovingItsGrammarPrepass)
+    {
+        const bool prepass = std::get<0>(GetParam());
+        auto grammar = std::make_shared<ComputationGrammar>();
+        if (prepass) {
+            grammar->add_operation_rule<MathematicalTransformer<>>(
+                "halve", Matcher::create_type_matcher<std::vector<Kakshya::DataVariant>>(),
+                MathematicalTransformerConfig { .gain_factor = 0.5 });
+        }
+        ComputationPipeline<> pipeline(grammar);
+        pipeline.create_operation<MathematicalTransformer<>>("same",
+            MathematicalTransformerConfig { .gain_factor = 2.0 });
+        pipeline.create_operation<MathematicalTransformer<>>("same",
+            MathematicalTransformerConfig { .operation = MathematicalOperation::OFFSET, .offset_value = 3.0 });
+        const auto input = to_datum({ { -2.0, 1.0, 3.0 } });
 
-    try {
-        auto output = std::any_cast<Datum<std::vector<DataVariant>>>(*result);
-        EXPECT_EQ(output.data.size(), 3) << "Should preserve channel count";
+        expect_channels(pipeline.process(input), prepass ? Channels { { 1.0, 4.0, 6.0 } } : Channels { { -1.0, 5.0, 9.0 } });
+        ComputationPipeline<> peer(grammar);
+        expect_channels(peer.process(input), prepass ? Channels { { -1.0, 0.5, 1.5 } } : Channels { { -2.0, 1.0, 3.0 } });
 
-        auto ch0_data = std::get<std::vector<double>>(output.data[0]);
-        auto ch1_data = std::get<std::vector<double>>(output.data[1]);
-        auto ch2_data = std::get<std::vector<double>>(output.data[2]);
-
-        EXPECT_EQ(ch0_data.size(), 256) << "Channel 0 should preserve size";
-        EXPECT_EQ(ch1_data.size(), 128) << "Channel 1 should preserve size";
-        EXPECT_EQ(ch2_data.size(), 512) << "Channel 2 should preserve size";
-
-    } catch (const std::exception& e) {
-        FAIL() << "Failed to process mixed channel sizes: " << e.what();
+        switch (std::get<1>(GetParam())) {
+        case PipelineMutation::Reconfigure:
+            ASSERT_TRUE(pipeline.configure_operation<MathematicalTransformer<>>("same", [](auto operation) {
+                operation->set_config(MathematicalTransformerConfig { .gain_factor = 4.0 });
+            }));
+            expect_channels(pipeline.process(input), prepass ? Channels { { -1.0, 5.0, 9.0 } } : Channels { { -5.0, 7.0, 15.0 } });
+            break;
+        case PipelineMutation::RemoveFirstDuplicate:
+            ASSERT_TRUE(pipeline.remove_operation("same"));
+            expect_channels(pipeline.process(input), prepass ? Channels { { 2.0, 3.5, 4.5 } } : Channels { { 1.0, 4.0, 6.0 } });
+            break;
+        case PipelineMutation::Clear:
+            pipeline.clear_operations();
+            expect_channels(pipeline.process(input), prepass ? Channels { { -1.0, 0.5, 1.5 } } : Channels { { -2.0, 1.0, 3.0 } });
+            break;
+        }
+        expect_channels(peer.process(input), prepass ? Channels { { -1.0, 0.5, 1.5 } } : Channels { { -2.0, 1.0, 3.0 } });
     }
-}
 
-TEST_F(GrammarMultiChannelTest, HandlesDifferentDataTypes)
-{
-    MathematicalTransformerConfig rule_cfg_13;
-    rule_cfg_13.gain_factor = 1.2;
-    grammar->add_operation_rule<MathematicalTransformer<>>("mixed_type_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_13, 50);
+    enum class Transition { RoundTrip, IncompatibleIntermediate, WrongFinalType, ThrowingStage };
 
-    std::vector<DataVariant> mixed_type_data = {
-        DataVariant(std::vector<double> { 1.0, 2.0, 3.0 }),
-        DataVariant(std::vector<float> { 4.0f, 5.0f, 6.0f }),
-        DataVariant(std::vector<double> { 7.0, 8.0, 9.0 })
+    class GrammarTransitionTest : public ::testing::TestWithParam<Transition> {
     };
 
-    Datum<std::vector<DataVariant>> test_input { mixed_type_data };
-    auto parametric_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::PARAMETRIC);
+    INSTANTIATE_TEST_SUITE_P(ErasedStageContracts, GrammarTransitionTest,
+        ::testing::Values(Transition::RoundTrip, Transition::IncompatibleIntermediate,
+            Transition::WrongFinalType, Transition::ThrowingStage),
+        [](const ::testing::TestParamInfo<Transition>& info) {
+            return std::string(Reflect::enum_to_string(info.param));
+        });
 
-    auto result = grammar->execute_rule("mixed_type_rule", test_input, parametric_ctx);
-    EXPECT_TRUE(result.has_value()) << "Should handle mixed data types";
+    TEST_P(GrammarTransitionTest, ChecksActualIntermediateAndFinalTypesAndPropagatesExecutionFailure)
+    {
+        const auto operations = std::make_shared<OperationRegistry>();
+        auto summarize = std::make_shared<FunctionalOperation<Samples, Eigen::VectorXd>>(
+            [](const SampleDatum& input) {
+                Eigen::VectorXd summary(2);
+                summary[0] = std::accumulate(input.data.begin(), input.data.end(), 0.0);
+                summary[1] = static_cast<double>(input.data.size());
+                return Datum<Eigen::VectorXd>(std::move(summary));
+            });
+        auto project = std::make_shared<FunctionalOperation<Eigen::VectorXd, Samples>>(
+            [](const Datum<Eigen::VectorXd>& input) {
+                return SampleDatum(Samples { input.data[0] / input.data[1], input.data[0] });
+            });
+        const SampleDatum input(Samples { 1.0, 3.0, 5.0 });
 
-    try {
-        auto output = std::any_cast<Datum<std::vector<DataVariant>>>(*result);
-        EXPECT_EQ(output.data.size(), 3) << "Should preserve channel count";
-
-        for (size_t ch = 0; ch < output.data.size(); ++ch) {
-            EXPECT_NO_THROW(std::get<std::vector<double>>(output.data[ch]))
-                << "Channel " << ch << " should be processable";
+        switch (GetParam()) {
+        case Transition::RoundTrip: {
+            const auto grammar = ComputationGrammar::Builder(operations)
+                .rule(BridgeMethod::Summarize).uses(summarize)
+                .rule(BridgeMethod::Project).uses(project)
+                .build();
+            EXPECT_EQ(grammar->process(input).data, (Samples { 3.0, 9.0 }));
+            break;
         }
-
-    } catch (const std::exception& e) {
-        FAIL() << "Failed to process mixed data types: " << e.what();
-    }
-}
-
-TEST_F(GrammarMultiChannelTest, PerformanceWithLargeMultiChannel)
-{
-    MathematicalTransformerConfig rule_cfg_14;
-    rule_cfg_14.gain_factor = 1.0;
-    grammar->add_operation_rule<MathematicalTransformer<>>("large_multichannel_rule", ComputationContext::PARAMETRIC, Matcher::create_type_matcher<std::vector<DataVariant>>(), rule_cfg_14, 50);
-
-    auto large_multichannel = GrammarTestDataGenerator::create_test_multichannel_signal(8, 44100);
-    Datum<std::vector<DataVariant>> test_input { large_multichannel };
-    auto parametric_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::PARAMETRIC);
-
-    auto start = std::chrono::high_resolution_clock::now();
-    auto result = grammar->execute_rule("large_multichannel_rule", test_input, parametric_ctx);
-    auto end = std::chrono::high_resolution_clock::now();
-
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-    EXPECT_TRUE(result.has_value()) << "Should handle large multichannel data";
-    EXPECT_LT(duration.count(), 1000) << "Should process large multichannel data in reasonable time";
-
-    try {
-        auto output = std::any_cast<Datum<std::vector<DataVariant>>>(*result);
-        EXPECT_EQ(output.data.size(), 8) << "Should preserve all 8 channels";
-
-        for (size_t ch = 0; ch < output.data.size(); ++ch) {
-            auto channel_data = std::get<std::vector<double>>(output.data[ch]);
-            EXPECT_EQ(channel_data.size(), 44100) << "Channel " << ch << " should preserve sample count";
+        case Transition::IncompatibleIntermediate: {
+            const auto grammar = ComputationGrammar::Builder(operations)
+                .rule(BridgeMethod::Summarize).uses(summarize)
+                .rule(UserMethod::Accumulate).uses(std::make_shared<Accumulator>())
+                .build();
+            EXPECT_THROW(grammar->process(input), std::runtime_error);
+            break;
         }
-
-    } catch (const std::exception& e) {
-        FAIL() << "Large multichannel performance test failed: " << e.what();
+        case Transition::WrongFinalType: {
+            const auto grammar = ComputationGrammar::Builder(operations)
+                .rule(BridgeMethod::Summarize).uses(summarize)
+                .build();
+            EXPECT_THROW(grammar->process(input), std::runtime_error);
+            const auto summary = grammar->process<Eigen::VectorXd>(input, grammar->signature());
+            ASSERT_EQ(summary.data.size(), 2);
+            EXPECT_DOUBLE_EQ(summary.data[0], 9.0);
+            EXPECT_DOUBLE_EQ(summary.data[1], 3.0);
+            break;
+        }
+        case Transition::ThrowingStage: {
+            auto failure = std::make_shared<FunctionalOperation<Samples>>(
+                [](const SampleDatum&) -> SampleDatum { throw std::domain_error("Unavailable computation"); });
+            auto downstream = std::make_shared<Accumulator>();
+            const auto grammar = ComputationGrammar::Builder(operations)
+                .rule(BridgeMethod::Fail).uses(failure)
+                .rule(UserMethod::Accumulate).uses(downstream)
+                .build();
+            EXPECT_THROW(grammar->process(input), std::domain_error);
+            EXPECT_EQ(downstream->apply_operation(input).data, (Samples { 3.0, 5.0, 7.0 }));
+            break;
+        }
+        }
     }
+
 }
-
-TEST_F(GrammarMultiChannelTest, ComplexMultiChannelMatcher)
-{
-    auto complex_matcher = Matcher::combine_and({ Matcher::create_type_matcher<std::vector<DataVariant>>(),
-        [](const std::any& input, const ExecutionContext&) -> bool {
-            try {
-                auto io_input = std::any_cast<Datum<std::vector<DataVariant>>>(input);
-                return io_input.data.size() == 2;
-            } catch (...) {
-                return false;
-            }
-        } });
-
-    auto rule = ComputationGrammar::Rule();
-    rule.name = "stereo_only_rule";
-    rule.context = ComputationContext::TEMPORAL;
-    rule.priority = 75;
-    rule.matcher = complex_matcher;
-    rule.executor = [](const std::any& input, const ExecutionContext& /*ctx*/) -> std::any {
-        return input;
-    };
-    grammar->add_rule(std::move(rule));
-
-    auto stereo_data = GrammarTestDataGenerator::create_test_multichannel_signal(2, 128);
-    Datum<std::vector<DataVariant>> stereo_input { stereo_data };
-    auto temporal_ctx = GrammarTestDataGenerator::create_test_context(ComputationContext::TEMPORAL);
-
-    auto stereo_match = grammar->find_best_match(stereo_input, temporal_ctx);
-    EXPECT_TRUE(stereo_match.has_value()) << "Should match stereo data";
-    EXPECT_EQ(stereo_match->name, "stereo_only_rule") << "Should select stereo-specific rule";
-
-    auto mono_data = GrammarTestDataGenerator::create_test_multichannel_signal(1, 128);
-    Datum<std::vector<DataVariant>> mono_input { mono_data };
-
-    auto mono_match = grammar->find_best_match(mono_input, temporal_ctx);
-    EXPECT_FALSE(mono_match.has_value()) << "Should not match mono data";
-
-    auto surround_data = GrammarTestDataGenerator::create_test_multichannel_signal(6, 128);
-    Datum<std::vector<DataVariant>> surround_input { surround_data };
-
-    auto surround_match = grammar->find_best_match(surround_input, temporal_ctx);
-    EXPECT_FALSE(surround_match.has_value()) << "Should not match surround data";
 }
-
-} // namespace MayaFlux::Test

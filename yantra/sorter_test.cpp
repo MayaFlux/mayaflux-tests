@@ -60,7 +60,7 @@ TEST(StandardSorterWiringConfigTest, StoresSettingsAsGiven)
     auto sorter = std::make_shared<ChannelSorter>(
         make_config(SortingDirection::DESCENDING, SortingStrategy::PARTIAL_SORT, SortingAlgorithm::HEAP, 64));
 
-    const auto& stored = sorter->config();
+    const auto& stored = sorter->config<StandardSorterConfig>();
     EXPECT_EQ(stored.direction, SortingDirection::DESCENDING);
     EXPECT_EQ(stored.strategy, SortingStrategy::PARTIAL_SORT);
     EXPECT_EQ(stored.algorithm, SortingAlgorithm::HEAP);
@@ -71,7 +71,7 @@ TEST(StandardSorterWiringConfigTest, DefaultsWhenNoSettingsGiven)
 {
     auto sorter = std::make_shared<ChannelSorter>();
 
-    const auto& stored = sorter->config();
+    const auto& stored = sorter->config<StandardSorterConfig>();
     EXPECT_EQ(stored.direction, SortingDirection::ASCENDING);
     EXPECT_EQ(stored.strategy, SortingStrategy::COPY_SORT);
     EXPECT_EQ(stored.algorithm, SortingAlgorithm::STANDARD);
