@@ -1,6 +1,8 @@
 #include "MayaFlux/Yantra/Analyzers/EnergyAnalyzer.hpp"
 #include "MayaFlux/Yantra/Analyzers/StatisticalAnalyzer.hpp"
+#include "MayaFlux/Yantra/Analyzers/VisionAnalyzer.hpp"
 #include "MayaFlux/Yantra/ComputeGrammar.hpp"
+#include "MayaFlux/Yantra/Extractors/VisionExtractor.hpp"
 #include "MayaFlux/Yantra/Sorters/RegionKeySorter.hpp"
 #include "MayaFlux/Yantra/Transformers/MathematicalTransformer.hpp"
 #include "MayaFlux/Yantra/Transformers/TemporalTransformer.hpp"
@@ -48,6 +50,26 @@ namespace {
         EXPECT_FALSE(registry.resolve(ComputationSignature(TemporalOperation::TIME_REVERSE), nullptr).empty());
         EXPECT_FALSE(registry.resolve(ComputationSignature(StatisticalMethod::MEAN), nullptr).empty());
         EXPECT_FALSE(registry.resolve(ComputationSignature(EnergyMethod::RMS), nullptr).empty());
+    }
+
+    TEST(DefaultRegistryTest, VisionOperationsAreGpuCandidatesByIntentAndMode)
+    {
+        using Kinesis::Vision::VisionIntent;
+        static_assert(std::same_as<selection_t<VisionAnalyzerConfig>, VisionIntent>);
+        static_assert(std::same_as<selection_t<VisionExtractorConfig>, VisionExtractMode>);
+        static_assert(target_of_v<VisionAnalyzer> == targets::vulkan);
+        static_assert(target_of_v<VisionExtractor> == targets::vulkan);
+
+        const auto registry = make_default_registry();
+
+        const auto analyzers = registry.resolve(
+            ComputationSignature(VisionIntent::FindElements | VisionIntent::TrackObjects), nullptr);
+        ASSERT_EQ(analyzers.size(), 1U);
+        EXPECT_EQ(analyzers.front().target, targets::vulkan);
+
+        const auto extractors = registry.resolve(ComputationSignature(VisionExtractMode::Crop), nullptr);
+        ASSERT_EQ(extractors.size(), 1U);
+        EXPECT_EQ(extractors.front().target, targets::vulkan);
     }
 
     TEST(DefaultRegistryTest, DoesNotListWorkflowOnlyOperations)
