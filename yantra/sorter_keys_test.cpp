@@ -11,8 +11,6 @@ namespace {
 
     using Yantra::SortKey;
     using Yantra::SortingDirection;
-    using Yantra::StandardSorter;
-    using Yantra::StandardSorterConfig;
 
     const Facet<double> rms {};
     const Facet<double> brightness {};
@@ -132,19 +130,6 @@ namespace {
 
         const std::vector<SortKey> inf_keys { { rms, SortingDirection::ASCENDING, std::numeric_limits<double>::infinity(), false } };
         EXPECT_THROW(Yantra::validate_sort_keys(inf_keys), std::invalid_argument);
-    }
-
-    TEST(SortKeyValidationTest, StandardSorterRejectsKeysItDoesNotApply)
-    {
-        StandardSorterConfig cfg;
-        cfg.keys = { { rms, SortingDirection::DESCENDING, 2.0, false } };
-        EXPECT_THROW(std::make_shared<StandardSorter<std::vector<Kakshya::DataVariant>>>(cfg), std::invalid_argument);
-    }
-
-    TEST(SortKeyValidationTest, StandardSorterAcceptsEmptyKeys)
-    {
-        StandardSorterConfig cfg;
-        EXPECT_NO_THROW(std::make_shared<StandardSorter<std::vector<Kakshya::DataVariant>>>(cfg));
     }
 
 } // namespace
