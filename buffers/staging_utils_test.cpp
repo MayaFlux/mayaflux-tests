@@ -393,7 +393,8 @@ namespace {
                 std::memcpy(out.data(), buffer->get_buffer_resources().mapped_ptr, out.size());
             } else {
                 std::shared_ptr<VKBuffer> staging;
-                Buffers::download_from_gpu_async(buffer, out.data(), out.size(), staging);
+                Buffers::download_back_buffer(
+                    Buffers::generation_slot(Buffers::gpu_buffer_handle(buffer)), out.data(), out.size(), staging);
                 track(staging);
             }
             return out;
