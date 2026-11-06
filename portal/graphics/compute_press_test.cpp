@@ -13,7 +13,6 @@ namespace {
     using Portal::Graphics::ComputeStage;
     using Portal::Graphics::DescriptorBindingInfo;
     using Portal::Graphics::GpuBufferBinding;
-    using Portal::Graphics::HazardResource;
     using Portal::Graphics::INVALID_COMPUTE_PIPELINE;
     using Portal::Graphics::INVALID_SHADER;
     using Portal::Graphics::ShaderID;
@@ -472,11 +471,6 @@ void main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }
         fill_ascending(*buffer);
         foundry().update_descriptor_buffer(sets.at(0), 0, vk::DescriptorType::eStorageBuffer, buffer->buffer(), 0, k_bytes);
 
-        HazardResource hazard;
-        hazard.binding.direction = GpuBufferBinding::Direction::INPUT_OUTPUT;
-        hazard.binding.element_type = GpuBufferBinding::ElementType::UINT32;
-        hazard.buffer = buffer->buffer();
-
         auto stage_with = [&](uint32_t factor) {
             ComputeStage stage {};
             stage.pipeline_id = id;
@@ -484,7 +478,6 @@ void main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }
             stage.groups = { 1, 1, 1 };
             stage.push_constant_data.resize(sizeof(factor));
             std::memcpy(stage.push_constant_data.data(), &factor, sizeof(factor));
-            stage.hazard_resources.push_back(hazard);
             return stage;
         };
 
