@@ -4,6 +4,7 @@
 
 namespace MayaFlux::Test::Vision {
 
+using Kinesis::Vision::BoundingBox;
 using Kinesis::Vision::CannyParams;
 using Kinesis::Vision::VisionOp;
 using Kinesis::Vision::VisionSequence;
@@ -212,6 +213,70 @@ TEST_F(VisionGpuAliasTest, ASecondRunOverwritesTheFirstRunsSlotImage)
     ASSERT_NE(second.images.gaussian_blur, nullptr);
     const auto after = read_floats(first.images.sobel);
     EXPECT_GT(max_abs_diff(before, after), k_alias_tolerance);
+}
+
+/**
+ * A threshold, a confine, then the same threshold again. The second threshold
+ * must produce the same pixels as a run that never saw the first threshold.
+ */
+TEST_F(VisionGpuAliasTest, ThresholdAfterConfineRunsItsOwnShader)
+{
+    constexpr uint32_t size = 64;
+    const BoundingBox region { .x = 0.25F, .y = 0.25F, .w = 0.5F, .h = 0.5F };
+    const auto frame = wave_frame(size, 0.0F, 0.0F);
+    ASSERT_NE(frame, nullptr);
+
+    const auto with_prior_threshold = VisionSequence::Builder {}
+                                          .rgba_to_gray()
+                                          .threshold({ .value = 0.5F })
+                                          .confine({ .bounds = region })
+                                          .threshold({ .value = 0.5F })
+                                          .build();
+    const auto without_prior_threshold = VisionSequence::Builder {}
+                                             .rgba_to_gray()
+                                             .confine({ .bounds = region })
+                                             .threshold({ .value = 0.5F })
+                                             .build();
+
+    VisionGpuExecutor executor;
+    const auto actual = executor.run(with_prior_threshold, frame, size, size);
+    ASSERT_NE(actual.images.threshold, nullptr);
+
+    VisionGpuExecutor reference_executor;
+    const auto expected = reference_executor.run(without_prior_threshold, frame, size, size);
+    ASSERT_NE(expected.images.threshold, nullptr);
+
+    ASSERT_EQ(actual.images.threshold->get_width(), expected.images.threshold->get_width());
+    ASSERT_EQ(actual.images.threshold->get_height(), expected.images.threshold->get_height());
+    EXPECT_LE(max_abs_diff(read_floats(actual.images.threshold), read_floats(expected.images.threshold)),
+        k_alias_tolerance);
+}
+
+/**
+ * A gaussian blur followed by sobel. Sobel declares no push constant range,
+ * so the blur's push bytes must not reach its dispatch. A validation message
+ * during the run means they did.
+ */
+TEST_F(VisionGpuAliasTest, PushDataDoesNotCarryIntoAShaderWithNoPushRange)
+{
+    constexpr uint32_t size = 64;
+    const auto frame = wave_frame(size, 0.0F, 0.0F);
+    ASSERT_NE(frame, nullptr);
+
+    const auto sequence = VisionSequence::Builder {}
+                              .rgba_to_gray()
+                              .gaussian_blur({ .sigma = 1.5F })
+                              .sobel()
+                              .build();
+
+    LogCapture::clear();
+    VisionGpuExecutor executor;
+    const auto result = executor.run(sequence, frame, size, size);
+    ASSERT_NE(result.images.sobel, nullptr);
+
+    for (const auto& message : LogCapture::messages()) {
+        EXPECT_EQ(message.find("Validation layer"), std::string::npos) << message;
+    }
 }
 
 } // namespace MayaFlux::Test::Vision
