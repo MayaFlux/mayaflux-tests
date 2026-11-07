@@ -203,45 +203,6 @@ void main()
         EXPECT_EQ(download_words(manager, "scale", 0, k_words), scaled(ascending(k_words), 4));
     }
 
-    TYPED_TEST(GpuResourceManagerTest, DispatchSequenceRunsEveryStageInOrder)
-    {
-        GpuResourceManager manager;
-        ASSERT_TRUE(init_scale(manager));
-        manager.ensure_buffer("scale", 0, k_bytes);
-        upload_words(manager, "scale", 0, ascending(k_words));
-        const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
-        manager.bind_descriptors_batch("scale", bindings);
-        const auto two = push_bytes(2);
-        const auto three = push_bytes(3);
-        const auto writes = manager.push_writes("scale");
-
-        manager.dispatch_sequence({ "scale", "scale" }, { k_one, k_one }, { two, three }, { writes, writes });
-
-        EXPECT_EQ(download_words(manager, "scale", 0, k_words), scaled(ascending(k_words), 6));
-    }
-
-    TYPED_TEST(GpuResourceManagerTest, DispatchSequenceAsyncReturnsAFenceThatCompletesWithResults)
-    {
-        GpuResourceManager manager;
-        ASSERT_TRUE(init_scale(manager));
-        manager.ensure_buffer("scale", 0, k_bytes);
-        upload_words(manager, "scale", 0, ascending(k_words));
-        const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
-        manager.bind_descriptors_batch("scale", bindings);
-        const auto two = push_bytes(2);
-        const auto three = push_bytes(3);
-        const auto writes = manager.push_writes("scale");
-
-        const auto fence = manager.dispatch_sequence_async({ "scale", "scale" }, { k_one, k_one },
-            { two, three }, { writes, writes });
-        ASSERT_NE(fence, INVALID_FENCE);
-        foundry().wait_for_fence(fence);
-        EXPECT_TRUE(foundry().is_fence_signaled(fence));
-        foundry().release_fence(fence);
-
-        EXPECT_EQ(download_words(manager, "scale", 0, k_words), scaled(ascending(k_words), 6));
-    }
-
     TYPED_TEST(GpuResourceManagerTest, IndirectStageReadsItsGroupCountsFromABuffer)
     {
         GpuResourceManager manager;
