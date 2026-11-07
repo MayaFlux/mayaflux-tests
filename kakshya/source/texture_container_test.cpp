@@ -7,8 +7,10 @@
 #include "../../support/vulkan_test_support.hpp"
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
+#include "MayaFlux/Kakshya/NDData/DataAccess.hpp"
 #include "MayaFlux/Kakshya/Region/Region.hpp"
 #include "MayaFlux/Kakshya/Region/RegionSegment.hpp"
+#include "MayaFlux/Kakshya/Source/TextureCollection.hpp"
 #include "MayaFlux/Kakshya/Source/TextureContainer.hpp"
 
 namespace MayaFlux::Test {
@@ -471,7 +473,7 @@ namespace {
         ASSERT_NE(values, nullptr);
         ASSERT_EQ(values->size(), 8U);
         for (size_t i = 0; i < 8; ++i) {
-            EXPECT_EQ((*values)[i], pixels[(1 * 3 + 1) * 4 + i]) << i;
+            EXPECT_EQ((*values)[i], pixels[size_t { 1 } * 3 * 4 + size_t { 1 } * 4 + i]) << i;
         }
     }
 
@@ -493,7 +495,7 @@ namespace {
             EXPECT_EQ(px[(2 * 3 + 2) * 4 + c], src[3 * 4 + c]);
         }
         EXPECT_EQ(px[0], 0);
-        EXPECT_EQ(px[(0 * 3 + 2) * 4], 0);
+        EXPECT_EQ(px[size_t { 2 } * 4], 0);
     }
 
     TEST(TextureContainerRegionTest, SetRegionDataIgnoresMismatchedTypeAndShortRegions)
@@ -576,6 +578,171 @@ namespace {
         const auto chain = tc.get_processing_chain();
         ASSERT_NE(chain, nullptr);
         EXPECT_EQ(tc.get_processing_chain(), chain);
+    }
+
+    TEST(TextureContainerHalfFloatTest, HalfFloatFormatsUseSixteenBitStorage)
+    {
+        TextureContainer half(3, 2, ImageFormat::RGBA16F);
+        EXPECT_EQ(half.get_channel_count(), 4U);
+        EXPECT_EQ(half.as_uint16(0).size(), 3U * 2U * 4U);
+        EXPECT_TRUE(half.as_uint8(0).empty());
+        EXPECT_TRUE(half.as_float(0).empty());
+        EXPECT_EQ(half.value_element_type(), std::type_index(typeid(uint16_t)));
+
+        TextureContainer single(3, 2, ImageFormat::R16F);
+        EXPECT_EQ(single.get_channel_count(), 1U);
+        EXPECT_EQ(single.as_uint16(0).size(), 3U * 2U);
+    }
+
+    TEST(TextureContainerHalfFloatTest, HalfFloatBitsRoundTripThroughSetPixels)
+    {
+        TextureContainer half(2, 1, ImageFormat::RG16F);
+        const std::vector<uint16_t> bits { 0x3C00, 0x4000, 0xBC00, 0x0000 };
+        half.set_pixels(std::span<const uint16_t>(bits), 0);
+        EXPECT_TRUE(std::ranges::equal(half.as_uint16(0), bits));
+    }
+
+    TEST(TextureContainerTypedFrameTest, SixteenBitLayersKeepTheirOwnPixels)
+    {
+        TextureContainer tc(2, 1, ImageFormat::RGBA16, 2U);
+        const std::vector<uint16_t> first { 1, 2, 3, 4, 5, 6, 7, 8 };
+        const std::vector<uint16_t> second { 9, 10, 11, 12, 13, 14, 15, 16 };
+        tc.set_pixels(std::span<const uint16_t>(first), 0);
+        tc.set_pixels(std::span<const uint16_t>(second), 1);
+
+        EXPECT_TRUE(std::ranges::equal(tc.as_uint16(0), first));
+        EXPECT_TRUE(std::ranges::equal(tc.as_uint16(1), second));
+        EXPECT_TRUE(tc.as_uint8(1).empty());
+    }
+
+    TEST(TextureContainerTypedFrameTest, FloatPixelsAreReadBackAsFloats)
+    {
+        TextureContainer tc(1, 2, ImageFormat::RGBA32F, 1U);
+        const std::vector<float> values { 0.5F, -1.F, 2.F, 4.F, 8.F, 16.F, 32.F, 64.F };
+        tc.set_pixels(std::span<const float>(values), 0);
+
+        EXPECT_TRUE(std::ranges::equal(tc.as_float(0), values));
+        EXPECT_TRUE(tc.as_uint16(0).empty());
+    }
+
+    TEST(TextureContainerLayerRegionTest, RegionWriteTargetsTheLayerNamedByTheFirstCoordinate)
+    {
+        TextureContainer tc(3, 3, ImageFormat::RGBA8, 2U);
+        const std::vector<uint8_t> marks(16, 9);
+        tc.set_region_data(box({ 1, 0, 0 }, { 1, 1, 1 }), { Kakshya::DataVariant(marks) });
+
+        EXPECT_TRUE(std::ranges::all_of(tc.as_uint8(0), [](uint8_t v) { return v == 0; }));
+
+        const auto layer = tc.as_uint8(1);
+        for (size_t y = 0; y < 2; ++y) {
+            for (size_t x = 0; x < 2; ++x) {
+                for (size_t c = 0; c < 4; ++c) {
+                    EXPECT_EQ(layer[(y * 3 + x) * 4 + c], 9) << y << ' ' << x << ' ' << c;
+                }
+            }
+        }
+        EXPECT_EQ(layer[size_t { 2 } * 3 * 4 + size_t { 2 } * 4], 0);
+    }
+
+    TEST(TextureContainerAccessTest, AllChannelDataHasOneEntryPerChannel)
+    {
+        TextureContainer rgba(2, 2, ImageFormat::RGBA8);
+        EXPECT_EQ(rgba.all_channel_data().size(), 4U);
+
+        TextureContainer single(2, 2, ImageFormat::R32F);
+        EXPECT_EQ(single.all_channel_data().size(), 1U);
+    }
+
+    TEST_F(TextureContainerGpuTest, ImageConstructorReadsTheImagePixels)
+    {
+        const auto pixels = ramp(16, 21);
+        const auto image = loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
+        ASSERT_NE(image, nullptr);
+
+        TextureContainer tc(image, ImageFormat::RGBA8);
+        EXPECT_EQ(tc.get_width(), 2U);
+        EXPECT_EQ(tc.get_height(), 2U);
+        EXPECT_TRUE(std::ranges::equal(tc.as_uint8(0), pixels));
+    }
+
+    TEST_F(TextureContainerGpuTest, FromImageOutOfRangeLayerLeavesTheContainerUnchanged)
+    {
+        TextureContainer tc(2, 2, ImageFormat::RGBA8, 2U);
+        const auto kept = ramp(16, 4);
+        tc.set_pixels(std::span<const uint8_t>(kept), 0);
+
+        const auto other = ramp(16, 77);
+        const auto image = loom().create_2d(2, 2, ImageFormat::RGBA8, other.data());
+        ASSERT_NE(image, nullptr);
+
+        tc.from_image(image, 5);
+        EXPECT_TRUE(std::ranges::equal(tc.as_uint8(0), kept));
+        EXPECT_TRUE(std::ranges::all_of(tc.as_uint8(1), [](uint8_t v) { return v == 0; }));
+    }
+
+    TEST_F(TextureContainerGpuTest, FromImageArrayWithTooFewLayersLeavesEveryLayerUnchanged)
+    {
+        TextureContainer tc(2, 2, ImageFormat::RGBA8, 3U);
+        const auto first = ramp(16, 5);
+        const auto second = ramp(16, 55);
+        tc.set_pixels(std::span<const uint8_t>(first), 0);
+        tc.set_pixels(std::span<const uint8_t>(second), 1);
+
+        const auto image = loom().create_2d_array(2, 2, 2, ImageFormat::RGBA8);
+        ASSERT_NE(image, nullptr);
+
+        tc.from_image_array(image);
+        EXPECT_TRUE(std::ranges::equal(tc.as_uint8(0), first));
+        EXPECT_TRUE(std::ranges::equal(tc.as_uint8(1), second));
+        EXPECT_TRUE(std::ranges::all_of(tc.as_uint8(2), [](uint8_t v) { return v == 0; }));
+    }
+
+    TEST_F(TextureContainerGpuTest, GpuHeldLayerIsDownloadedOnTheFirstCpuRead)
+    {
+        const auto pixels = ramp(16, 31);
+        const auto source = loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
+        ASSERT_NE(source, nullptr);
+
+        Kakshya::TextureCollection collection(Kakshya::TextureCollectionSpec { .width = 2, .height = 2, .format = ImageFormat::RGBA8 });
+        ASSERT_TRUE(collection.append(source));
+
+        EXPECT_TRUE(std::ranges::equal(collection.as_uint8(0), pixels));
+    }
+
+    TEST_F(TextureContainerGpuTest, CpuWriteReplacesAGpuHeldLayer)
+    {
+        const auto before = ramp(16, 41);
+        const auto source = loom().create_2d(2, 2, ImageFormat::RGBA8, before.data());
+        ASSERT_NE(source, nullptr);
+
+        Kakshya::TextureCollection collection(Kakshya::TextureCollectionSpec { .width = 2, .height = 2, .format = ImageFormat::RGBA8 });
+        ASSERT_TRUE(collection.append(source));
+
+        const auto after = ramp(16, 141);
+        collection.set_pixels(std::span<const uint8_t>(after), 0);
+
+        EXPECT_TRUE(std::ranges::equal(collection.as_uint8(0), after));
+        const auto image = collection.to_image(0);
+        ASSERT_NE(image, nullptr);
+        EXPECT_EQ(read_image(image, after.size()), after);
+    }
+
+    TEST_F(TextureContainerGpuTest, ClearZeroesALayerHeldOnlyOnTheGpu)
+    {
+        const auto pixels = ramp(16, 51);
+        const auto source = loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
+        ASSERT_NE(source, nullptr);
+
+        Kakshya::TextureCollection collection(Kakshya::TextureCollectionSpec { .width = 2, .height = 2, .format = ImageFormat::RGBA8 });
+        ASSERT_TRUE(collection.append(source));
+
+        collection.clear();
+
+        EXPECT_TRUE(std::ranges::all_of(collection.as_uint8(0), [](uint8_t v) { return v == 0; }));
+        EXPECT_EQ(collection.get_processing_state(), ProcessingState::IDLE);
+        const auto image = collection.to_image(0);
+        ASSERT_NE(image, nullptr);
+        EXPECT_EQ(read_image(image, pixels.size()), std::vector<uint8_t>(pixels.size(), 0));
     }
 
 } // namespace
