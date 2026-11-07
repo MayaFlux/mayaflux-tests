@@ -276,4 +276,101 @@ TEST_F(VisionGpuContoursTest, EightyScatteredSquaresGiveEightyContoursAndAnEmpty
     EXPECT_TRUE(last_empty->empty());
 }
 
+namespace {
+
+    constexpr uint32_t k_ranked_size = 64;
+    constexpr std::array<uint32_t, 4> k_ranked_sides { 5, 9, 3, 7 };
+
+    std::vector<float> ranked_squares()
+    {
+        std::vector<float> pixels(static_cast<size_t>(k_ranked_size) * k_ranked_size * 4, 0.0F);
+        uint32_t x0 = 4;
+        for (const uint32_t side : k_ranked_sides) {
+            for (uint32_t y = 4; y < 4 + side; ++y) {
+                for (uint32_t x = x0; x < x0 + side; ++x) {
+                    set_all_channels(pixels, k_ranked_size, x, y, 1.0F);
+                }
+            }
+            x0 += side + 4;
+        }
+        return pixels;
+    }
+
+    float ranked_area(uint32_t side)
+    {
+        return static_cast<float>(side * side) / static_cast<float>(k_ranked_size * k_ranked_size);
+    }
+
+} // namespace
+
+TEST_F(VisionGpuContoursTest, MaxContoursKeepsTheLargestSquaresInDescendingArea)
+{
+    const auto image = rgba_image(k_ranked_size, k_ranked_size, ranked_squares());
+    ASSERT_NE(image, nullptr);
+
+    const auto sequence = VisionSequence::Builder {}
+                              .connected_components({ .export_labels = true })
+                              .find_contours({ .max_contours = 2 })
+                              .build();
+    VisionGpuExecutor exec;
+    const auto result = exec.run(sequence, image, k_ranked_size, k_ranked_size);
+    const auto* contours = std::get_if<std::vector<Contour>>(&result.structured);
+    ASSERT_NE(contours, nullptr);
+    ASSERT_EQ(contours->size(), 2U);
+
+    EXPECT_NEAR((*contours)[0].area, ranked_area(9), 1e-5F);
+    EXPECT_NEAR((*contours)[1].area, ranked_area(7), 1e-5F);
+}
+
+TEST_F(VisionGpuContoursTest, MaxContoursAboveTheCountReturnsEveryContourLargestFirst)
+{
+    const auto image = rgba_image(k_ranked_size, k_ranked_size, ranked_squares());
+    ASSERT_NE(image, nullptr);
+
+    const auto sequence = VisionSequence::Builder {}
+                              .connected_components({ .export_labels = true })
+                              .find_contours({ .max_contours = 10 })
+                              .build();
+    VisionGpuExecutor exec;
+    const auto result = exec.run(sequence, image, k_ranked_size, k_ranked_size);
+    const auto* contours = std::get_if<std::vector<Contour>>(&result.structured);
+    ASSERT_NE(contours, nullptr);
+    ASSERT_EQ(contours->size(), k_ranked_sides.size());
+
+    const std::array<uint32_t, 4> expected { 9, 7, 5, 3 };
+    for (size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_NEAR((*contours)[i].area, ranked_area(expected[i]), 1e-5F) << "rank " << i;
+    }
+}
+
+TEST_F(VisionGpuContoursTest, MaxContoursWithAnImageDrawsOnlyTheLargestOutlines)
+{
+    const auto image = rgba_image(k_ranked_size, k_ranked_size, ranked_squares());
+    ASSERT_NE(image, nullptr);
+
+    const auto all_sequence = VisionSequence::Builder {}
+                                  .connected_components({ .export_labels = true })
+                                  .find_contours({ .as_image = true })
+                                  .build();
+    const auto top_sequence = VisionSequence::Builder {}
+                                  .connected_components({ .export_labels = true })
+                                  .find_contours({ .max_contours = 1, .as_image = true })
+                                  .build();
+
+    VisionGpuExecutor all_exec;
+    const auto all_result = all_exec.run(all_sequence, image, k_ranked_size, k_ranked_size);
+    ASSERT_NE(all_result.images.contour_image, nullptr);
+
+    VisionGpuExecutor top_exec;
+    const auto top_result = top_exec.run(top_sequence, image, k_ranked_size, k_ranked_size);
+    ASSERT_NE(top_result.images.contour_image, nullptr);
+
+    size_t ring_pixels = 0;
+    for (const uint32_t side : k_ranked_sides) {
+        ring_pixels += 4U * (side - 1U);
+    }
+    EXPECT_EQ(count_lit(read_floats(all_result.images.contour_image)), ring_pixels);
+    EXPECT_EQ(count_lit(read_floats(top_result.images.contour_image)), size_t { 4U * (9U - 1U) });
+}
+
 } // namespace MayaFlux::Test::Vision

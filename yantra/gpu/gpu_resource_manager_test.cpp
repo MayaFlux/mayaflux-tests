@@ -47,6 +47,45 @@ void main()
 }
 )";
 
+    constexpr std::string_view k_pointer_source = R"(#version 450
+#extension GL_EXT_buffer_reference : require
+layout(local_size_x = 16) in;
+layout(buffer_reference, std430) buffer Words { uint values[]; };
+layout(push_constant) uniform PC { Words words; uint addend; } pc;
+void main()
+{
+    pc.words.values[gl_GlobalInvocationID.x] += pc.addend;
+}
+)";
+
+    constexpr std::string_view k_far_set_source = R"(#version 450
+layout(local_size_x = 16) in;
+layout(set = 2, binding = 0, std430) buffer Data { uint values[]; };
+void main()
+{
+    values[gl_GlobalInvocationID.x] += 1u;
+}
+)";
+
+    struct PointerPush {
+        uint64_t words {};
+        uint32_t addend {};
+        uint32_t padding {};
+    };
+
+    std::vector<uint8_t> pointer_push(uint64_t address, uint32_t addend)
+    {
+        const PointerPush push { .words = address, .addend = addend };
+        std::vector<uint8_t> out(sizeof(push));
+        std::memcpy(out.data(), &push, sizeof(push));
+        return out;
+    }
+
+    bool init_pointer(GpuResourceManager& manager)
+    {
+        return manager.initialise("pointer", compute_config(load_compute(k_pointer_source), sizeof(PointerPush)), {});
+    }
+
     bool init_scale(GpuResourceManager& manager)
     {
         return manager.initialise("scale", compute_config(load_compute(k_scale_source), sizeof(uint32_t)),
@@ -261,6 +300,86 @@ void main()
 
         EXPECT_EQ(download_words(manager, "pair", 0, k_words),
             summed(summed(ascending(k_words), ascending(k_words, 100)), ascending(k_words, 200)));
+    }
+
+    // ------------------------------------------------------------------
+    // Device addresses and the layout rule
+    // ------------------------------------------------------------------
+
+    TYPED_TEST(GpuResourceManagerTest, ShaderReadsAndWritesASharedBufferThroughItsDeviceAddress)
+    {
+        GpuResourceManager manager;
+        ASSERT_TRUE(init_pointer(manager));
+        manager.ensure_shared_buffer(1, 0, k_words, GpuBufferBinding::ElementType::UINT32);
+        upload_shared_words(manager, 1, 0, ascending(k_words));
+        const auto push = pointer_push(manager.shared_buffer_address(1, 0), 5);
+
+        manager.dispatch("pointer", k_one, push.data(), push.size());
+
+        EXPECT_EQ(download_shared_words(manager, 1, 0, k_words), summed(ascending(k_words), filled(k_words, 5)));
+    }
+
+    TYPED_TEST(GpuResourceManagerTest, DeviceAddressIsZeroUntilTheBufferExistsAndFollowsARegrowth)
+    {
+        GpuResourceManager manager;
+        ASSERT_TRUE(init_pointer(manager));
+
+        EXPECT_EQ(manager.shared_buffer_address(1, 0), 0U);
+
+        manager.ensure_shared_buffer(1, 0, k_words, GpuBufferBinding::ElementType::UINT32);
+        const uint64_t first = manager.shared_buffer_address(1, 0);
+        EXPECT_NE(first, 0U);
+
+        manager.ensure_shared_buffer(1, 0, k_words / 2, GpuBufferBinding::ElementType::UINT32);
+        EXPECT_EQ(manager.shared_buffer_address(1, 0), first);
+
+        manager.ensure_shared_buffer(1, 0, 2 * k_words, GpuBufferBinding::ElementType::UINT32);
+        ASSERT_NE(manager.shared_buffer_address(1, 0), 0U);
+        upload_shared_words(manager, 1, 0, ascending(2 * k_words));
+        const auto push = pointer_push(manager.shared_buffer_address(1, 0), 7);
+
+        manager.dispatch("pointer", { 2, 1, 1 }, push.data(), push.size());
+
+        EXPECT_EQ(download_shared_words(manager, 1, 0, 2 * k_words),
+            summed(ascending(2 * k_words), filled(2 * k_words, 7)));
+    }
+
+    TYPED_TEST(GpuResourceManagerTest, LaterSetBindingsTheShaderDoesNotUseAreNotHeld)
+    {
+        GpuResourceManager manager;
+        const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0), storage_binding(1, 0) };
+
+        EXPECT_TRUE(manager.holds_binding("scale", 1, 0));
+        ASSERT_TRUE(manager.initialise("scale", compute_config(load_compute(k_scale_source), sizeof(uint32_t)), bindings));
+
+        EXPECT_TRUE(manager.holds_binding("scale", 0, 0));
+        EXPECT_FALSE(manager.holds_binding("scale", 1, 0));
+
+        manager.ensure_buffer("scale", 0, k_bytes);
+        upload_words(manager, "scale", 0, ascending(k_words));
+        manager.ensure_shared_buffer(1, 0, k_words, GpuBufferBinding::ElementType::UINT32);
+        manager.bind_descriptors_batch("scale", bindings);
+        const auto factor = push_bytes(3);
+
+        manager.dispatch("scale", k_one, factor.data(), factor.size());
+
+        EXPECT_EQ(download_words(manager, "scale", 0, k_words), scaled(ascending(k_words), 3));
+    }
+
+    TYPED_TEST(GpuResourceManagerTest, ShaderUsingOnlyALaterSetKeepsItsSetNumberAcrossTheGap)
+    {
+        GpuResourceManager manager;
+        const std::vector<GpuBufferBinding> bindings { storage_binding(2, 0) };
+        ASSERT_TRUE(manager.initialise("far", compute_config(load_compute(k_far_set_source), 0), bindings));
+        EXPECT_TRUE(manager.holds_binding("far", 2, 0));
+
+        manager.ensure_shared_buffer(2, 0, k_words, GpuBufferBinding::ElementType::UINT32);
+        upload_shared_words(manager, 2, 0, ascending(k_words));
+        manager.bind_descriptors_batch("far", bindings);
+
+        manager.dispatch("far", k_one, nullptr, 0);
+
+        EXPECT_EQ(download_shared_words(manager, 2, 0, k_words), summed(ascending(k_words), filled(k_words, 1)));
     }
 
     // ------------------------------------------------------------------
