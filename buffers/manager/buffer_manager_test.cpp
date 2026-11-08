@@ -52,6 +52,13 @@ namespace {
         double m_value;
     };
 
+    class RunCounter final : public Buffers::BufferProcessor {
+    public:
+        void processing_function(const std::shared_ptr<Buffers::Buffer>&) override { ++runs; }
+
+        int runs { 0 };
+    };
+
     class BufferManagerFixture : public ::testing::Test {
     protected:
         std::shared_ptr<BufferManager> make_manager(uint32_t out = 2, uint32_t in = 0, uint32_t block = 512)
@@ -463,6 +470,45 @@ TEST_F(BufferManagerTest, ProcessInputDeinterleavesIntoTheInputChannels)
     EXPECT_DOUBLE_EQ(left->get_data()[1], 0.3);
     EXPECT_DOUBLE_EQ(right->get_data()[0], 0.2);
     EXPECT_DOUBLE_EQ(right->get_data()[1], 0.4);
+}
+
+TEST_F(BufferManagerTest, AParallelBufferProcessorRunsOnceAndOnlyWhenTheParallelTokenIsProcessed)
+{
+    manager = make_manager(2, 0, 512);
+    const auto child = make_child(0.0);
+    const auto counter = std::make_shared<RunCounter>();
+    manager->add_buffer(child, ProcessingToken::AUDIO_PARALLEL, 0);
+    manager->add_processor(counter, child, ProcessingToken::AUDIO_PARALLEL);
+
+    manager->process_token(ProcessingToken::AUDIO_BACKEND, 512);
+    EXPECT_EQ(counter->runs, 0);
+
+    manager->process_token(ProcessingToken::AUDIO_PARALLEL, 512);
+    EXPECT_EQ(counter->runs, 1);
+}
+
+TEST_F(BufferManagerTest, TheParallelUnitMixesItsChildrenAndLeavesTheBackendUnitUntouched)
+{
+    manager = make_manager(2, 0, 512);
+    manager->add_buffer(make_child(0.25), ProcessingToken::AUDIO_PARALLEL, 0);
+    manager->add_buffer(make_child(0.75), ProcessingToken::AUDIO_PARALLEL, 0);
+
+    manager->process_token(ProcessingToken::AUDIO_PARALLEL, 512);
+
+    EXPECT_DOUBLE_EQ(manager->get_buffer_data(ProcessingToken::AUDIO_PARALLEL, 0).front(), 0.5);
+    EXPECT_DOUBLE_EQ(manager->get_buffer_data(ProcessingToken::AUDIO_BACKEND, 0).front(), 0.0);
+}
+
+TEST_F(BufferManagerTest, AParallelProcessorFeedsTheParallelRootMix)
+{
+    manager = make_manager(2, 0, 512);
+    const auto child = make_child(0.0);
+    manager->add_buffer(child, ProcessingToken::AUDIO_PARALLEL, 0);
+    manager->add_processor(std::make_shared<FillProcessor>(0.6), child, ProcessingToken::AUDIO_PARALLEL);
+
+    manager->process_token(ProcessingToken::AUDIO_PARALLEL, 512);
+
+    EXPECT_DOUBLE_EQ(manager->get_buffer_data(ProcessingToken::AUDIO_PARALLEL, 0).front(), 0.6);
 }
 
 TEST_F(BufferManagerTest, AnInputListenerReceivesInputUntilUnregistered)

@@ -170,6 +170,20 @@ TEST_F(BufferAccessControlTest, AddBufferRefusesAChildWhoseTokenTheStrictRootRej
     EXPECT_TRUE(access->get_audio_buffers(Buffers::AUDIO_BACKEND, 0).empty());
 }
 
+TEST_F(BufferAccessControlTest, TheParallelRootAcceptsChildrenOfEitherDefaultProcessorToken)
+{
+    auto gpu_child = std::make_shared<AudioBuffer>();
+    gpu_child->set_default_processor(std::make_shared<TokenedProbe>(Buffers::AUDIO_PARALLEL));
+    auto cpu_child = std::make_shared<AudioBuffer>();
+    cpu_child->set_default_processor(std::make_shared<TokenedProbe>(Buffers::AUDIO_BACKEND));
+
+    EXPECT_NO_THROW(access->add_buffer(gpu_child, Buffers::AUDIO_PARALLEL, 0));
+    EXPECT_NO_THROW(access->add_buffer(cpu_child, Buffers::AUDIO_PARALLEL, 0));
+
+    EXPECT_EQ(access->get_audio_buffers(Buffers::AUDIO_PARALLEL, 0),
+        (std::vector<std::shared_ptr<AudioBuffer>> { gpu_child, cpu_child }));
+}
+
 TEST_F(BufferAccessControlTest, TerminateZeroesAttachedChildren)
 {
     auto child = std::make_shared<AudioBuffer>();

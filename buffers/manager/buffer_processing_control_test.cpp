@@ -69,15 +69,39 @@ protected:
     std::shared_ptr<CountingProbe> probe;
 };
 
-TEST_F(BufferProcessingControlTest, AddProcessorToBufferRegistersOnItsChannelChain)
+TEST_F(BufferProcessingControlTest, AddProcessorToBufferAttachesToItsOwnChainAndNotTheUnitChain)
 {
     auto child = std::make_shared<AudioBuffer>();
     access->add_buffer(child, Buffers::AUDIO_BACKEND, 1);
 
     control->add_processor(probe, child, Buffers::AUDIO_BACKEND);
 
-    EXPECT_TRUE(holds(channel_chain(1), child, probe));
+    EXPECT_TRUE(holds(child->get_processing_chain(), child, probe));
+    EXPECT_FALSE(holds(channel_chain(1), child, probe));
     EXPECT_FALSE(holds(channel_chain(0), child, probe));
+}
+
+TEST_F(BufferProcessingControlTest, AddProcessorToABufferUnderTheParallelTokenAttachesToItsOwnChain)
+{
+    auto child = std::make_shared<AudioBuffer>();
+    access->add_buffer(child, Buffers::AUDIO_PARALLEL, 0);
+
+    control->add_processor(probe, child, Buffers::AUDIO_PARALLEL);
+
+    EXPECT_TRUE(holds(child->get_processing_chain(), child, probe));
+    EXPECT_FALSE(holds(access->get_audio_processing_chain(Buffers::AUDIO_PARALLEL, 0), child, probe));
+    EXPECT_FALSE(units->has_audio_unit(Buffers::AUDIO_BACKEND));
+}
+
+TEST_F(BufferProcessingControlTest, AddProcessorWithATokenThatHasNoUnitIsDroppedAndCreatesNothing)
+{
+    auto child = std::make_shared<AudioBuffer>();
+    access->add_buffer(child, Buffers::AUDIO_BACKEND, 0);
+
+    control->add_processor(probe, child, Buffers::AUDIO_PARALLEL);
+
+    EXPECT_FALSE(units->has_audio_unit(Buffers::AUDIO_PARALLEL));
+    EXPECT_FALSE(holds(child->get_processing_chain(), child, probe));
 }
 
 TEST_F(BufferProcessingControlTest, AddProcessorToBufferWithNoMatchingChannelIsDropped)
@@ -126,11 +150,24 @@ TEST_F(BufferProcessingControlTest, RemoveProcessorFromABufferDetachesIt)
     auto child = std::make_shared<AudioBuffer>();
     access->add_buffer(child, Buffers::AUDIO_BACKEND, 1);
     control->add_processor(probe, child, Buffers::AUDIO_BACKEND);
-    ASSERT_TRUE(holds(channel_chain(1), child, probe));
+    ASSERT_TRUE(holds(child->get_processing_chain(), child, probe));
 
     control->remove_processor(probe, child, Buffers::AUDIO_BACKEND);
 
+    EXPECT_FALSE(holds(child->get_processing_chain(), child, probe));
     EXPECT_FALSE(holds(channel_chain(1), child, probe));
+}
+
+TEST_F(BufferProcessingControlTest, RemoveProcessorFromABufferUnderTheParallelTokenDetachesIt)
+{
+    auto child = std::make_shared<AudioBuffer>();
+    access->add_buffer(child, Buffers::AUDIO_PARALLEL, 0);
+    control->add_processor(probe, child, Buffers::AUDIO_PARALLEL);
+    ASSERT_TRUE(holds(child->get_processing_chain(), child, probe));
+
+    control->remove_processor(probe, child, Buffers::AUDIO_PARALLEL);
+
+    EXPECT_FALSE(holds(child->get_processing_chain(), child, probe));
 }
 
 TEST_F(BufferProcessingControlTest, RemoveProcessorFromAMissingChannelCreatesNothing)
@@ -190,7 +227,7 @@ TEST_F(BufferProcessingControlTest, AChildMarkedForRemovalIsNotSummedAndLeavesTh
     EXPECT_TRUE(access->get_audio_buffers(Buffers::AUDIO_BACKEND, 1).empty());
 }
 
-TEST_F(BufferProcessingControlTest, AttachQuickProcessToABufferRegistersTheReturnedProcessor)
+TEST_F(BufferProcessingControlTest, AttachQuickProcessToABufferRegistersTheReturnedProcessorOnItsOwnChain)
 {
     auto child = std::make_shared<AudioBuffer>();
     access->add_buffer(child, Buffers::AUDIO_BACKEND, 1);
@@ -199,7 +236,8 @@ TEST_F(BufferProcessingControlTest, AttachQuickProcessToABufferRegistersTheRetur
     auto quick = control->attach_quick_process(body, child, Buffers::AUDIO_BACKEND);
 
     ASSERT_NE(quick, nullptr);
-    EXPECT_TRUE(holds(channel_chain(1), child, quick));
+    EXPECT_TRUE(holds(child->get_processing_chain(), child, quick));
+    EXPECT_FALSE(holds(channel_chain(1), child, quick));
 }
 
 TEST_F(BufferProcessingControlTest, AttachQuickProcessToAChannelRegistersOnTheRoot)

@@ -2,6 +2,7 @@
 
 #include "MayaFlux/Buffers/BufferProcessingChain.hpp"
 #include "MayaFlux/Buffers/Managers/TokenUnitManager.hpp"
+#include "MayaFlux/Buffers/Root/RootParallelAudioBuffer.hpp"
 
 namespace MayaFlux::Test {
 
@@ -31,6 +32,23 @@ TEST_F(TokenUnitManagerTest, ReportsTheDefaultTokens)
 {
     EXPECT_EQ(units->get_default_audio_token(), Buffers::AUDIO_BACKEND);
     EXPECT_EQ(units->get_default_graphics_token(), Buffers::GRAPHICS_BACKEND);
+}
+
+TEST_F(TokenUnitManagerTest, TheParallelUnitCreatesParallelRootsAndTheBackendUnitDoesNot)
+{
+    units->ensure_audio_channels(Buffers::AUDIO_PARALLEL, 2);
+    units->ensure_audio_channels(Buffers::AUDIO_BACKEND, 2);
+
+    for (uint32_t channel = 0; channel < 2; ++channel) {
+        EXPECT_NE(std::dynamic_pointer_cast<Buffers::RootParallelAudioBuffer>(
+                      units->get_audio_unit(Buffers::AUDIO_PARALLEL).get_buffer(channel)),
+            nullptr)
+            << "channel " << channel;
+        EXPECT_EQ(std::dynamic_pointer_cast<Buffers::RootParallelAudioBuffer>(
+                      units->get_audio_unit(Buffers::AUDIO_BACKEND).get_buffer(channel)),
+            nullptr)
+            << "channel " << channel;
+    }
 }
 
 TEST_F(TokenUnitManagerTest, NoUnitsExistUntilRequested)

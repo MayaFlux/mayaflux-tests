@@ -626,6 +626,20 @@ namespace {
         EXPECT_EQ(seen.Task, Vruta::ProcessingToken::SAMPLE_ACCURATE);
     }
 
+    TEST(SubsystemExternalHookTest, TheDefaultsDeclineEveryTokenAndDeliverNothing)
+    {
+        auto counters = std::make_shared<SubsystemCounters>();
+        FakeSubsystem subsystem(SubsystemType::AUDIO, audio_tokens(), counters);
+
+        int delivered = 0;
+        const Core::ExternalSink sink = [&delivered](std::any&&) { ++delivered; };
+
+        EXPECT_FALSE(subsystem.supports_external(visual_tokens()));
+        EXPECT_FALSE(subsystem.supports_external(audio_tokens()));
+        EXPECT_FALSE(subsystem.process_external(visual_tokens(), 512, sink));
+        EXPECT_EQ(delivered, 0);
+    }
+
     TEST(SubsystemManagerTest, CombinedTokenOperationRegistersNoSubsystem)
     {
         ManagerRig rig;
