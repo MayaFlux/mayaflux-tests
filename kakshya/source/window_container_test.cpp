@@ -10,6 +10,7 @@ namespace MayaFlux::Test {
 namespace {
 
     using Kakshya::DataDimension;
+    using Kakshya::DataVariant;
     using Kakshya::ImageFormat;
     using Kakshya::ProcessingState;
     using Kakshya::Region;
@@ -602,6 +603,116 @@ namespace {
         WindowRig rig(k_history, GetParam().surface);
 
         EXPECT_EQ(rig.container->get_image_format(), GetParam().image);
+    }
+
+    std::vector<uint8_t> crop_of(const std::vector<uint8_t>& frame, uint32_t y0, uint32_t x0, uint32_t y1, uint32_t x1)
+    {
+        std::vector<uint8_t> out;
+        for (uint32_t y = y0; y <= y1; ++y) {
+            for (uint32_t x = x0; x <= x1; ++x) {
+                for (uint32_t c = 0; c < k_surface_channels; ++c) {
+                    out.push_back(frame[(y * k_surface_width + x) * k_surface_channels + c]);
+                }
+            }
+        }
+        return out;
+    }
+
+    TEST_F(WindowContainerRigTest, RegionCropsAreEmptyBeforeTheFirstCapture)
+    {
+        rig.container->create_default_processor();
+        rig.container->add_region_group(RegionGroup("crops", { Region(std::vector<uint64_t> { 0, 0 }, std::vector<uint64_t> { 1, 1 }) }));
+
+        EXPECT_TRUE(rig.container->region_crops("crops").empty());
+    }
+
+    TEST_F(WindowContainerRigTest, RegionCropsOfAnUnknownOrEmptyGroupAreEmpty)
+    {
+        rig.container->create_default_processor();
+        capture(1);
+        rig.container->add_region_group(RegionGroup("empty"));
+
+        EXPECT_TRUE(rig.container->region_crops("absent").empty());
+        EXPECT_TRUE(rig.container->region_crops("empty").empty());
+    }
+
+    const Kakshya::DataVariant& pixels_of(const Kakshya::OrganizedRegion& crop)
+    {
+        return crop.segments.front().cache.data.front();
+    }
+
+    TEST_F(WindowContainerRigTest, RegionCropsComeInGroupOrderEachWithItsRegion)
+    {
+        rig.container->create_default_processor();
+        const auto frame = capture(1);
+        Region late(std::vector<uint64_t> { 2, 2 }, std::vector<uint64_t> { 2, 3 });
+        late.label = "late";
+        Region early(std::vector<uint64_t> { 0, 0 }, std::vector<uint64_t> { 1, 1 });
+        early.label = "early";
+        rig.container->add_region_group(RegionGroup("crops", { late, early }));
+
+        const auto crops = rig.container->region_crops("crops");
+
+        ASSERT_EQ(crops.size(), 2U);
+        EXPECT_EQ(crops[0].group_name, "crops");
+        EXPECT_EQ(crops[0].region_index, 0U);
+        EXPECT_EQ(crops[0].segments.front().source_region.label, std::optional<std::string> { "late" });
+        EXPECT_TRUE(crops[0].segments.front().is_cached);
+        EXPECT_EQ(raw_bytes(pixels_of(crops[0])), crop_of(frame, 2, 2, 2, 3));
+        EXPECT_EQ(crops[1].region_index, 1U);
+        EXPECT_EQ(crops[1].segments.front().source_region.label, std::optional<std::string> { "early" });
+        EXPECT_EQ(raw_bytes(pixels_of(crops[1])), crop_of(frame, 0, 0, 1, 1));
+    }
+
+    TEST_F(WindowContainerRigTest, RegionCropsCarryTheGroupAndRegionFacets)
+    {
+        rig.container->create_default_processor();
+        capture(1);
+        const Facet<int> from_region;
+        const Facet<int> from_group;
+        Region region(std::vector<uint64_t> { 0, 0 }, std::vector<uint64_t> { 1, 1 });
+        region.set(from_region, 7);
+        RegionGroup group("crops", { region });
+        group.set(from_group, 3);
+        rig.container->add_region_group(group);
+
+        const auto crops = rig.container->region_crops("crops");
+
+        ASSERT_EQ(crops.size(), 1U);
+        ASSERT_NE(crops[0].get(from_region), nullptr);
+        EXPECT_EQ(*crops[0].get(from_region), 7);
+        ASSERT_NE(crops[0].get(from_group), nullptr);
+        EXPECT_EQ(*crops[0].get(from_group), 3);
+    }
+
+    TEST_F(WindowContainerRigTest, RegionCropsFollowTheLatestCaptureAcrossTheWholeRing)
+    {
+        rig.container->create_default_processor();
+        rig.container->add_region_group(RegionGroup("crops", { Region(std::vector<uint64_t> { 1, 1 }, std::vector<uint64_t> { 2, 2 }) }));
+
+        std::vector<uint8_t> frame;
+        for (uint64_t seed = 1; seed <= k_history + 3; ++seed) {
+            frame = capture(seed);
+            const auto crops = rig.container->region_crops("crops");
+            ASSERT_EQ(crops.size(), 1U) << "capture " << seed;
+            EXPECT_EQ(raw_bytes(pixels_of(crops[0])), crop_of(frame, 1, 1, 2, 2)) << "capture " << seed;
+        }
+    }
+
+    TEST_F(WindowContainerRigTest, RegionCropsLeaveTheSurfaceAndDoNotDependOnProcessedData)
+    {
+        rig.container->create_default_processor();
+        const auto frame = capture(1);
+        rig.container->add_region_group(RegionGroup("crops", { Region(std::vector<uint64_t> { 1, 1 }, std::vector<uint64_t> { 2, 2 }) }));
+
+        (void)rig.container->region_crops("crops");
+        EXPECT_EQ(processed_pixels(*rig.container), frame);
+
+        rig.container->get_processed_data() = { DataVariant(std::vector<uint8_t> { 9, 9, 9, 9 }) };
+        const auto crops = rig.container->region_crops("crops");
+
+        ASSERT_EQ(crops.size(), 1U);
+        EXPECT_EQ(raw_bytes(pixels_of(crops[0])), crop_of(frame, 1, 1, 2, 2));
     }
 
     TEST(WindowContainerTest, WithoutADisplayTheImageFormatFallsBackToBgraSrgb)

@@ -1,7 +1,7 @@
 #include "gtest/gtest.h"
 
 #include "MayaFlux/Kakshya/Region/Region.hpp"
-#include "MayaFlux/Kakshya/Region/RegionCacheManager.hpp"
+#include "MayaFlux/Kakshya/Region/RegionHash.hpp"
 
 namespace MayaFlux::Test {
 namespace {
