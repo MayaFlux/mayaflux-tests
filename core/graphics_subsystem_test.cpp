@@ -181,10 +181,11 @@ TEST(GraphicsSubsystemTest, ProcessNeverCreatesAParallelUnit)
     GraphicsSubsystemRig rig;
     ASSERT_NO_THROW(rig.subsystem->initialize(rig.handle));
 
+    const auto before = rig.buffers->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL);
     rig.subsystem->process();
     rig.subsystem->process();
 
-    EXPECT_EQ(rig.buffers->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL), 0U);
+    EXPECT_EQ(rig.buffers->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL), before);
 }
 
 TEST(GraphicsSubsystemTest, InitializeMakesSubsystemReadyAndBringsUpPortal)

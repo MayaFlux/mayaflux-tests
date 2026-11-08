@@ -101,5 +101,39 @@ namespace {
         EXPECT_DOUBLE_EQ(Kinesis::ping_pong(3.0, 5.0, 2.0), 5.0);
     }
 
+    TEST(KinesisScalarSoftLimitTest, IsTheIdentityUpToTheThreshold)
+    {
+        EXPECT_DOUBLE_EQ(Kinesis::soft_limit(0.0), 0.0);
+        EXPECT_DOUBLE_EQ(Kinesis::soft_limit(0.5), 0.5);
+        EXPECT_DOUBLE_EQ(Kinesis::soft_limit(-0.5), -0.5);
+        EXPECT_DOUBLE_EQ(Kinesis::soft_limit(0.95), 0.95);
+    }
+
+    TEST(KinesisScalarSoftLimitTest, KeepsTheSignAndIsOddInput)
+    {
+        EXPECT_DOUBLE_EQ(Kinesis::soft_limit(-2.0), -Kinesis::soft_limit(2.0));
+        EXPECT_LT(Kinesis::soft_limit(-2.0), 0.0);
+    }
+
+    TEST(KinesisScalarSoftLimitTest, IsMonotonicAndNeverExceedsTheCeiling)
+    {
+        double previous = Kinesis::soft_limit(0.0);
+        for (int step = 1; step <= 400; ++step) {
+            const double x = step * 0.05;
+            const double y = Kinesis::soft_limit(x);
+            EXPECT_GE(y, previous) << "input " << x;
+            EXPECT_LE(y, 1.0) << "input " << x;
+            previous = y;
+        }
+    }
+
+    TEST(KinesisScalarSoftLimitTest, HonoursAnExplicitThresholdAndCeiling)
+    {
+        const double limited = Kinesis::soft_limit(0.4, 0.3, 0.5);
+        EXPECT_GT(limited, 0.3);
+        EXPECT_LT(limited, 0.5);
+        EXPECT_DOUBLE_EQ(Kinesis::soft_limit(0.2, 0.3, 0.5), 0.2);
+    }
+
 } // namespace
 } // namespace MayaFlux::Test

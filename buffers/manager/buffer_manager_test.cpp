@@ -271,6 +271,17 @@ TEST_F(BufferManagerTest, TheDefaultOutputIsLimitedToFullScale)
     EXPECT_TRUE(std::ranges::all_of(output, [](double sample) { return std::abs(sample) <= 1.0; }));
 }
 
+TEST_F(BufferManagerTest, TheParallelMixIsLimitedToFullScale)
+{
+    manager = make_manager(2, 0, 512);
+    manager->add_buffer(make_child(10.0), ProcessingToken::AUDIO_PARALLEL, 0);
+
+    manager->process_token(ProcessingToken::AUDIO_PARALLEL, 512);
+
+    const auto& output = manager->get_buffer_data(ProcessingToken::AUDIO_PARALLEL, 0);
+    EXPECT_TRUE(std::ranges::all_of(output, [](double sample) { return std::abs(sample) <= 1.0; }));
+}
+
 TEST_F(BufferManagerTest, AddProcessorToABufferRunsItBeforeTheChannelSum)
 {
     manager = make_manager(2, 0, 512);

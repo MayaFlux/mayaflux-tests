@@ -221,7 +221,7 @@ namespace {
         rig.buffers->add_buffer(child, token, channel);
     }
 
-    TEST(AudioSubsystemTest, ParallelRootReplacesTheBackendRootOnItsChannelOnly)
+    TEST(AudioSubsystemTest, ParallelRootIsSummedWithTheBackendRootOnItsChannelOnly)
     {
         SubsystemRig rig(2);
         REQUIRE_AUDIO(rig);
@@ -234,8 +234,25 @@ namespace {
         const auto output = rig.render(k_buffer_size);
 
         for (uint32_t frame = 0; frame < k_buffer_size; ++frame) {
-            ASSERT_DOUBLE_EQ(output[static_cast<size_t>(frame) * 2], 0.25) << "frame " << frame;
+            ASSERT_DOUBLE_EQ(output[static_cast<size_t>(frame) * 2], 0.55) << "frame " << frame;
             ASSERT_DOUBLE_EQ(output[static_cast<size_t>(frame) * 2 + 1], 0.6) << "frame " << frame;
+        }
+    }
+
+    TEST(AudioSubsystemTest, TheSumOfBackendAndParallelIsLimitedAtTheDevice)
+    {
+        SubsystemRig rig(2);
+        REQUIRE_AUDIO(rig);
+
+        add_level_child(rig, Buffers::ProcessingToken::AUDIO_BACKEND, 0, 0.9);
+        add_level_child(rig, Buffers::ProcessingToken::AUDIO_PARALLEL, 0, 0.9);
+        rig.buffers->process_token(Buffers::ProcessingToken::AUDIO_PARALLEL, k_buffer_size);
+
+        const auto output = rig.render(k_buffer_size);
+
+        for (uint32_t frame = 0; frame < k_buffer_size; ++frame) {
+            ASSERT_LE(output[static_cast<size_t>(frame) * 2], 1.0) << "frame " << frame;
+            ASSERT_GT(output[static_cast<size_t>(frame) * 2], 0.95) << "frame " << frame;
         }
     }
 
@@ -311,10 +328,11 @@ namespace {
         SubsystemRig rig(2);
         REQUIRE_AUDIO(rig);
 
+        const auto before = rig.buffers->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL);
         (void)rig.render(k_buffer_size);
         (void)rig.render(k_buffer_size);
 
-        EXPECT_EQ(rig.buffers->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL), 0U);
+        EXPECT_EQ(rig.buffers->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL), before);
     }
 
     TEST(AudioSubsystemTest, ProcessOutputWithoutAParallelUnitIsUnchanged)
