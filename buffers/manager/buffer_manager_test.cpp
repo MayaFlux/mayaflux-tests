@@ -5,6 +5,7 @@
 #include "MayaFlux/Buffers/BufferProcessor.hpp"
 #include "MayaFlux/Buffers/Input/InputAudioBuffer.hpp"
 #include "MayaFlux/Buffers/Root/RootAudioBuffer.hpp"
+#include "MayaFlux/Buffers/Root/RootParallelAudioBuffer.hpp"
 
 namespace MayaFlux::Test {
 
@@ -497,6 +498,36 @@ TEST_F(BufferManagerTest, TheParallelUnitMixesItsChildrenAndLeavesTheBackendUnit
 
     EXPECT_DOUBLE_EQ(manager->get_buffer_data(ProcessingToken::AUDIO_PARALLEL, 0).front(), 0.5);
     EXPECT_DOUBLE_EQ(manager->get_buffer_data(ProcessingToken::AUDIO_BACKEND, 0).front(), 0.0);
+}
+
+TEST_F(BufferManagerTest, EachParallelCycleCompletesAsOnePublishedBlockPerChannel)
+{
+    manager = make_manager(2, 0, 512);
+    manager->add_buffer(make_child(0.25), ProcessingToken::AUDIO_PARALLEL, 0);
+    manager->add_buffer(make_child(0.5), ProcessingToken::AUDIO_PARALLEL, 1);
+
+    manager->process_token(ProcessingToken::AUDIO_PARALLEL, 512);
+    manager->process_token(ProcessingToken::AUDIO_PARALLEL, 512);
+
+    for (uint32_t channel = 0; channel < 2; ++channel) {
+        const auto root = std::dynamic_pointer_cast<Buffers::RootParallelAudioBuffer>(
+            manager->get_root_audio_buffer(ProcessingToken::AUDIO_PARALLEL, channel));
+        ASSERT_NE(root, nullptr);
+        EXPECT_DOUBLE_EQ(root->read_block().front(), channel == 0 ? 0.25 : 0.5);
+        EXPECT_EQ(root->block_generation(), 2U);
+    }
+}
+
+TEST_F(BufferManagerTest, TheBackendRootIsReadAsItsOwnDataAndNoParallelRootExistsForIt)
+{
+    manager = make_manager(2, 0, 512);
+    manager->add_buffer(make_child(0.25), ProcessingToken::AUDIO_BACKEND, 0);
+    manager->process_channel(ProcessingToken::AUDIO_BACKEND, 0, 512);
+
+    const auto root = manager->get_root_audio_buffer(ProcessingToken::AUDIO_BACKEND, 0);
+
+    EXPECT_EQ(std::dynamic_pointer_cast<Buffers::RootParallelAudioBuffer>(root), nullptr);
+    EXPECT_EQ(root->read_block().data(), root->get_data().data());
 }
 
 TEST_F(BufferManagerTest, AParallelProcessorFeedsTheParallelRootMix)

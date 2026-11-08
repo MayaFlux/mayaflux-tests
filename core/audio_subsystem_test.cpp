@@ -273,6 +273,20 @@ namespace {
         }
     }
 
+    TEST(AudioSubsystemTest, ProcessOutputReadsThePublishedBlockNotTheWorkingMix)
+    {
+        SubsystemRig rig(2);
+        REQUIRE_AUDIO(rig);
+
+        add_level_child(rig, Buffers::ProcessingToken::AUDIO_PARALLEL, 0, 0.25);
+        rig.buffers->process_token(Buffers::ProcessingToken::AUDIO_PARALLEL, k_buffer_size);
+
+        auto& working = rig.buffers->get_buffer_data(Buffers::ProcessingToken::AUDIO_PARALLEL, 0);
+        std::ranges::fill(working, 0.9);
+
+        EXPECT_DOUBLE_EQ(rig.render(k_buffer_size)[0], 0.25);
+    }
+
     TEST(AudioSubsystemTest, ParallelRootFollowsItsOwnReprocessing)
     {
         SubsystemRig rig(2);

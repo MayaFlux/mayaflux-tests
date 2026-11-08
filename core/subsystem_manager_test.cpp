@@ -661,6 +661,38 @@ namespace {
         EXPECT_DOUBLE_EQ(backend.read_channel_data(0).front(), 0.0);
     }
 
+    TEST(BufferProcessingHandleTest, ReadChannelBlockReturnsTheLatestPublishedParallelBlock)
+    {
+        auto manager = std::make_shared<Buffers::BufferManager>(2, 0, 48000, 512);
+        Core::BufferProcessingHandle backend(manager, Buffers::ProcessingToken::AUDIO_BACKEND);
+        auto parallel = backend.for_token(Buffers::ProcessingToken::AUDIO_PARALLEL);
+
+        auto child = std::make_shared<Buffers::AudioBuffer>(0, 512);
+        child->resize(512);
+        std::ranges::fill(child->get_data(), 0.5);
+        manager->add_buffer(child, Buffers::ProcessingToken::AUDIO_PARALLEL, 0);
+
+        EXPECT_DOUBLE_EQ(parallel.read_channel_block(0).front(), 0.0);
+
+        parallel.process(512);
+        EXPECT_DOUBLE_EQ(parallel.read_channel_block(0).front(), 0.5);
+
+        std::ranges::fill(child->get_data(), 0.9);
+        EXPECT_DOUBLE_EQ(parallel.read_channel_block(0).front(), 0.5);
+
+        parallel.process(512);
+        EXPECT_DOUBLE_EQ(parallel.read_channel_block(0).front(), 0.9);
+    }
+
+    TEST(BufferProcessingHandleTest, ReadChannelBlockOnTheBackendIsTheRootsOwnData)
+    {
+        auto manager = std::make_shared<Buffers::BufferManager>(2, 0, 48000, 512);
+        Core::BufferProcessingHandle backend(manager, Buffers::ProcessingToken::AUDIO_BACKEND);
+
+        EXPECT_EQ(backend.read_channel_block(0).data(), backend.read_channel_data(0).data());
+        EXPECT_EQ(backend.read_channel_block(0).size(), backend.read_channel_data(0).size());
+    }
+
     TEST(SubsystemManagerTest, CombinedTokenOperationRegistersNoSubsystem)
     {
         ManagerRig rig;
