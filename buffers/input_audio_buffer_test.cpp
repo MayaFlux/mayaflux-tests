@@ -508,6 +508,63 @@ namespace {
         EXPECT_EQ(control.get_input_buffer(0)->get_data(), (std::vector<double> { 1, 2, 3, 4 }));
     }
 
+    TEST(BufferInputControlTest, InputGrowthRebuildsTheBuffersAndDropsTheirListeners)
+    {
+        const PreferredSizeGuard guard(4);
+        BufferInputControl control;
+        control.setup_audio_input_buffers(1, 4);
+        const auto old_buffer = control.get_input_buffer(0);
+        const auto left = make_listener();
+        control.register_audio_input_listener(left, 0);
+        std::vector<double> input { 1, -1, 2, -2, 3, -3, 4, -4 };
+
+        control.process_audio_input(input.data(), 2, 4);
+
+        ASSERT_EQ(control.get_audio_input_channel_count(), 2U);
+        EXPECT_NE(control.get_input_buffer(0), old_buffer);
+        EXPECT_TRUE(control.get_input_buffer(0)->get_listeners().empty());
+        EXPECT_EQ(left->get_data(), std::vector<double>(4, 0.0));
+    }
+
+    TEST(BufferInputControlTest, AListenerOnASilencedChannelReceivesZeros)
+    {
+        const PreferredSizeGuard guard(4);
+        BufferInputControl control;
+        control.setup_audio_input_buffers(2, 4);
+        const auto right = make_listener();
+        control.register_audio_input_listener(right, 1);
+        std::vector<double> stereo { 1, -1, 2, -2, 3, -3, 4, -4 };
+        std::vector<double> mono { 5, 6, 7, 8 };
+        control.process_audio_input(stereo.data(), 2, 4);
+        ASSERT_EQ(right->get_data(), (std::vector<double> { -1, -2, -3, -4 }));
+
+        control.process_audio_input(mono.data(), 1, 4);
+
+        EXPECT_EQ(right->get_data(), std::vector<double>(4, 0.0));
+    }
+
+    TEST(BufferInputControlTest, ANullListenerIsIgnored)
+    {
+        const PreferredSizeGuard guard(4);
+        BufferInputControl control;
+        control.setup_audio_input_buffers(1, 4);
+
+        EXPECT_NO_THROW(control.register_audio_input_listener(nullptr, 0));
+
+        EXPECT_TRUE(control.get_input_buffer(0)->get_listeners().empty());
+    }
+
+    TEST(BufferInputControlTest, ProcessingWithNoChannelsIsANoOp)
+    {
+        const PreferredSizeGuard guard(4);
+        BufferInputControl control;
+        std::vector<double> input { 1, 2, 3, 4 };
+
+        EXPECT_NO_THROW(control.process_audio_input(input.data(), 0, 4));
+
+        EXPECT_EQ(control.get_audio_input_channel_count(), 0U);
+    }
+
     TEST(BufferInputControlTest, ListenersFollowEachBlock)
     {
         const PreferredSizeGuard guard(2);
