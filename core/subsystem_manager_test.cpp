@@ -632,12 +632,47 @@ namespace {
         FakeSubsystem subsystem(SubsystemType::AUDIO, audio_tokens(), counters);
 
         int delivered = 0;
-        const Core::ExternalSink sink = [&delivered](std::any&&) { ++delivered; };
+        const Core::ExternalSink sink = [&delivered] { ++delivered; };
 
         EXPECT_FALSE(subsystem.supports_external(visual_tokens()));
         EXPECT_FALSE(subsystem.supports_external(audio_tokens()));
         EXPECT_FALSE(subsystem.process_external(visual_tokens(), 512, sink));
         EXPECT_EQ(delivered, 0);
+    }
+
+    TEST(BufferProcessingHandleTest, ForTokenScopesAHandleToAnotherTokenOnTheSameManager)
+    {
+        auto manager = std::make_shared<Buffers::BufferManager>(2, 0, 48000, 512);
+        Core::BufferProcessingHandle backend(manager, Buffers::ProcessingToken::AUDIO_BACKEND);
+        const auto parallel = backend.for_token(Buffers::ProcessingToken::AUDIO_PARALLEL);
+
+        EXPECT_EQ(backend.channel_count(), 2U);
+        EXPECT_EQ(parallel.channel_count(), 0U);
+
+        auto child = std::make_shared<Buffers::AudioBuffer>(0, 512);
+        child->resize(512);
+        std::ranges::fill(child->get_data(), 0.5);
+        manager->add_buffer(child, Buffers::ProcessingToken::AUDIO_PARALLEL, 0);
+
+        EXPECT_EQ(parallel.channel_count(), 1U);
+        EXPECT_EQ(backend.channel_count(), 2U);
+    }
+
+    TEST(BufferProcessingHandleTest, AParallelHandleProcessesAndReadsOnlyItsOwnToken)
+    {
+        auto manager = std::make_shared<Buffers::BufferManager>(2, 0, 48000, 512);
+        Core::BufferProcessingHandle backend(manager, Buffers::ProcessingToken::AUDIO_BACKEND);
+        auto parallel = backend.for_token(Buffers::ProcessingToken::AUDIO_PARALLEL);
+
+        auto child = std::make_shared<Buffers::AudioBuffer>(0, 512);
+        child->resize(512);
+        std::ranges::fill(child->get_data(), 0.5);
+        manager->add_buffer(child, Buffers::ProcessingToken::AUDIO_PARALLEL, 0);
+
+        parallel.process(512);
+
+        EXPECT_DOUBLE_EQ(parallel.read_channel_data(0).front(), 0.5);
+        EXPECT_DOUBLE_EQ(backend.read_channel_data(0).front(), 0.0);
     }
 
     TEST(SubsystemManagerTest, CombinedTokenOperationRegistersNoSubsystem)

@@ -193,6 +193,184 @@ namespace {
             [probe](const double* data, uint32_t size) { probe->record(data, size); });
     }
 
+    Core::SubsystemTokens parallel_tokens()
+    {
+        return {
+            .Buffer = Buffers::ProcessingToken::AUDIO_PARALLEL,
+            .Node = Nodes::ProcessingToken::AUDIO_RATE,
+            .Task = Vruta::ProcessingToken::SAMPLE_ACCURATE
+        };
+    }
+
+    TEST(AudioSubsystemTest, SupportsOnlyTheParallelBufferTokenForExternalProcessing)
+    {
+        SubsystemRig rig(2);
+        ASSERT_TRUE(rig.construct());
+
+        EXPECT_TRUE(rig.subsystem->supports_external(parallel_tokens()));
+        EXPECT_FALSE(rig.subsystem->supports_external(rig.subsystem->get_tokens()));
+    }
+
+    TEST(AudioSubsystemTest, ProcessExternalCallsTheSinkForTheParallelTokenOnly)
+    {
+        SubsystemRig rig(2);
+        if (!rig.initialize_only())
+            GTEST_SKIP() << "Audio subsystem could not be initialized in this environment";
+
+        int called = 0;
+        const Core::ExternalSink sink = [&called] { ++called; };
+
+        EXPECT_FALSE(rig.subsystem->process_external(rig.subsystem->get_tokens(), k_buffer_size, sink));
+        EXPECT_EQ(called, 0);
+
+        EXPECT_TRUE(rig.subsystem->process_external(parallel_tokens(), k_buffer_size, sink));
+        EXPECT_EQ(called, 1);
+    }
+
+    TEST(AudioSubsystemTest, ProcessOutputReadsTheParallelUnitAsTheChannelRoot)
+    {
+        SubsystemRig rig(2);
+        REQUIRE_AUDIO(rig);
+
+        constexpr double levels[] = { 0.25, 0.5 };
+        for (uint32_t channel = 0; channel < 2; ++channel) {
+            auto child = std::make_shared<Buffers::AudioBuffer>(channel, k_buffer_size);
+            child->resize(k_buffer_size);
+            std::ranges::fill(child->get_data(), levels[channel]);
+            rig.buffers->add_buffer(child, Buffers::ProcessingToken::AUDIO_PARALLEL, channel);
+        }
+        rig.buffers->process_token(Buffers::ProcessingToken::AUDIO_PARALLEL, k_buffer_size);
+
+        const auto output = rig.render(k_buffer_size);
+
+        EXPECT_DOUBLE_EQ(output[0], levels[0]);
+        EXPECT_DOUBLE_EQ(output[1], levels[1]);
+    }
+
+    void add_level_child(SubsystemRig& rig, Buffers::ProcessingToken token, uint32_t channel, double level)
+    {
+        auto child = std::make_shared<Buffers::AudioBuffer>(channel, k_buffer_size);
+        child->resize(k_buffer_size);
+        std::ranges::fill(child->get_data(), level);
+        rig.buffers->add_buffer(child, token, channel);
+    }
+
+    TEST(AudioSubsystemTest, ParallelRootReplacesTheBackendRootOnItsChannelOnly)
+    {
+        SubsystemRig rig(2);
+        REQUIRE_AUDIO(rig);
+
+        add_level_child(rig, Buffers::ProcessingToken::AUDIO_BACKEND, 0, 0.3);
+        add_level_child(rig, Buffers::ProcessingToken::AUDIO_BACKEND, 1, 0.6);
+        add_level_child(rig, Buffers::ProcessingToken::AUDIO_PARALLEL, 0, 0.25);
+        rig.buffers->process_token(Buffers::ProcessingToken::AUDIO_PARALLEL, k_buffer_size);
+
+        const auto output = rig.render(k_buffer_size);
+
+        for (uint32_t frame = 0; frame < k_buffer_size; ++frame) {
+            ASSERT_DOUBLE_EQ(output[static_cast<size_t>(frame) * 2], 0.25) << "frame " << frame;
+            ASSERT_DOUBLE_EQ(output[static_cast<size_t>(frame) * 2 + 1], 0.6) << "frame " << frame;
+        }
+    }
+
+    TEST(AudioSubsystemTest, ParallelChannelsBeyondTheStreamAreIgnored)
+    {
+        SubsystemRig rig(2);
+        REQUIRE_AUDIO(rig);
+
+        for (uint32_t channel = 0; channel < 3; ++channel) {
+            add_level_child(rig, Buffers::ProcessingToken::AUDIO_PARALLEL, channel, 0.1 * (channel + 1));
+        }
+        rig.buffers->process_token(Buffers::ProcessingToken::AUDIO_PARALLEL, k_buffer_size);
+
+        const auto output = rig.render(k_buffer_size);
+
+        ASSERT_EQ(output.size(), static_cast<size_t>(k_buffer_size) * 2);
+        EXPECT_DOUBLE_EQ(output[0], 0.1);
+        EXPECT_DOUBLE_EQ(output[1], 0.2);
+        EXPECT_DOUBLE_EQ(output[output.size() - 2], 0.1);
+        EXPECT_DOUBLE_EQ(output[output.size() - 1], 0.2);
+    }
+
+    TEST(AudioSubsystemTest, RepeatedCallbacksRereadTheParallelRootWithoutAccumulating)
+    {
+        SubsystemRig rig(2);
+        REQUIRE_AUDIO(rig);
+
+        add_level_child(rig, Buffers::ProcessingToken::AUDIO_PARALLEL, 0, 0.25);
+        rig.buffers->process_token(Buffers::ProcessingToken::AUDIO_PARALLEL, k_buffer_size);
+
+        for (int callback = 0; callback < 4; ++callback) {
+            const auto output = rig.render(k_buffer_size);
+            ASSERT_DOUBLE_EQ(output[0], 0.25) << "callback " << callback;
+            ASSERT_DOUBLE_EQ(output[output.size() - 2], 0.25) << "callback " << callback;
+        }
+    }
+
+    TEST(AudioSubsystemTest, ParallelRootFollowsItsOwnReprocessing)
+    {
+        SubsystemRig rig(2);
+        REQUIRE_AUDIO(rig);
+
+        auto child = std::make_shared<Buffers::AudioBuffer>(0, k_buffer_size);
+        child->resize(k_buffer_size);
+        std::ranges::fill(child->get_data(), 0.25);
+        rig.buffers->add_buffer(child, Buffers::ProcessingToken::AUDIO_PARALLEL, 0);
+        rig.buffers->process_token(Buffers::ProcessingToken::AUDIO_PARALLEL, k_buffer_size);
+        ASSERT_DOUBLE_EQ(rig.render(k_buffer_size)[0], 0.25);
+
+        std::ranges::fill(child->get_data(), 0.5);
+        EXPECT_DOUBLE_EQ(rig.render(k_buffer_size)[0], 0.25);
+
+        rig.buffers->process_token(Buffers::ProcessingToken::AUDIO_PARALLEL, k_buffer_size);
+        EXPECT_DOUBLE_EQ(rig.render(k_buffer_size)[0], 0.5);
+    }
+
+    TEST(AudioSubsystemTest, ProcessOutputNeverCreatesAParallelUnit)
+    {
+        SubsystemRig rig(2);
+        REQUIRE_AUDIO(rig);
+
+        (void)rig.render(k_buffer_size);
+        (void)rig.render(k_buffer_size);
+
+        EXPECT_EQ(rig.buffers->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL), 0U);
+    }
+
+    TEST(AudioSubsystemTest, ProcessExternalNeverCreatesAParallelUnit)
+    {
+        SubsystemRig rig(2);
+        if (!rig.initialize_only())
+            GTEST_SKIP() << "Audio subsystem could not be initialized in this environment";
+
+        EXPECT_TRUE(rig.subsystem->process_external(parallel_tokens(), k_buffer_size, {}));
+
+        EXPECT_EQ(rig.buffers->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL), 0U);
+    }
+
+    TEST(AudioSubsystemTest, ProcessExternalBeforeInitializeDeclinesWithoutCallingTheSink)
+    {
+        SubsystemRig rig(2);
+        ASSERT_TRUE(rig.construct());
+
+        int called = 0;
+        const Core::ExternalSink sink = [&called] { ++called; };
+
+        EXPECT_FALSE(rig.subsystem->process_external(parallel_tokens(), k_buffer_size, sink));
+        EXPECT_EQ(called, 0);
+    }
+
+    TEST(AudioSubsystemTest, ProcessOutputWithoutAParallelUnitIsUnchanged)
+    {
+        SubsystemRig rig(2);
+        REQUIRE_AUDIO(rig);
+
+        const auto output = rig.render(k_buffer_size);
+
+        EXPECT_DOUBLE_EQ(output[0], 0.0);
+        EXPECT_DOUBLE_EQ(output[1], 0.0);
+    }
+
     TEST(AudioSubsystemTest, ConstructionExposesConfigurationBackendAndTokens)
     {
         SubsystemRig rig(2);
