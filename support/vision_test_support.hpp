@@ -6,6 +6,7 @@
 #include "MayaFlux/Kakshya/Source/TextureContainer.hpp"
 #include "MayaFlux/Portal/Graphics/SamplerForge.hpp"
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
+#include "MayaFlux/Yantra/Analyzers/VisionAnalyzer.hpp"
 #include "MayaFlux/Yantra/Executors/VisionGpuDispatch.hpp"
 
 namespace MayaFlux::Test::Vision {
@@ -498,6 +499,35 @@ inline BoxGrid square_grid(uint32_t w, uint32_t h, uint32_t columns, uint32_t ro
         }
     }
     return grid;
+}
+
+/**
+ * @brief VisionAnalyzer settings for a query, with an optional filtering context.
+ */
+inline Yantra::VisionAnalyzerConfig analyzer_config(
+    const Kinesis::Vision::VisionQuery& query,
+    const Kinesis::Vision::VisionAnalysisContext& context = {})
+{
+    return Yantra::VisionAnalyzerConfig { .method = query.intents, .query = query, .context = context };
+}
+
+/**
+ * @brief Wrap an image as the texture container the analyzer takes as input.
+ */
+inline std::shared_ptr<Kakshya::TextureContainer> as_container(const ImageHandle& image)
+{
+    return std::make_shared<Kakshya::TextureContainer>(image, Portal::Graphics::ImageFormat::RGBA32F);
+}
+
+/**
+ * @brief Change settings of an operation that already exists.
+ */
+template <typename Config, typename Op, typename Edit>
+void edit_config(Op& op, Edit edit)
+{
+    auto config = op.template config<Config>();
+    edit(config);
+    op.set_config(std::move(config));
 }
 
 } // namespace MayaFlux::Test::Vision
