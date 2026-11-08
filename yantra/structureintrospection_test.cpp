@@ -1,6 +1,8 @@
+#include "MayaFlux/Yantra/Data/DataIO.hpp"
 #include "MayaFlux/Yantra/Data/StructureIntrospection.hpp"
 #include "MayaFlux/Kakshya/Source/CompositeContainer.hpp"
 #include "../support/audio_container.hpp"
+#include "../support/log_capture.hpp"
 
 #include <gtest/gtest.h>
 
@@ -294,6 +296,84 @@ namespace {
         EXPECT_EQ(row->get<double>("gain"), 0.75);
         EXPECT_FALSE(row->has("id"));
         EXPECT_THROW(infer_structure(std::shared_ptr<Kakshya::CompositeContainer> {}), std::invalid_argument);
+    }
+
+    constexpr std::string_view k_naive_warning = "Inferring structure from DataVariant vector";
+
+    size_t naive_warnings()
+    {
+        const auto messages = LogCapture::messages();
+        return static_cast<size_t>(std::ranges::count_if(messages, [](const std::string& message) {
+            return message.find(k_naive_warning) != std::string::npos;
+        }));
+    }
+
+    Container interleaved_stereo()
+    {
+        return make_audio_container(std::vector<Samples> { Samples(100, 0.5), Samples(100, 0.25) },
+            48000, Kakshya::OrganizationStrategy::INTERLEAVED);
+    }
+
+    TEST(YantraStructureContainerAware, VariantsOfAContainerTakeItsOwnStructure)
+    {
+        const auto container = interleaved_stereo();
+        const Variants source { Samples(200, 0.0) };
+
+        const auto result = infer_structure(source, container);
+
+        expect_structure(result, { { Role::TIME, 100 }, { Role::CHANNEL, 2 } }, Modality::AUDIO_MULTICHANNEL);
+    }
+
+    TEST(YantraStructureContainerAware, WithoutAContainerTheVariantsAreInferredAsBefore)
+    {
+        const Variants source { Samples(200, 0.0) };
+
+        expect_structure(infer_structure(source), { { Role::TIME, 200 } }, Modality::AUDIO_1D);
+    }
+
+    TEST(YantraStructureContainerAware, VariantsThatAreNotTheContainersWholeFallBackToInference)
+    {
+        const auto container = interleaved_stereo();
+        const Variants source { Samples(50, 0.0) };
+
+        expect_structure(infer_structure(source, container), { { Role::TIME, 50 } }, Modality::AUDIO_1D);
+    }
+
+    TEST(YantraStructureContainerAware, ADatumBuiltWithAContainerCarriesItsStructure)
+    {
+        const auto container = interleaved_stereo();
+
+        const Datum<Variants> datum(Variants { Samples(200, 0.0) }, container);
+
+        ASSERT_EQ(datum.dimensions.size(), 2U);
+        EXPECT_EQ(datum.dimensions[0].role, Role::TIME);
+        EXPECT_EQ(datum.dimensions[0].size, 100U);
+        EXPECT_EQ(datum.dimensions[1].role, Role::CHANNEL);
+        EXPECT_EQ(datum.modality, Modality::AUDIO_MULTICHANNEL);
+    }
+
+    TEST(YantraStructureContainerAware, NoNaiveWarningIsLoggedWhenTheContainerSuppliesTheStructure)
+    {
+        LogCapture::install();
+        LogCapture::clear();
+        const auto container = interleaved_stereo();
+
+        (void)infer_structure(Variants { Samples(200, 0.0) }, container);
+        const Datum<Variants> datum(Variants { Samples(200, 0.0) }, container);
+
+        EXPECT_EQ(naive_warnings(), 0U);
+    }
+
+    TEST(YantraStructureContainerAware, TheNaiveWarningIsLoggedAtMostOnce)
+    {
+        LogCapture::install();
+        LogCapture::clear();
+
+        for (int i = 0; i < 5; ++i) {
+            (void)infer_structure(Variants { Samples(8, 0.0) });
+        }
+
+        EXPECT_LE(naive_warnings(), 1U);
     }
 
 }
