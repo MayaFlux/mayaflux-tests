@@ -82,15 +82,6 @@ namespace {
         Core::SubsystemProcessingHandle handle;
     };
 
-    Core::SubsystemTokens external_parallel_tokens()
-    {
-        return {
-            .Buffer = Buffers::ProcessingToken::AUDIO_PARALLEL,
-            .Node = Nodes::ProcessingToken::AUDIO_RATE,
-            .Task = Vruta::ProcessingToken::SAMPLE_ACCURATE
-        };
-    }
-
     bool buffer_service_registered()
     {
         return Registry::BackendRegistry::instance().has_service<Registry::Service::BufferService>();
@@ -146,47 +137,6 @@ TEST(GraphicsSubsystemTest, RegisterCallbacksBeforeInitializeThrows)
     EXPECT_THROW(rig.subsystem->register_callbacks(), std::runtime_error);
 }
 
-TEST(GraphicsSubsystemTest, SupportsOnlyTheParallelBufferTokenForExternalProcessing)
-{
-    GraphicsSubsystemRig rig;
-
-    EXPECT_TRUE(rig.subsystem->supports_external(external_parallel_tokens()));
-    EXPECT_FALSE(rig.subsystem->supports_external(rig.subsystem->get_tokens()));
-}
-
-TEST(GraphicsSubsystemTest, ProcessExternalBeforeInitializeDoesNothing)
-{
-    GraphicsSubsystemRig rig;
-    int delivered = 0;
-    const Core::ExternalSink sink = [&delivered] { ++delivered; };
-
-    EXPECT_FALSE(rig.subsystem->process_external(external_parallel_tokens(), k_buffer_size, sink));
-    EXPECT_EQ(delivered, 0);
-}
-
-TEST(GraphicsSubsystemTest, ProcessExternalProcessesTheParallelUnitThenCallsTheSink)
-{
-    REQUIRE_VULKAN();
-
-    GraphicsSubsystemRig rig;
-    ASSERT_NO_THROW(rig.subsystem->initialize(rig.handle));
-
-    auto child = std::make_shared<Buffers::AudioBuffer>(0, k_buffer_size);
-    child->resize(k_buffer_size);
-    std::ranges::fill(child->get_data(), 0.4);
-    rig.buffers->add_buffer(child, Buffers::ProcessingToken::AUDIO_PARALLEL, 0);
-
-    int delivered = 0;
-    const Core::ExternalSink sink = [&delivered] { ++delivered; };
-
-    EXPECT_TRUE(rig.subsystem->process_external(external_parallel_tokens(), k_buffer_size, sink));
-    EXPECT_DOUBLE_EQ(rig.buffers->get_buffer_data(Buffers::ProcessingToken::AUDIO_PARALLEL, 0).front(), 0.4);
-    EXPECT_EQ(delivered, 1);
-
-    EXPECT_FALSE(rig.subsystem->process_external(rig.subsystem->get_tokens(), k_buffer_size, sink));
-    EXPECT_EQ(delivered, 1);
-}
-
 TEST(GraphicsSubsystemTest, EachProcessTickProcessesTheParallelUnit)
 {
     REQUIRE_VULKAN();
@@ -207,20 +157,7 @@ TEST(GraphicsSubsystemTest, EachProcessTickProcessesTheParallelUnit)
     EXPECT_DOUBLE_EQ(rig.buffers->get_buffer_data(Buffers::ProcessingToken::AUDIO_PARALLEL, 0).front(), 0.7);
 }
 
-TEST(GraphicsSubsystemTest, ProcessNeverCreatesAParallelUnit)
-{
-    REQUIRE_VULKAN();
-
-    GraphicsSubsystemRig rig;
-    ASSERT_NO_THROW(rig.subsystem->initialize(rig.handle));
-
-    rig.subsystem->process();
-    rig.subsystem->process();
-
-    EXPECT_EQ(rig.buffers->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL), 0U);
-}
-
-TEST(GraphicsSubsystemTest, ProcessExternalLeavesTheBackendUnitsAlone)
+TEST(GraphicsSubsystemTest, ProcessLeavesTheBackendUnitAlone)
 {
     REQUIRE_VULKAN();
 
@@ -232,9 +169,22 @@ TEST(GraphicsSubsystemTest, ProcessExternalLeavesTheBackendUnitsAlone)
     std::ranges::fill(backend_child->get_data(), 0.9);
     rig.buffers->add_buffer(backend_child, Buffers::ProcessingToken::AUDIO_BACKEND, 0);
 
-    EXPECT_TRUE(rig.subsystem->process_external(external_parallel_tokens(), k_buffer_size, {}));
+    rig.subsystem->process();
 
     EXPECT_DOUBLE_EQ(rig.buffers->get_buffer_data(Buffers::ProcessingToken::AUDIO_BACKEND, 0).front(), 0.0);
+}
+
+TEST(GraphicsSubsystemTest, ProcessNeverCreatesAParallelUnit)
+{
+    REQUIRE_VULKAN();
+
+    GraphicsSubsystemRig rig;
+    ASSERT_NO_THROW(rig.subsystem->initialize(rig.handle));
+
+    rig.subsystem->process();
+    rig.subsystem->process();
+
+    EXPECT_EQ(rig.buffers->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL), 0U);
 }
 
 TEST(GraphicsSubsystemTest, InitializeMakesSubsystemReadyAndBringsUpPortal)

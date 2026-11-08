@@ -193,40 +193,6 @@ namespace {
             [probe](const double* data, uint32_t size) { probe->record(data, size); });
     }
 
-    Core::SubsystemTokens parallel_tokens()
-    {
-        return {
-            .Buffer = Buffers::ProcessingToken::AUDIO_PARALLEL,
-            .Node = Nodes::ProcessingToken::AUDIO_RATE,
-            .Task = Vruta::ProcessingToken::SAMPLE_ACCURATE
-        };
-    }
-
-    TEST(AudioSubsystemTest, SupportsOnlyTheParallelBufferTokenForExternalProcessing)
-    {
-        SubsystemRig rig(2);
-        ASSERT_TRUE(rig.construct());
-
-        EXPECT_TRUE(rig.subsystem->supports_external(parallel_tokens()));
-        EXPECT_FALSE(rig.subsystem->supports_external(rig.subsystem->get_tokens()));
-    }
-
-    TEST(AudioSubsystemTest, ProcessExternalCallsTheSinkForTheParallelTokenOnly)
-    {
-        SubsystemRig rig(2);
-        if (!rig.initialize_only())
-            GTEST_SKIP() << "Audio subsystem could not be initialized in this environment";
-
-        int called = 0;
-        const Core::ExternalSink sink = [&called] { ++called; };
-
-        EXPECT_FALSE(rig.subsystem->process_external(rig.subsystem->get_tokens(), k_buffer_size, sink));
-        EXPECT_EQ(called, 0);
-
-        EXPECT_TRUE(rig.subsystem->process_external(parallel_tokens(), k_buffer_size, sink));
-        EXPECT_EQ(called, 1);
-    }
-
     TEST(AudioSubsystemTest, ProcessOutputReadsTheParallelUnitAsTheChannelRoot)
     {
         SubsystemRig rig(2);
@@ -335,29 +301,6 @@ namespace {
         (void)rig.render(k_buffer_size);
 
         EXPECT_EQ(rig.buffers->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL), 0U);
-    }
-
-    TEST(AudioSubsystemTest, ProcessExternalNeverCreatesAParallelUnit)
-    {
-        SubsystemRig rig(2);
-        if (!rig.initialize_only())
-            GTEST_SKIP() << "Audio subsystem could not be initialized in this environment";
-
-        EXPECT_TRUE(rig.subsystem->process_external(parallel_tokens(), k_buffer_size, {}));
-
-        EXPECT_EQ(rig.buffers->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL), 0U);
-    }
-
-    TEST(AudioSubsystemTest, ProcessExternalBeforeInitializeDeclinesWithoutCallingTheSink)
-    {
-        SubsystemRig rig(2);
-        ASSERT_TRUE(rig.construct());
-
-        int called = 0;
-        const Core::ExternalSink sink = [&called] { ++called; };
-
-        EXPECT_FALSE(rig.subsystem->process_external(parallel_tokens(), k_buffer_size, sink));
-        EXPECT_EQ(called, 0);
     }
 
     TEST(AudioSubsystemTest, ProcessOutputWithoutAParallelUnitIsUnchanged)
