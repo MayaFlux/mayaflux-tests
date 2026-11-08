@@ -12,26 +12,29 @@ namespace MayaFlux::Test {
  *
  * @param channels   Per-channel samples. Every channel must be non-empty.
  * @param sample_rate Sample rate in Hz.
+ * @param organization Planar, or interleaved frame by frame.
  */
 [[nodiscard]] inline std::shared_ptr<Kakshya::SoundFileContainer> make_audio_container(
     std::vector<std::vector<double>> channels,
-    uint32_t sample_rate = 48000)
+    uint32_t sample_rate = 48000,
+    Kakshya::OrganizationStrategy organization = Kakshya::OrganizationStrategy::PLANAR)
 {
     const auto count = static_cast<uint32_t>(channels.size());
-    return Kakshya::make_sound_file_container(
-        std::move(channels), count, sample_rate, Kakshya::OrganizationStrategy::PLANAR);
+    return Kakshya::make_sound_file_container(std::move(channels), count, sample_rate, organization);
 }
 
 /**
  * @brief A populated single-channel audio container.
  * @param samples Samples of the one channel.
  * @param sample_rate Sample rate in Hz.
+ * @param organization Planar, or interleaved frame by frame.
  */
 [[nodiscard]] inline std::shared_ptr<Kakshya::SoundFileContainer> make_audio_container(
     const std::vector<double>& samples,
-    uint32_t sample_rate = 48000)
+    uint32_t sample_rate = 48000,
+    Kakshya::OrganizationStrategy organization = Kakshya::OrganizationStrategy::PLANAR)
 {
-    return make_audio_container(std::vector<std::vector<double>> { samples }, sample_rate);
+    return make_audio_container(std::vector<std::vector<double>> { samples }, sample_rate, organization);
 }
 
 }

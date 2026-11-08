@@ -477,6 +477,29 @@ namespace {
         }
     }
 
+    TEST(TextureContainerRegionTest, GetRegionDataReadsTheNamedLayerOfAMultiLayerTexture)
+    {
+        TextureContainer tc(2, 2, ImageFormat::RGBA8, 3U);
+        std::vector<std::vector<uint8_t>> layers;
+        for (uint32_t layer = 0; layer < 3; ++layer) {
+            layers.push_back(ramp(16, static_cast<uint8_t>(30 * (layer + 1))));
+            tc.set_pixels(std::span<const uint8_t>(layers.back()), layer);
+        }
+
+        for (uint64_t layer = 0; layer < 3; ++layer) {
+            const auto data = tc.get_region_data(box({ layer, 0, 1, 0 }, { layer, 1, 1, 3 }));
+
+            ASSERT_EQ(data.size(), 1U) << "layer " << layer;
+            std::vector<uint8_t> expected;
+            for (size_t y = 0; y < 2; ++y) {
+                for (size_t c = 0; c < 4; ++c) {
+                    expected.push_back(layers[layer][(y * 2 + 1) * 4 + c]);
+                }
+            }
+            EXPECT_EQ(std::get<std::vector<uint8_t>>(data[0]), expected) << "layer " << layer;
+        }
+    }
+
     TEST(TextureContainerRegionTest, SetRegionDataFillsTheBoxInReadingOrder)
     {
         TextureContainer tc(3, 3, ImageFormat::RGBA8);

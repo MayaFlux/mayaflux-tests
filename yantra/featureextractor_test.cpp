@@ -3,7 +3,7 @@
 #include "MayaFlux/Kinesis/Discrete/Extract.hpp"
 #include "MayaFlux/Yantra/Extractors/FeatureExtractor.hpp"
 #include "MayaFlux/Yantra/Transformers/MathematicalTransformer.hpp"
-#include "audio_container.hpp"
+#include "../support/audio_container.hpp"
 
 #include <gtest/gtest.h>
 
