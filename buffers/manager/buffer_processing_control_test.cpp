@@ -115,7 +115,7 @@ TEST_F(BufferProcessingControlTest, RemoveProcessorFromAChannelLeavesOtherChanne
     access->ensure_audio_channels(Buffers::AUDIO_BACKEND, 2);
     control->add_processor(probe, Buffers::AUDIO_BACKEND);
 
-    control->remove_processor_from_token(probe, Buffers::AUDIO_BACKEND, 1);
+    control->remove_processor_from_channel(probe, Buffers::AUDIO_BACKEND, 1);
 
     EXPECT_FALSE(holds(channel_chain(1), root(1), probe));
     EXPECT_TRUE(holds(channel_chain(0), root(0), probe));
@@ -135,7 +135,7 @@ TEST_F(BufferProcessingControlTest, RemoveProcessorFromABufferDetachesIt)
 
 TEST_F(BufferProcessingControlTest, RemoveProcessorFromAMissingChannelCreatesNothing)
 {
-    EXPECT_NO_THROW(control->remove_processor_from_token(probe, Buffers::AUDIO_BACKEND, 3));
+    EXPECT_NO_THROW(control->remove_processor_from_channel(probe, Buffers::AUDIO_BACKEND, 3));
 
     EXPECT_FALSE(units->has_audio_unit(Buffers::AUDIO_BACKEND));
 }
