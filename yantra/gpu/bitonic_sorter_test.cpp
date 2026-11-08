@@ -90,21 +90,40 @@ namespace {
         EXPECT_GE(count_of(Yantra::targets::cpu), 1);
     }
 
-    TEST(BitonicSorterDeclineTest, OffersOnlyTheOrdersAndStrategiesItImplements)
+    TEST(BitonicSorterDeclineTest, DeclinesOnlyWhatTheDeviceCannotRun)
     {
-        const auto accepts = [](SortingDirection direction, SortingStrategy strategy) {
+        const auto accepts = [](SortingDirection direction, SortingStrategy strategy, size_t chunk_size = 1024) {
             StandardSorterConfig config;
             config.direction = direction;
             config.strategy = strategy;
+            config.chunk_size = chunk_size;
             return BitonicSorter<>(config).validate_input(channels_of({ { 1.0 } }));
         };
 
         EXPECT_TRUE(accepts(SortingDirection::ASCENDING, SortingStrategy::COPY_SORT));
         EXPECT_TRUE(accepts(SortingDirection::DESCENDING, SortingStrategy::INDEX_ONLY));
         EXPECT_TRUE(accepts(SortingDirection::ASCENDING, SortingStrategy::PARALLEL_SORT));
+        EXPECT_TRUE(accepts(SortingDirection::BIDIRECTIONAL, SortingStrategy::COPY_SORT));
+        EXPECT_TRUE(accepts(SortingDirection::ASCENDING, SortingStrategy::CHUNKED_SORT, 64));
         EXPECT_FALSE(accepts(SortingDirection::CUSTOM, SortingStrategy::COPY_SORT));
-        EXPECT_FALSE(accepts(SortingDirection::BIDIRECTIONAL, SortingStrategy::COPY_SORT));
-        EXPECT_FALSE(accepts(SortingDirection::ASCENDING, SortingStrategy::CHUNKED_SORT));
+        EXPECT_FALSE(accepts(SortingDirection::ASCENDING, SortingStrategy::CHUNKED_SORT, 0));
+    }
+
+    TEST(BitonicSorterDeclineTest, EveryAlgorithmIsAccepted)
+    {
+        for (const auto algorithm : { Yantra::SortingAlgorithm::STANDARD, Yantra::SortingAlgorithm::STABLE,
+                 Yantra::SortingAlgorithm::PARTIAL, Yantra::SortingAlgorithm::NTH_ELEMENT,
+                 Yantra::SortingAlgorithm::HEAP, Yantra::SortingAlgorithm::PARALLEL,
+                 Yantra::SortingAlgorithm::RADIX, Yantra::SortingAlgorithm::COUNTING,
+                 Yantra::SortingAlgorithm::BUCKET, Yantra::SortingAlgorithm::MERGE_EXTERNAL,
+                 Yantra::SortingAlgorithm::QUICK_OPTIMIZED, Yantra::SortingAlgorithm::LAZY_STREAMING,
+                 Yantra::SortingAlgorithm::PREDICTIVE_ML, Yantra::SortingAlgorithm::EIGEN_OPTIMIZED,
+                 Yantra::SortingAlgorithm::GPU_ACCELERATED }) {
+            StandardSorterConfig config;
+            config.algorithm = algorithm;
+            EXPECT_TRUE(BitonicSorter<>(config).validate_input(channels_of({ { 1.0 } })))
+                << static_cast<int>(algorithm);
+        }
     }
 
     template <typename Fixture>
@@ -224,6 +243,105 @@ namespace {
         ASSERT_EQ(gpu_result.data.size(), 2U);
         EXPECT_EQ(doubles_of(gpu_result, 0), doubles_of(cpu_result, 0));
         EXPECT_EQ(doubles_of(gpu_result, 1), doubles_of(cpu_result, 1));
+    }
+
+    TYPED_TEST(BitonicSorterGpuTest, EveryAlgorithmGivesTheSortedResult)
+    {
+        const auto input = channels_of({ random_values(150, 8001, false) });
+        for (const auto algorithm : { Yantra::SortingAlgorithm::STANDARD, Yantra::SortingAlgorithm::STABLE,
+                 Yantra::SortingAlgorithm::HEAP, Yantra::SortingAlgorithm::PARALLEL,
+                 Yantra::SortingAlgorithm::RADIX, Yantra::SortingAlgorithm::GPU_ACCELERATED }) {
+            StandardSorterConfig config;
+            config.algorithm = algorithm;
+            const auto result = BitonicSorter<>(config).apply_operation(input);
+            EXPECT_TRUE(std::ranges::is_sorted(doubles_of(result, 0))) << static_cast<int>(algorithm);
+        }
+    }
+
+    TYPED_TEST(BitonicSorterGpuTest, PartialAndNthElementAreSatisfiedByTheFullSort)
+    {
+        const auto input = channels_of({ random_values(150, 8002, false) });
+        for (const auto algorithm : { Yantra::SortingAlgorithm::PARTIAL, Yantra::SortingAlgorithm::NTH_ELEMENT }) {
+            StandardSorterConfig config;
+            config.algorithm = algorithm;
+            const auto result = BitonicSorter<>(config).apply_operation(input);
+            const auto& values = doubles_of(result, 0);
+            const auto first_half = std::vector<double>(values.begin(), values.begin() + 75);
+            auto expected = std::get<std::vector<double>>(input.data[0]);
+            std::ranges::sort(expected);
+            EXPECT_EQ(first_half, std::vector<double>(expected.begin(), expected.begin() + 75)) << static_cast<int>(algorithm);
+        }
+    }
+
+    TYPED_TEST(BitonicSorterGpuTest, BidirectionalOrderMatchesTheCpuSorterOnEveryChannel)
+    {
+        StandardSorterConfig config;
+        config.direction = SortingDirection::BIDIRECTIONAL;
+        BitonicSorter<> gpu(config);
+        StandardDataSorter cpu(config);
+
+        const auto input = channels_of({ random_values(200, 9001, false), random_values(33, 9002, false), random_values(1, 9003, false) });
+        const auto gpu_result = gpu.apply_operation(input);
+        const auto cpu_result = cpu.apply_operation(input);
+
+        ASSERT_EQ(gpu_result.data.size(), 3U);
+        for (size_t channel = 0; channel < 3; ++channel) {
+            EXPECT_EQ(doubles_of(gpu_result, channel), doubles_of(cpu_result, channel)) << "channel " << channel;
+        }
+    }
+
+    TYPED_TEST(BitonicSorterGpuTest, BidirectionalPermutationMatchesKinesisForDistinctValues)
+    {
+        StandardSorterConfig config;
+        config.direction = SortingDirection::BIDIRECTIONAL;
+        BitonicSorter<> sorter(config);
+
+        for (const size_t count : { 2U, 5U, 16U, 101U }) {
+            auto values = random_values(count, 9100 + count, false);
+            std::vector<double> source = values;
+            const auto expected = Kinesis::Discrete::span_sort_indices(source, Kinesis::Discrete::SortOrder { SortingDirection::BIDIRECTIONAL });
+            EXPECT_EQ(sorter.order(values), expected) << "count " << count;
+        }
+    }
+
+    TYPED_TEST(BitonicSorterGpuTest, ChunkedSortMatchesTheCpuSorterIncludingAShortLastChunk)
+    {
+        for (const auto direction : { SortingDirection::ASCENDING, SortingDirection::DESCENDING }) {
+            StandardSorterConfig config;
+            config.strategy = SortingStrategy::CHUNKED_SORT;
+            config.chunk_size = 64;
+            config.direction = direction;
+            BitonicSorter<> gpu(config);
+            StandardDataSorter cpu(config);
+
+            const auto input = channels_of({ random_values(200, 9201, false), random_values(200, 9202, true) });
+            const auto gpu_result = gpu.apply_operation(input);
+            const auto cpu_result = cpu.apply_operation(input);
+
+            ASSERT_EQ(gpu_result.data.size(), 2U);
+            EXPECT_EQ(doubles_of(gpu_result, 0), doubles_of(cpu_result, 0));
+            EXPECT_EQ(doubles_of(gpu_result, 1), doubles_of(cpu_result, 1));
+        }
+    }
+
+    TYPED_TEST(BitonicSorterGpuTest, ChunkedResultIsSortedPerChunkAndRecordsItsPath)
+    {
+        StandardSorterConfig config;
+        config.strategy = SortingStrategy::CHUNKED_SORT;
+        config.chunk_size = 10;
+        BitonicSorter<> gpu(config);
+
+        const auto result = gpu.apply_operation(channels_of({ random_values(25, 9301, false) }));
+        const auto& values = doubles_of(result, 0);
+
+        ASSERT_EQ(values.size(), 25U);
+        EXPECT_TRUE(std::is_sorted(values.begin(), values.begin() + 10));
+        EXPECT_TRUE(std::is_sorted(values.begin() + 10, values.begin() + 20));
+        EXPECT_TRUE(std::is_sorted(values.begin() + 20, values.end()));
+
+        const auto* record = result.facets.get<Yantra::SortRecord>();
+        ASSERT_NE(record, nullptr);
+        EXPECT_EQ(static_cast<Yantra::SortPath>(record->path), Yantra::SortPath::CHUNKED_MERGED);
     }
 
     TYPED_TEST(BitonicSorterGpuTest, SortedCopyKeepsTheSettingsRecord)

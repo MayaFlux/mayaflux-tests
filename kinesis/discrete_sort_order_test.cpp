@@ -125,6 +125,25 @@ namespace {
         EXPECT_THROW((void)D::double_comparator(SortingDirection::BIDIRECTIONAL), std::invalid_argument);
     }
 
+    TEST(KinesisMountainPositionsTest, RanksAlternateBetweenTheEndsAndFillInward)
+    {
+        EXPECT_TRUE(D::mountain_positions(0).empty());
+        EXPECT_EQ(D::mountain_positions(1), (std::vector<size_t> { 0 }));
+        EXPECT_EQ(D::mountain_positions(4), (std::vector<size_t> { 0, 3, 1, 2 }));
+        EXPECT_EQ(D::mountain_positions(5), (std::vector<size_t> { 0, 4, 1, 3, 2 }));
+    }
+
+    TEST(KinesisMountainPositionsTest, IsAPermutationOfTheIndices)
+    {
+        for (const size_t count : { 2U, 7U, 64U, 101U }) {
+            auto positions = D::mountain_positions(count);
+            std::ranges::sort(positions);
+            std::vector<size_t> expected(count);
+            std::iota(expected.begin(), expected.end(), size_t { 0 });
+            EXPECT_EQ(positions, expected) << "count " << count;
+        }
+    }
+
     TEST(KinesisSortOrderCustomTest, ComparatorOrdersValues)
     {
         auto values = absolute_order_key();
