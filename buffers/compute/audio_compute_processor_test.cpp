@@ -44,6 +44,18 @@ void main() {
 }
 )";
 
+    constexpr const char* k_sign_invert_word_pair_32 = R"(#version 460
+layout(local_size_x = 32) in;
+layout(set = 0, binding = 0, std430) buffer Block { uvec2 words[]; } block;
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= block.words.length()) {
+        return;
+    }
+    block.words[index].y ^= 0x80000000u;
+}
+)";
+
     class TemporaryShader {
     public:
         TemporaryShader(const void* owner, const char* source)
@@ -285,6 +297,62 @@ void main() {
         for (size_t i = 0; i < 4; ++i) {
             EXPECT_EQ(bits_of(child->get_data()[i]), bits_of(0.0)) << "sample " << i;
         }
+    }
+
+    TEST_F(AudioComputeProcessorDeviceTest, AttachPrewarmsTheShaderAndPipelineBeforeTheFirstCycle)
+    {
+        TemporaryShader shader(this, k_sign_invert_word_pair);
+        auto child = make_child({ 0.5, -0.5, 0.25, -0.25 });
+
+        auto processor = attach(shader.path(), child);
+
+        EXPECT_TRUE(processor->is_shader_loaded());
+        EXPECT_TRUE(processor->is_pipeline_ready());
+        EXPECT_TRUE(processor->are_descriptors_ready());
+    }
+
+    TEST_F(AudioComputeProcessorDeviceTest, AttachWithAnEmptyChildDefersPrewarmToTheFirstCycle)
+    {
+        TemporaryShader shader(this, k_sign_invert_word_pair);
+        auto child = make_child({});
+        auto processor = attach(shader.path(), child);
+
+        EXPECT_FALSE(processor->is_pipeline_ready());
+
+        const std::vector<double> grown { 1.0, -2.0 };
+        child->resize(static_cast<uint32_t>(grown.size()));
+        std::ranges::copy(grown, child->get_data().begin());
+        child->process_default();
+
+        EXPECT_TRUE(processor->is_pipeline_ready());
+        expect_bits_equal(child->get_data(), sign_flipped(grown));
+    }
+
+    TEST_F(AudioComputeProcessorDeviceTest, MissingShaderAtAttachDoesNotThrowAndLoadsNothing)
+    {
+        const auto missing = (std::filesystem::temp_directory_path()
+            / ("mayaflux_audio_compute_attach_missing_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)) + ".comp"))
+                                 .string();
+        auto child = make_child({ 1.0, 2.0 });
+
+        std::shared_ptr<AudioComputeProcessor> processor;
+        EXPECT_NO_THROW(processor = attach(missing, child));
+
+        EXPECT_FALSE(processor->is_shader_loaded());
+        EXPECT_FALSE(processor->is_pipeline_ready());
+    }
+
+    TEST_F(AudioComputeProcessorDeviceTest, WorkgroupMismatchWarnsButStillDispatches)
+    {
+        TemporaryShader shader(this, k_sign_invert_word_pair_32);
+        const std::vector<double> input { 0.25, -0.5, 0.75, -1.0, 1.25, -1.5, 1.75, -2.0 };
+        auto child = make_child(input);
+
+        EXPECT_NO_THROW(attach(shader.path(), child, false, 64));
+
+        child->process_default();
+
+        expect_bits_equal(child->get_data(), sign_flipped(input));
     }
 
     TEST_F(AudioComputeProcessorDeviceTest, ChildUnderAParallelRootIsMixedAfterProcessing)
