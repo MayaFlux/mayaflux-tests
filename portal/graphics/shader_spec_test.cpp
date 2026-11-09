@@ -145,29 +145,29 @@ namespace {
         field.format = GpuDataFormat::FLOAT32;
         spec.pc_fields.push_back(field);
 
-        EXPECT_TRUE(Portal::Graphics::detail::unsupported_spec_reason(spec).empty());
+        EXPECT_TRUE(Portal::Graphics::detail::double_field_reason(spec).empty());
     }
 
-    TEST(ShaderSpecGeneratorTest, AFloat64BindingIsNamedAsUnsupported)
+    TEST(ShaderSpecGeneratorTest, AFloat64BindingIsNamed)
     {
         ShaderSpec spec;
         spec.bindings.push_back({ .name = "samples", .direction = BindingDirection::InOut, .format = GpuDataFormat::FLOAT64 });
 
-        const auto reason = Portal::Graphics::detail::unsupported_spec_reason(spec);
+        const auto reason = Portal::Graphics::detail::double_field_reason(spec);
 
         EXPECT_NE(reason.find("samples"), std::string::npos);
         EXPECT_NE(reason.find("64-bit float"), std::string::npos);
     }
 
-    TEST(ShaderSpecGeneratorTest, AVec2F64BindingIsUnsupportedToo)
+    TEST(ShaderSpecGeneratorTest, AVec2F64BindingIsNamedToo)
     {
         ShaderSpec spec;
         spec.bindings.push_back({ .name = "pairs", .direction = BindingDirection::Input, .format = GpuDataFormat::VEC2_F64 });
 
-        EXPECT_FALSE(Portal::Graphics::detail::unsupported_spec_reason(spec).empty());
+        EXPECT_FALSE(Portal::Graphics::detail::double_field_reason(spec).empty());
     }
 
-    TEST(ShaderSpecGeneratorTest, AFloat64PushConstantFieldIsNamedAsUnsupported)
+    TEST(ShaderSpecGeneratorTest, AFloat64PushConstantFieldIsNamed)
     {
         ShaderSpec spec;
         Portal::Graphics::PushConstantField field;
@@ -175,10 +175,44 @@ namespace {
         field.format = GpuDataFormat::FLOAT64;
         spec.pc_fields.push_back(field);
 
-        const auto reason = Portal::Graphics::detail::unsupported_spec_reason(spec);
+        const auto reason = Portal::Graphics::detail::double_field_reason(spec);
 
         EXPECT_NE(reason.find("rate"), std::string::npos);
         EXPECT_NE(reason.find("64-bit float"), std::string::npos);
+    }
+
+    TEST(ShaderSpecGeneratorTest, AUserKernelDeclaresDoubleFieldsAsDoubleTypes)
+    {
+        const auto spec = ShaderSpec::Assemble {}
+                              .ssbo("sig", BindingDirection::InOut, GpuDataFormat::FLOAT64)
+                              .ssbo("pairs", BindingDirection::Input, GpuDataFormat::VEC2_F64)
+                              .ssbo("triples", BindingDirection::Input, GpuDataFormat::VEC3_F64)
+                              .ssbo("quads", BindingDirection::Input, GpuDataFormat::VEC4_F64)
+                              .pc("rate", GpuDataFormat::FLOAT64)
+                              .kernel(MF_KERNEL([](double* sig, const double* pairs, const double* triples, const double* quads, double rate, uint32_t i) {
+                                  sig[i] = sig[i] * rate + pairs[i] + triples[i] + quads[i];
+                              }))
+                              .build();
+
+        const std::string glsl = Portal::Graphics::detail::emit_glsl_kernel(spec);
+
+        EXPECT_NE(glsl.find("double sig[];"), std::string::npos);
+        EXPECT_NE(glsl.find("dvec2 pairs[];"), std::string::npos);
+        EXPECT_NE(glsl.find("dvec3 triples[];"), std::string::npos);
+        EXPECT_NE(glsl.find("dvec4 quads[];"), std::string::npos);
+        EXPECT_NE(glsl.find("double rate;"), std::string::npos);
+    }
+
+    TEST(ShaderSpecGeneratorTest, Vec3AndVec4F64BindingsAreNamed)
+    {
+        ShaderSpec spec;
+        spec.bindings.push_back({ .name = "triples", .direction = BindingDirection::Input, .format = GpuDataFormat::VEC3_F64 });
+        spec.bindings.push_back({ .name = "quads", .direction = BindingDirection::Input, .format = GpuDataFormat::VEC4_F64 });
+
+        EXPECT_NE(Portal::Graphics::detail::double_field_reason(spec).find("triples"), std::string::npos);
+
+        spec.bindings.erase(spec.bindings.begin());
+        EXPECT_NE(Portal::Graphics::detail::double_field_reason(spec).find("quads"), std::string::npos);
     }
 
     TEST(ShaderSpecAssembleTest, PushConstantFieldsKeepDeclarationOrderAndDefaultToFloat)

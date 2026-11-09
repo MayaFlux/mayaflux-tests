@@ -238,6 +238,21 @@ void main() {
         EXPECT_EQ(foundry().load_shader(spec), INVALID_SHADER);
     }
 
+    TEST_F(ShaderFoundryTest, UserKernelWithADoubleBindingLoadsWhenTheDeviceSupportsIt)
+    {
+        ASSERT_TRUE(foundry().initialize(backend()));
+        if (!foundry().get_physical_device().getFeatures().shaderFloat64) {
+            GTEST_SKIP() << "Selected device does not report shaderFloat64";
+        }
+        const auto spec = ShaderSpec::Assemble {}
+                              .ssbo("sig", BindingDirection::InOut, Kakshya::GpuDataFormat::FLOAT64)
+                              .pc("gain", Kakshya::GpuDataFormat::FLOAT64)
+                              .kernel(MF_KERNEL([](double* sig, double gain, uint32_t i) { sig[i] = sig[i] * gain; }))
+                              .build();
+
+        EXPECT_NE(foundry().load_shader(spec), INVALID_SHADER);
+    }
+
     TEST_F(ShaderFoundryTest, GeneratedKernelShaderReturnsTheSameIdForTheSameSpec)
     {
         ASSERT_TRUE(foundry().initialize(backend()));
