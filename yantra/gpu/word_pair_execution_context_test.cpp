@@ -157,6 +157,44 @@ void main()
         EXPECT_NE(words[2], words[3]);
     }
 
+    TYPED_TEST(WordPairExecutionContextGpuTest, RawDispatchDecodesToTheStagedDoubles)
+    {
+        const auto context = copy_context(false);
+
+        copied_words(*context, k_mixed);
+
+        const auto values = context->primary_values();
+        ASSERT_EQ(values.size(), k_mixed.size());
+        for (size_t i = 0; i < k_mixed.size(); ++i) {
+            EXPECT_EQ(std::bit_cast<uint64_t>(values[i]), std::bit_cast<uint64_t>(k_mixed[i])) << "index " << i;
+        }
+    }
+
+    TYPED_TEST(WordPairExecutionContextGpuTest, OrderKeyedDispatchHasNoDecodedValues)
+    {
+        const auto context = copy_context(true);
+
+        copied_words(*context, k_mixed);
+
+        EXPECT_TRUE(context->primary_values().empty());
+    }
+
+    TYPED_TEST(WordPairExecutionContextGpuTest, DecodePrimaryReadsAnAsynchronousResult)
+    {
+        const auto context = copy_context(false);
+        const auto bytes = Yantra::OperationHelper::encode_word_pairs(k_mixed);
+        Yantra::GpuChannelResult result;
+        result.primary.resize(bytes.size() / sizeof(float));
+        std::memcpy(result.primary.data(), bytes.data(), bytes.size());
+
+        const auto values = context->decode_primary(result);
+
+        ASSERT_EQ(values.size(), k_mixed.size());
+        for (size_t i = 0; i < k_mixed.size(); ++i) {
+            EXPECT_EQ(std::bit_cast<uint64_t>(values[i]), std::bit_cast<uint64_t>(k_mixed[i])) << "index " << i;
+        }
+    }
+
     TYPED_TEST(WordPairExecutionContextGpuTest, PaddingWordsAreTheLargestKey)
     {
         const auto context = copy_context(true);
