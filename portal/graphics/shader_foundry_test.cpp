@@ -214,6 +214,30 @@ void main() {
         EXPECT_EQ(again, first);
     }
 
+    TEST_F(ShaderFoundryTest, GeneratedSpecWithADoubleBindingIsRejected)
+    {
+        ASSERT_TRUE(foundry().initialize(backend()));
+        const auto spec = ShaderSpec::Assemble {}
+                              .ssbo("sig", BindingDirection::InOut, Kakshya::GpuDataFormat::FLOAT64)
+                              .pc("gain")
+                              .op(KernelOp::Scale)
+                              .build();
+
+        EXPECT_EQ(foundry().load_shader(spec), INVALID_SHADER);
+    }
+
+    TEST_F(ShaderFoundryTest, GeneratedSpecWithADoublePushConstantIsRejected)
+    {
+        ASSERT_TRUE(foundry().initialize(backend()));
+        const auto spec = ShaderSpec::Assemble {}
+                              .ssbo("sig", BindingDirection::InOut, Kakshya::GpuDataFormat::FLOAT32)
+                              .pc("gain", Kakshya::GpuDataFormat::FLOAT64)
+                              .op(KernelOp::Scale)
+                              .build();
+
+        EXPECT_EQ(foundry().load_shader(spec), INVALID_SHADER);
+    }
+
     TEST_F(ShaderFoundryTest, GeneratedKernelShaderReturnsTheSameIdForTheSameSpec)
     {
         ASSERT_TRUE(foundry().initialize(backend()));

@@ -218,6 +218,31 @@ void main()
     using ImageHardwareOptions = ::testing::Types<GpuDispatchCoreImageFixture<true>, GpuDispatchCoreImageFixture<false>>;
     TYPED_TEST_SUITE(GpuDispatchCoreImageTest, ImageHardwareOptions);
 
+    constexpr std::string_view k_double_scale_source = R"(#version 450
+layout(local_size_x = 16) in;
+layout(set = 0, binding = 0, std430) readonly buffer In { double in_values[]; };
+layout(set = 0, binding = 1, std430) buffer Out { double out_values[]; };
+layout(push_constant) uniform PC { uint count; double factor; } pc;
+void main()
+{
+    const uint x = gl_GlobalInvocationID.x;
+    if (x < pc.count) {
+        out_values[x] = in_values[x] * pc.factor;
+    }
+}
+)";
+
+    struct DoublePush {
+        uint32_t count;
+        uint32_t pad;
+        double factor;
+    };
+
+    bool device_supports_shader_float64()
+    {
+        return foundry().get_physical_device().getFeatures().shaderFloat64;
+    }
+
     GpuBufferBinding make_binding(uint32_t index, GpuBufferBinding::Direction direction,
         BufferUsageHint usage = BufferUsageHint::COMPUTE_STORAGE,
         GpuBufferBinding::ElementType element_type = GpuBufferBinding::ElementType::UINT32)
@@ -292,6 +317,15 @@ void main()
         };
     }
 
+    /** Double input and output only: native float64 input is the sole input and sets the dispatch size. */
+    std::vector<GpuBufferBinding> native_float64_bindings()
+    {
+        return {
+            make_binding(0, GpuBufferBinding::Direction::INPUT, BufferUsageHint::COMPUTE_STORAGE, GpuBufferBinding::ElementType::FLOAT64),
+            make_binding(1, GpuBufferBinding::Direction::OUTPUT, BufferUsageHint::COMPUTE_STORAGE, GpuBufferBinding::ElementType::FLOAT64),
+        };
+    }
+
     /** Uint input and output only: native uint32 input is the sole input and sets the dispatch size. */
     std::vector<GpuBufferBinding> native_uint_bindings()
     {
@@ -327,6 +361,15 @@ void main()
         config.shader_id = load_compute(k_float_scale_source);
         config.workgroup_size = { 16, 1, 1 };
         config.push_constant_size = sizeof(FloatPush);
+        return config;
+    }
+
+    GpuComputeConfig double_scale_config()
+    {
+        GpuComputeConfig config;
+        config.shader_id = load_compute(k_double_scale_source);
+        config.workgroup_size = { 16, 1, 1 };
+        config.push_constant_size = sizeof(DoublePush);
         return config;
     }
 
@@ -507,6 +550,61 @@ void main()
 
         const auto native = float_ramp(k_words);
         EXPECT_EQ(core.run_native(native).primary, float_scaled(native, 2.0F));
+    }
+
+    TYPED_TEST(GpuDispatchCoreTest, NativeFloat64InputIsCopiedRawIntoAFloat64Binding)
+    {
+        if (!device_supports_shader_float64()) {
+            GTEST_SKIP() << "Selected device does not report shaderFloat64";
+        }
+        DispatchCoreProbe core(double_scale_config(), native_float64_bindings());
+        ASSERT_TRUE(core.ensure_gpu_ready());
+        core.set_output_size(1, k_words * sizeof(double));
+        core.set_push_constants(DoublePush { .count = static_cast<uint32_t>(k_words), .pad = 0, .factor = 2.5 });
+
+        std::vector<double> values(k_words);
+        for (size_t i = 0; i < k_words; ++i) {
+            values[i] = static_cast<double>(i) + 0.5;
+        }
+        const auto result = core.run_native_raw(GpuDataFormat::FLOAT64, values.data(), values.size() * sizeof(double));
+
+        std::vector<double> out(result.primary.size() * sizeof(float) / sizeof(double));
+        ASSERT_EQ(out.size(), k_words);
+        std::memcpy(out.data(), result.primary.data(), out.size() * sizeof(double));
+
+        std::vector<double> expected(values);
+        for (auto& v : expected) {
+            v *= 2.5;
+        }
+        EXPECT_EQ(out, expected);
+    }
+
+    TYPED_TEST(GpuDispatchCoreTest, NativeFloat64InputIsRefusedByAFloat32Binding)
+    {
+        DispatchCoreProbe core(float_scale_config(), native_float_bindings());
+        ASSERT_TRUE(core.ensure_gpu_ready());
+        core.set_output_size(1, k_bytes);
+        core.set_push_constants(FloatPush { .count = static_cast<uint32_t>(k_words), .factor = 2.0F });
+
+        const std::vector<double> doubles(k_words, 1.0);
+        EXPECT_TRUE(core.run_native_raw(GpuDataFormat::FLOAT64, doubles.data(), doubles.size() * sizeof(double)).primary.empty());
+
+        const auto native = float_ramp(k_words);
+        EXPECT_EQ(core.run_native(native).primary, float_scaled(native, 2.0F));
+    }
+
+    TYPED_TEST(GpuDispatchCoreTest, NativeFloat32InputIsRefusedByAFloat64Binding)
+    {
+        if (!device_supports_shader_float64()) {
+            GTEST_SKIP() << "Selected device does not report shaderFloat64";
+        }
+        DispatchCoreProbe core(double_scale_config(), native_float64_bindings());
+        ASSERT_TRUE(core.ensure_gpu_ready());
+        core.set_output_size(1, k_words * sizeof(double));
+        core.set_push_constants(DoublePush { .count = static_cast<uint32_t>(k_words), .pad = 0, .factor = 2.0 });
+
+        const auto native = float_ramp(k_words);
+        EXPECT_TRUE(core.run_native(native).primary.empty());
     }
 
     TYPED_TEST(GpuDispatchCoreTest, NativeInputIsConsumedByItsOwnDispatch)

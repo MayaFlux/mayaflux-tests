@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 
 
+#include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 #include "MayaFlux/Portal/Graphics/ShaderSpec.hpp"
 
 namespace MayaFlux::Test {
@@ -132,6 +133,52 @@ namespace {
         EXPECT_EQ(spec.bindings[1].modality, DataModality::IMAGE_2D);
         EXPECT_EQ(spec.bindings[1].direction, BindingDirection::Input);
         EXPECT_EQ(spec.bindings[1].format, GpuDataFormat::VEC4_F32);
+    }
+
+    TEST(ShaderSpecGeneratorTest, ASpecOfEmittedFormatsIsSupported)
+    {
+        ShaderSpec spec;
+        spec.bindings.push_back({ .name = "in_values", .direction = BindingDirection::Input, .format = GpuDataFormat::VEC2_U32 });
+        spec.bindings.push_back({ .name = "out_values", .direction = BindingDirection::Output, .format = GpuDataFormat::FLOAT32 });
+        Portal::Graphics::PushConstantField field;
+        field.name = "factor";
+        field.format = GpuDataFormat::FLOAT32;
+        spec.pc_fields.push_back(field);
+
+        EXPECT_TRUE(Portal::Graphics::detail::unsupported_spec_reason(spec).empty());
+    }
+
+    TEST(ShaderSpecGeneratorTest, AFloat64BindingIsNamedAsUnsupported)
+    {
+        ShaderSpec spec;
+        spec.bindings.push_back({ .name = "samples", .direction = BindingDirection::InOut, .format = GpuDataFormat::FLOAT64 });
+
+        const auto reason = Portal::Graphics::detail::unsupported_spec_reason(spec);
+
+        EXPECT_NE(reason.find("samples"), std::string::npos);
+        EXPECT_NE(reason.find("64-bit float"), std::string::npos);
+    }
+
+    TEST(ShaderSpecGeneratorTest, AVec2F64BindingIsUnsupportedToo)
+    {
+        ShaderSpec spec;
+        spec.bindings.push_back({ .name = "pairs", .direction = BindingDirection::Input, .format = GpuDataFormat::VEC2_F64 });
+
+        EXPECT_FALSE(Portal::Graphics::detail::unsupported_spec_reason(spec).empty());
+    }
+
+    TEST(ShaderSpecGeneratorTest, AFloat64PushConstantFieldIsNamedAsUnsupported)
+    {
+        ShaderSpec spec;
+        Portal::Graphics::PushConstantField field;
+        field.name = "rate";
+        field.format = GpuDataFormat::FLOAT64;
+        spec.pc_fields.push_back(field);
+
+        const auto reason = Portal::Graphics::detail::unsupported_spec_reason(spec);
+
+        EXPECT_NE(reason.find("rate"), std::string::npos);
+        EXPECT_NE(reason.find("64-bit float"), std::string::npos);
     }
 
     TEST(ShaderSpecAssembleTest, PushConstantFieldsKeepDeclarationOrderAndDefaultToFloat)
