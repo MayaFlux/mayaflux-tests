@@ -6,7 +6,7 @@
 #include "../../support/gpu_dispatch_test_support.hpp"
 
 #include "MayaFlux/Kinesis/Discrete/OrderKey.hpp"
-#include "MayaFlux/Yantra/Executors/SegmentedReductionContext.hpp"
+#include "MayaFlux/Yantra/Executors/Audio/SegmentedReductionContext.hpp"
 
 namespace MayaFlux::Test {
 namespace {

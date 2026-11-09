@@ -626,6 +626,93 @@ namespace {
         EXPECT_TRUE(contains_none(emit_spirv_asm(missing_output), { { "%main = OpFunction", "one binding is not enough" } }));
     }
 
+    ShaderSpec fft_spec(uint32_t points, Portal::Graphics::SpectrumOutput output, uint32_t workgroup)
+    {
+        return ShaderSpec::Assemble {}
+            .tmpl(KernelTemplate::FFT)
+            .points(points)
+            .spectrum(output)
+            .ssbo("values", BindingDirection::Input, GpuDataFormat::VEC2_U32)
+            .ssbo("twiddle", BindingDirection::Input, GpuDataFormat::VEC2_U32)
+            .ssbo("window", BindingDirection::Input, GpuDataFormat::VEC2_U32)
+            .ssbo("result", BindingDirection::Output, GpuDataFormat::VEC2_U32)
+            .pc("length", GpuDataFormat::UINT32)
+            .pc("stride", GpuDataFormat::UINT32)
+            .pc("offset", GpuDataFormat::UINT32)
+            .pc("scale_lo", GpuDataFormat::UINT32)
+            .pc("scale_hi", GpuDataFormat::UINT32)
+            .workgroup(workgroup)
+            .build();
+    }
+
+    size_t occurrences(const std::string& text, std::string_view needle)
+    {
+        size_t count = 0;
+        for (auto at = text.find(needle); at != std::string::npos; at = text.find(needle, at + needle.size())) {
+            ++count;
+        }
+        return count;
+    }
+
+    TEST(FftAsmTest, ListsTheWorkgroupBuiltinsAndSharedArraysInTheInterface)
+    {
+        const std::string text = emit_spirv_asm(fft_spec(64, Portal::Graphics::SpectrumOutput::Complex, 32));
+
+        EXPECT_TRUE(contains_all(text,
+            { { "%wgid_var %fft_re %fft_im", "SPIR-V 1.4 and later lists every global the entry point uses" },
+                { "BuiltIn WorkgroupId", "the workgroup is the window" },
+                { "BuiltIn LocalInvocationId", "invocations share the butterflies" },
+                { "OpTypeArray %v2u32 %sd_k64", "one word pair per point, real and imaginary" },
+                { "%sd_f64_add = OpFunction %v2u32", "butterflies add" },
+                { "%sd_f64_mul = OpFunction %v2u32", "butterflies and the window multiply" },
+                { "LocalSize 32 1 1", "execution mode matches the workgroup" } }));
+        EXPECT_TRUE(contains_none(text,
+            { { "OpFAdd", "arithmetic is integer only" },
+                { "OpCapability Float64", "no device float64" },
+                { "OpCapability Int64", "no device int64" },
+                { "%sd_f64_less = OpFunction", "no ordering in an FFT" } }));
+    }
+
+    TEST(FftAsmTest, OneBarrierSeparatesTheLoadAndEveryStage)
+    {
+        EXPECT_EQ(occurrences(emit_spirv_asm(fft_spec(2, Portal::Graphics::SpectrumOutput::Complex, 1)), "OpControlBarrier"), 2U);
+        EXPECT_EQ(occurrences(emit_spirv_asm(fft_spec(16, Portal::Graphics::SpectrumOutput::Complex, 8)), "OpControlBarrier"), 5U);
+        EXPECT_EQ(occurrences(emit_spirv_asm(fft_spec(256, Portal::Graphics::SpectrumOutput::Complex, 128)), "OpControlBarrier"), 9U);
+    }
+
+    TEST(FftAsmTest, PowerOutputGuardsEachRoundOfBinsAndComplexOutputDoesNot)
+    {
+        const std::string power = emit_spirv_asm(fft_spec(8, Portal::Graphics::SpectrumOutput::Power, 2));
+        const std::string complex = emit_spirv_asm(fft_spec(8, Portal::Graphics::SpectrumOutput::Complex, 2));
+
+        EXPECT_TRUE(contains_all(power,
+            { { "%fft_pw2 = OpLabel", "five bins over two invocations take three rounds" },
+                { "OpSelectionMerge %fft_pm0 None", "the guard is structured" } }));
+        EXPECT_TRUE(contains_none(power, { { "%fft_pw3 = OpLabel", "only three rounds" } }));
+        EXPECT_TRUE(contains_none(complex, { { "%fft_pw0", "every bin of a complex output is in range" } }));
+    }
+
+    TEST(FftAsmTest, AMalformedSpecEmitsNoEntryPoint)
+    {
+        const ShaderSpec not_power_of_two = fft_spec(24, Portal::Graphics::SpectrumOutput::Complex, 4);
+        const ShaderSpec too_large = fft_spec(4096, Portal::Graphics::SpectrumOutput::Complex, 256);
+        const ShaderSpec too_wide = fft_spec(16, Portal::Graphics::SpectrumOutput::Complex, 16);
+        const ShaderSpec odd_workgroup = fft_spec(16, Portal::Graphics::SpectrumOutput::Complex, 3);
+        const ShaderSpec one_point = fft_spec(1, Portal::Graphics::SpectrumOutput::Complex, 1);
+
+        const ShaderSpec two_bindings = ShaderSpec::Assemble {}
+                                            .tmpl(KernelTemplate::FFT)
+                                            .points(16)
+                                            .ssbo("values", BindingDirection::Input, GpuDataFormat::VEC2_U32)
+                                            .ssbo("result", BindingDirection::Output, GpuDataFormat::VEC2_U32)
+                                            .workgroup(8)
+                                            .build();
+
+        for (const auto* spec : { &not_power_of_two, &too_large, &too_wide, &odd_workgroup, &one_point, &two_bindings }) {
+            EXPECT_TRUE(contains_none(emit_spirv_asm(*spec), { { "%main = OpFunction", "the spec has no valid FFT shape" } }));
+        }
+    }
+
     TEST(AsmGeneratorTest, Convolve2dLoopsOverTheKernelWithClampedCoordinatesAndAccumulates)
     {
         const ShaderSpec spec = ShaderSpec::Assemble {}
