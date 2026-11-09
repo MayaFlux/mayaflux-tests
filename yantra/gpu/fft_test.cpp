@@ -4,6 +4,8 @@
 
 #include "../../support/gpu_dispatch_test_support.hpp"
 
+#include "MayaFlux/Kinesis/Discrete/Spectral.hpp"
+#include "MayaFlux/Kinesis/Discrete/Taper.hpp"
 #include "MayaFlux/Yantra/Executors/Audio/FftContext.hpp"
 
 namespace MayaFlux::Test {
@@ -245,6 +247,65 @@ namespace {
             frequency_energy += spectrum[2 * k] * spectrum[2 * k] + spectrum[2 * k + 1] * spectrum[2 * k + 1];
         }
         EXPECT_NEAR(frequency_energy / points, time_energy, 1.0e-11);
+    }
+
+    TYPED_TEST(FftGpuTest, AProjectionMatchesTheKinesisProjectionOfTheWindowedPowerSpectrum)
+    {
+        constexpr uint32_t points = 64;
+        constexpr size_t bins = points / 2 + 1;
+        constexpr size_t rows = 5;
+        const auto signal = random_signal(700, 53);
+        const auto weights = random_signal(rows * bins, 59);
+        const auto taper = Kinesis::Discrete::hann(points);
+        FftContext context(points, weights);
+
+        const auto got = context.transform(signal, { .length = points, .stride = 32, .offset = 0, .count = 20 }, taper);
+        const auto want = Kinesis::Discrete::spectral_projection(signal, points, 32, weights, taper);
+
+        ASSERT_EQ(context.descriptors(), rows);
+        ASSERT_EQ(want.size(), 20U * rows);
+        ASSERT_EQ(got.size(), want.size());
+        for (size_t i = 0; i < want.size(); ++i) {
+            EXPECT_NEAR(got[i], want[i], 1.0e-11 * (1.0 + std::abs(want[i]))) << "value " << i;
+        }
+    }
+
+    TYPED_TEST(FftGpuTest, MoreRowsThanInvocationsAreAllComputed)
+    {
+        constexpr uint32_t points = 64;
+        constexpr size_t bins = points / 2 + 1;
+        constexpr size_t rows = 70;
+        const auto signal = random_signal(256, 61);
+        const auto weights = random_signal(rows * bins, 67);
+        FftContext context(points, weights);
+
+        const auto got = context.transform(signal, { .length = points, .stride = 64, .offset = 0, .count = 4 });
+        const auto want = Kinesis::Discrete::spectral_projection(signal, points, 64, weights);
+
+        ASSERT_EQ(got.size(), want.size());
+        for (size_t i = 0; i < want.size(); ++i) {
+            EXPECT_NEAR(got[i], want[i], 1.0e-11 * (1.0 + std::abs(want[i]))) << "value " << i;
+        }
+    }
+
+    TYPED_TEST(FftGpuTest, AProjectionOfAllOnesIsTheSumOfThePowerSpectrum)
+    {
+        constexpr uint32_t points = 128;
+        constexpr size_t bins = points / 2 + 1;
+        const auto signal = random_signal(points, 71);
+        const std::vector<double> ones(bins, 1.0);
+        FftContext projecting(points, ones);
+        FftContext power(points, SpectrumOutput::Power);
+
+        const auto total = projecting.transform(signal, one_window(points));
+        const auto spectrum = power.transform(signal, one_window(points));
+
+        ASSERT_EQ(total.size(), 1U);
+        double sum = 0.0;
+        for (const double p : spectrum) {
+            sum += p;
+        }
+        EXPECT_NEAR(total[0], sum, 1.0e-11 * (1.0 + sum));
     }
 
     TYPED_TEST(FftGpuTest, NoWindowsReturnsNothing)

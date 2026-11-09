@@ -1,4 +1,5 @@
 #include "MayaFlux/Yantra/Analyzers/EnergyAnalyzer.hpp"
+#include "MayaFlux/Yantra/Analyzers/SpectralAnalyzer.hpp"
 #include "MayaFlux/Yantra/Analyzers/StatisticalAnalyzer.hpp"
 #include "MayaFlux/Yantra/Analyzers/VisionAnalyzer.hpp"
 #include "MayaFlux/Yantra/ComputeGrammar.hpp"
@@ -70,6 +71,23 @@ namespace {
         const auto extractors = registry.resolve(ComputationSignature(VisionExtractMode::Crop), nullptr);
         ASSERT_EQ(extractors.size(), 1U);
         EXPECT_EQ(extractors.front().target, targets::vulkan);
+    }
+
+    TEST(DefaultRegistryTest, SpectralAnalyzersAreGpuCandidatesByMethod)
+    {
+        static_assert(std::same_as<selection_t<SpectralAnalyzerConfig>, SpectralMethod>);
+        static_assert(target_of_v<StandardSpectralAnalyzer> == targets::vulkan);
+        static_assert(target_of_v<ContainerSpectralAnalyzer> == targets::vulkan);
+
+        const auto registry = make_default_registry();
+
+        for (const auto method : { SpectralMethod::TOTAL_POWER, SpectralMethod::CENTROID, SpectralMethod::FLUX }) {
+            const auto found = registry.resolve(ComputationSignature(method), nullptr);
+            ASSERT_FALSE(found.empty());
+            for (const auto& candidate : found) {
+                EXPECT_EQ(candidate.target, targets::vulkan);
+            }
+        }
     }
 
     TEST(DefaultRegistryTest, DoesNotListWorkflowOnlyOperations)

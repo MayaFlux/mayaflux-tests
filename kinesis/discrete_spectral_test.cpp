@@ -194,5 +194,92 @@ namespace {
         EXPECT_NEAR(ratio, 2.0, 0.1);
     }
 
+    TEST(KinesisSpectralProjectionTest, AnImpulseHasUnitPowerInEveryBin)
+    {
+        constexpr uint32_t window = 32;
+        constexpr size_t bins = window / 2 + 1;
+        std::vector<double> impulse(window, 0.0);
+        impulse[0] = 1.0;
+        const std::vector<double> ones(bins, 1.0);
+
+        const auto out = D::spectral_projection(impulse, window, window, ones);
+
+        ASSERT_EQ(out.size(), 1U);
+        EXPECT_NEAR(out[0], static_cast<double>(bins), 1e-9);
+    }
+
+    TEST(KinesisSpectralProjectionTest, ASingleBinRowReadsThePowerOfATonePlacedInThatBin)
+    {
+        constexpr uint32_t window = 64;
+        constexpr size_t bins = window / 2 + 1;
+        constexpr size_t tone_bin = 5;
+        std::vector<double> tone(window);
+        for (size_t n = 0; n < window; ++n) {
+            tone[n] = std::cos(2.0 * std::numbers::pi * tone_bin * static_cast<double>(n) / window);
+        }
+        std::vector<double> weights(2 * bins, 0.0);
+        weights[tone_bin] = 1.0;
+        weights[bins + 7] = 1.0;
+
+        const auto out = D::spectral_projection(tone, window, window, weights);
+
+        ASSERT_EQ(out.size(), 2U);
+        EXPECT_NEAR(out[0], std::pow(window / 2.0, 2.0), 1e-6);
+        EXPECT_NEAR(out[1], 0.0, 1e-6);
+    }
+
+    TEST(KinesisSpectralProjectionTest, FramesAreWholeAndRowsFollowEachFrame)
+    {
+        constexpr uint32_t window = 64;
+        constexpr size_t bins = window / 2 + 1;
+        const std::vector<double> signal = sine(300, 500.0);
+        const std::vector<double> weights(3 * bins, 1.0);
+
+        const auto out = D::spectral_projection(signal, window, 32, weights);
+
+        EXPECT_EQ(out.size(), 8U * 3U);
+        for (size_t frame = 0; frame < 8; ++frame) {
+            EXPECT_DOUBLE_EQ(out[frame * 3], out[frame * 3 + 1]);
+            EXPECT_DOUBLE_EQ(out[frame * 3], out[frame * 3 + 2]);
+        }
+    }
+
+    TEST(KinesisSpectralProjectionTest, TheTaperIsAppliedBeforeTheTransform)
+    {
+        constexpr uint32_t window = 32;
+        constexpr size_t bins = window / 2 + 1;
+        const std::vector<double> constant(window, 1.0);
+        std::vector<double> taper(window, 0.0);
+        taper[0] = 1.0;
+        const std::vector<double> ones(bins, 1.0);
+
+        const auto out = D::spectral_projection(constant, window, window, ones, taper);
+
+        ASSERT_EQ(out.size(), 1U);
+        EXPECT_NEAR(out[0], static_cast<double>(bins), 1e-9);
+    }
+
+    TEST(KinesisSpectralProjectionTest, ArgumentsThatDoNotFitReturnNothing)
+    {
+        const std::vector<double> signal(128, 1.0);
+        const std::vector<double> ones(17, 1.0);
+        const std::vector<double> ragged(20, 1.0);
+        const std::vector<double> short_taper(8, 1.0);
+
+        EXPECT_TRUE(D::spectral_projection(signal, 32, 0, ones).empty());
+        EXPECT_TRUE(D::spectral_projection(signal, 1, 8, ones).empty());
+        EXPECT_TRUE(D::spectral_projection(signal, 32, 8, {}).empty());
+        EXPECT_TRUE(D::spectral_projection(signal, 32, 8, ragged).empty());
+        EXPECT_TRUE(D::spectral_projection(signal, 32, 8, ones, short_taper).empty());
+    }
+
+    TEST(KinesisSpectralProjectionTest, ASignalShorterThanOneFrameHasNoFrames)
+    {
+        const std::vector<double> signal(16, 1.0);
+        const std::vector<double> ones(17, 1.0);
+
+        EXPECT_TRUE(D::spectral_projection(signal, 32, 8, ones).empty());
+    }
+
 } // namespace
 } // namespace MayaFlux::Test

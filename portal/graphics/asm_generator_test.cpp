@@ -692,6 +692,57 @@ namespace {
         EXPECT_TRUE(contains_none(complex, { { "%fft_pw0", "every bin of a complex output is in range" } }));
     }
 
+    ShaderSpec fft_projection_spec(uint32_t points, uint32_t descriptors, uint32_t workgroup, bool with_weights = true)
+    {
+        auto assemble = ShaderSpec::Assemble {};
+        assemble.tmpl(KernelTemplate::FFT)
+            .points(points)
+            .spectrum(Portal::Graphics::SpectrumOutput::Projection)
+            .descriptors(descriptors)
+            .ssbo("values", BindingDirection::Input, GpuDataFormat::VEC2_U32)
+            .ssbo("twiddle", BindingDirection::Input, GpuDataFormat::VEC2_U32)
+            .ssbo("window", BindingDirection::Input, GpuDataFormat::VEC2_U32)
+            .ssbo("result", BindingDirection::Output, GpuDataFormat::VEC2_U32);
+        if (with_weights) {
+            assemble.ssbo("weights", BindingDirection::Input, GpuDataFormat::VEC2_U32);
+        }
+        return assemble
+            .pc("length", GpuDataFormat::UINT32)
+            .pc("stride", GpuDataFormat::UINT32)
+            .pc("offset", GpuDataFormat::UINT32)
+            .pc("scale_lo", GpuDataFormat::UINT32)
+            .pc("scale_hi", GpuDataFormat::UINT32)
+            .workgroup(workgroup)
+            .build();
+    }
+
+    TEST(FftAsmTest, AProjectionWritesPowerBackToSharedMemoryAndLoopsOverTheWeights)
+    {
+        const std::string text = emit_spirv_asm(fft_projection_spec(64, 5, 16));
+
+        EXPECT_TRUE(contains_all(text,
+            { { "%fft_acc = OpVariable %fft_pf_v2 Function", "the running sum of a row lives in a function variable" },
+                { "OpLoopMerge %fft_lm0 %fft_lc0 None", "each row loops over the bins" },
+                { "OpControlBarrier", "the power spectrum is complete before any row reads it" },
+                { "%buf_weights", "the weights are a fifth binding" },
+                { "%fft_dw0 = OpLabel", "a row is guarded against the descriptor count" } }));
+        EXPECT_TRUE(contains_none(text, { { "OpFAdd", "arithmetic is integer only" } }));
+    }
+
+    TEST(FftAsmTest, ARowCountBeyondTheWorkgroupTakesMoreRounds)
+    {
+        const std::string text = emit_spirv_asm(fft_projection_spec(64, 70, 16));
+
+        EXPECT_TRUE(contains_all(text, { { "%fft_dw4 = OpLabel", "70 rows over 16 invocations take five rounds" } }));
+        EXPECT_TRUE(contains_none(text, { { "%fft_dw5 = OpLabel", "only five rounds" } }));
+    }
+
+    TEST(FftAsmTest, AProjectionWithoutWeightsOrRowsEmitsNoEntryPoint)
+    {
+        EXPECT_TRUE(contains_none(emit_spirv_asm(fft_projection_spec(64, 5, 16, false)), { { "%main = OpFunction", "no weights binding" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(fft_projection_spec(64, 0, 16)), { { "%main = OpFunction", "no rows" } }));
+    }
+
     TEST(FftAsmTest, AMalformedSpecEmitsNoEntryPoint)
     {
         const ShaderSpec not_power_of_two = fft_spec(24, Portal::Graphics::SpectrumOutput::Complex, 4);
