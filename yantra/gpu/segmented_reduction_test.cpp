@@ -316,6 +316,65 @@ namespace {
         EXPECT_TRUE(same_double(sums[3], -k_inf));
     }
 
+    TYPED_TEST(SegmentedReductionGpuTest, ReducingFewerSegmentsAfterMoreReturnsOnlyTheRequestedCount)
+    {
+        SegmentedReductionContext context(KernelOp::Sum);
+        const auto values = counting(300);
+
+        const auto many = context.reduce(values, tiled(100, 3));
+        const auto few = context.reduce(values, tiled(150, 2));
+        const auto one = context.reduce(values, tiled(300, 1));
+
+        ASSERT_EQ(many.size(), 3U);
+        ASSERT_EQ(few.size(), 2U);
+        ASSERT_EQ(one.size(), 1U);
+        EXPECT_TRUE(same_double(few[0], 150.0 * 151.0 / 2.0));
+        EXPECT_TRUE(same_double(few[1], 300.0 * 301.0 / 2.0 - 150.0 * 151.0 / 2.0));
+        EXPECT_TRUE(same_double(one[0], 300.0 * 301.0 / 2.0));
+    }
+
+    TYPED_TEST(SegmentedReductionGpuTest, AStagedReductionRunsThroughTheAsynchronousPathAndCanBeRestaged)
+    {
+        SegmentedReductionContext context(KernelOp::Sum, ReductionMap::Square);
+        const auto values = counting(300);
+
+        const auto run = [&context, &values](const SegmentGeometry& geometry) {
+            context.stage(values, geometry);
+            const auto fence = context.dispatch_async(Yantra::Datum<std::vector<Kakshya::DataVariant>> {});
+            EXPECT_NE(fence, Portal::Graphics::INVALID_FENCE);
+            foundry().wait_for_fence(fence);
+            return context.decode_primary(context.collect_result());
+        };
+
+        const auto expected = [&values](const SegmentGeometry& geometry) {
+            std::vector<double> sums;
+            for (uint32_t s = 0; s < geometry.count; ++s) {
+                double sum = 0.0;
+                for (uint32_t i = 0; i < geometry.length; ++i) {
+                    const double x = values[static_cast<size_t>(geometry.offset) + static_cast<size_t>(s) * geometry.stride + i];
+                    sum += x * x;
+                }
+                sums.push_back(sum);
+            }
+            return sums;
+        };
+
+        const SegmentGeometry three = tiled(100, 3);
+        const SegmentGeometry two = tiled(150, 2);
+
+        const auto first = run(three);
+        const auto second = run(two);
+
+        ASSERT_EQ(first.size(), 3U);
+        ASSERT_EQ(second.size(), 2U);
+        for (size_t i = 0; i < first.size(); ++i) {
+            EXPECT_TRUE(same_double(first[i], expected(three)[i])) << "segment " << i;
+        }
+        for (size_t i = 0; i < second.size(); ++i) {
+            EXPECT_TRUE(same_double(second[i], expected(two)[i])) << "segment " << i;
+        }
+    }
+
     TYPED_TEST(SegmentedReductionGpuTest, SumOfRandomSamplesAgreesWithTheHostWithinRounding)
     {
         SegmentedReductionContext context(KernelOp::Sum);
