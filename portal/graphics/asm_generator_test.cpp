@@ -508,6 +508,124 @@ namespace {
                 { "loop_hdr", "back edge target" } }));
     }
 
+    ShaderSpec segmented_spec(KernelOp op, Portal::Graphics::ReductionMap map, uint32_t workgroup = 64)
+    {
+        return ShaderSpec::Assemble {}
+            .tmpl(KernelTemplate::SegmentedReduction)
+            .op(op)
+            .map(map)
+            .ssbo("values", BindingDirection::Input, GpuDataFormat::VEC2_U32)
+            .ssbo("result", BindingDirection::Output, GpuDataFormat::VEC2_U32)
+            .pc("length", GpuDataFormat::UINT32)
+            .pc("stride", GpuDataFormat::UINT32)
+            .pc("offset", GpuDataFormat::UINT32)
+            .workgroup(workgroup)
+            .build();
+    }
+
+    TEST(SegmentedReductionAsmTest, DeclaresWorkgroupAndLocalInvocationBuiltinsAndTheSharedTree)
+    {
+        const std::string text = emit_spirv_asm(segmented_spec(KernelOp::Sum, Portal::Graphics::ReductionMap::Identity));
+
+        EXPECT_TRUE(contains_all(text,
+            { { "%wgid_var %sr_shared", "SPIR-V 1.4 and later lists every global the entry point uses" },
+                { "BuiltIn WorkgroupId", "the workgroup is the segment" },
+                { "BuiltIn LocalInvocationId", "invocations stride across the segment" },
+                { "OpTypeArray %v2u32 %sr_local", "shared memory holds one word pair per invocation" },
+                { "OpControlBarrier", "the tree synchronises between levels" },
+                { "OpLoopMerge", "the stride loop and the tree loop are structured" },
+                { "%sr_op = OpAccessChain %pelem_result %buf_result %c0u %sr_seg", "the result lands at the workgroup index" } }));
+    }
+
+    TEST(SegmentedReductionAsmTest, SumEmitsOnlyTheSoftDoubleAddition)
+    {
+        const std::string text = emit_spirv_asm(segmented_spec(KernelOp::Sum, Portal::Graphics::ReductionMap::Identity));
+
+        EXPECT_TRUE(contains_all(text,
+            { { "%sd_f64_add = OpFunction %v2u32", "addition is defined" },
+                { "OpFunctionCall %v2u32 %sd_f64_add", "the combine calls it" },
+                { "OpUGreaterThanEqual", "alignment shifts are guarded" } }));
+        EXPECT_TRUE(contains_none(text,
+            { { "%sd_f64_mul = OpFunction", "no square map, no multiply" },
+                { "%sd_f64_less = OpFunction", "no ordering combine, no comparison" },
+                { "OpFAdd", "arithmetic is integer only" },
+                { "OpCapability Float64", "no device float64" },
+                { "OpCapability Int64", "no device int64" } }));
+    }
+
+    TEST(SegmentedReductionAsmTest, SquareMapAddsTheMultiplyAndUsesTheExtendedProduct)
+    {
+        const std::string text = emit_spirv_asm(segmented_spec(KernelOp::Sum, Portal::Graphics::ReductionMap::Square));
+
+        EXPECT_TRUE(contains_all(text,
+            { { "%sd_f64_mul = OpFunction %v2u32", "multiply is defined" },
+                { "OpUMulExtended", "32 by 32 products keep their high word" },
+                { "OpFunctionCall %v2u32 %sd_f64_mul %sr_x0 %sr_x0", "the element is squared" } }));
+    }
+
+    TEST(SegmentedReductionAsmTest, AbsMapClearsTheSignBitWithoutCallingSoftDouble)
+    {
+        const std::string text = emit_spirv_asm(segmented_spec(KernelOp::Max, Portal::Graphics::ReductionMap::Abs));
+
+        EXPECT_TRUE(contains_all(text,
+            { { "OpBitwiseAnd %u32 %sr_x0hi %sr_abs", "abs is a mask on the high word" },
+                { "%sd_f64_less = OpFunction %bool", "max compares by order key" } }));
+        EXPECT_TRUE(contains_none(text,
+            { { "%sd_f64_add = OpFunction", "max does not add" },
+                { "%sd_f64_mul = OpFunction", "abs does not multiply" } }));
+    }
+
+    TEST(SegmentedReductionAsmTest, MaxStartsFromTheSmallestKeyAndMinFromTheLargest)
+    {
+        const std::string max_text = emit_spirv_asm(segmented_spec(KernelOp::Max, Portal::Graphics::ReductionMap::Identity));
+        const std::string min_text = emit_spirv_asm(segmented_spec(KernelOp::Min, Portal::Graphics::ReductionMap::Identity));
+
+        EXPECT_TRUE(contains_all(max_text, { { "%sr_id_hi = OpConstant %u32 4293918720", "-inf high word" } }));
+        EXPECT_TRUE(contains_all(min_text, { { "%sr_id_hi = OpConstant %u32 2146959360", "NaN high word, the largest key" } }));
+    }
+
+    TEST(SegmentedReductionAsmTest, SoftDoubleFunctionsFollowEveryGlobalDeclaration)
+    {
+        const std::string text = emit_spirv_asm(segmented_spec(KernelOp::Sum, Portal::Graphics::ReductionMap::Square));
+
+        const auto last_global = text.find("%sr_pf_u32 = OpTypePointer Function %u32");
+        const auto last_constant = text.rfind(" = OpConstant %u32 ", text.find("OpFunction"));
+        const auto first_function = text.find("OpFunction");
+
+        ASSERT_NE(last_global, std::string::npos);
+        ASSERT_NE(first_function, std::string::npos);
+        EXPECT_LT(last_global, first_function);
+        EXPECT_LT(last_constant, first_function);
+    }
+
+    TEST(SegmentedReductionAsmTest, WorkgroupSizeIsTheSharedArrayLength)
+    {
+        const std::string text = emit_spirv_asm(segmented_spec(KernelOp::Sum, Portal::Graphics::ReductionMap::Identity, 128));
+
+        EXPECT_TRUE(contains_all(text,
+            { { "%sr_local = OpConstant %u32 128", "array length follows the workgroup" },
+                { "LocalSize 128 1 1", "execution mode matches" } }));
+    }
+
+    TEST(SegmentedReductionAsmTest, AMalformedSpecEmitsNoEntryPoint)
+    {
+        auto not_power_of_two = segmented_spec(KernelOp::Sum, Portal::Graphics::ReductionMap::Identity, 96);
+        auto wrong_combine = segmented_spec(KernelOp::Scale, Portal::Graphics::ReductionMap::Identity);
+
+        const ShaderSpec missing_output = ShaderSpec::Assemble {}
+                                              .tmpl(KernelTemplate::SegmentedReduction)
+                                              .op(KernelOp::Sum)
+                                              .ssbo("values", BindingDirection::Input, GpuDataFormat::VEC2_U32)
+                                              .pc("length", GpuDataFormat::UINT32)
+                                              .pc("stride", GpuDataFormat::UINT32)
+                                              .pc("offset", GpuDataFormat::UINT32)
+                                              .build();
+
+        EXPECT_TRUE(contains_none(emit_spirv_asm(not_power_of_two), { { "%main = OpFunction", "96 is not a power of two" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(wrong_combine), { { "%main = OpFunction", "Scale is not a combine" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(missing_output), { { "%main = OpFunction", "one binding is not enough" } }));
+    }
+
     TEST(AsmGeneratorTest, Convolve2dLoopsOverTheKernelWithClampedCoordinatesAndAccumulates)
     {
         const ShaderSpec spec = ShaderSpec::Assemble {}
