@@ -49,6 +49,15 @@ namespace {
         return out;
     }
 
+    std::vector<double> pure_tone(size_t count, double period)
+    {
+        std::vector<double> out(count);
+        for (size_t i = 0; i < count; ++i) {
+            out[i] = std::sin(2.0 * std::numbers::pi * static_cast<double>(i) / period);
+        }
+        return out;
+    }
+
     std::vector<double> harmonic_stack(size_t count, double period, double amplitude)
     {
         std::vector<double> out(count);
@@ -136,6 +145,88 @@ namespace {
             EXPECT_EQ(channel.values[w], channel.period[w]);
             EXPECT_NEAR(channel.periodicity[w], strengths[w], 1.0e-9);
             EXPECT_NEAR(channel.frequency[w], lags[w] > 0 ? k_rate / static_cast<double>(lags[w]) : 0.0, 1.0e-9);
+        }
+    }
+
+    TYPED_TEST(WaveformAnalyzerGpuTest, AHopThatDoesNotDivide512MatchesKinesisPeriodicity)
+    {
+        const auto signal = voice_like();
+        StandardWaveformAnalyzer analyzer(make_config(WaveformMethod::PERIOD, 512, 100));
+
+        const auto analysis = analyzer.analyze_waveform(input_of({ signal }));
+
+        const size_t windows = D::num_windows(signal.size(), 512, 100);
+        const auto [strengths, lags] = D::periodicity(signal, windows, 100, 512, 40, 228);
+        const auto& channel = analysis.channels[0];
+        ASSERT_EQ(channel.period.size(), windows);
+        for (size_t w = 0; w < windows; ++w) {
+            EXPECT_EQ(channel.period[w], static_cast<double>(lags[w]));
+            EXPECT_NEAR(channel.periodicity[w], strengths[w], 1.0e-9);
+            EXPECT_EQ(channel.window_positions[w].first, w * 100);
+        }
+    }
+
+    TYPED_TEST(WaveformAnalyzerGpuTest, KeepingProfilesDoesNotChangeThePeriodOrTheStrength)
+    {
+        const auto signal = voice_like();
+        auto kept = make_config(WaveformMethod::PERIODICITY);
+        kept.keep_profiles = true;
+        StandardWaveformAnalyzer without(make_config(WaveformMethod::PERIODICITY));
+        StandardWaveformAnalyzer with(kept);
+
+        const auto a = without.analyze_waveform(input_of({ signal })).channels[0];
+        const auto b = with.analyze_waveform(input_of({ signal })).channels[0];
+
+        ASSERT_EQ(a.period.size(), b.period.size());
+        EXPECT_EQ(a.period, b.period);
+        EXPECT_EQ(a.periodicity, b.periodicity);
+        EXPECT_EQ(a.harmonicity, b.harmonicity);
+    }
+
+    TYPED_TEST(WaveformAnalyzerGpuTest, UnbiasedStrengthDoesNotFallWithThePeriod)
+    {
+        auto biased_config = make_config(WaveformMethod::PERIODICITY);
+        auto unbiased_config = biased_config;
+        unbiased_config.unbiased_periodicity = true;
+        StandardWaveformAnalyzer biased(biased_config);
+        StandardWaveformAnalyzer unbiased(unbiased_config);
+
+        double biased_mean[2] {};
+        int slot = 0;
+        for (const double period : { 80.0, 160.0 }) {
+            const auto signal = pure_tone(4096, period);
+            const auto plain = biased.analyze_waveform(input_of({ signal })).channels[0];
+            const auto corrected = unbiased.analyze_waveform(input_of({ signal })).channels[0];
+
+            ASSERT_EQ(plain.periodicity.size(), corrected.periodicity.size());
+            for (size_t w = 0; w < plain.periodicity.size(); ++w) {
+                EXPECT_EQ(corrected.period[w], plain.period[w]) << period;
+                EXPECT_GT(corrected.periodicity[w], plain.periodicity[w]) << period;
+                EXPECT_NEAR(corrected.periodicity[w], 1.0, 0.1) << period;
+                biased_mean[slot] += plain.periodicity[w] / static_cast<double>(plain.periodicity.size());
+            }
+            ++slot;
+        }
+        EXPECT_GT(biased_mean[0] - biased_mean[1], 0.1);
+    }
+
+    TYPED_TEST(WaveformAnalyzerGpuTest, UnbiasedStrengthIsTheChosenLagsStrengthOverItsShareOfPairs)
+    {
+        const auto signal = voice_like();
+        auto unbiased_config = make_config(WaveformMethod::PERIODICITY);
+        unbiased_config.unbiased_periodicity = true;
+        StandardWaveformAnalyzer biased(make_config(WaveformMethod::PERIODICITY));
+        StandardWaveformAnalyzer unbiased(unbiased_config);
+
+        const auto plain = biased.analyze_waveform(input_of({ signal })).channels[0];
+        const auto corrected = unbiased.analyze_waveform(input_of({ signal })).channels[0];
+
+        ASSERT_EQ(plain.period.size(), corrected.period.size());
+        EXPECT_EQ(plain.period, corrected.period);
+        for (size_t w = 0; w < plain.period.size(); ++w) {
+            const double lag = plain.period[w];
+            const double share = lag > 0.0 ? 512.0 / (512.0 - lag) : 1.0;
+            EXPECT_NEAR(corrected.periodicity[w], plain.periodicity[w] * share, 1.0e-12) << w;
         }
     }
 
@@ -450,9 +541,10 @@ namespace {
         EXPECT_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 256, 128)), std::invalid_argument);
     }
 
-    TEST(WaveformAnalyzerConfigTest, AHopThatDoesNotDivide512IsRejected)
+    TEST(WaveformAnalyzerConfigTest, AnyHopAboveZeroIsAccepted)
     {
-        EXPECT_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 512, 100)), std::invalid_argument);
+        EXPECT_NO_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 512, 100)));
+        EXPECT_NO_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 512, 441)));
         EXPECT_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 512, 0)), std::invalid_argument);
     }
 
