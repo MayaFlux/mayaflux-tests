@@ -28,7 +28,7 @@ namespace {
     TensorData floats(std::string name, std::vector<uint64_t> shape, float value)
     {
         const size_t count = Yantra::TensorKernels::detail::element_count(shape);
-        return *TensorData::from_values<float>(std::vector<float>(count, value), std::move(shape), std::move(name));
+        return TensorData::from_values<float>(std::vector<float>(count, value), std::move(shape), std::move(name)).value();
     }
 
     TensorSet bias_then_weight()
@@ -63,7 +63,7 @@ namespace {
     TEST(TensorKernelsWeightsTest, OtherElementTypesAreConvertedToFloat)
     {
         TensorSet set;
-        set.tensors.push_back(*TensorData::from_values<int32_t>(std::vector<int32_t> { 3 }, { 1, 1, 1 }, "w"));
+        set.tensors.push_back(TensorData::from_values<int32_t>(std::vector<int32_t> { 3 }, { 1, 1, 1 }, "w").value());
         set.tensors.push_back(floats("b", { 1 }, 0.5F));
 
         const auto packed = pack_weights(set, required());
@@ -75,8 +75,8 @@ namespace {
     TEST(TensorKernelsWeightsTest, AnElementTypeThatCannotBecomeFloatIsNamedWithItsReason)
     {
         TensorSet set;
-        set.tensors.push_back(*TensorData::from_values<std::complex<float>>(
-            std::vector<std::complex<float>> { { 1.0F, 2.0F } }, { 1, 1, 1 }, "w"));
+        set.tensors.push_back(TensorData::from_values<std::complex<float>>(
+            std::vector<std::complex<float>> { { 1.0F, 2.0F } }, { 1, 1, 1 }, "w").value());
         set.tensors.push_back(floats("b", { 1 }, 0.5F));
 
         const auto packed = pack_weights(set, required());
