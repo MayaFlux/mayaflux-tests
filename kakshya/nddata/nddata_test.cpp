@@ -42,6 +42,26 @@ namespace {
         EXPECT_EQ(dim.role, Role::CHANNEL);
     }
 
+    TEST(NDDataDimensionTest, InstanceMarksIndependentRepeats)
+    {
+        const auto dim = DataDimension::instance(8);
+
+        EXPECT_EQ(dim.name, "instance");
+        EXPECT_EQ(dim.size, 8U);
+        EXPECT_EQ(dim.stride, 1U);
+        EXPECT_EQ(dim.role, Role::INSTANCE);
+        EXPECT_NE(dim.role, Role::TIME);
+        EXPECT_NE(dim.role, Role::CHANNEL);
+    }
+
+    TEST(NDDataDimensionTest, InstanceCarriesItsStrideAndName)
+    {
+        const auto dim = DataDimension::instance(3, 480, "clips");
+
+        EXPECT_EQ(dim.name, "clips");
+        EXPECT_EQ(dim.stride, 480U);
+    }
+
     TEST(NDDataDimensionTest, DepthDefaultsToOneComponent)
     {
         const auto dim = DataDimension::depth();

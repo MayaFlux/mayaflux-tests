@@ -1041,6 +1041,29 @@ namespace {
             return std::string(info.param.name);
         });
 
+    TEST(DataUtilsModalityTest, AnInstanceAxisIsNotReadAsAProgressionOrAStream)
+    {
+        const auto detect = [](const std::vector<DataDimension>& dims) { return Kakshya::detect_data_modality(dims); };
+
+        EXPECT_EQ(detect({ DataDimension::instance(4), DataDimension::time(480) }), DataModality::TENSOR_ND);
+        EXPECT_EQ(detect({ DataDimension::instance(4), DataDimension::time(10), DataDimension::frequency(513) }), DataModality::TENSOR_ND);
+        EXPECT_EQ(detect({ DataDimension::instance(4), DataDimension::time(480), DataDimension::channel(2) }), DataModality::TENSOR_ND);
+        EXPECT_EQ(detect({ DataDimension::instance(4) }), DataModality::TENSOR_ND);
+        EXPECT_EQ(detect({ DataDimension::time(480) }), DataModality::AUDIO_1D);
+    }
+
+    TEST(DataUtilsModalityTest, InstancesOfAColorImageAreAnImageArray)
+    {
+        const auto detect = [](const std::vector<DataDimension>& dims) { return Kakshya::detect_data_modality(dims); };
+
+        EXPECT_EQ(detect({ DataDimension::instance(6), DataDimension::spatial(8, 'y'), DataDimension::spatial(8, 'x'), DataDimension::channel(3) }),
+            DataModality::IMAGE_COLOR_ARRAY);
+        EXPECT_EQ(detect({ DataDimension::channel(3), DataDimension::spatial(8, 'y'), DataDimension::spatial(8, 'x'), DataDimension::instance(6) }),
+            DataModality::IMAGE_COLOR_ARRAY);
+        EXPECT_EQ(detect({ DataDimension::instance(6), DataDimension::spatial(8, 'y'), DataDimension::spatial(8, 'x') }),
+            DataModality::TENSOR_ND);
+    }
+
     TEST(DataUtilsModalityTest, GroupedDimensionsDetectTheirVertexModality)
     {
         EXPECT_EQ(Kakshya::detect_data_modality({ DataDimension::vertex_positions(4) }), DataModality::VERTEX_POSITIONS_3D);
