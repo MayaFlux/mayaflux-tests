@@ -121,8 +121,39 @@ namespace {
         EXPECT_EQ(segment.state, RegionState::READY);
         EXPECT_FALSE(segment.cache.is_dirty);
         EXPECT_GE(segment.get_cache_age_seconds(), 0.0);
-        ASSERT_EQ(segment.cache.data.size(), 1U);
+        const auto* held = segment.cache.get(Kakshya::variant_cache());
+        ASSERT_NE(held, nullptr);
+        EXPECT_EQ(held->size(), 1U);
         EXPECT_EQ(segment.cache.source_region, segment.source_region);
+    }
+
+    TEST(RegionSegmentTest, MarkCachedUnderAKeyKeepsThatPayloadApartFromTheVariants)
+    {
+        RegionSegment segment(Region::time_span(0, 2));
+        const Facet<std::vector<int>> ints;
+
+        segment.mark_cached(ints, { 1, 2, 3 });
+
+        EXPECT_TRUE(segment.is_cached);
+        EXPECT_EQ(segment.state, RegionState::READY);
+        ASSERT_NE(segment.cache.get(ints), nullptr);
+        EXPECT_EQ(*segment.cache.get(ints), (std::vector<int> { 1, 2, 3 }));
+        EXPECT_EQ(segment.cache.get(Kakshya::variant_cache()), nullptr);
+        EXPECT_FALSE(segment.cache.empty());
+    }
+
+    TEST(RegionSegmentTest, ClearCacheDropsEveryPayload)
+    {
+        RegionSegment segment(Region::time_span(0, 2));
+        const Facet<std::vector<int>> ints;
+        segment.mark_cached({ DataVariant { std::vector<double> { 1.0 } } });
+        segment.cache.set(ints, { 4 });
+
+        segment.clear_cache();
+
+        EXPECT_TRUE(segment.cache.empty());
+        EXPECT_EQ(segment.cache.get(ints), nullptr);
+        EXPECT_EQ(segment.cache.get(Kakshya::variant_cache()), nullptr);
     }
 
     TEST(RegionSegmentTest, ClearCacheReturnsAReadySegmentToIdle)
@@ -134,7 +165,7 @@ namespace {
 
         EXPECT_FALSE(segment.is_cached);
         EXPECT_EQ(segment.state, RegionState::IDLE);
-        EXPECT_TRUE(segment.cache.data.empty());
+        EXPECT_TRUE(segment.cache.empty());
         EXPECT_DOUBLE_EQ(segment.get_cache_age_seconds(), -1.0);
     }
 
@@ -247,12 +278,14 @@ namespace {
         const auto& c = GetParam();
         RegionCache cache;
 
-        cache.data = { c.data };
+        cache.set(Kakshya::variant_cache(), { c.data });
         cache.source_region = Region::time_span(100, 200, "cached_region");
 
-        ASSERT_EQ(cache.data.size(), 1U);
-        EXPECT_EQ(cache.data[0].index(), c.data.index());
-        const size_t size = std::visit([](const auto& values) { return static_cast<size_t>(values.size()); }, cache.data[0]);
+        const auto* held = cache.get(Kakshya::variant_cache());
+        ASSERT_NE(held, nullptr);
+        ASSERT_EQ(held->size(), 1U);
+        EXPECT_EQ((*held)[0].index(), c.data.index());
+        const size_t size = std::visit([](const auto& values) { return static_cast<size_t>(values.size()); }, (*held)[0]);
         EXPECT_EQ(size, c.size);
     }
 

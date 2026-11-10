@@ -638,7 +638,7 @@ namespace {
 
     const Kakshya::DataVariant& pixels_of(const Kakshya::OrganizedRegion& crop)
     {
-        return crop.segments.front().cache.data.front();
+        return crop.segments.front().cache.get(Kakshya::variant_cache())->front();
     }
 
     TEST_F(WindowContainerRigTest, RegionCropsComeInGroupOrderEachWithItsRegion)

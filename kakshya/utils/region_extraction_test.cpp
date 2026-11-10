@@ -298,7 +298,7 @@ namespace {
         const auto data = interleaved_stereo();
         auto segments = two_segments();
         segments[0].is_cached = true;
-        segments[0].cache.data = { variant_of({ 7, 8, 9 }) };
+        segments[0].cache.set(Kakshya::variant_cache(), { variant_of({ 7, 8, 9 }) });
 
         const auto out = Kakshya::extract_segments_data<double>(
             segments, { span_of(data) }, stereo_dimensions(), OrganizationStrategy::INTERLEAVED);
@@ -307,14 +307,28 @@ namespace {
         EXPECT_EQ(out[0], (Samples { 7, 8, 9, 30, 31 }));
     }
 
+    TEST(RegionExtractionSegmentTest, ACacheHoldingOnlyAnotherPayloadFallsBackToTheSource)
+    {
+        const auto data = interleaved_stereo();
+        auto segments = two_segments();
+        const Facet<std::vector<int>> other;
+        segments[0].mark_cached(other, { 7, 8, 9 });
+
+        const auto out = Kakshya::extract_segments_data<double>(
+            segments, { span_of(data) }, stereo_dimensions(), OrganizationStrategy::INTERLEAVED);
+
+        ASSERT_EQ(out.size(), 1U);
+        EXPECT_EQ(out[0], (Samples { 10, 11, 30, 31 }));
+    }
+
     TEST(RegionExtractionSegmentTest, CachedPlanarSegmentsJoinPerChannel)
     {
         const auto data = interleaved_stereo();
         std::vector<RegionSegment> segments { RegionSegment(Region::audio_span(0, 1, 0, 1)), RegionSegment(Region::audio_span(2, 2, 0, 1)) };
         segments[0].is_cached = true;
-        segments[0].cache.data = { variant_of({ 1, 2 }), variant_of({ 3, 4 }) };
+        segments[0].cache.set(Kakshya::variant_cache(), { variant_of({ 1, 2 }), variant_of({ 3, 4 }) });
         segments[1].is_cached = true;
-        segments[1].cache.data = { variant_of({ 5 }), variant_of({ 6 }) };
+        segments[1].cache.set(Kakshya::variant_cache(), { variant_of({ 5 }), variant_of({ 6 }) });
 
         const auto out = Kakshya::extract_segments_data<double>(
             segments, { span_of(data) }, stereo_dimensions(), OrganizationStrategy::PLANAR);
