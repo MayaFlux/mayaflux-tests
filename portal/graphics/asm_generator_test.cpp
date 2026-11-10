@@ -941,5 +941,71 @@ namespace {
         EXPECT_LT(falloff, main);
     }
 
+    ShaderSpec lagged_pair_spec(Portal::Graphics::PairMap map, bool centred, uint32_t workgroup, size_t pc_count = 7)
+    {
+        auto assemble = ShaderSpec::Assemble {};
+        assemble.tmpl(KernelTemplate::LaggedPair)
+            .pair_map(map)
+            .centred(centred)
+            .ssbo("values", BindingDirection::Input, GpuDataFormat::VEC2_U32)
+            .ssbo("result", BindingDirection::Output, GpuDataFormat::VEC2_U32);
+        const char* names[] = { "length", "stride", "offset", "first_lag", "lag_count", "scale_lo", "scale_hi" };
+        for (size_t i = 0; i < pc_count && i < 7; ++i) {
+            assemble.pc(names[i], GpuDataFormat::UINT32);
+        }
+        return assemble.workgroup(workgroup).build();
+    }
+
+    TEST(LaggedPairAsmTest, ListsTheWorkgroupBuiltinsAndTheSharedArrayInTheInterface)
+    {
+        const std::string text = emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::Product, false, 32));
+
+        EXPECT_TRUE(contains_all(text,
+            { { "%wgid_var %lp_shared", "SPIR-V 1.4 and later lists every global the entry point uses" },
+                { "BuiltIn WorkgroupId", "group x is the lag and group y the window" },
+                { "BuiltIn LocalInvocationId", "invocations share the sum" },
+                { "OpTypeArray %v2u32 %sd_k32", "one word pair per invocation" },
+                { "%sd_f64_add = OpFunction %v2u32", "partial sums add" },
+                { "%sd_f64_mul = OpFunction %v2u32", "a product map multiplies" },
+                { "LocalSize 32 1 1", "execution mode matches the workgroup" } }));
+        EXPECT_TRUE(contains_none(text,
+            { { "OpFAdd", "arithmetic is integer only" },
+                { "OpCapability Float64", "no device float64" },
+                { "OpCapability Int64", "no device int64" },
+                { "%sd_f64_less = OpFunction", "no ordering in a lagged sum" } }));
+    }
+
+    TEST(LaggedPairAsmTest, EverySumIsFollowedByOneBarrierPerTreeStageAndCentringRepeatsIt)
+    {
+        EXPECT_EQ(occurrences(emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::Product, false, 4)), "OpControlBarrier"), 3U);
+        EXPECT_EQ(occurrences(emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::Product, true, 4)), "OpControlBarrier"), 7U);
+        EXPECT_EQ(occurrences(emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::Product, false, 2)), "OpControlBarrier"), 2U);
+    }
+
+    TEST(LaggedPairAsmTest, OnlyTheProductMapAndCentringCallTheSoftDoubleMultiply)
+    {
+        const std::string product = emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::Product, false, 8));
+        const std::string crossings = emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::SignChange, false, 8));
+        const std::string distance = emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::AbsDifference, false, 8));
+        const std::string centred = emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::SignChange, true, 8));
+
+        EXPECT_TRUE(contains_all(product, { { "%sd_f64_mul = OpFunction", "a product multiplies" } }));
+        EXPECT_TRUE(contains_all(crossings, { { "OpLogicalNotEqual", "a crossing is a difference of signs" } }));
+        EXPECT_TRUE(contains_none(crossings, { { "%sd_f64_mul = OpFunction", "no product" } }));
+        EXPECT_TRUE(contains_none(distance, { { "%sd_f64_mul = OpFunction", "no product" } }));
+        EXPECT_TRUE(contains_all(centred, { { "%sd_f64_mul = OpFunction", "the mean is a sum times one over the length" } }));
+    }
+
+    TEST(LaggedPairAsmTest, AMalformedSpecEmitsNoEntryPoint)
+    {
+        const ShaderSpec not_power_of_two = lagged_pair_spec(Portal::Graphics::PairMap::Product, false, 96);
+        const ShaderSpec too_few_constants = lagged_pair_spec(Portal::Graphics::PairMap::Product, false, 32, 6);
+        const ShaderSpec too_wide = lagged_pair_spec(Portal::Graphics::PairMap::Product, false, 2048);
+
+        EXPECT_TRUE(contains_none(emit_spirv_asm(not_power_of_two), { { "%main = OpFunction", "96 is not a power of two" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(too_few_constants), { { "%main = OpFunction", "seven push constants are needed" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(too_wide), { { "%main = OpFunction", "1024 is the widest group" } }));
+    }
+
 } // namespace
 } // namespace MayaFlux::Test
