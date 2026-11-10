@@ -6,14 +6,16 @@
 
 #include "MayaFlux/Kinesis/Discrete/Analysis.hpp"
 #include "MayaFlux/Kinesis/Stochastic/Estimate.hpp"
-#include "MayaFlux/Yantra/Executors/Audio/LaggedPairContext.hpp"
+#include "MayaFlux/Yantra/Executors/Audio/LaggedPair.hpp"
 
 namespace MayaFlux::Test {
 namespace {
 
     using namespace GpuDispatch;
     using Portal::Graphics::PairMap;
-    using Yantra::LaggedPairContext;
+    using Yantra::lagged_pair_spec;
+    using Yantra::lagged_pair_stage;
+    using Yantra::WordPairExecutionContext;
     using Yantra::SegmentGeometry;
 
     namespace D = Kinesis::Discrete;
@@ -76,6 +78,29 @@ namespace {
         return out;
     }
 
+    struct Pass {
+        std::unique_ptr<WordPairExecutionContext> context;
+        Yantra::GpuComputeConfig config;
+    };
+
+    Pass make_pass(PairMap map, bool centred)
+    {
+        const auto spec = lagged_pair_spec(map, centred);
+        auto config = Yantra::config_from_spec(spec);
+        auto context = std::make_unique<WordPairExecutionContext>(config, Yantra::bindings_from_spec(spec), false, "LaggedPair");
+        return { std::move(context), std::move(config) };
+    }
+
+    std::vector<double> sums(Pass& pass, std::span<const double> values, const SegmentGeometry& geometry,
+        uint32_t first_lag, uint32_t lag_count)
+    {
+        if (geometry.count == 0 || lag_count == 0) {
+            return {};
+        }
+        pass.context->record_stages({ lagged_pair_stage(*pass.context, pass.config, values, geometry, first_lag, lag_count) });
+        return pass.context->download_words(1, static_cast<size_t>(geometry.count) * lag_count);
+    }
+
     template <typename Fixture>
     class LaggedPairGpuTest : public Fixture { };
 
@@ -86,9 +111,9 @@ namespace {
     {
         const auto signal = random_signal(2000, 3);
         const SegmentGeometry geometry { .length = 300, .stride = 128, .offset = 0, .count = 14 };
-        LaggedPairContext context(PairMap::Product, false);
+        auto context = make_pass(PairMap::Product, false);
 
-        const auto got = context.sums(signal, geometry, 5, 40);
+        const auto got = sums(context, signal, geometry, 5, 40);
 
         const auto want = host_sums(signal, geometry, 5, 40, PairMap::Product, false);
         ASSERT_EQ(got.size(), want.size());
@@ -104,9 +129,9 @@ namespace {
             value += 3.0;
         }
         const SegmentGeometry geometry { .length = 256, .stride = 256, .offset = 0, .count = 5 };
-        LaggedPairContext context(PairMap::Product, true);
+        auto context = make_pass(PairMap::Product, true);
 
-        const auto got = context.sums(signal, geometry, 0, 60);
+        const auto got = sums(context, signal, geometry, 0, 60);
 
         const auto want = host_sums(signal, geometry, 0, 60, PairMap::Product, true);
         ASSERT_EQ(got.size(), want.size());
@@ -124,9 +149,9 @@ namespace {
         constexpr uint32_t window = 200;
         constexpr uint32_t hop = 100;
         const size_t windows = D::num_windows(signal.size(), window, hop);
-        LaggedPairContext context(PairMap::SignChange, false);
+        auto context = make_pass(PairMap::SignChange, false);
 
-        const auto got = context.sums(signal, { .length = window, .stride = hop, .offset = 0, .count = static_cast<uint32_t>(windows) }, 1, 1);
+        const auto got = sums(context, signal, { .length = window, .stride = hop, .offset = 0, .count = static_cast<uint32_t>(windows) }, 1, 1);
 
         const auto rate = D::zero_crossing_rate(signal, windows, hop, window);
         ASSERT_EQ(got.size(), windows);
@@ -139,9 +164,9 @@ namespace {
     {
         const auto signal = random_signal(900, 13);
         const SegmentGeometry geometry { .length = 150, .stride = 150, .offset = 0, .count = 6 };
-        LaggedPairContext context(PairMap::AbsDifference, false);
+        auto context = make_pass(PairMap::AbsDifference, false);
 
-        const auto got = context.sums(signal, geometry, 1, 30);
+        const auto got = sums(context, signal, geometry, 1, 30);
 
         const auto want = host_sums(signal, geometry, 1, 30, PairMap::AbsDifference, false);
         ASSERT_EQ(got.size(), want.size());
@@ -153,9 +178,9 @@ namespace {
     TYPED_TEST(LaggedPairGpuTest, ALagAtOrBeyondTheWindowSumsNothing)
     {
         const auto signal = random_signal(64, 17);
-        LaggedPairContext context(PairMap::Product, false);
+        auto context = make_pass(PairMap::Product, false);
 
-        const auto got = context.sums(signal, { .length = 8, .stride = 8, .offset = 0, .count = 2 }, 6, 5);
+        const auto got = sums(context, signal, { .length = 8, .stride = 8, .offset = 0, .count = 2 }, 6, 5);
 
         ASSERT_EQ(got.size(), 10U);
         for (uint32_t w = 0; w < 2; ++w) {
@@ -172,9 +197,9 @@ namespace {
     {
         const auto signal = random_signal(100, 21);
         const SegmentGeometry geometry { .length = 5, .stride = 11, .offset = 7, .count = 6 };
-        LaggedPairContext context(PairMap::Product, true);
+        auto context = make_pass(PairMap::Product, true);
 
-        const auto got = context.sums(signal, geometry, 0, 3);
+        const auto got = sums(context, signal, geometry, 0, 3);
 
         const auto want = host_sums(signal, geometry, 0, 3, PairMap::Product, true);
         ASSERT_EQ(got.size(), want.size());
@@ -186,10 +211,10 @@ namespace {
     TYPED_TEST(LaggedPairGpuTest, NoWindowsOrNoLagsGiveNothing)
     {
         const auto signal = random_signal(64, 23);
-        LaggedPairContext context(PairMap::Product, false);
+        auto context = make_pass(PairMap::Product, false);
 
-        EXPECT_TRUE(context.sums(signal, { .length = 8, .stride = 8, .offset = 0, .count = 0 }, 0, 4).empty());
-        EXPECT_TRUE(context.sums(signal, { .length = 8, .stride = 8, .offset = 0, .count = 4 }, 0, 0).empty());
+        EXPECT_TRUE(sums(context, signal, { .length = 8, .stride = 8, .offset = 0, .count = 0 }, 0, 4).empty());
+        EXPECT_TRUE(sums(context, signal, { .length = 8, .stride = 8, .offset = 0, .count = 4 }, 0, 0).empty());
     }
 
     TYPED_TEST(LaggedPairGpuTest, CentredProductSelectsTheLagsOfKinesisPeriodicity)
@@ -205,19 +230,19 @@ namespace {
         constexpr uint32_t last_lag = 200;
         constexpr uint32_t lag_count = last_lag - first_lag + 1;
         const size_t windows = D::num_windows(signal.size(), window, hop);
-        LaggedPairContext context(PairMap::Product, true);
+        auto context = make_pass(PairMap::Product, true);
 
-        const auto sums = context.sums(signal, { .length = window, .stride = hop, .offset = 0, .count = static_cast<uint32_t>(windows) }, first_lag, lag_count);
+        const auto row_sums = sums(context, signal, { .length = window, .stride = hop, .offset = 0, .count = static_cast<uint32_t>(windows) }, first_lag, lag_count);
 
         const auto [strengths, lags] = D::periodicity(signal, windows, hop, window, first_lag, last_lag);
-        ASSERT_EQ(sums.size(), windows * lag_count);
+        ASSERT_EQ(row_sums.size(), windows * lag_count);
         for (size_t w = 0; w < windows; ++w) {
             const std::span<const double> view(signal.data() + w * hop, window);
             const double denominator = Kinesis::Stochastic::Estimate::variance(view) * static_cast<double>(window - 1);
             double best = 0.0;
             size_t best_lag = 0;
             for (uint32_t l = 0; l < lag_count; ++l) {
-                const double correlation = sums[w * lag_count + l] / denominator;
+                const double correlation = row_sums[w * lag_count + l] / denominator;
                 if (correlation > best) {
                     best = correlation;
                     best_lag = first_lag + l;

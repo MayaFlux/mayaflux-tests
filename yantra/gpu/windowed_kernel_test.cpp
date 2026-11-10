@@ -14,7 +14,7 @@ namespace {
     using namespace GpuDispatch;
     using Yantra::StandardWindowedKernelAnalyzer;
     using Yantra::WindowedKernelConfig;
-    using Yantra::WindowedKernelContext;
+    using Yantra::windowed_kernel_config;
 
     constexpr const char* k_mean_step = R"(
     float acc = 0.0;
@@ -237,7 +237,7 @@ void main()
 
     TYPED_TEST(WindowedKernelGpuTest, ABodyThatDoesNotCompileHasNoShader)
     {
-        const auto config = WindowedKernelContext::kernel_config("this is not glsl;");
+        const auto config = windowed_kernel_config("this is not glsl;");
 
         EXPECT_EQ(config.shader_id, Portal::Graphics::INVALID_SHADER);
     }
