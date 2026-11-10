@@ -653,7 +653,7 @@ void main()
         ctx->set_output_dimensions(k_w, k_h);
 
         const auto result = ctx->execute(Datum<std::vector<Kakshya::DataVariant>> {}, ExecutionContext {});
-        EXPECT_FALSE(result.container.has_value());
+        EXPECT_FALSE(result.has_container());
 
         const auto output = ctx->get_output_image(0);
         ASSERT_NE(output, nullptr);
@@ -673,7 +673,7 @@ void main()
         container->set_pixels(std::span<const float>(px), 0);
 
         Datum<std::vector<Kakshya::DataVariant>> input {};
-        input.container = container;
+        input.set_container(container);
 
         auto ctx = std::make_shared<TextureExecutionContext>(
             shader_config(shader, sizeof(ImagePush), { 8, 8, 1 }),
@@ -871,7 +871,7 @@ void main()
         source->set_pixels(std::span<const float>(px), 0);
 
         Datum<std::vector<Kakshya::DataVariant>> input {};
-        input.container = source;
+        input.set_container(source);
 
         auto ctx = std::make_shared<TextureExecutionContext>(
             shader_config(shader, sizeof(ImagePush), { 8, 8, 1 }),
@@ -881,8 +881,8 @@ void main()
 
         const auto result = ctx->execute(input, ExecutionContext {});
 
-        ASSERT_TRUE(result.container.has_value());
-        const auto out = std::dynamic_pointer_cast<Kakshya::TextureContainer>(*result.container);
+        ASSERT_TRUE(result.has_container());
+        const auto out = std::dynamic_pointer_cast<Kakshya::TextureContainer>(result.get_container());
         ASSERT_NE(out, nullptr);
         EXPECT_EQ(out->get_width(), k_w);
         EXPECT_EQ(out->get_height(), k_h);
@@ -901,7 +901,7 @@ void main()
         const uint32_t out_w = k_w / 2;
         const uint32_t out_h = k_h / 2;
         Datum<std::vector<Kakshya::DataVariant>> input {};
-        input.container = source;
+        input.set_container(source);
 
         auto ctx = std::make_shared<TextureExecutionContext>(
             shader_config(shader, sizeof(ImagePush), { 8, 8, 1 }),
@@ -913,8 +913,8 @@ void main()
         const auto result = ctx->execute(input, ExecutionContext {});
         ctx->clear_output_dimensions();
 
-        ASSERT_TRUE(result.container.has_value());
-        const auto out = std::dynamic_pointer_cast<Kakshya::TextureContainer>(*result.container);
+        ASSERT_TRUE(result.has_container());
+        const auto out = std::dynamic_pointer_cast<Kakshya::TextureContainer>(result.get_container());
         ASSERT_NE(out, nullptr);
         EXPECT_EQ(out->get_width(), out_w);
         EXPECT_EQ(out->get_height(), out_h);
@@ -944,8 +944,8 @@ void main()
 
         const auto result = ctx->collect_container_result();
 
-        ASSERT_TRUE(result.container.has_value());
-        const auto out = std::dynamic_pointer_cast<Kakshya::TextureContainer>(*result.container);
+        ASSERT_TRUE(result.has_container());
+        const auto out = std::dynamic_pointer_cast<Kakshya::TextureContainer>(result.get_container());
         ASSERT_NE(out, nullptr);
         EXPECT_EQ(out->get_width(), k_w);
         EXPECT_EQ(out->get_height(), k_h);
@@ -993,7 +993,7 @@ void main()
         source->set_pixels(std::span<const float>(layer1), 1);
 
         Datum<std::vector<Kakshya::DataVariant>> input {};
-        input.container = source;
+        input.set_container(source);
 
         auto ctx = std::make_shared<TextureExecutionContext>(
             shader_config(shader, sizeof(LayerPush), { 8, 8, 1 }),

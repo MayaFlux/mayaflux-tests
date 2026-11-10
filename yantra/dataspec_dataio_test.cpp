@@ -1,4 +1,5 @@
 #include "MayaFlux/Yantra/Data/DataIO.hpp"
+#include "MayaFlux/Yantra/OperationSpec/OperationHelper.hpp"
 #include "../support/audio_container.hpp"
 
 #include <gtest/gtest.h>
@@ -95,7 +96,8 @@ namespace {
         spec<Eigen::MatrixXi, std::vector<std::span<int>>, Multi, Variants>("IntegerMatrix", false, true, false, true),
         spec<Eigen::VectorXcd, std::vector<std::span<std::complex<double>>>, Multi, Variants>("ComplexVector", true, true, false, true),
         spec<Kakshya::CompositeArray, const Kakshya::CompositeArray&, void, void>("CompositeArray", false, false, false, true),
-        spec<std::shared_ptr<Kakshya::CompositeContainer>, const Kakshya::CompositeArray&, void, void>("CompositeContainer", false, false, false, true)),
+        spec<std::shared_ptr<Kakshya::CompositeContainer>, const Kakshya::CompositeArray&, void, void>("CompositeContainer", false, false, false, true),
+        spec<std::shared_ptr<Kakshya::TensorContainer>, const Kakshya::TensorData&, void, void>("TensorContainer", false, false, false, true)),
         [](const auto& info) { return info.param.name; });
 
     static_assert(VariantVector<Variants>);
@@ -104,6 +106,27 @@ namespace {
     static_assert(!SingleVariant<std::string>);
     static_assert(!CompositeData<Container>);
     static_assert(!RequiresContainer<Container>);
+    using TensorContainerPtr = std::shared_ptr<Kakshya::TensorContainer>;
+    static_assert(ComputeData<TensorContainerPtr>);
+    static_assert(TensorContainerData<TensorContainerPtr>);
+    static_assert(!CompositeData<TensorContainerPtr>);
+    static_assert(!RequiresContainer<TensorContainerPtr>);
+    static_assert(!MultiVariant<TensorContainerPtr>);
+    static_assert(is_IO<TensorContainerIO>::value);
+    static_assert(OperationReadyData<TensorContainerIO>);
+    static_assert(SourceContainer<Kakshya::SignalSourceContainer>);
+    static_assert(SourceContainer<Kakshya::SoundFileContainer>);
+    static_assert(SourceContainer<Kakshya::CompositeContainer>);
+    static_assert(SourceContainer<Kakshya::TensorContainer>);
+    static_assert(!SourceContainer<Samples>);
+    static_assert(std::same_as<container_family_t<Kakshya::SoundFileContainer>, Kakshya::SignalSourceContainer>);
+    static_assert(std::same_as<container_family_t<Kakshya::CompositeContainer>, Kakshya::CompositeContainer>);
+    static_assert(std::same_as<container_family_t<Kakshya::TensorContainer>, Kakshya::TensorContainer>);
+    template <typename T>
+    concept NumericallyExtractable = requires(T& datum) { OperationHelper::extract_structured_double(datum); };
+    static_assert(NumericallyExtractable<ContainerIO>);
+    static_assert(!NumericallyExtractable<TensorContainerIO>);
+    static_assert(!NumericallyExtractable<CompositeContainerIO>);
     static_assert(std::same_as<native_element_t<Variant>, void>);
     static_assert(std::same_as<native_element_t<Variants>, void>);
     static_assert(std::same_as<native_element_t<std::vector<float>>, float>);
@@ -171,7 +194,7 @@ namespace {
         RegionIO datum = GetParam() == Construction::Copy
             ? RegionIO(source, container) : RegionIO(std::move(source), container);
         ASSERT_TRUE(datum.has_container());
-        EXPECT_EQ(*datum.container, container);
+        EXPECT_EQ(datum.get_container(), container);
         expect_axis(datum.dimensions, Role::TIME, 6);
         EXPECT_EQ(datum.modality, Modality::AUDIO_1D);
         EXPECT_TRUE(datum.is_suitable_for_processing(Modality::AUDIO_1D));
@@ -374,7 +397,7 @@ namespace {
         container.reset();
         EXPECT_FALSE(lifetime.expired());
         EXPECT_TRUE(datum.is_suitable_for_processing(Modality::AUDIO_1D));
-        datum.container.reset();
+        datum.reset_container();
         EXPECT_TRUE(lifetime.expired());
         EXPECT_FALSE(datum.is_suitable_for_processing(Modality::AUDIO_1D));
     }
@@ -393,6 +416,187 @@ namespace {
         EXPECT_FALSE(region.needs_processig());
         container.set_container_processing(false);
         EXPECT_FALSE(container.needs_processig());
+    }
+
+    std::shared_ptr<Kakshya::TensorContainer> ramp_tensor(std::vector<uint64_t> shape)
+    {
+        uint64_t count = 1;
+        for (const auto extent : shape) {
+            count *= extent;
+        }
+        std::vector<float> values(count);
+        std::iota(values.begin(), values.end(), 0.0F);
+        auto tensor = Kakshya::TensorData::from_values<float>(values, std::move(shape), "ramp");
+        return std::make_shared<Kakshya::TensorContainer>(std::move(*tensor));
+    }
+
+    std::shared_ptr<Kakshya::CompositeContainer> scored_rows(size_t count)
+    {
+        Kakshya::CompositeLayout layout;
+        layout.add_field<double>("score");
+        Kakshya::CompositeArray rows(std::move(layout));
+        for (size_t i = 0; i < count; ++i) {
+            rows.append();
+        }
+        return std::make_shared<Kakshya::CompositeContainer>(std::move(rows));
+    }
+
+    TEST(YantraDatumContainer, EachFamilyHasItsOwnSlot)
+    {
+        Datum<Samples> datum;
+        const auto signal = make_audio_container(Samples { 1, 2, 3 });
+        const auto composite = scored_rows(2);
+        const auto tensor = ramp_tensor({ 2, 3 });
+        EXPECT_FALSE(datum.has_container());
+
+        datum.set_container(signal);
+        datum.set_container(composite);
+        datum.set_container(tensor);
+
+        EXPECT_EQ(datum.get_container(), signal);
+        EXPECT_EQ(datum.get_container<Kakshya::CompositeContainer>(), composite);
+        EXPECT_EQ(datum.get_container<Kakshya::TensorContainer>(), tensor);
+        EXPECT_TRUE(datum.has_container<Kakshya::SignalSourceContainer>());
+        EXPECT_TRUE(datum.has_container<Kakshya::CompositeContainer>());
+        EXPECT_TRUE(datum.has_container<Kakshya::TensorContainer>());
+
+        datum.reset_container<Kakshya::TensorContainer>();
+        EXPECT_EQ(datum.get_container<Kakshya::TensorContainer>(), nullptr);
+        EXPECT_EQ(datum.get_container(), signal);
+        EXPECT_EQ(datum.get_container<Kakshya::CompositeContainer>(), composite);
+        EXPECT_TRUE(datum.has_container());
+    }
+
+    TEST(YantraDatumContainer, ADerivedSignalContainerSharesTheSignalSlot)
+    {
+        Datum<Samples> datum;
+        const auto sound = make_audio_container(Samples { 1, 2, 3 });
+
+        datum.set_container(sound);
+
+        EXPECT_TRUE(datum.has_container<Kakshya::SoundFileContainer>());
+        EXPECT_TRUE(datum.has_container<Kakshya::SignalSourceContainer>());
+        EXPECT_EQ(datum.get_container<Kakshya::SoundFileContainer>(), sound);
+        EXPECT_FALSE(datum.has_container<Kakshya::TensorContainer>());
+        EXPECT_FALSE(datum.has_container<Kakshya::CompositeContainer>());
+    }
+
+    TEST(YantraDatumContainer, ANullContainerClearsOnlyItsOwnFamily)
+    {
+        Datum<Samples> datum;
+        const auto signal = make_audio_container(Samples { 1, 2, 3 });
+        datum.set_container(signal);
+        datum.set_container(ramp_tensor({ 2 }));
+
+        datum.set_container(std::shared_ptr<Kakshya::TensorContainer> {});
+
+        EXPECT_FALSE(datum.has_container<Kakshya::TensorContainer>());
+        EXPECT_EQ(datum.get_container(), signal);
+
+        datum.set_container(nullptr);
+        EXPECT_FALSE(datum.has_container());
+    }
+
+    TEST(YantraDatumContainer, CopiesShareTheContainerAndKeepItAlive)
+    {
+        auto tensor = ramp_tensor({ 2, 3 });
+        const std::weak_ptr<Kakshya::TensorContainer> lifetime = tensor;
+        auto original = std::make_unique<Datum<Samples>>();
+        original->set_container(tensor);
+        tensor.reset();
+
+        const Datum<Samples> copy = *original;
+        original.reset();
+
+        EXPECT_FALSE(lifetime.expired());
+        EXPECT_EQ(copy.get_container<Kakshya::TensorContainer>(), lifetime.lock());
+    }
+
+    TEST(YantraDatumContainer, RegionDatumOverATensorKeepsTheTensorAxes)
+    {
+        auto tensor = ramp_tensor({ 4, 5 });
+        ASSERT_TRUE(tensor->insert().set_axes({ Dimension::time(4), Dimension::channel(5) }));
+
+        const RegionIO datum(Kakshya::Region({ 1, 1 }, { 2, 3 }), tensor);
+
+        expect_axis(datum.dimensions, Role::TIME, 2);
+        expect_axis(datum.dimensions, Role::CHANNEL, 3);
+        EXPECT_EQ(datum.modality, Modality::TENSOR_ND);
+        EXPECT_EQ(datum.get_container<Kakshya::TensorContainer>(), tensor);
+        EXPECT_FALSE(datum.has_container<Kakshya::SignalSourceContainer>());
+        EXPECT_TRUE(datum.is_suitable_for_processing(Modality::TENSOR_ND));
+    }
+
+    TEST(YantraDatumContainer, ARegionOutsideTheTensorIsRefused)
+    {
+        const auto tensor = ramp_tensor({ 4, 5 });
+
+        EXPECT_THROW(RegionIO(Kakshya::Region({ 9 }, { 9 }), tensor), std::invalid_argument);
+        EXPECT_THROW(RegionIO(Kakshya::Region({ 3 }, { 1 }), tensor), std::invalid_argument);
+    }
+
+    TEST(YantraDatumContainer, ARegionWithoutCoordinatesDescribesTheWholeTensor)
+    {
+        const auto tensor = ramp_tensor({ 4, 5 });
+
+        const RegionIO datum(Kakshya::Region {}, tensor);
+
+        ASSERT_EQ(datum.dimensions.size(), 2U);
+        EXPECT_EQ(datum.dimensions[0].size, 4U);
+        EXPECT_EQ(datum.dimensions[1].size, 5U);
+    }
+
+    TEST(YantraDatumContainer, GroupsAndSegmentsOverATensorUseTheirBounds)
+    {
+        const auto tensor = ramp_tensor({ 4, 5 });
+        Kakshya::RegionGroup group("rows", { Kakshya::Region({ 0 }, { 0 }), Kakshya::Region({ 2 }, { 3 }) });
+        std::vector<Kakshya::RegionSegment> segments { Kakshya::RegionSegment(Kakshya::Region({ 1, 0 }, { 2, 4 })) };
+
+        const RegionGroupIO grouped(group, tensor);
+        const SegmentIO segmented(segments, tensor);
+
+        ASSERT_EQ(grouped.dimensions.size(), 2U);
+        EXPECT_EQ(grouped.dimensions[0].size, 4U);
+        EXPECT_EQ(grouped.dimensions[1].size, 5U);
+        ASSERT_EQ(segmented.dimensions.size(), 2U);
+        EXPECT_EQ(segmented.dimensions[0].size, 2U);
+        EXPECT_EQ(segmented.dimensions[1].size, 5U);
+        EXPECT_TRUE(grouped.is_suitable_for_processing(Modality::TENSOR_ND));
+        EXPECT_TRUE(segmented.is_suitable_for_processing(Modality::TENSOR_ND));
+    }
+
+    TEST(YantraDatumContainer, ARegionOverCompositeRecordsDescribesTheElementAxis)
+    {
+        const auto rows = scored_rows(6);
+
+        const RegionIO datum(Kakshya::Region({ 1 }, { 3 }), rows);
+
+        ASSERT_EQ(datum.dimensions.size(), 1U);
+        EXPECT_EQ(datum.dimensions[0].role, Role::CUSTOM);
+        EXPECT_EQ(datum.dimensions[0].size, 3U);
+        EXPECT_EQ(datum.modality, Modality::TENSOR_ND);
+        EXPECT_EQ(datum.get_container<Kakshya::CompositeContainer>(), rows);
+        EXPECT_FALSE(datum.has_container<Kakshya::SignalSourceContainer>());
+    }
+
+    TEST(YantraDatumContainer, ATensorContainerDatumInfersFromTheContainer)
+    {
+        const auto tensor = ramp_tensor({ 3, 2 });
+
+        const TensorContainerIO datum(tensor);
+
+        ASSERT_EQ(datum.dimensions.size(), 2U);
+        EXPECT_EQ(datum.dimensions[0].size, 3U);
+        EXPECT_EQ(datum.dimensions[1].size, 2U);
+        EXPECT_EQ(datum.modality, Modality::TENSOR_ND);
+        EXPECT_EQ(datum.get_total_elements(), 6U);
+        EXPECT_THROW((TensorContainerIO(std::shared_ptr<Kakshya::TensorContainer> {})), std::invalid_argument);
+
+        const auto info = OperationHelper::get_structure_info(datum);
+        EXPECT_EQ(info.original_type, std::type_index(typeid(std::shared_ptr<Kakshya::TensorContainer>)));
+        EXPECT_EQ(info.modality, Modality::TENSOR_ND);
+        EXPECT_EQ(info.dimensions.size(), 2U);
+        EXPECT_FALSE(info.composite_layout.has_value());
     }
 
     Kakshya::CompositeArray records()

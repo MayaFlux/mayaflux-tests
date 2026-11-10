@@ -298,6 +298,113 @@ namespace {
         EXPECT_THROW(infer_structure(std::shared_ptr<Kakshya::CompositeContainer> {}), std::invalid_argument);
     }
 
+    std::shared_ptr<Kakshya::TensorContainer> axed_tensor()
+    {
+        std::vector<float> values(24, 1.0F);
+        auto data = Kakshya::TensorData::from_values<float>(values, { 2, 3, 4 }, "t");
+        auto tensor = std::make_shared<Kakshya::TensorContainer>(std::move(*data));
+        tensor->insert().set_axes({ Dimension::time(2), Dimension::spatial(3, 'y'), Dimension::spatial(4, 'x') });
+        return tensor;
+    }
+
+    TEST(YantraStructure, TensorContainerKeepsItsOwnAxes)
+    {
+        const auto tensor = axed_tensor();
+
+        const auto [dimensions, modality] = infer_structure(tensor);
+
+        EXPECT_EQ(modality, Modality::TENSOR_ND);
+        ASSERT_EQ(dimensions.size(), 3U);
+        EXPECT_EQ(dimensions[0].role, Role::TIME);
+        EXPECT_EQ(dimensions[0].size, 2U);
+        EXPECT_EQ(dimensions[2].size, 4U);
+        EXPECT_THROW(infer_structure(std::shared_ptr<Kakshya::TensorContainer> {}), std::invalid_argument);
+    }
+
+    TEST(YantraStructure, TensorRegionKeepsTheAxesWithTheRegionExtents)
+    {
+        const auto tensor = axed_tensor();
+
+        const auto [window, modality] = infer_structure(Kakshya::Region({ 1, 0, 1 }, { 1, 2, 2 }), tensor);
+
+        EXPECT_EQ(modality, Modality::TENSOR_ND);
+        ASSERT_EQ(window.size(), 3U);
+        EXPECT_EQ(window[0].role, Role::TIME);
+        EXPECT_EQ(window[0].size, 1U);
+        EXPECT_EQ(window[1].size, 3U);
+        EXPECT_EQ(window[2].size, 2U);
+    }
+
+    TEST(YantraStructure, TensorRegionNamingOnlyLeadingAxesSpansTheRest)
+    {
+        const auto tensor = axed_tensor();
+
+        const auto [window, modality] = infer_from_region(Kakshya::Region({ 0 }, { 1 }), tensor);
+
+        ASSERT_EQ(window.size(), 3U);
+        EXPECT_EQ(window[0].size, 2U);
+        EXPECT_EQ(window[1].size, 3U);
+        EXPECT_EQ(window[2].size, 4U);
+        EXPECT_EQ(modality, Modality::TENSOR_ND);
+    }
+
+    TEST(YantraStructure, TensorRegionsThatDoNotFitAreRefused)
+    {
+        const auto tensor = axed_tensor();
+
+        EXPECT_THROW(infer_from_region(Kakshya::Region({ 2 }, { 2 }), tensor), std::invalid_argument);
+        EXPECT_THROW(infer_from_region(Kakshya::Region({ 0, 0, 0, 0 }, { 0, 0, 0, 0 }), tensor), std::invalid_argument);
+    }
+
+    TEST(YantraStructure, TensorGroupsAndSegmentsDescribeTheirBoundsAndEmptyOnesNothing)
+    {
+        const auto tensor = axed_tensor();
+        Kakshya::RegionGroup group("planes", { Kakshya::Region({ 0 }, { 0 }), Kakshya::Region({ 1 }, { 1 }) });
+        std::vector<Kakshya::RegionSegment> segments { Kakshya::RegionSegment(Kakshya::Region({ 0, 1 }, { 1, 2 })) };
+
+        const auto [grouped, group_modality] = infer_from_region_group(group, tensor);
+        const auto [segmented, segment_modality] = infer_from_segments(segments, tensor);
+        const auto [empty_group, empty_modality] = infer_from_region_group(Kakshya::RegionGroup {}, tensor);
+
+        EXPECT_EQ(group_modality, Modality::TENSOR_ND);
+        EXPECT_EQ(segment_modality, Modality::TENSOR_ND);
+        ASSERT_EQ(grouped.size(), 3U);
+        EXPECT_EQ(grouped[0].size, 2U);
+        ASSERT_EQ(segmented.size(), 3U);
+        EXPECT_EQ(segmented[0].size, 2U);
+        EXPECT_EQ(segmented[1].size, 2U);
+        EXPECT_EQ(segmented[2].size, 4U);
+        EXPECT_EQ(empty_modality, Modality::UNKNOWN);
+        ASSERT_EQ(empty_group.size(), 1U);
+        EXPECT_EQ(empty_group[0].size, 0U);
+    }
+
+    TEST(YantraStructure, CompositeRegionsDescribeTheElementsTheySelect)
+    {
+        Kakshya::CompositeLayout layout;
+        ASSERT_TRUE(layout.add_field<double>("gain"));
+        Kakshya::CompositeArray data(std::move(layout));
+        for (int i = 0; i < 8; ++i) {
+            data.append();
+        }
+        const auto source = std::make_shared<Kakshya::CompositeContainer>(std::move(data));
+
+        const auto [selected, modality] = infer_structure(Kakshya::Region({ 2 }, { 5 }), source);
+        const auto [whole, whole_modality] = infer_from_region(Kakshya::Region {}, source);
+        const auto [grouped, group_modality] = infer_from_region_group(
+            Kakshya::RegionGroup("rows", { Kakshya::Region({ 1 }, { 2 }), Kakshya::Region({ 6 }, { 7 }) }), source);
+
+        EXPECT_EQ(modality, Modality::TENSOR_ND);
+        ASSERT_EQ(selected.size(), 1U);
+        EXPECT_EQ(selected[0].size, 4U);
+        ASSERT_EQ(whole.size(), 1U);
+        EXPECT_EQ(whole[0].size, 8U);
+        EXPECT_EQ(whole_modality, Modality::TENSOR_ND);
+        ASSERT_EQ(grouped.size(), 1U);
+        EXPECT_EQ(grouped[0].size, 7U);
+        EXPECT_EQ(group_modality, Modality::TENSOR_ND);
+    }
+
     constexpr std::string_view k_naive_warning = "Inferring structure from DataVariant vector";
 
     size_t naive_warnings()
