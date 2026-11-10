@@ -9,6 +9,8 @@
 #include "MayaFlux/Buffers/Node/NodeBuffer.hpp"
 #include "MayaFlux/Core/ProcessingArchitecture.hpp"
 #include "MayaFlux/Core/Subsystems/AudioSubsystem.hpp"
+#include "MayaFlux/Kakshya/Source/DynamicSoundStream.hpp"
+#include "MayaFlux/Kriya/BufferPipeline.hpp"
 #include "MayaFlux/Nodes/Generators/Polynomial.hpp"
 #include "MayaFlux/Nodes/NodeGraphManager.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
@@ -774,6 +776,103 @@ namespace {
         std::this_thread::sleep_for(100ms);
 
         EXPECT_EQ(probe->calls(), calls_at_stop);
+    }
+
+
+    double record_value(uint64_t block, uint32_t frame)
+    {
+        return 1e-4 * static_cast<double>(block * k_buffer_size + frame + 1);
+    }
+
+    void run_input_block(SubsystemRig& rig, uint64_t block, std::vector<double>& output)
+    {
+        std::vector<double> input(static_cast<size_t>(k_buffer_size) * rig.input_channels, 0.0);
+        for (uint32_t frame = 0; frame < k_buffer_size; ++frame) {
+            input[static_cast<size_t>(frame) * rig.input_channels] = record_value(block, frame);
+        }
+        output.assign(static_cast<size_t>(k_buffer_size) * rig.channels, 0.0);
+        EXPECT_EQ(rig.subsystem->process_audio(input.data(), output.data(), k_buffer_size), 0);
+    }
+
+    TEST(AudioSubsystemRecordTest, RecordCapturesTheBlocksProcessAudioReceivesIntoAStream)
+    {
+        SubsystemRig rig(2, 2);
+        REQUIRE_AUDIO(rig);
+        const auto stream = std::make_shared<Kakshya::DynamicSoundStream>(k_sample_rate, 1);
+        const auto [pipeline, listener] = Kriya::record(rig.tasks, rig.buffers, stream, 0, 3);
+        ASSERT_NE(pipeline, nullptr);
+
+        std::vector<double> output;
+        for (uint64_t block = 0; block < 4; ++block) {
+            run_input_block(rig, block, output);
+        }
+
+        EXPECT_FALSE(pipeline->is_running());
+        ASSERT_EQ(stream->get_write_head(0), 3ULL * k_buffer_size);
+        const auto frames = stream->get_channel_frames(0, 0, 3ULL * k_buffer_size);
+        for (uint64_t i = 0; i < frames.size(); ++i) {
+            ASSERT_DOUBLE_EQ(frames[i], record_value(i / k_buffer_size, static_cast<uint32_t>(i % k_buffer_size))) << i;
+        }
+    }
+
+    TEST(AudioSubsystemRecordTest, ASilentRecordingLeavesTheOutputSilent)
+    {
+        SubsystemRig rig(2, 2);
+        REQUIRE_AUDIO(rig);
+        const auto stream = std::make_shared<Kakshya::DynamicSoundStream>(k_sample_rate, 1);
+        const auto [pipeline, listener] = Kriya::record(rig.tasks, rig.buffers, stream, 0, 2);
+
+        std::vector<double> output;
+        run_input_block(rig, 0, output);
+
+        EXPECT_TRUE(std::ranges::all_of(output, [](double s) { return s == 0.0; }));
+    }
+
+    TEST(AudioSubsystemRecordTest, AMonitorChannelPutsTheInputOnThatOutputWhileRecording)
+    {
+        SubsystemRig rig(2, 2);
+        REQUIRE_AUDIO(rig);
+        const auto stream = std::make_shared<Kakshya::DynamicSoundStream>(k_sample_rate, 1);
+        const auto [pipeline, listener] = Kriya::record(rig.tasks, rig.buffers, stream, 0, 3, 1);
+
+        std::vector<double> output;
+        run_input_block(rig, 0, output);
+
+        double heard = 0.0;
+        double other = 0.0;
+        for (size_t frame = 0; frame < k_buffer_size; ++frame) {
+            other = std::max(other, std::abs(output[frame * rig.channels]));
+            heard = std::max(heard, std::abs(output[frame * rig.channels + 1]));
+        }
+        EXPECT_GT(heard, 0.0);
+        EXPECT_EQ(other, 0.0);
+    }
+
+    TEST(AudioSubsystemRecordTest, RecordIntoRecordsAgainThroughTheSameListener)
+    {
+        SubsystemRig rig(2, 2);
+        REQUIRE_AUDIO(rig);
+        const auto stream = std::make_shared<Kakshya::DynamicSoundStream>(k_sample_rate, 1);
+        const auto [pipeline, listener] = Kriya::record(rig.tasks, rig.buffers, stream, 0, 2);
+
+        std::vector<double> output;
+        run_input_block(rig, 0, output);
+        run_input_block(rig, 1, output);
+        run_input_block(rig, 2, output);
+        ASSERT_FALSE(pipeline->is_running());
+
+        const auto again = Kriya::record_into(rig.tasks, rig.buffers, stream, listener, 0, 2);
+        ASSERT_NE(again, nullptr);
+        run_input_block(rig, 5, output);
+        run_input_block(rig, 6, output);
+        run_input_block(rig, 7, output);
+
+        EXPECT_FALSE(again->is_running());
+        ASSERT_EQ(stream->get_write_head(0), 4ULL * k_buffer_size);
+        const auto frames = stream->get_channel_frames(0, 2ULL * k_buffer_size, 2ULL * k_buffer_size);
+        for (uint64_t i = 0; i < frames.size(); ++i) {
+            ASSERT_DOUBLE_EQ(frames[i], record_value(5 + i / k_buffer_size, static_cast<uint32_t>(i % k_buffer_size))) << i;
+        }
     }
 
 }
