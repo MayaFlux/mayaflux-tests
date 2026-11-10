@@ -341,6 +341,49 @@ namespace {
         EXPECT_EQ(again.probabilities, first.probabilities);
     }
 
+    TEST(SileroVadRateTest, TheDefaultRateIsTheOneTheNetworkRunsAt)
+    {
+        const VadAnalyzerConfig config;
+
+        EXPECT_EQ(config.sample_rate, 16000.0);
+        EXPECT_EQ(StandardVadAnalyzer::diagnose(config), "");
+    }
+
+    TEST(SileroVadRateTest, AnotherRateIsRefusedWithItsReason)
+    {
+        VadAnalyzerConfig config;
+        config.sample_rate = 48000.0;
+
+        EXPECT_EQ(StandardVadAnalyzer::diagnose(config),
+            "sample_rate 48000 is not the 16000 Hz the network runs at; convert the input first, for example with Kinesis::Discrete::Resampler");
+    }
+
+    TEST(SileroVadRateTest, ARateThatIsNotANumberOrIsZeroIsRefused)
+    {
+        VadAnalyzerConfig config;
+        config.sample_rate = std::numeric_limits<double>::quiet_NaN();
+        EXPECT_FALSE(StandardVadAnalyzer::diagnose(config).empty());
+
+        config.sample_rate = 0.0;
+        EXPECT_FALSE(StandardVadAnalyzer::diagnose(config).empty());
+    }
+
+    TEST(SileroVadRateTest, TheAnalyzerRefusesAnotherRateAtConstructionAndWhenTheConfigChanges)
+    {
+        const auto weights = load_weights();
+        if (!weights) {
+            GTEST_SKIP() << "data/tensors/silero/silero_vad_16k.safetensors is not present";
+        }
+        VadAnalyzerConfig wrong;
+        wrong.sample_rate = 44100.0;
+
+        EXPECT_THROW(StandardVadAnalyzer(*weights, wrong), std::invalid_argument);
+
+        StandardVadAnalyzer analyzer(*weights);
+        analyzer.set_config(wrong);
+        EXPECT_ANY_THROW(std::ignore = analyzer.analyze_speech(std::vector<Kakshya::DataVariant> { std::vector<double>(2048, 0.0) }));
+    }
+
     TEST(SileroVadWeightsTest, DiagnoseNamesTheFirstProblem)
     {
         const TensorSet empty;
