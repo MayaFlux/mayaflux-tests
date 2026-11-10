@@ -270,5 +270,161 @@ namespace {
         }
     }
 
+    std::vector<double> streamed(D::Resampler& resampler, std::span<const double> input, std::span<const size_t> blocks)
+    {
+        std::vector<double> out;
+        size_t at = 0;
+        size_t step = 0;
+        while (at < input.size()) {
+            const size_t count = std::min(blocks[step++ % blocks.size()], input.size() - at);
+            const auto part = resampler.push(input.subspan(at, count));
+            out.insert(out.end(), part.begin(), part.end());
+            at += count;
+        }
+        const auto rest = resampler.flush();
+        out.insert(out.end(), rest.begin(), rest.end());
+        return out;
+    }
+
+    struct StreamRatio {
+        uint32_t from;
+        uint32_t to;
+    };
+
+    class DiscreteResamplerRatioTest : public ::testing::TestWithParam<StreamRatio> { };
+
+    TEST_P(DiscreteResamplerRatioTest, TheStreamIsTheWholeBufferOutputHoweverTheInputIsCut)
+    {
+        const auto [from, to] = GetParam();
+        const auto input = noise(12000, 5);
+        const auto whole = D::resample(input, from, to);
+        constexpr std::array<size_t, 8> blocks { 1, 7, 64, 513, 3, 2048, 0, 100 };
+
+        D::Resampler resampler(from, to);
+        const auto got = streamed(resampler, input, blocks);
+
+        ASSERT_EQ(got.size(), whole.size());
+        for (size_t i = 0; i < whole.size(); ++i) {
+            ASSERT_EQ(got[i], whole[i]) << i;
+        }
+    }
+
+    TEST_P(DiscreteResamplerRatioTest, OneSampleAtATimeGivesTheSameOutput)
+    {
+        const auto [from, to] = GetParam();
+        const auto input = noise(900, 8);
+        const auto whole = D::resample(input, from, to);
+        constexpr std::array<size_t, 1> blocks { 1 };
+
+        D::Resampler resampler(from, to);
+        const auto got = streamed(resampler, input, blocks);
+
+        ASSERT_EQ(got.size(), whole.size());
+        for (size_t i = 0; i < whole.size(); ++i) {
+            ASSERT_EQ(got[i], whole[i]) << i;
+        }
+    }
+
+    INSTANTIATE_TEST_SUITE_P(Ratios, DiscreteResamplerRatioTest,
+        ::testing::Values(
+            StreamRatio { 48000, 16000 }, StreamRatio { 44100, 16000 }, StreamRatio { 16000, 48000 },
+            StreamRatio { 8000, 11025 }, StreamRatio { 48000, 44100 }, StreamRatio { 16000, 16000 }));
+
+    TEST(DiscreteResamplerTest, BlockWiseResamplingRestartsTheFilterAtEveryEdgeAndTheStreamDoesNot)
+    {
+        const std::vector<double> input(4800, 1.0);
+        const auto whole = D::resample(input, 48000, 16000);
+
+        std::vector<double> restarted;
+        for (size_t at = 0; at < input.size(); at += 480) {
+            const auto part = D::resample(std::span<const double>(input).subspan(at, 480), 48000, 16000);
+            restarted.insert(restarted.end(), part.begin(), part.end());
+        }
+        double worst = 0.0;
+        for (size_t i = 158; i < 170; ++i) {
+            worst = std::max(worst, std::abs(restarted[i] - whole[i]));
+        }
+
+        EXPECT_GT(worst, 0.1);
+
+        constexpr std::array<size_t, 1> blocks { 480 };
+        D::Resampler resampler(48000, 16000);
+        const auto continuous = streamed(resampler, input, blocks);
+        ASSERT_EQ(continuous.size(), whole.size());
+        for (size_t i = 158; i < 170; ++i) {
+            EXPECT_EQ(continuous[i], whole[i]) << i;
+        }
+    }
+
+    TEST(DiscreteResamplerTest, AnOutputWaitsForTheInputItReads)
+    {
+        D::Resampler resampler(48000, 16000);
+        ASSERT_EQ(resampler.lookahead(), 30U);
+
+        EXPECT_TRUE(resampler.push(std::vector<double>(30, 0.5)).empty());
+        EXPECT_EQ(resampler.push(std::vector<double>(1, 0.5)).size(), 1U);
+    }
+
+    TEST(DiscreteResamplerTest, OnlyTheInputTheNextOutputNeedsIsKept)
+    {
+        D::Resampler resampler(48000, 16000);
+        const auto block = noise(480, 3);
+
+        size_t most = 0;
+        for (size_t i = 0; i < 400; ++i) {
+            static_cast<void>(resampler.push(block));
+            most = std::max(most, resampler.retained());
+        }
+
+        EXPECT_LT(most, 1000U);
+    }
+
+    TEST(DiscreteResamplerTest, AFlushEndsTheStreamAndTheNextPushStartsANewOne)
+    {
+        const auto input = noise(3000, 2);
+        const auto whole = D::resample(input, 44100, 16000);
+        constexpr std::array<size_t, 2> blocks { 333, 1000 };
+        D::Resampler resampler(44100, 16000);
+
+        const auto first = streamed(resampler, input, blocks);
+        const auto second = streamed(resampler, input, blocks);
+
+        EXPECT_EQ(first, whole);
+        EXPECT_EQ(second, whole);
+    }
+
+    TEST(DiscreteResamplerTest, ResetForgetsAPartialStream)
+    {
+        const auto input = noise(3000, 4);
+        const auto whole = D::resample(input, 48000, 16000);
+        constexpr std::array<size_t, 1> blocks { 700 };
+        D::Resampler resampler(48000, 16000);
+        static_cast<void>(resampler.push(std::span<const double>(input).first(1234)));
+
+        resampler.reset();
+
+        EXPECT_EQ(streamed(resampler, input, blocks), whole);
+    }
+
+    TEST(DiscreteResamplerTest, EqualRatesPassTheInputThroughWithNoDelay)
+    {
+        D::Resampler resampler(16000, 16000);
+        const auto input = noise(50, 6);
+
+        EXPECT_EQ(resampler.lookahead(), 0U);
+        EXPECT_EQ(resampler.push(input), input);
+        EXPECT_TRUE(resampler.flush().empty());
+    }
+
+    TEST(DiscreteResamplerTest, EmptyInputGivesNothingAndZeroRatesAreRefused)
+    {
+        D::Resampler resampler(48000, 16000);
+
+        EXPECT_TRUE(resampler.push({}).empty());
+        EXPECT_TRUE(resampler.flush().empty());
+        EXPECT_THROW(D::Resampler(0, 16000), std::invalid_argument);
+        EXPECT_THROW(D::Resampler(48000, 0), std::invalid_argument);
+    }
+
 }
 }
