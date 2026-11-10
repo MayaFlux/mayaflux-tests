@@ -1,5 +1,6 @@
 #include "MayaFlux/Yantra/Analyzers/EnergyAnalyzer.hpp"
 #include "MayaFlux/Yantra/Analyzers/SpectralAnalyzer.hpp"
+#include "MayaFlux/Yantra/Analyzers/WaveformAnalyzer.hpp"
 #include "MayaFlux/Yantra/Analyzers/StatisticalAnalyzer.hpp"
 #include "MayaFlux/Yantra/Analyzers/VisionAnalyzer.hpp"
 #include "MayaFlux/Yantra/ComputeGrammar.hpp"
@@ -82,6 +83,25 @@ namespace {
         const auto registry = make_default_registry();
 
         for (const auto method : { SpectralMethod::TOTAL_POWER, SpectralMethod::CENTROID, SpectralMethod::FLUX }) {
+            const auto found = registry.resolve(ComputationSignature(method), nullptr);
+            ASSERT_FALSE(found.empty());
+            for (const auto& candidate : found) {
+                EXPECT_EQ(candidate.target, targets::vulkan);
+            }
+        }
+    }
+
+    TEST(DefaultRegistryTest, WaveformAnalyzersAreGpuCandidatesByMethod)
+    {
+        static_assert(std::same_as<selection_t<WaveformAnalyzerConfig>, WaveformMethod>);
+        static_assert(target_of_v<StandardWaveformAnalyzer> == targets::vulkan);
+        static_assert(target_of_v<ContainerWaveformAnalyzer> == targets::vulkan);
+
+        const auto registry = make_default_registry();
+
+        for (const auto method : { WaveformMethod::LEVEL, WaveformMethod::CROSSING_RATE, WaveformMethod::PERIODICITY, WaveformMethod::PERIOD,
+                 WaveformMethod::FREQUENCY, WaveformMethod::PEAK, WaveformMethod::DC_OFFSET, WaveformMethod::CREST_FACTOR,
+                 WaveformMethod::HARMONICITY, WaveformMethod::LEVEL_CHANGE, WaveformMethod::PERIOD_CHANGE }) {
             const auto found = registry.resolve(ComputationSignature(method), nullptr);
             ASSERT_FALSE(found.empty());
             for (const auto& candidate : found) {
