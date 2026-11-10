@@ -548,6 +548,191 @@ namespace {
         }
     }
 
+    TYPED_TEST(IntervalExtractorGpuTest, AStageRecordedInACallersOwnContextGivesTheExtractorsIntervals)
+    {
+        using namespace Yantra;
+        using Portal::Graphics::BufferUsageHint;
+
+        std::vector<double> scores;
+        std::vector<double> gate;
+        Ref::random_gated(21, 400, scores, gate);
+        auto config = small_config();
+        config.gate_channel = 0;
+        config.length = 10000;
+        const auto expected = gated(config, gate, scores);
+        ASSERT_FALSE(expected.empty());
+
+        auto recording = std::make_shared<GpuDispatchRecorder>(true);
+        ShaderExecutionContext<> context(GpuComputeConfig { .shader_path = interval_scan_shader, .workgroup_size = { 1, 1, 1 }, .push_constant_size = sizeof(IntervalScanPC) });
+        context.set_recording(recording);
+        ASSERT_TRUE(context.ensure_gpu_ready());
+
+        constexpr auto f32 = GpuBufferBinding::ElementType::FLOAT32;
+        constexpr auto u32 = GpuBufferBinding::ElementType::UINT32;
+        constexpr size_t scores_binding = 0;
+        constexpr size_t gate_binding = 1;
+        constexpr size_t state_binding = 2;
+        constexpr size_t runs_binding = 3;
+        constexpr size_t report_binding = 4;
+        const auto n = static_cast<uint32_t>(scores.size());
+
+        context.ensure_shared_buffer(0, scores_binding, n, f32, BufferUsageHint::COMPUTE);
+        context.ensure_shared_buffer(0, gate_binding, n, f32, BufferUsageHint::COMPUTE);
+        context.ensure_shared_buffer(0, state_binding, interval_scan_state_words, u32, BufferUsageHint::COMPUTE);
+        context.ensure_shared_buffer(0, runs_binding, interval_scan_runs_words(n), u32);
+        context.ensure_shared_buffer(0, report_binding, interval_scan_report_words, u32);
+
+        const std::vector<float> score_floats(scores.begin(), scores.end());
+        const std::vector<float> gate_floats(gate.begin(), gate.end());
+        const std::vector<uint32_t> state_zeros(interval_scan_state_words, 0U);
+        const uint32_t no_runs = 0;
+        context.upload_shared_raw(0, scores_binding, reinterpret_cast<const uint8_t*>(score_floats.data()), score_floats.size() * sizeof(float));
+        context.upload_shared_raw(0, gate_binding, reinterpret_cast<const uint8_t*>(gate_floats.data()), gate_floats.size() * sizeof(float));
+        context.upload_shared_raw(0, state_binding, reinterpret_cast<const uint8_t*>(state_zeros.data()), state_zeros.size() * sizeof(uint32_t));
+        context.upload_shared_raw(0, report_binding, reinterpret_cast<const uint8_t*>(&no_runs), sizeof(no_runs));
+
+        context.record_stages({ interval_scan_stage(scan_config_of(config),
+            context.shared_buffer_address(0, scores_binding), context.shared_buffer_address(0, gate_binding),
+            context.shared_buffer_address(0, state_binding), context.shared_buffer_address(0, runs_binding),
+            context.shared_buffer_address(0, report_binding), 0, n, true) });
+
+        std::array<uint32_t, interval_scan_report_words> words {};
+        context.download_shared(0, report_binding, words.data(), sizeof(words));
+        const auto report = decode_interval_scan_report(words);
+        std::vector<uint32_t> runs(static_cast<size_t>(report.emitted) * 2);
+        context.download_shared(0, runs_binding, runs.data(), runs.size() * sizeof(uint32_t));
+
+        Intervals got;
+        for (uint32_t i = 0; i < report.emitted; ++i) {
+            got.emplace_back(runs[2 * i], runs[2 * i + 1]);
+        }
+        EXPECT_EQ(got, expected);
+        EXPECT_FALSE(report.open_start.has_value());
+        EXPECT_FALSE(report.pending.has_value());
+    }
+
+    TYPED_TEST(IntervalExtractorGpuTest, ASubmissionCollectedLaterGivesTheSynchronousResult)
+    {
+        std::vector<double> scores;
+        std::vector<double> gate;
+        Ref::random_gated(31, 500, scores, gate);
+        auto config = small_config();
+        config.gate_channel = 0;
+        config.length = 10000;
+
+        MatrixIntervalExtractor synchronous(config);
+        const auto expected = synchronous.extract_intervals(matrix_of({ gate, scores }));
+
+        MatrixIntervalExtractor deferred(config);
+        ASSERT_TRUE(deferred.submit(matrix_of({ gate, scores })));
+        EXPECT_TRUE(deferred.pending());
+        for (size_t spins = 0; !deferred.ready() && spins < 10000000; ++spins) { }
+        const auto got = deferred.collect();
+
+        ASSERT_TRUE(got.has_value());
+        EXPECT_FALSE(deferred.pending());
+        ASSERT_EQ(got->channels.size(), 2U);
+        for (size_t channel = 0; channel < 2; ++channel) {
+            EXPECT_EQ(got->channels[channel].intervals, expected.channels[channel].intervals) << channel;
+            EXPECT_EQ(got->channels[channel].open_start, expected.channels[channel].open_start) << channel;
+            EXPECT_EQ(got->channels[channel].pending, expected.channels[channel].pending) << channel;
+        }
+    }
+
+    TYPED_TEST(IntervalExtractorGpuTest, AnOutstandingSubmissionRefusesAnotherAndASynchronousCall)
+    {
+        auto config = small_config();
+        config.length = 100;
+        MatrixIntervalExtractor extractor(config);
+
+        EXPECT_TRUE(extractor.ready());
+        EXPECT_FALSE(extractor.pending());
+        EXPECT_FALSE(extractor.collect().has_value());
+
+        ASSERT_TRUE(extractor.submit(matrix_of({ { 0, 0, 1, 1, 1 } })));
+        EXPECT_FALSE(extractor.submit(matrix_of({ { 0, 0, 1, 1, 1 } })));
+        EXPECT_THROW(std::ignore = extractor.extract_intervals(matrix_of({ { 0, 0, 1, 1, 1 } })), std::runtime_error);
+
+        for (size_t spins = 0; !extractor.ready() && spins < 10000000; ++spins) { }
+        EXPECT_TRUE(extractor.collect().has_value());
+        EXPECT_FALSE(extractor.collect().has_value());
+        EXPECT_NO_THROW(std::ignore = extractor.extract_intervals(matrix_of({ { 0, 0 } })));
+    }
+
+    TYPED_TEST(IntervalExtractorGpuTest, TheStreamContinuesAcrossSubmissions)
+    {
+        auto config = small_config();
+        config.length = 100;
+        MatrixIntervalExtractor extractor(config);
+
+        ASSERT_TRUE(extractor.submit(matrix_of({ { 0, 0, 1, 1, 1 } })));
+        for (size_t spins = 0; !extractor.ready() && spins < 10000000; ++spins) { }
+        const auto first = extractor.collect();
+        ASSERT_TRUE(first.has_value());
+        EXPECT_TRUE(first->channels[0].intervals.empty());
+        EXPECT_EQ(first->channels[0].open_start, std::optional<size_t> { 20 });
+
+        config.flush = true;
+        extractor.set_config(config);
+        ASSERT_TRUE(extractor.submit(matrix_of({ { 0, 0, 0, 0, 0 } })));
+        for (size_t spins = 0; !extractor.ready() && spins < 10000000; ++spins) { }
+        const auto second = extractor.collect();
+
+        ASSERT_TRUE(second.has_value());
+        EXPECT_EQ(second->channels[0].intervals, (Intervals { { 15, 55 } }));
+    }
+
+    TYPED_TEST(IntervalExtractorGpuTest, ResetDiscardsAnOutstandingSubmission)
+    {
+        auto config = small_config();
+        config.length = 100;
+        MatrixIntervalExtractor extractor(config);
+        ASSERT_TRUE(extractor.submit(matrix_of({ { 0, 0, 1, 1, 1 } })));
+
+        extractor.reset();
+
+        EXPECT_FALSE(extractor.pending());
+        EXPECT_TRUE(extractor.ready());
+        EXPECT_FALSE(extractor.collect().has_value());
+        EXPECT_TRUE(extractor.buffers().empty());
+    }
+
+    TYPED_TEST(IntervalExtractorGpuTest, TheBuffersHoldTheLatestResultsOnTheDevice)
+    {
+        auto config = small_config();
+        config.length = 100;
+        config.flush = true;
+        MatrixIntervalExtractor extractor(config);
+        EXPECT_TRUE(extractor.buffers().empty());
+
+        const auto result = extractor.extract_intervals(
+            matrix_of({ { 0, 0, 1, 1, 1, 0, 0, 0, 0, 0 }, { 0, 0, 0, 0, 1, 1, 1, 1, 0, 0 } }));
+        const auto views = extractor.buffers();
+
+        ASSERT_EQ(views.size(), 2U);
+        for (size_t channel = 0; channel < 2; ++channel) {
+            const auto& view = views[channel];
+            ASSERT_NE(view.runs_address, 0U);
+            ASSERT_NE(view.report_address, 0U);
+            ASSERT_TRUE(view.runs && view.runs->mapped_ptr);
+            ASSERT_TRUE(view.report && view.report->mapped_ptr);
+            EXPECT_EQ(view.capacity, 14U);
+
+            std::array<uint32_t, Yantra::interval_scan_report_words> words {};
+            std::memcpy(words.data(), view.report->mapped_ptr, sizeof(words));
+            const auto report = Yantra::decode_interval_scan_report(words);
+            const auto& expected = result.channels[channel].intervals;
+            ASSERT_EQ(report.emitted, expected.size()) << channel;
+
+            const auto* runs = static_cast<const uint32_t*>(view.runs->mapped_ptr);
+            for (size_t i = 0; i < expected.size(); ++i) {
+                EXPECT_EQ(runs[2 * i], expected[i].first) << channel;
+                EXPECT_EQ(runs[2 * i + 1], expected[i].second) << channel;
+            }
+        }
+        EXPECT_NE(views[0].runs_address, views[1].runs_address);
+    }
+
     TYPED_TEST(IntervalExtractorGpuTest, AGateChannelThatIsNotAColumnIsRefused)
     {
         auto config = small_config();
