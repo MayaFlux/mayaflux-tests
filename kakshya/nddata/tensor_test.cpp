@@ -2,6 +2,7 @@
 
 #include "MayaFlux/Kakshya/NDData/TensorDLPack.hpp"
 #include "MayaFlux/Kakshya/NDData/TensorInsertion.hpp"
+#include "MayaFlux/Kakshya/Region/Region.hpp"
 
 #include "dlpack.h"
 
@@ -11,6 +12,7 @@ namespace {
     using Kakshya::DataDimension;
     using Kakshya::DataVariant;
     using Kakshya::GpuDataFormat;
+    using Kakshya::Region;
     using Kakshya::TensorAccess;
     using Kakshya::TensorData;
     using Kakshya::TensorDevice;
@@ -260,6 +262,154 @@ namespace {
         EXPECT_EQ(named[0].size, 2U);
         EXPECT_EQ(named[1].role, DataDimension::Role::CHANNEL);
         EXPECT_EQ(named[1].size, 3U);
+    }
+
+    TEST(TensorSpecTest, WindowKeepsTheStridesAndMovesTheOffset)
+    {
+        const auto base = make_floats({ 4, 5 });
+        ASSERT_TRUE(base.has_value());
+        const std::vector<uint64_t> origin { 1, 2 };
+        const std::vector<uint64_t> extent { 2, 3 };
+
+        const auto window = base->spec().window(origin, extent);
+
+        ASSERT_TRUE(window.has_value());
+        EXPECT_EQ(window->shape, (std::vector<uint64_t> { 2, 3 }));
+        EXPECT_EQ(window->strides, (std::vector<int64_t> { 5, 1 }));
+        EXPECT_EQ(window->byte_offset, (1U * 5U + 2U) * sizeof(float));
+        EXPECT_TRUE(window->is_valid());
+
+        const auto view = view_of(*base, *window);
+        ASSERT_TRUE(view.has_value());
+        const auto copy = TensorData::copy_of(*view);
+        ASSERT_TRUE(copy.has_value());
+        EXPECT_EQ(floats_of(*copy), (std::vector<float> { 7, 8, 9, 12, 13, 14 }));
+    }
+
+    TEST(TensorSpecTest, WindowOfTheWholeTensorIsTheSpecItself)
+    {
+        const auto spec = TensorSpec::contiguous(TensorDType::of<float>(), { 4, 5 }, "whole");
+        const std::vector<uint64_t> origin { 0, 0 };
+        const std::vector<uint64_t> extent { 4, 5 };
+
+        const auto window = spec.window(origin, extent);
+
+        ASSERT_TRUE(window.has_value());
+        EXPECT_EQ(window->shape, spec.shape);
+        EXPECT_TRUE(window->strides.empty());
+        EXPECT_EQ(window->byte_offset, 0U);
+        EXPECT_EQ(window->name, "whole");
+    }
+
+    TEST(TensorSpecTest, WindowRefusesBoxesThatDoNotFit)
+    {
+        const auto spec = TensorSpec::contiguous(TensorDType::of<float>(), { 4, 5 });
+        const auto window = [&](std::vector<uint64_t> origin, std::vector<uint64_t> extent) {
+            return spec.window(origin, extent);
+        };
+
+        EXPECT_FALSE(window({ 0 }, { 2 }).has_value());
+        EXPECT_FALSE(window({ 0, 0, 0 }, { 1, 1, 1 }).has_value());
+        EXPECT_FALSE(window({ 0, 0 }, { 0, 2 }).has_value());
+        EXPECT_FALSE(window({ 4, 0 }, { 1, 1 }).has_value());
+        EXPECT_FALSE(window({ 3, 0 }, { 2, 1 }).has_value());
+        EXPECT_FALSE(window({ 3, 0 }, { std::numeric_limits<uint64_t>::max(), 1 }).has_value());
+        EXPECT_TRUE(window({ 3, 4 }, { 1, 1 }).has_value());
+    }
+
+    TEST(TensorSpecTest, WindowOfAReversedAxisMovesTowardsTheStart)
+    {
+        std::vector<float> values { 0, 1, 2, 3, 4, 5 };
+        auto spec = TensorSpec::contiguous(TensorDType::of<float>(), { 6 });
+        spec.strides = { -1 };
+        spec.byte_offset = 5 * sizeof(float);
+        const auto base = TensorData::from_bytes(spec, std::as_bytes(std::span<const float>(values)));
+        ASSERT_TRUE(base.has_value());
+        const std::vector<uint64_t> origin { 1 };
+        const std::vector<uint64_t> extent { 3 };
+
+        const auto window = base->spec().window(origin, extent);
+
+        ASSERT_TRUE(window.has_value());
+        EXPECT_EQ(window->byte_offset, 4U * sizeof(float));
+        const auto view = view_of(*base, *window);
+        ASSERT_TRUE(view.has_value());
+        EXPECT_EQ(floats_of(*TensorData::copy_of(*view)), (std::vector<float> { 4, 3, 2 }));
+    }
+
+    TEST(TensorSpecTest, WindowCutsPerAxisQuantizationToTheSameRange)
+    {
+        auto spec = TensorSpec::contiguous(TensorDType::of<int8_t>(), { 4, 3 });
+        spec.quantization = TensorQuantization { .scale = { 1, 2, 3, 4 }, .zero_point = { 0, 1, 2, 3 }, .axis = 0 };
+        const std::vector<uint64_t> origin { 1, 0 };
+        const std::vector<uint64_t> extent { 2, 3 };
+
+        const auto window = spec.window(origin, extent);
+
+        ASSERT_TRUE(window.has_value());
+        ASSERT_TRUE(window->quantization.has_value());
+        EXPECT_EQ(window->quantization->scale, (std::vector<double> { 2, 3 }));
+        EXPECT_EQ(window->quantization->zero_point, (std::vector<int64_t> { 1, 2 }));
+        EXPECT_TRUE(window->is_valid());
+    }
+
+    TEST(TensorSpecTest, WindowLeavesPerTensorQuantizationAlone)
+    {
+        auto spec = TensorSpec::contiguous(TensorDType::of<int8_t>(), { 4, 3 });
+        spec.quantization = TensorQuantization { .scale = { 0.5 }, .zero_point = { 3 }, .axis = std::nullopt };
+        const std::vector<uint64_t> origin { 2, 1 };
+        const std::vector<uint64_t> extent { 1, 2 };
+
+        const auto window = spec.window(origin, extent);
+
+        ASSERT_TRUE(window.has_value());
+        EXPECT_EQ(window->quantization->scale, (std::vector<double> { 0.5 }));
+        EXPECT_EQ(window->quantization->zero_point, (std::vector<int64_t> { 3 }));
+        EXPECT_TRUE(window->is_valid());
+    }
+
+    TEST(TensorSpecTest, SubByteWindowIsOnlyTheWholeTensor)
+    {
+        const auto spec = TensorSpec::contiguous(TensorDType { TensorDTypeKind::FLOAT4_E2M1FN, 4, 1 }, { 4, 4 });
+        ASSERT_TRUE(spec.is_valid());
+        const std::vector<uint64_t> origin { 0, 0 };
+
+        EXPECT_FALSE(spec.window(origin, std::vector<uint64_t> { 2, 2 }).has_value());
+        EXPECT_TRUE(spec.window(origin, std::vector<uint64_t> { 4, 4 }).has_value());
+    }
+
+    TEST(TensorSpecTest, WindowByRegionNamesLeadingAxesAndSpansTheRest)
+    {
+        const auto spec = TensorSpec::contiguous(TensorDType::of<float>(), { 4, 5 });
+
+        const auto rows = spec.window(Region({ 1 }, { 2 }));
+        ASSERT_TRUE(rows.has_value());
+        EXPECT_EQ(rows->shape, (std::vector<uint64_t> { 2, 5 }));
+        EXPECT_EQ(rows->byte_offset, 5U * sizeof(float));
+
+        const auto box = spec.window(Region({ 1, 1 }, { 2, 3 }));
+        ASSERT_TRUE(box.has_value());
+        EXPECT_EQ(box->shape, (std::vector<uint64_t> { 2, 3 }));
+        EXPECT_EQ(box->byte_offset, (5U + 1U) * sizeof(float));
+
+        const std::vector<uint64_t> origin { 1, 1 };
+        const std::vector<uint64_t> extent { 2, 3 };
+        const auto direct = spec.window(origin, extent);
+        ASSERT_TRUE(direct.has_value());
+        EXPECT_EQ(box->strides, direct->strides);
+        EXPECT_EQ(box->byte_offset, direct->byte_offset);
+    }
+
+    TEST(TensorSpecTest, WindowByRegionRefusesEmptyInvertedAndOversizedRegions)
+    {
+        const auto spec = TensorSpec::contiguous(TensorDType::of<float>(), { 4, 5 });
+
+        EXPECT_FALSE(spec.window(Region {}).has_value());
+        EXPECT_FALSE(spec.window(Region({ 3 }, { 1 })).has_value());
+        EXPECT_FALSE(spec.window(Region({ 0 }, { 4 })).has_value());
+        EXPECT_FALSE(spec.window(Region({ 0, 0, 0 }, { 0, 0, 0 })).has_value());
+        EXPECT_FALSE(spec.window(Region({ 0, 0 }, { 1 })).has_value());
+        EXPECT_TRUE(spec.window(Region(std::vector<uint64_t> { 3, 4 })).has_value());
     }
 
     // ---------------------------------------------------------------------
@@ -627,6 +777,99 @@ namespace {
         std::vector<double> wide(6, 1.0);
         const auto other_type = TensorData::from_values<double>(wide, { 2, 3 });
         EXPECT_FALSE(insert.assign(*other_type->access()));
+    }
+
+    TEST(TensorInsertionTest, AssignWindowWritesOnlyTheBox)
+    {
+        auto destination = TensorData::allocate(TensorSpec::contiguous(TensorDType::of<float>(), { 3, 4 }));
+        ASSERT_TRUE(destination.has_value());
+        const auto patch = make_floats({ 2, 2 });
+        ASSERT_TRUE(patch.has_value());
+
+        TensorInsertion insert(*destination);
+        EXPECT_TRUE(insert.assign_window(Region({ 1, 1 }, { 2, 2 }), *patch->access()));
+
+        EXPECT_EQ(floats_of(*destination), (std::vector<float> { 0, 0, 0, 0, 0, 0, 1, 0, 0, 2, 3, 0 }));
+    }
+
+    TEST(TensorInsertionTest, AssignWindowScattersIntoAStridedDestination)
+    {
+        auto spec = TensorSpec::contiguous(TensorDType::of<float>(), { 3, 4 });
+        spec.strides = { 1, 3 };
+        auto destination = TensorData::allocate(spec);
+        ASSERT_TRUE(destination.has_value());
+        const auto patch = make_floats({ 2, 2 });
+        ASSERT_TRUE(patch.has_value());
+
+        TensorInsertion insert(*destination);
+        EXPECT_TRUE(insert.assign_window(Region({ 1, 1 }, { 2, 2 }), *patch->access()));
+
+        const auto logical = TensorData::copy_of(*destination->access());
+        ASSERT_TRUE(logical.has_value());
+        EXPECT_EQ(floats_of(*logical), (std::vector<float> { 0, 0, 0, 0, 0, 0, 1, 0, 0, 2, 3, 0 }));
+    }
+
+    TEST(TensorInsertionTest, AssignWindowAcceptsASourceThatOverlapsTheDestination)
+    {
+        auto destination = make_floats({ 4, 4 });
+        ASSERT_TRUE(destination.has_value());
+        const auto source_spec = destination->spec().window(Region({ 1, 1 }, { 2, 2 }));
+        ASSERT_TRUE(source_spec.has_value());
+        const auto source = view_of(*destination, *source_spec);
+        ASSERT_TRUE(source.has_value());
+
+        TensorInsertion insert(*destination);
+        EXPECT_TRUE(insert.assign_window(Region({ 2, 2 }, { 3, 3 }), *source));
+
+        std::vector<float> expected(16);
+        std::iota(expected.begin(), expected.end(), 0.0F);
+        expected[10] = 5;
+        expected[11] = 6;
+        expected[14] = 9;
+        expected[15] = 10;
+        EXPECT_EQ(floats_of(*destination), expected);
+    }
+
+    TEST(TensorInsertionTest, AssignWindowRefusesAndLeavesTheTensorAloneOtherwise)
+    {
+        auto destination = make_floats({ 3, 4 });
+        ASSERT_TRUE(destination.has_value());
+        const auto before = floats_of(*destination);
+        TensorInsertion insert(*destination);
+
+        const auto wrong_shape = make_floats({ 2, 3 });
+        EXPECT_FALSE(insert.assign_window(Region({ 0, 0 }, { 1, 1 }), *wrong_shape->access()));
+
+        std::vector<double> wide(4, 1.0);
+        const auto wrong_type = TensorData::from_values<double>(wide, { 2, 2 });
+        EXPECT_FALSE(insert.assign_window(Region({ 0, 0 }, { 1, 1 }), *wrong_type->access()));
+
+        const auto patch = make_floats({ 2, 2 });
+        EXPECT_FALSE(insert.assign_window(Region({ 2, 3 }, { 3, 4 }), *patch->access()));
+        EXPECT_FALSE(insert.assign_window(Region {}, *patch->access()));
+
+        EXPECT_EQ(floats_of(*destination), before);
+    }
+
+    TEST(TensorInsertionTest, AssignWindowOnASubByteTensorNeedsTheWholeTensor)
+    {
+        const auto dtype = TensorDType { TensorDTypeKind::FLOAT4_E2M1FN, 4, 1 };
+        auto destination = TensorData::allocate(TensorSpec::contiguous(dtype, { 4, 4 }));
+        ASSERT_TRUE(destination.has_value());
+        const std::vector<std::byte> pattern { std::byte { 0x21 }, std::byte { 0x43 }, std::byte { 0x65 }, std::byte { 0x07 },
+            std::byte { 0x18 }, std::byte { 0x29 }, std::byte { 0x3A }, std::byte { 0x4B } };
+        const auto whole = TensorData::from_bytes(TensorSpec::contiguous(dtype, { 4, 4 }), pattern);
+        ASSERT_TRUE(whole.has_value());
+        const auto part = TensorData::allocate(TensorSpec::contiguous(dtype, { 2, 2 }));
+        ASSERT_TRUE(part.has_value());
+
+        TensorInsertion insert(*destination);
+        EXPECT_FALSE(insert.assign_window(Region({ 0, 0 }, { 1, 1 }), *part->access()));
+        EXPECT_TRUE(insert.assign_window(Region({ 0, 0 }, { 3, 3 }), *whole->access()));
+
+        const auto stored = destination->storage();
+        ASSERT_EQ(stored.size(), pattern.size());
+        EXPECT_TRUE(std::equal(stored.begin(), stored.end(), pattern.begin()));
     }
 
     TEST(TensorInsertionTest, ReshapeKeepsDataAndRefusesAChangedCount)
