@@ -7,6 +7,7 @@
 
 #include "MayaFlux/IO/Tensor/SafetensorsFormat.hpp"
 #include "MayaFlux/Yantra/Extractors/PhonemeExtractor.hpp"
+#include "MayaFlux/Yantra/Extractors/SpeechSegmenter.hpp"
 
 namespace MayaFlux::Test {
 namespace {
@@ -286,6 +287,38 @@ namespace {
         const auto* audio = std::get_if<std::vector<double>>(&output.data[0]);
         ASSERT_NE(audio, nullptr);
         EXPECT_EQ(audio->size(), expected);
+    }
+
+    TYPED_TEST(PhonemeExtractorGpuTest, SpeechIntervalsAreTheSegmentersAndStayWithinTheirBounds)
+    {
+        const auto vad = read_weights(k_vad_weights);
+        const auto hubert = read_weights(k_hubert_weights);
+        const auto speech = read_floats(k_speech);
+        if (!vad || !hubert || speech.empty()) {
+            GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";
+        }
+        const auto audio = as_input(speech_then_silence_then_speech(speech));
+        StandardPhonemeExtractor extractor(*vad, *hubert);
+        const auto record = extractor.extract_phonemes(audio);
+
+        Yantra::RegionSpeechSegmenter segmenter(*vad);
+        Yantra::SpeechSegmenterConfig config;
+        config.speech.max_run = HubertPhonemeModel::max_samples;
+        const auto& samples = std::get<std::vector<double>>(audio[0]);
+        const auto expected = segmenter.segment(samples, config).speech;
+
+        ASSERT_EQ(record.speech.size(), 2U);
+        EXPECT_EQ(record.speech, expected);
+        const size_t n = speech.size();
+        const size_t padding = config.speech.padding;
+        EXPECT_LE(record.speech[0].first, n);
+        EXPECT_LE(record.speech[0].second, record.speech[1].first);
+        EXPECT_GE(record.speech[1].first, n + k_silence - padding);
+        EXPECT_LE(record.speech[1].second, samples.size());
+        for (const auto& [first, last] : record.speech) {
+            EXPECT_LT(first, last);
+            EXPECT_LE(last - first, HubertPhonemeModel::max_samples);
+        }
     }
 
 }
