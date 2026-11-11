@@ -217,6 +217,18 @@ namespace {
         EXPECT_FALSE(HubertPhonemeModel::is_vowel(first.phoneme));
         EXPECT_GT(output.data(static_cast<Eigen::Index>(first.frame), 1), output.data(static_cast<Eigen::Index>(first.frame), 0));
 
+        EXPECT_EQ(analysis.events.front().start, 0U);
+        EXPECT_EQ(analysis.events.back().end, audio.size());
+        for (size_t k = 0; k < analysis.events.size(); ++k) {
+            const auto& event = analysis.events[k];
+            EXPECT_LT(event.start, event.end);
+            EXPECT_LE(event.start, event.sample + HubertPhonemeModel::frame_span);
+            EXPECT_GT(event.end, event.sample);
+            if (k > 0) {
+                EXPECT_EQ(event.start, analysis.events[k - 1].end);
+            }
+        }
+
         const auto regions = Yantra::phoneme_regions(analysis, 0, 0);
         ASSERT_EQ(regions.regions.size(), analysis.events.size());
         EXPECT_EQ(regions.regions.front().label, std::optional<std::string>("G"));
@@ -224,6 +236,103 @@ namespace {
         EXPECT_EQ(*regions.regions.front().get(Yantra::phoneme_class), first.phoneme);
         EXPECT_NE(analysis.posterior_tensor("posteriors"), nullptr);
         EXPECT_NE(analysis.embedding_tensor("states"), nullptr);
+    }
+
+    TYPED_TEST(HubertPhonemeGpuTest, CompositeOutputIsOneRecordPerRecognisedPhoneme)
+    {
+        const auto& weights = hubert_weights();
+        const auto audio = hubert_floats("tests/models/hubert_phoneme/hubert_speech_audio.f32");
+        const auto want = hubert_floats("tests/models/hubert_phoneme/hubert_speech_posteriors.f32");
+        if (!weights || audio.empty() || want.empty()) {
+            GTEST_SKIP() << "the HuBERT weights or the speech fixture are not present";
+        }
+        Yantra::CompositePhonemeAnalyzer analyzer(*weights);
+
+        const auto output = analyzer.apply_operation(Yantra::Datum<std::vector<Kakshya::DataVariant>> { hubert_input(audio) });
+        const auto analysis = analyzer.get_phoneme_analysis();
+
+        const auto names = phonemes_of(want);
+        ASSERT_EQ(output.data.size(), names.size());
+        ASSERT_EQ(analysis.events.size(), names.size());
+        ASSERT_NE(output.facets.template get<Yantra::PhonemeAnalysis>(), nullptr);
+        for (size_t row = 0; row < names.size(); ++row) {
+            const auto record = output.data.at(row);
+            ASSERT_TRUE(record.has_value());
+            const auto& event = analysis.events[row];
+            EXPECT_EQ(record->text("phoneme"), std::optional<std::string_view>(names[row]));
+            EXPECT_EQ(record->template get<uint32_t>("class"), std::optional<uint32_t>(event.phoneme));
+            EXPECT_EQ(record->template get<uint64_t>("frame"), std::optional<uint64_t>(event.frame));
+            EXPECT_EQ(record->template get<uint64_t>("sample"), std::optional<uint64_t>(event.frame * HubertPhonemeModel::frame_hop));
+            EXPECT_EQ(record->template get<uint64_t>("start"), std::optional<uint64_t>(event.start));
+            EXPECT_EQ(record->template get<uint64_t>("end"), std::optional<uint64_t>(event.end));
+            EXPECT_EQ(record->template get<double>("probability"), std::optional<double>(event.probability));
+            EXPECT_EQ(record->template get<uint8_t>("vowel"), std::optional<uint8_t>(HubertPhonemeModel::is_vowel(event.phoneme) ? 1 : 0));
+        }
+    }
+
+    TYPED_TEST(HubertPhonemeGpuTest, HeldClassesMarkEveryFrameOnceAndFollowTheEstimatedRanges)
+    {
+        const auto& weights = hubert_weights();
+        const auto audio = hubert_floats("tests/models/hubert_phoneme/hubert_speech_audio.f32");
+        if (!weights || audio.empty()) {
+            GTEST_SKIP() << "the HuBERT weights or the speech fixture are not present";
+        }
+        PhonemeAnalyzerConfig config;
+        config.method = PhonemeMethod::HELD_CLASSES;
+        StandardPhonemeAnalyzer analyzer(*weights, config);
+
+        const auto output = analyzer.apply_operation(Yantra::Datum<std::vector<Kakshya::DataVariant>> { hubert_input(audio) });
+        const auto analysis = analyzer.get_phoneme_analysis();
+
+        ASSERT_EQ(output.data.cols(), 3);
+        ASSERT_EQ(static_cast<size_t>(output.data.rows()), analysis.frames);
+        for (Eigen::Index frame = 0; frame < output.data.rows(); ++frame) {
+            EXPECT_EQ(output.data.row(frame).sum(), 1.0) << "frame " << frame;
+        }
+        for (const auto& event : analysis.events) {
+            const auto frame = static_cast<Eigen::Index>(event.frame);
+            const size_t centre = event.frame * HubertPhonemeModel::frame_hop + HubertPhonemeModel::frame_span / 2;
+            if (event.start <= centre && centre < event.end) {
+                EXPECT_EQ(output.data(frame, HubertPhonemeModel::is_vowel(event.phoneme) ? 0 : 1), 1.0) << "frame " << frame;
+            }
+        }
+        EXPECT_GT(output.data.col(0).sum(), 0.0);
+        EXPECT_GT(output.data.col(1).sum(), 0.0);
+    }
+
+    TEST(PhonemeRecordTest, ColumnsFillTheNumericFieldsInOrderAndLeaveTextAbsent)
+    {
+        Yantra::DataStructureInfo info;
+        info.composite_layout = Yantra::phoneme_record_layout();
+        const std::vector<std::vector<double>> columns { { 14.0, 24.0 }, { 9.0, 13.0 }, { 2880.0, 4160.0 }, { 0.0, 3560.0 }, { 3560.0, 4840.0 }, { 0.75, 0.5 }, { 0.0, 1.0 } };
+
+        const auto records = Yantra::OperationHelper::reconstruct_from_double<Kakshya::CompositeArray>(columns, info);
+
+        ASSERT_EQ(records.size(), 2U);
+        EXPECT_FALSE(records.at(0)->has("phoneme"));
+        EXPECT_EQ(records.at(1)->get<uint32_t>("class"), std::optional<uint32_t>(24));
+        EXPECT_EQ(records.at(1)->get<uint64_t>("sample"), std::optional<uint64_t>(4160));
+        EXPECT_EQ(records.at(1)->get<uint64_t>("end"), std::optional<uint64_t>(4840));
+        EXPECT_EQ(records.at(0)->get<double>("probability"), std::optional<double>(0.75));
+        EXPECT_EQ(records.at(1)->get<uint8_t>("vowel"), std::optional<uint8_t>(1));
+
+        const auto datum = Yantra::OperationHelper::reconstruct_from_double<Yantra::Datum<Kakshya::CompositeArray>>(columns, info);
+        EXPECT_EQ(datum.data.size(), 2U);
+    }
+
+    TEST(PhonemeRecordTest, ColumnsThatDoNotFitTheLayoutAreRefused)
+    {
+        Yantra::DataStructureInfo info;
+        const std::vector<std::vector<double>> columns { { 1.0 }, { 2.0 } };
+        EXPECT_THROW(static_cast<void>(Yantra::OperationHelper::reconstruct_from_double<Kakshya::CompositeArray>(columns, info)), std::runtime_error);
+
+        info.composite_layout = Yantra::phoneme_record_layout();
+        const std::vector<std::vector<double>> uneven { { 1.0, 2.0 }, { 3.0 } };
+        EXPECT_THROW(static_cast<void>(Yantra::OperationHelper::reconstruct_from_double<Kakshya::CompositeArray>(uneven, info)), std::runtime_error);
+        const std::vector<std::vector<double>> many(8, std::vector<double> { 1.0 });
+        EXPECT_THROW(static_cast<void>(Yantra::OperationHelper::reconstruct_from_double<Kakshya::CompositeArray>(many, info)), std::runtime_error);
+        const std::vector<std::vector<double>> fractional { { 1.5 } };
+        EXPECT_THROW(static_cast<void>(Yantra::OperationHelper::reconstruct_from_double<Kakshya::CompositeArray>(fractional, info)), std::invalid_argument);
     }
 
     TEST(HubertPhonemeLayoutTest, FramesFollowTheConvolutionLengths)
