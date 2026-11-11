@@ -59,6 +59,30 @@ namespace {
         return layout;
     }
 
+    CompositeLayout coefficient_layout()
+    {
+        CompositeLayout layout;
+        layout.add_field<double>("b0");
+        layout.add_field<double>("a1");
+        return layout;
+    }
+
+    CompositeLayout filter_layout()
+    {
+        CompositeLayout layout;
+        layout.add_field<std::string>("name");
+        layout.add_list_field("stages", coefficient_layout());
+        return layout;
+    }
+
+    CompositeLayout drawable_layout()
+    {
+        CompositeLayout layout;
+        layout.add_field<uint32_t>("id");
+        layout.add_compound_field("filter", filter_layout());
+        return layout;
+    }
+
     struct RawSlice {
         uint64_t offset;
         uint64_t length;
@@ -160,6 +184,197 @@ namespace {
     TEST(CompositeLayoutTest, ArrayNeedsAtLeastOneField)
     {
         EXPECT_THROW(CompositeArray(CompositeLayout {}), std::invalid_argument);
+    }
+
+    TEST(CompositeLayoutTest, NestedFieldsKeepRecursiveSchemas)
+    {
+        CompositeLayout layout = drawable_layout();
+        CompositeArray array(layout);
+        const auto& filter_field = array.layout().fields()[1];
+
+        ASSERT_TRUE(filter_field.nested_layout);
+        EXPECT_EQ(filter_field.size_bytes, sizeof(uint64_t));
+        EXPECT_TRUE(array.layout().same_structure(layout));
+        EXPECT_FALSE(array.layout().same_structure(people_layout()));
+
+        const auto& stages_field = filter_field.nested_layout->fields()[1];
+        EXPECT_EQ(stages_field.name, "stages");
+        EXPECT_TRUE(stages_field.nested_layout);
+    }
+
+    TEST(CompositeArrayTest, NestedMembersDistinguishAbsentEmptyAndOrderedValues)
+    {
+        CompositeArray coefficients(coefficient_layout());
+        CompositeInsertion coefficient_insert(coefficients);
+
+        const auto first = coefficient_insert.append();
+        const auto second = coefficient_insert.append();
+        ASSERT_TRUE(coefficient_insert.set(first, "b0", 0.25));
+        ASSERT_TRUE(coefficient_insert.set(second, "b0", 0.75));
+
+        CompositeArray filter(filter_layout());
+        CompositeInsertion filter_insert(filter);
+
+        const auto filter_row = filter_insert.append();
+        ASSERT_TRUE(filter_insert.set_text(filter_row, "name", "lowpass"));
+        ASSERT_TRUE(filter_insert.set_list(filter_row, "stages", coefficients));
+
+        CompositeArray drawable(drawable_layout());
+        CompositeInsertion drawable_insert(drawable);
+
+        const auto absent = drawable_insert.append();
+        const auto present = drawable_insert.append();
+        ASSERT_TRUE(drawable_insert.set_compound(present, "filter", *filter.at(filter_row)));
+        ASSERT_TRUE(drawable_insert.set(present, "id", uint32_t { 17 }));
+
+        EXPECT_FALSE(drawable.at(absent)->has("filter"));
+        EXPECT_EQ(drawable.at(absent)->compound("filter"), nullptr);
+
+        const auto* stored_filter = drawable.at(present)->compound("filter");
+        ASSERT_NE(stored_filter, nullptr);
+        ASSERT_EQ(stored_filter->size(), 1U);
+        EXPECT_EQ(stored_filter->at(0)->text("name"), "lowpass");
+
+        const auto* stages = stored_filter->at(0)->list("stages");
+        ASSERT_NE(stages, nullptr);
+        ASSERT_EQ(stages->size(), 2U);
+        EXPECT_EQ(stages->at(0)->get<double>("b0"), 0.25);
+        EXPECT_EQ(stages->at(1)->get<double>("b0"), 0.75);
+        EXPECT_FALSE(stages->at(0)->has("a1"));
+
+        const auto ids = drawable.to_nddata<uint32_t>("id");
+        ASSERT_TRUE(ids);
+        EXPECT_EQ(std::get<std::vector<uint32_t>>(ids->values)[present], 17U);
+        EXPECT_EQ(std::get<std::vector<uint8_t>>(ids->presence)[absent], 0U);
+
+        CompositeArray empty(coefficient_layout());
+        ASSERT_TRUE(filter_insert.set_list(filter_row, "stages", empty));
+        EXPECT_EQ(stored_filter->at(0)->list("stages")->size(), 2U);
+
+        ASSERT_TRUE(drawable_insert.set_compound(present, "filter", *filter.at(filter_row)));
+        const auto* empty_filter = drawable.at(present)->compound("filter");
+        ASSERT_NE(empty_filter, nullptr);
+        EXPECT_TRUE(empty_filter->at(0)->has("stages"));
+        EXPECT_EQ(empty_filter->at(0)->list("stages")->size(), 0U);
+    }
+
+    TEST(CompositeArrayTest, NestedCopiesAndSlicesOwnOrBorrowAsExpected)
+    {
+        CompositeArray coefficients(coefficient_layout());
+        const auto coefficient = coefficients.append();
+        ASSERT_TRUE(coefficients.set(coefficient, "b0", 0.5));
+
+        CompositeArray filter(filter_layout());
+        const auto filter_row = filter.append();
+        ASSERT_TRUE(filter.set_list(filter_row, "stages", coefficients));
+
+        CompositeArray drawable(drawable_layout());
+        const auto row = drawable.append();
+        ASSERT_TRUE(drawable.set_compound(row, "filter", *filter.at(filter_row)));
+
+        CompositeArray copied(drawable);
+        CompositeArray inserted(drawable_layout());
+        CompositeInsertion insertion(inserted);
+        ASSERT_TRUE(insertion.append(*drawable.at(row)));
+
+        const auto slice = drawable.slice(0, 1);
+        ASSERT_TRUE(slice);
+        const auto* first_filter = slice->at(0)->compound("filter");
+        ASSERT_NE(first_filter, nullptr);
+        const auto* first_stages = first_filter->at(0)->list("stages");
+        ASSERT_NE(first_stages, nullptr);
+        EXPECT_EQ(first_stages->at(0)->get<double>("b0"), 0.5);
+
+        ASSERT_TRUE(coefficients.set(coefficient, "b0", 0.9));
+        ASSERT_TRUE(filter.set_list(filter_row, "stages", coefficients));
+        ASSERT_TRUE(drawable.set_compound(row, "filter", *filter.at(filter_row)));
+
+        const auto* current_filter = slice->at(0)->compound("filter");
+        const auto* copied_filter = copied.at(0)->compound("filter");
+        const auto* inserted_filter = inserted.at(0)->compound("filter");
+        ASSERT_NE(current_filter, nullptr);
+        ASSERT_NE(copied_filter, nullptr);
+        ASSERT_NE(inserted_filter, nullptr);
+
+        const auto* current_stages = current_filter->at(0)->list("stages");
+        const auto* copied_stages = copied_filter->at(0)->list("stages");
+        const auto* inserted_stages = inserted_filter->at(0)->list("stages");
+        ASSERT_NE(current_stages, nullptr);
+        ASSERT_NE(copied_stages, nullptr);
+        ASSERT_NE(inserted_stages, nullptr);
+
+        EXPECT_NE(copied_filter, current_filter);
+        EXPECT_NE(inserted_filter, current_filter);
+        EXPECT_EQ(current_stages->at(0)->get<double>("b0"), 0.9);
+        EXPECT_EQ(copied_stages->at(0)->get<double>("b0"), 0.5);
+        EXPECT_EQ(inserted_stages->at(0)->get<double>("b0"), 0.5);
+    }
+
+    TEST(CompositeArrayTest, NestedWritesRejectDifferentSchemasAndCardinality)
+    {
+        CompositeArray drawable(drawable_layout());
+        const auto row = drawable.append();
+        CompositeArray empty_filter(filter_layout());
+        CompositeArray wrong(people_layout());
+        const auto wrong_row = wrong.append();
+
+        EXPECT_FALSE(drawable.set_list(row, "filter", empty_filter));
+        EXPECT_FALSE(drawable.set_compound(row, "filter", *wrong.at(wrong_row)));
+        EXPECT_FALSE(drawable.at(row)->has("filter"));
+    }
+
+    TEST(CompositeInsertionTest, NestedSchemaDifferencesRejectWholeRecordCopies)
+    {
+        CompositeLayout other_filter;
+        other_filter.add_field<double>("frequency");
+
+        CompositeLayout other_drawable;
+        other_drawable.add_field<uint32_t>("id");
+        other_drawable.add_compound_field("filter", other_filter);
+
+        CompositeArray source(other_drawable);
+        CompositeArray destination(drawable_layout());
+        CompositeInsertion insertion(destination);
+        const auto row = source.append();
+
+        EXPECT_FALSE(insertion.append(*source.at(row)));
+        EXPECT_TRUE(destination.empty());
+    }
+
+    TEST(CompositeAccessTest, NestedAccessRequiresItsPayloadStore)
+    {
+        CompositeArray drawable(drawable_layout());
+        const auto row = drawable.append();
+        CompositeArray filter(filter_layout());
+        const auto filter_row = filter.append();
+        ASSERT_TRUE(drawable.set_compound(row, "filter", *filter.at(filter_row)));
+
+        const auto access = drawable.access();
+        ASSERT_TRUE(access);
+        ASSERT_NE(access->at(row)->compound("filter"), nullptr);
+
+        const auto& elements = drawable.element_data();
+        const auto& text = drawable.text_data();
+        const auto& blob = drawable.blob_data();
+        const auto& layout = drawable.layout();
+
+        EXPECT_FALSE(Kakshya::as_composite_access(elements, text, blob, layout));
+
+        const std::vector<std::shared_ptr<CompositeArray>> missing_payloads;
+        EXPECT_FALSE(Kakshya::as_composite_access(
+            elements, text, blob, missing_payloads, layout));
+
+        const std::vector<std::shared_ptr<CompositeArray>> wrong_payloads {
+            std::make_shared<CompositeArray>(coefficient_layout())
+        };
+        EXPECT_FALSE(Kakshya::as_composite_access(
+            elements, text, blob, wrong_payloads, layout));
+
+        const std::vector<std::shared_ptr<CompositeArray>> valid_payloads {
+            std::make_shared<CompositeArray>(filter)
+        };
+        EXPECT_TRUE(Kakshya::as_composite_access(
+            elements, text, blob, valid_payloads, layout));
     }
 
     // ---------------------------------------------------------------------

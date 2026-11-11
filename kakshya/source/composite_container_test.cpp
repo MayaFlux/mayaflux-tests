@@ -35,6 +35,18 @@ namespace {
         return layout;
     }
 
+    CompositeLayout nested_layout()
+    {
+        CompositeLayout item;
+        item.add_field<double>("value");
+
+        CompositeLayout layout;
+        layout.add_field<std::string>("name");
+        layout.add_list_field("samples", item);
+
+        return layout;
+    }
+
     Region span(uint64_t start, uint64_t end)
     {
         return Region(std::vector<uint64_t> { start }, std::vector<uint64_t> { end });
@@ -229,6 +241,39 @@ namespace {
 
         EXPECT_EQ(name_at(container.get_data(), 0), "X");
         EXPECT_EQ(name_at(container.get_materialized_data(), 0), "r0");
+    }
+
+    TEST_F(CompositeContainerTest, MaterializedNestedListsKeepTheirOrderAndOwnership)
+    {
+        CompositeContainer container(nested_layout(), 1);
+        CompositeLayout item_layout;
+        item_layout.add_field<double>("value");
+
+        CompositeArray samples(item_layout);
+        const auto first = samples.append();
+        const auto second = samples.append();
+        ASSERT_TRUE(samples.set(first, "value", 1.0));
+        ASSERT_TRUE(samples.set(second, "value", 2.0));
+
+        auto insertion = container.insert();
+        const auto row = insertion.append();
+        ASSERT_TRUE(insertion.set_list(row, "samples", samples));
+
+        ASSERT_TRUE(container.materialize_next());
+        const auto* stored = container.get_materialized_data().at(0)->list("samples");
+        ASSERT_NE(stored, nullptr);
+
+        ASSERT_EQ(stored->size(), 2U);
+        EXPECT_EQ(stored->at(0)->get<double>("value"), 1.0);
+        EXPECT_EQ(stored->at(1)->get<double>("value"), 2.0);
+
+        ASSERT_TRUE(samples.set(first, "value", 3.0));
+        ASSERT_TRUE(insertion.set_list(row, "samples", samples));
+
+        const auto* current = container.get_data().at(0)->list("samples");
+        ASSERT_NE(current, nullptr);
+        EXPECT_EQ(current->at(0)->get<double>("value"), 3.0);
+        EXPECT_EQ(stored->at(0)->get<double>("value"), 1.0);
     }
 
     TEST_F(CompositeContainerTest, SlicesBorrowConsecutiveRowsAndRejectBadRanges)
