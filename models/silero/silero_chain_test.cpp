@@ -6,6 +6,7 @@
 #include "../../support/gpu_dispatch_test_support.hpp"
 
 #include "MayaFlux/IO/Tensor/SafetensorsFormat.hpp"
+#include "MayaFlux/Yantra/Analyzers/VadAnalyzer.hpp"
 #include "MayaFlux/Yantra/Executors/Audio/SileroVadModel.hpp"
 #include "MayaFlux/Yantra/Extractors/IntervalExtractor.hpp"
 
@@ -21,6 +22,7 @@ namespace {
     using Yantra::IntervalExtractorConfig;
     using Yantra::MatrixIntervalExtractor;
     using Yantra::SileroVadModel;
+    using Yantra::StandardVadAnalyzer;
 
     const fs::path k_weights = "data/tensors/silero/silero_vad_16k.safetensors";
 
@@ -165,6 +167,43 @@ namespace {
         started.share_recording(recording);
         started.bind_scores(0, *buffer.context, buffer.set, buffer.binding);
         EXPECT_THROW(started.share_recording(recording), std::logic_error);
+    }
+
+    TYPED_TEST(SileroChainGpuTest, AVadAnalyzerSharesItsRecordingAndTheScanReadsItsProbabilitiesInPlace)
+    {
+        const auto weights = load_weights();
+        const auto audio = read_floats("tests/models/silero/silero_reference_audio.f32");
+        if (!weights || audio.empty()) {
+            GTEST_SKIP() << "the Silero weights or the reference fixture are not present";
+        }
+        const auto config = speech_config(audio.size());
+
+        StandardVadAnalyzer offline(*weights);
+        const std::vector<Kakshya::DataVariant> input { std::vector<double>(audio.begin(), audio.end()) };
+        const auto probabilities = offline.analyze_speech(input).probabilities;
+        Eigen::MatrixXd column(static_cast<Eigen::Index>(probabilities.size()), 1);
+        for (size_t n = 0; n < probabilities.size(); ++n) {
+            column(static_cast<Eigen::Index>(n), 0) = probabilities[n];
+        }
+        MatrixIntervalExtractor reference(config);
+        const auto want = reference.extract_intervals(column).channels[0].intervals;
+
+        const auto recording = std::make_shared<GpuDispatchRecorder>(true);
+        StandardVadAnalyzer analyzer(*weights);
+        analyzer.share_recording(recording);
+        MatrixIntervalExtractor chained(config);
+        chained.share_recording(recording);
+        const auto buffer = analyzer.probability_buffer();
+        chained.bind_scores(0, *buffer.context, buffer.set, buffer.binding);
+
+        const size_t recorded = analyzer.record(audio);
+        ASSERT_EQ(recorded, probabilities.size());
+        ASSERT_EQ(analyzer.resident_count(), recorded);
+        const std::array<uint32_t, 1> counts { static_cast<uint32_t>(recorded) };
+        const auto got = chained.extract_resident(counts).channels[0].intervals;
+
+        EXPECT_EQ(got, want);
+        EXPECT_THROW(analyzer.share_recording(recording), std::logic_error);
     }
 
 } // namespace

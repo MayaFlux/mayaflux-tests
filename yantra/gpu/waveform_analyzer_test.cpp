@@ -528,6 +528,60 @@ namespace {
         }
     }
 
+    TYPED_TEST(WaveformAnalyzerGpuTest, NativeFloatAgreesWithTheExactPassesToFloatPrecision)
+    {
+        auto signal = voice_like();
+        signal.resize(4096);
+        for (const bool unbiased : { false, true }) {
+            auto exact_config = make_config(WaveformMethod::LEVEL);
+            exact_config.unbiased_periodicity = unbiased;
+            auto native_config = exact_config;
+            native_config.native_float = true;
+            StandardWaveformAnalyzer exact(exact_config);
+            StandardWaveformAnalyzer native(native_config);
+
+            const auto want = exact.analyze_waveform(input_of({ signal })).channels[0];
+            const auto got = native.analyze_waveform(input_of({ signal })).channels[0];
+
+            ASSERT_EQ(got.level.size(), want.level.size());
+            ASSERT_GT(want.level.size(), 0U);
+            size_t clear = 0;
+            for (size_t w = 0; w < want.level.size(); ++w) {
+                EXPECT_EQ(got.window_positions[w], want.window_positions[w]);
+                EXPECT_NEAR(got.level[w], want.level[w], 1.0e-4 * (1.0 + want.level[w])) << "window " << w;
+                EXPECT_NEAR(got.peak[w], want.peak[w], 1.0e-5 * (1.0 + want.peak[w])) << "window " << w;
+                EXPECT_NEAR(got.dc_offset[w], want.dc_offset[w], 1.0e-5) << "window " << w;
+                EXPECT_NEAR(got.crossing_rate[w], want.crossing_rate[w], 0.01) << "window " << w;
+                if (want.periodicity[w] > 0.6) {
+                    ++clear;
+                    EXPECT_EQ(got.period[w], want.period[w]) << "window " << w;
+                    EXPECT_NEAR(got.periodicity[w], want.periodicity[w], 2.0e-3) << "window " << w;
+                }
+            }
+            EXPECT_GT(clear, 0U);
+        }
+    }
+
+    TYPED_TEST(WaveformAnalyzerGpuTest, NativeFloatIsRepeatableAndKeepsNoProfiles)
+    {
+        auto signal = voice_like();
+        signal.resize(3000);
+        auto config = make_config(WaveformMethod::PERIOD);
+        config.native_float = true;
+        StandardWaveformAnalyzer analyzer(config);
+
+        const auto first = analyzer.analyze_waveform(input_of({ signal })).channels[0];
+        const auto second = analyzer.analyze_waveform(input_of({ signal })).channels[0];
+
+        EXPECT_EQ(first.period, second.period);
+        EXPECT_EQ(first.periodicity, second.periodicity);
+        EXPECT_TRUE(first.autocorrelation.values.empty());
+
+        auto with_profiles = config;
+        with_profiles.keep_profiles = true;
+        EXPECT_THROW(StandardWaveformAnalyzer { with_profiles }, std::invalid_argument);
+    }
+
     TYPED_TEST(WaveformAnalyzerGpuTest, ProfilesBecomeTensorsOfWindowsByLags)
     {
         auto signal = voice_like();

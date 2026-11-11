@@ -1076,6 +1076,39 @@ namespace {
         EXPECT_TRUE(contains_none(product, { { "%sd_f64_add = OpFunction", "no sum" }, { "%sd_f64_div = OpFunction", "no quotient" } }));
     }
 
+    TEST(WordPairMapAsmTest, AFloatConversionEmitsOnlyItsFunctionAndStoresAFloat)
+    {
+        auto assemble = ShaderSpec::Assemble {};
+        assemble.tmpl(KernelTemplate::WordPairMap)
+            .word_op(Portal::Graphics::WordPairOp::ToFloat32)
+            .ssbo("a", BindingDirection::Input, GpuDataFormat::VEC2_U32)
+            .ssbo("result", BindingDirection::Output, GpuDataFormat::FLOAT32)
+            .pc("count", GpuDataFormat::UINT32);
+        const std::string text = emit_spirv_asm(assemble.workgroup(64).build());
+
+        EXPECT_TRUE(contains_all(text,
+            { { "%sd_f64_to_f32 = OpFunction %u32", "the operation is the conversion" },
+                { "OpBitcast %f32", "the bits are stored as a float" },
+                { "%main = OpFunction", "the entry point is emitted" } }));
+        EXPECT_TRUE(contains_none(text,
+            { { "%sd_f64_add = OpFunction", "no addition" },
+                { "%sd_f64_div = OpFunction", "no division" },
+                { "OpFConvert", "the conversion is integer only" },
+                { "OpCapability Float64", "no device float64" } }));
+    }
+
+    TEST(WordPairMapAsmTest, AFloatConversionNeedsAFloatResultBinding)
+    {
+        auto assemble = ShaderSpec::Assemble {};
+        assemble.tmpl(KernelTemplate::WordPairMap)
+            .word_op(Portal::Graphics::WordPairOp::ToFloat32)
+            .ssbo("a", BindingDirection::Input, GpuDataFormat::VEC2_U32)
+            .ssbo("result", BindingDirection::Output, GpuDataFormat::VEC2_U32)
+            .pc("count", GpuDataFormat::UINT32);
+
+        EXPECT_TRUE(contains_none(emit_spirv_asm(assemble.workgroup(64).build()), { { "%main = OpFunction", "the result of a conversion is float32" } }));
+    }
+
     TEST(WordPairMapAsmTest, ElementsPastTheCountAreGuardedByOneComparison)
     {
         const std::string text = emit_spirv_asm(word_pair_map_spec(Portal::Graphics::WordPairOp::Div, 128, 3));

@@ -417,5 +417,127 @@ namespace {
         EXPECT_EQ(got[2], 0.5);
     }
 
+    bool same_float(float got, float want)
+    {
+        return (std::isnan(got) && std::isnan(want)) || std::bit_cast<uint32_t>(got) == std::bit_cast<uint32_t>(want);
+    }
+
+    void expect_float_conversion(const std::vector<double>& values)
+    {
+        ASSERT_GT(values.size(), 0U);
+        auto pass = make_pass(WordPairOp::ToFloat32);
+        pass.context->record_stages({ word_pair_map_stage(*pass.context, pass.config, WordPairOp::ToFloat32, values, std::span<const double> {}) });
+        const auto got = Yantra::read_float_results(*pass.context, values.size());
+
+        ASSERT_EQ(got.size(), values.size());
+        size_t wrong = 0;
+        std::string report;
+        for (size_t i = 0; i < values.size(); ++i) {
+            const auto want = static_cast<float>(values[i]);
+            if (!same_float(got[i], want)) {
+                if (wrong < 8) {
+                    char text[80];
+                    std::snprintf(text, sizeof(text), "  a %s  got %08x  want %08x\n", hex(values[i]).c_str(),
+                        std::bit_cast<uint32_t>(got[i]), std::bit_cast<uint32_t>(want));
+                    report += text;
+                }
+                ++wrong;
+            }
+        }
+        EXPECT_EQ(wrong, 0U) << wrong << " of " << values.size() << " differ from the host conversion, first:\n"
+                             << report;
+    }
+
+    std::vector<double> float_rounding_values(size_t count, uint64_t seed)
+    {
+        std::mt19937_64 engine(seed);
+        std::vector<double> out;
+        while (out.size() < count) {
+            const uint64_t draw = engine();
+            const uint64_t field = 840 + draw % 321;
+            const uint64_t drop = field >= 897 ? 29 : 926 - field;
+            if (drop > 53) {
+                continue;
+            }
+            const uint64_t below = (1ULL << drop) - 1ULL;
+            uint64_t tail = 0;
+            switch ((draw >> 12) % 4) {
+            case 0:
+                tail = 0;
+                break;
+            case 1:
+                tail = 1;
+                break;
+            case 2:
+                tail = below >> 1;
+                break;
+            default:
+                tail = engine() & (below >> 1);
+                break;
+            }
+            uint64_t full = (engine() & ~below) | (1ULL << (drop - 1)) | tail;
+            full |= 1ULL << 52;
+            full &= (1ULL << 53) - 1ULL;
+            out.push_back(make((draw >> 20) & 1ULL, field, full));
+        }
+        return out;
+    }
+
+    TYPED_TEST(WordPairMapGpuTest, AFloatConversionMatchesTheHostOnRandomBitPatterns)
+    {
+        expect_float_conversion(random_bit_patterns(1U << 18, 81));
+        expect_float_conversion(random_moderate(1U << 18, 82));
+    }
+
+    TYPED_TEST(WordPairMapGpuTest, AFloatConversionMatchesTheHostOnSpecialValuesAndEveryExponent)
+    {
+        expect_float_conversion(special_values());
+        expect_float_conversion(exponent_sweep(every_field()));
+    }
+
+    TYPED_TEST(WordPairMapGpuTest, AFloatConversionRoundsTiesAndNearTiesLikeTheHostAtEveryPosition)
+    {
+        expect_float_conversion(float_rounding_values(1U << 18, 83));
+    }
+
+    TYPED_TEST(WordPairMapGpuTest, AFloatConversionHandlesTheOverflowAndSubnormalBoundaries)
+    {
+        constexpr double float_max = std::numeric_limits<float>::max();
+        const double max_ulp = std::ldexp(1.0, 104);
+        const double min_normal = std::numeric_limits<float>::min();
+        const double min_subnormal = std::numeric_limits<float>::denorm_min();
+        std::vector<double> values;
+        for (const double sign : { 1.0, -1.0 }) {
+            for (const double base : { float_max, float_max + max_ulp / 2.0, float_max + max_ulp / 2.0 + 1.0e20,
+                     float_max + max_ulp, min_normal, min_normal / 2.0, min_normal * (1.0 - 1.0e-9),
+                     min_subnormal, min_subnormal / 2.0, min_subnormal * 0.5000001, min_subnormal * 0.4999999,
+                     min_subnormal * 1.5, min_subnormal * 2.5, 1.0e-46, 1.0e-45, 1.4e-45, 1.0e300, 1.0e-300 }) {
+                values.push_back(sign * base);
+                values.push_back(sign * std::nextafter(base, 0.0));
+                values.push_back(sign * std::nextafter(base, 1.0e308));
+            }
+        }
+        expect_float_conversion(values);
+    }
+
+    TYPED_TEST(WordPairMapGpuTest, AFloatResultCanBeSharedWithAnotherContext)
+    {
+        auto pass = make_pass(WordPairOp::ToFloat32);
+        const auto values = random_moderate(5000, 84);
+        pass.context->ensure_shared_buffer(0, 1, values.size(), Yantra::GpuBufferBinding::ElementType::FLOAT32);
+
+        pass.context->record_stages({ word_pair_map_stage(*pass.context, pass.config, WordPairOp::ToFloat32, values, std::span<const double> {}) });
+        const auto got = Yantra::read_float_results(*pass.context, values.size());
+
+        ASSERT_EQ(got.size(), values.size());
+        for (size_t i = 0; i < values.size(); ++i) {
+            ASSERT_TRUE(same_float(got[i], static_cast<float>(values[i]))) << "element " << i;
+        }
+        const auto info = pass.context->shared_buffer_info(0, 1);
+        ASSERT_TRUE(info.has_value());
+        EXPECT_EQ(info->element_type, Yantra::GpuBufferBinding::ElementType::FLOAT32);
+        EXPECT_GE(info->element_count, values.size());
+    }
+
 } // namespace
 } // namespace MayaFlux::Test
