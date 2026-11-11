@@ -1100,5 +1100,56 @@ namespace {
         EXPECT_TRUE(contains_none(emit_spirv_asm(too_wide), { { "%main = OpFunction", "1024 is the widest group" } }));
     }
 
+    ShaderSpec argmax_spec(uint32_t workgroup, size_t binding_count = 2, size_t pc_count = 3)
+    {
+        auto assemble = ShaderSpec::Assemble {};
+        assemble.tmpl(KernelTemplate::SegmentedArgMax);
+        const char* names[] = { "values", "result", "extra" };
+        for (size_t i = 0; i < binding_count && i < 3; ++i) {
+            assemble.ssbo(names[i], i + 1 == binding_count ? BindingDirection::Output : BindingDirection::Input, GpuDataFormat::VEC2_U32);
+        }
+        const char* constants[] = { "length", "stride", "offset", "extra" };
+        for (size_t i = 0; i < pc_count && i < 4; ++i) {
+            assemble.pc(constants[i], GpuDataFormat::UINT32);
+        }
+        return assemble.workgroup(workgroup).build();
+    }
+
+    TEST(SegmentedArgMaxAsmTest, ListsTheWorkgroupBuiltinsAndBothSharedArraysInTheInterface)
+    {
+        const std::string text = emit_spirv_asm(argmax_spec(8));
+
+        EXPECT_TRUE(contains_all(text,
+            { { "%wgid_var %am_shared_v %am_shared_i", "SPIR-V 1.4 and later lists every global the entry point uses" },
+                { "BuiltIn WorkgroupId", "the group id is the segment" },
+                { "BuiltIn LocalInvocationId", "invocations share the selection" },
+                { "OpTypeArray %v2u32 %sd_k8", "one candidate value per invocation" },
+                { "OpTypeArray %u32 %sd_k8", "one candidate index per invocation" },
+                { "LocalSize 8 1 1", "execution mode matches the workgroup" } }));
+        EXPECT_TRUE(contains_none(text,
+            { { "%sd_f64_add = OpFunction", "a selection never adds" },
+                { "%sd_f64_mul = OpFunction", "a selection never multiplies" },
+                { "%sd_f64_div = OpFunction", "a selection never divides" },
+                { "OpFAdd", "arithmetic is integer only" },
+                { "OpCapability Float64", "no device float64" },
+                { "OpCapability Int64", "no device int64" } }));
+    }
+
+    TEST(SegmentedArgMaxAsmTest, OneBarrierFollowsTheStoreAndEachTreeStage)
+    {
+        EXPECT_EQ(occurrences(emit_spirv_asm(argmax_spec(8)), "OpControlBarrier"), 4U);
+        EXPECT_EQ(occurrences(emit_spirv_asm(argmax_spec(2)), "OpControlBarrier"), 2U);
+        EXPECT_EQ(occurrences(emit_spirv_asm(argmax_spec(256)), "OpControlBarrier"), 9U);
+    }
+
+    TEST(SegmentedArgMaxAsmTest, AMalformedSpecEmitsNoEntryPoint)
+    {
+        EXPECT_TRUE(contains_none(emit_spirv_asm(argmax_spec(96)), { { "%main = OpFunction", "96 is not a power of two" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(argmax_spec(1)), { { "%main = OpFunction", "a tree needs at least two invocations" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(argmax_spec(2048)), { { "%main = OpFunction", "1024 is the widest group" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(argmax_spec(64, 1)), { { "%main = OpFunction", "two bindings are needed" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(argmax_spec(64, 2, 2)), { { "%main = OpFunction", "three push constants are needed" } }));
+    }
+
 } // namespace
 } // namespace MayaFlux::Test

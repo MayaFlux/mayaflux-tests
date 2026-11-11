@@ -497,6 +497,37 @@ namespace {
         }
     }
 
+    TYPED_TEST(WaveformAnalyzerGpuTest, TheLagChosenOnTheDeviceIsTheFirstMaximumOfTheKeptAutocorrelation)
+    {
+        auto signal = voice_like();
+        signal.resize(4096);
+        auto config = make_config(WaveformMethod::PERIOD);
+        config.keep_profiles = true;
+        config.unbiased_periodicity = false;
+        StandardWaveformAnalyzer analyzer(config);
+
+        const auto channel = analyzer.analyze_waveform(input_of({ signal })).channels[0];
+
+        const auto& acf = channel.autocorrelation;
+        const uint32_t first = channel.mean_difference.first_lag;
+        const size_t windows = channel.period.size();
+        ASSERT_GT(windows, 0U);
+        ASSERT_EQ(acf.values.size(), windows * acf.lag_count);
+        for (size_t w = 0; w < windows; ++w) {
+            double best = 0.0;
+            uint32_t best_lag = 0;
+            for (uint32_t lag = first; lag < acf.lag_count; ++lag) {
+                const double strength = acf.values[w * acf.lag_count + lag];
+                if (strength > best) {
+                    best = strength;
+                    best_lag = lag;
+                }
+            }
+            EXPECT_EQ(channel.period[w], static_cast<double>(best_lag)) << "window " << w;
+            EXPECT_NEAR(channel.periodicity[w], best, 1.0e-12) << "window " << w;
+        }
+    }
+
     TYPED_TEST(WaveformAnalyzerGpuTest, ProfilesBecomeTensorsOfWindowsByLags)
     {
         auto signal = voice_like();
