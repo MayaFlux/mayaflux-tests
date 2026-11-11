@@ -140,6 +140,49 @@ namespace {
         }
     }
 
+    TYPED_TEST(LaggedPairGpuTest, TheMeanOfAConstantWindowIsExactSoItsCentredSumsAreZero)
+    {
+        auto context = make_pass(PairMap::Product, true);
+        for (const double level : { 1.0, 3.0, -0.5, 7.0 }) {
+            for (uint32_t length = 1; length <= 200; ++length) {
+                const std::vector<double> signal(static_cast<size_t>(length) * 2, level);
+                const SegmentGeometry geometry { .length = length, .stride = length, .offset = 0, .count = 2 };
+
+                const auto got = sums(context, signal, geometry, 0, std::min<uint32_t>(length, 4));
+
+                for (const double value : got) {
+                    ASSERT_EQ(value, 0.0) << "length " << length << " level " << level;
+                }
+            }
+        }
+    }
+
+    TYPED_TEST(LaggedPairGpuTest, CentredSumsOfAnAlternatingWindowMatchTheHostForAwkwardLengths)
+    {
+        auto context = make_pass(PairMap::Product, true);
+        for (const uint32_t length : { 3U, 5U, 6U, 7U, 10U, 49U, 98U, 147U }) {
+            std::vector<double> signal(length);
+            for (uint32_t i = 0; i < length; ++i) {
+                signal[i] = static_cast<double>(i % 2 == 0 ? 1 : 2);
+            }
+            const SegmentGeometry geometry { .length = length, .stride = length, .offset = 0, .count = 1 };
+
+            const auto got = sums(context, signal, geometry, 0, 1);
+
+            double total = 0.0;
+            for (const double value : signal) {
+                total += value;
+            }
+            const double mean = total / static_cast<double>(length);
+            double deviation = 0.0;
+            for (const double value : signal) {
+                deviation += (value - mean) * (value - mean);
+            }
+            ASSERT_EQ(got.size(), 1U);
+            EXPECT_NEAR(got[0], deviation, 1.0e-12 * (1.0 + deviation)) << "length " << length;
+        }
+    }
+
     TYPED_TEST(LaggedPairGpuTest, SignChangeAtLagOneIsTheKinesisCrossingCount)
     {
         auto signal = random_signal(1200, 9);

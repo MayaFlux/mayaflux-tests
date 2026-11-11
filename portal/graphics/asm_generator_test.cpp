@@ -949,7 +949,7 @@ namespace {
             .centred(centred)
             .ssbo("values", BindingDirection::Input, GpuDataFormat::VEC2_U32)
             .ssbo("result", BindingDirection::Output, GpuDataFormat::VEC2_U32);
-        const char* names[] = { "length", "stride", "offset", "first_lag", "lag_count", "scale_lo", "scale_hi" };
+        const char* names[] = { "length", "stride", "offset", "first_lag", "lag_count", "length_lo", "length_hi" };
         for (size_t i = 0; i < pc_count && i < 7; ++i) {
             assemble.pc(names[i], GpuDataFormat::UINT32);
         }
@@ -982,18 +982,22 @@ namespace {
         EXPECT_EQ(occurrences(emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::Product, false, 2)), "OpControlBarrier"), 2U);
     }
 
-    TEST(LaggedPairAsmTest, OnlyTheProductMapAndCentringCallTheSoftDoubleMultiply)
+    TEST(LaggedPairAsmTest, OnlyTheProductMapCallsTheSoftDoubleMultiplyAndOnlyCentringCallsTheDivide)
     {
         const std::string product = emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::Product, false, 8));
         const std::string crossings = emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::SignChange, false, 8));
         const std::string distance = emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::AbsDifference, false, 8));
         const std::string centred = emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::SignChange, true, 8));
+        const std::string centred_product = emit_spirv_asm(lagged_pair_spec(Portal::Graphics::PairMap::Product, true, 8));
 
         EXPECT_TRUE(contains_all(product, { { "%sd_f64_mul = OpFunction", "a product multiplies" } }));
+        EXPECT_TRUE(contains_none(product, { { "%sd_f64_div = OpFunction", "no mean without centring" } }));
         EXPECT_TRUE(contains_all(crossings, { { "OpLogicalNotEqual", "a crossing is a difference of signs" } }));
-        EXPECT_TRUE(contains_none(crossings, { { "%sd_f64_mul = OpFunction", "no product" } }));
-        EXPECT_TRUE(contains_none(distance, { { "%sd_f64_mul = OpFunction", "no product" } }));
-        EXPECT_TRUE(contains_all(centred, { { "%sd_f64_mul = OpFunction", "the mean is a sum times one over the length" } }));
+        EXPECT_TRUE(contains_none(crossings, { { "%sd_f64_mul = OpFunction", "no product" }, { "%sd_f64_div = OpFunction", "no mean without centring" } }));
+        EXPECT_TRUE(contains_none(distance, { { "%sd_f64_mul = OpFunction", "no product" }, { "%sd_f64_div = OpFunction", "no mean without centring" } }));
+        EXPECT_TRUE(contains_all(centred, { { "%sd_f64_div = OpFunction", "the mean is the sum divided by the length" } }));
+        EXPECT_TRUE(contains_none(centred, { { "%sd_f64_mul = OpFunction", "centring no longer multiplies by one over the length" } }));
+        EXPECT_TRUE(contains_all(centred_product, { { "%sd_f64_mul = OpFunction", "the map multiplies" }, { "%sd_f64_div = OpFunction", "the mean divides" } }));
     }
 
     TEST(LaggedPairAsmTest, AMalformedSpecEmitsNoEntryPoint)
