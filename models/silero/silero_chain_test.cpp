@@ -53,7 +53,7 @@ namespace {
     IntervalExtractorConfig speech_config(size_t samples)
     {
         IntervalExtractorConfig config;
-        config.samples_per_score = SileroVadModel::chunk_samples;
+        config.scan.samples_per_score = SileroVadModel::chunk_samples;
         config.flush = true;
         config.length = static_cast<uint32_t>(samples);
         return config;

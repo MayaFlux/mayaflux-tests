@@ -32,13 +32,13 @@ namespace {
         std::vector<ReferenceCase> cases;
         for (auto& c : Ref::load()) {
             IntervalExtractorConfig config;
-            config.enter_threshold = c.enter;
-            config.min_run = c.min_run;
-            config.min_gap = c.min_gap;
-            config.padding = c.padding;
-            config.gap_at_limit = c.gap_at_limit;
-            config.max_run = c.max_run;
-            config.use_longest_gap = c.longest;
+            config.scan.enter_threshold = c.enter;
+            config.scan.min_run = c.min_run;
+            config.scan.min_gap = c.min_gap;
+            config.scan.padding = c.padding;
+            config.scan.gap_at_limit = c.gap_at_limit;
+            config.scan.max_run = c.max_run;
+            config.scan.use_longest_gap = c.longest;
             config.length = c.length;
             cases.push_back({ .name = std::move(c.name), .config = config, .scores = std::move(c.scores), .expect = std::move(c.expect) });
         }
@@ -70,11 +70,11 @@ namespace {
     IntervalExtractorConfig small_config()
     {
         IntervalExtractorConfig config;
-        config.samples_per_score = 10;
-        config.min_run = 15;
-        config.min_gap = 20;
-        config.padding = 5;
-        config.gap_at_limit = 0;
+        config.scan.samples_per_score = 10;
+        config.scan.min_run = 15;
+        config.scan.min_gap = 20;
+        config.scan.padding = 5;
+        config.scan.gap_at_limit = 0;
         return config;
     }
 
@@ -92,7 +92,7 @@ namespace {
 
     Intervals gated(IntervalExtractorConfig config, const std::vector<double>& gate, const std::vector<double>& scores)
     {
-        config.gate_channel = 0;
+        config.scan.gate_channel = 0;
         config.flush = true;
         MatrixIntervalExtractor extractor(config);
         return extractor.extract_intervals(matrix_of({ gate, scores })).channels[1].intervals;
@@ -101,19 +101,19 @@ namespace {
     Kinesis::Discrete::IntervalScanConfig scan_config_of(const IntervalExtractorConfig& config)
     {
         return {
-            .enter = config.enter_threshold,
-            .leave = std::max(config.enter_threshold - config.leave_margin, config.leave_floor),
-            .gate_threshold = config.gate_threshold,
-            .hop = config.samples_per_score,
-            .first_sample = config.first_sample,
-            .min_run = config.min_run,
-            .min_gap = config.min_gap,
-            .padding = config.padding,
-            .gap_at_limit = config.gap_at_limit,
-            .max_run = config.max_run,
-            .use_longest_gap = config.use_longest_gap,
+            .enter = config.scan.enter_threshold,
+            .leave = std::max(config.scan.enter_threshold - config.scan.leave_margin, config.scan.leave_floor),
+            .gate_threshold = config.scan.gate_threshold,
+            .hop = config.scan.samples_per_score,
+            .first_sample = config.scan.first_sample,
+            .min_run = config.scan.min_run,
+            .min_gap = config.scan.min_gap,
+            .padding = config.scan.padding,
+            .gap_at_limit = config.scan.gap_at_limit,
+            .max_run = config.scan.max_run,
+            .use_longest_gap = config.scan.use_longest_gap,
             .length = config.length,
-            .emit_on_close = config.emit_on_close,
+            .emit_on_close = config.scan.emit_on_close,
         };
     }
 
@@ -203,7 +203,7 @@ namespace {
     {
         const std::vector<double> scores { 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 };
         auto config = small_config();
-        config.padding = 30;
+        config.scan.padding = 30;
         config.length = 200;
 
         EXPECT_EQ(whole(config, scores), (Intervals { { 0, 75 }, { 75, 160 } }));
@@ -213,7 +213,7 @@ namespace {
     {
         const std::vector<double> scores { 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 };
         auto config = small_config();
-        config.padding = 10;
+        config.scan.padding = 10;
         config.length = 200;
 
         EXPECT_EQ(whole(config, scores), (Intervals { { 10, 60 }, { 90, 140 } }));
@@ -232,7 +232,7 @@ namespace {
     {
         const std::vector<double> scores { 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0 };
         auto config = small_config();
-        config.padding = 0;
+        config.scan.padding = 0;
         config.length = 110;
 
         EXPECT_EQ(whole(config, scores), (Intervals { { 10, 60 } }));
@@ -242,7 +242,7 @@ namespace {
     {
         const std::vector<double> scores { 0, 1, 1, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1, 1, 0, 0, 0, 0 };
         auto config = small_config();
-        config.padding = 0;
+        config.scan.padding = 0;
         config.length = 150;
 
         EXPECT_EQ(whole(config, scores), (Intervals { { 10, 110 } }));
@@ -327,7 +327,7 @@ namespace {
     TYPED_TEST(IntervalExtractorGpuTest, TheFirstSampleMovesEveryPositionAndTheClamp)
     {
         auto config = small_config();
-        config.first_sample = 5;
+        config.scan.first_sample = 5;
         config.length = 120;
 
         EXPECT_EQ(whole(config, { 0, 0, 1, 1, 1, 0, 0, 0, 0, 0 }), (Intervals { { 20, 60 } }));
@@ -336,8 +336,8 @@ namespace {
     TYPED_TEST(IntervalExtractorGpuTest, TheFirstSampleCountsInTheEndOfTheScoresWhenNoLengthIsSet)
     {
         auto config = small_config();
-        config.first_sample = 5;
-        config.padding = 100;
+        config.scan.first_sample = 5;
+        config.scan.padding = 100;
 
         EXPECT_EQ(whole(config, { 0, 0, 1, 1, 1, 1, 1, 1 }), (Intervals { { 0, 85 } }));
     }
@@ -345,7 +345,7 @@ namespace {
     TYPED_TEST(IntervalExtractorGpuTest, AGateBelowItsThresholdEndsARunAtOnce)
     {
         auto config = small_config();
-        config.padding = 0;
+        config.scan.padding = 0;
         config.length = 120;
         const std::vector<double> scores { 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0 };
         const std::vector<double> gate { 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1 };
@@ -357,7 +357,7 @@ namespace {
     TYPED_TEST(IntervalExtractorGpuTest, AGapIsBridgedOnlyWhileTheGateStaysHigh)
     {
         auto config = small_config();
-        config.padding = 0;
+        config.scan.padding = 0;
         config.length = 140;
         const std::vector<double> scores { 0, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0 };
         const std::vector<double> open(14, 1.0);
@@ -370,7 +370,7 @@ namespace {
     TYPED_TEST(IntervalExtractorGpuTest, ALowGateIsNeverEngaged)
     {
         auto config = small_config();
-        config.padding = 0;
+        config.scan.padding = 0;
         config.length = 100;
         const std::vector<double> scores { 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 };
         const std::vector<double> gate { 0, 0, 1, 1, 1, 1, 1, 1, 1, 1 };
@@ -401,13 +401,13 @@ namespace {
     TYPED_TEST(IntervalExtractorGpuTest, TheGateColumnItselfIsScannedAsItIs)
     {
         auto config = small_config();
-        config.padding = 0;
+        config.scan.padding = 0;
         config.length = 120;
         const std::vector<double> voice { 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1 };
         const std::vector<double> vowel { 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0 };
 
         auto with_gate = config;
-        with_gate.gate_channel = 0;
+        with_gate.scan.gate_channel = 0;
         with_gate.flush = true;
         MatrixIntervalExtractor extractor(with_gate);
         const auto both = extractor.extract_intervals(matrix_of({ voice, vowel }));
@@ -423,8 +423,8 @@ namespace {
         std::vector<double> gate;
         Ref::random_gated(5, 600, scores, gate);
         auto config = small_config();
-        config.gate_channel = 0;
-        config.first_sample = 3;
+        config.scan.gate_channel = 0;
+        config.scan.first_sample = 3;
         config.length = 10000;
 
         const auto expected = gated(config, gate, scores);
@@ -457,11 +457,11 @@ namespace {
             Ref::random_gated(seed, 800, scores, gate);
 
             auto config = small_config();
-            config.gate_channel = 0;
-            config.first_sample = seed * 7;
-            config.max_run = seed % 2 == 0 ? 0U : 200U;
-            config.use_longest_gap = seed < 3;
-            config.emit_on_close = seed % 2 == 1;
+            config.scan.gate_channel = 0;
+            config.scan.first_sample = seed * 7;
+            config.scan.max_run = seed % 2 == 0 ? 0U : 200U;
+            config.scan.use_longest_gap = seed < 3;
+            config.scan.emit_on_close = seed % 2 == 1;
             config.length = 20000;
 
             const auto device = gated(config, gate, scores);
@@ -511,9 +511,9 @@ namespace {
     TYPED_TEST(IntervalExtractorGpuTest, EmitOnCloseReleasesAnIntervalAtOnceWithFullPaddingOnBothSides)
     {
         auto config = small_config();
-        config.padding = 30;
+        config.scan.padding = 30;
         config.length = 200;
-        config.emit_on_close = true;
+        config.scan.emit_on_close = true;
         MatrixIntervalExtractor extractor(config);
 
         const auto result = extractor.extract_intervals(
@@ -529,7 +529,7 @@ namespace {
         std::vector<double> gate;
         Ref::random_gated(9, 500, scores, gate);
         auto config = small_config();
-        config.gate_channel = 0;
+        config.scan.gate_channel = 0;
         config.length = 10000;
 
         MatrixIntervalExtractor extractor(config);
@@ -557,7 +557,7 @@ namespace {
         std::vector<double> gate;
         Ref::random_gated(21, 400, scores, gate);
         auto config = small_config();
-        config.gate_channel = 0;
+        config.scan.gate_channel = 0;
         config.length = 10000;
         const auto expected = gated(config, gate, scores);
         ASSERT_FALSE(expected.empty());
@@ -617,7 +617,7 @@ namespace {
         std::vector<double> gate;
         Ref::random_gated(31, 500, scores, gate);
         auto config = small_config();
-        config.gate_channel = 0;
+        config.scan.gate_channel = 0;
         config.length = 10000;
 
         MatrixIntervalExtractor synchronous(config);
@@ -736,7 +736,7 @@ namespace {
     TYPED_TEST(IntervalExtractorGpuTest, AGateChannelThatIsNotAColumnIsRefused)
     {
         auto config = small_config();
-        config.gate_channel = 2;
+        config.scan.gate_channel = 2;
         config.flush = true;
         MatrixIntervalExtractor extractor(config);
 
@@ -759,23 +759,23 @@ namespace {
     TEST(IntervalExtractorTest, InvalidSettingsAreRefused)
     {
         IntervalExtractorConfig no_hop;
-        no_hop.samples_per_score = 0;
+        no_hop.scan.samples_per_score = 0;
         EXPECT_THROW(MatrixIntervalExtractor { no_hop }, std::invalid_argument);
 
         IntervalExtractorConfig tight_cap;
-        tight_cap.max_run = tight_cap.samples_per_score + 2 * tight_cap.padding;
+        tight_cap.scan.max_run = tight_cap.scan.samples_per_score + 2 * tight_cap.scan.padding;
         EXPECT_THROW(MatrixIntervalExtractor { tight_cap }, std::invalid_argument);
 
         IntervalExtractorConfig not_finite;
-        not_finite.enter_threshold = std::numeric_limits<double>::quiet_NaN();
+        not_finite.scan.enter_threshold = std::numeric_limits<double>::quiet_NaN();
         EXPECT_THROW(MatrixIntervalExtractor { not_finite }, std::invalid_argument);
 
         IntervalExtractorConfig capped;
-        capped.max_run = capped.samples_per_score + 2 * capped.padding + 1;
+        capped.scan.max_run = capped.scan.samples_per_score + 2 * capped.scan.padding + 1;
         EXPECT_NO_THROW(MatrixIntervalExtractor { capped });
 
         IntervalExtractorConfig bad_gate;
-        bad_gate.gate_threshold = std::numeric_limits<double>::quiet_NaN();
+        bad_gate.scan.gate_threshold = std::numeric_limits<double>::quiet_NaN();
         EXPECT_THROW(MatrixIntervalExtractor { bad_gate }, std::invalid_argument);
     }
 
