@@ -321,5 +321,64 @@ namespace {
         }
     }
 
+    TYPED_TEST(PhonemeExtractorGpuTest, VoicingGateTrimsVowelAudioToVoicedStretches)
+    {
+        const auto vad = read_weights(k_vad_weights);
+        const auto hubert = read_weights(k_hubert_weights);
+        const auto speech = read_floats(k_speech);
+        if (!vad || !hubert || speech.empty()) {
+            GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";
+        }
+        PhonemeExtractorConfig config;
+        config.method = PhonemeSelection::VOWELS;
+        AudioPhonemeExtractor extractor(*vad, *hubert, config);
+        const Yantra::Datum<std::vector<Kakshya::DataVariant>> input { as_input(speech_then_silence_then_speech(speech)) };
+
+        const auto length_of = [](const auto& output) {
+            const auto* audio = output.data.empty() ? nullptr : std::get_if<std::vector<double>>(&output.data[0]);
+            return audio ? audio->size() : size_t { 0 };
+        };
+
+        const auto plain = extractor.apply_operation(input);
+        const auto* plain_record = plain.facets.template get<PhonemeExtraction>();
+        ASSERT_NE(plain_record, nullptr);
+        EXPECT_TRUE(plain_record->voiced.empty());
+        ASSERT_GT(length_of(plain), 0U);
+
+        config.gate.enabled = true;
+        extractor.set_config(config);
+        const auto gated = extractor.apply_operation(input);
+        const auto* gated_record = gated.facets.template get<PhonemeExtraction>();
+        ASSERT_NE(gated_record, nullptr);
+        EXPECT_FALSE(gated_record->voiced.empty());
+        EXPECT_GT(length_of(gated), 0U);
+        EXPECT_LE(length_of(gated), length_of(plain));
+        EXPECT_EQ(gated_record->events.size(), plain_record->events.size());
+    }
+
+    TYPED_TEST(PhonemeExtractorGpuTest, VoicingGateLeavesOtherSelectionsAndRefusesBadSettings)
+    {
+        const auto vad = read_weights(k_vad_weights);
+        const auto hubert = read_weights(k_hubert_weights);
+        const auto speech = read_floats(k_speech);
+        if (!vad || !hubert || speech.empty()) {
+            GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";
+        }
+        PhonemeExtractorConfig config;
+        config.method = PhonemeSelection::CONSONANTS;
+        config.gate.enabled = true;
+        AudioPhonemeExtractor extractor(*vad, *hubert, config);
+        const auto output = extractor.apply_operation(Yantra::Datum<std::vector<Kakshya::DataVariant>> { as_input(speech_then_silence_then_speech(speech)) });
+        const auto* record = output.facets.template get<PhonemeExtraction>();
+        ASSERT_NE(record, nullptr);
+        EXPECT_TRUE(record->voiced.empty());
+
+        config.gate.hop = 0;
+        EXPECT_THROW(AudioPhonemeExtractor(*vad, *hubert, config), std::invalid_argument);
+        config.gate.hop = 64;
+        config.gate.threshold = 0.0;
+        EXPECT_THROW(AudioPhonemeExtractor(*vad, *hubert, config), std::invalid_argument);
+    }
+
 }
 }

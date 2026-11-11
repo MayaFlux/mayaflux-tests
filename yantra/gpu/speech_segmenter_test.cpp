@@ -22,6 +22,7 @@ namespace {
     using Yantra::SpeechSegmentation;
     using Yantra::SpeechSegmenterConfig;
     using Yantra::StandardWaveformAnalyzer;
+    using Yantra::voiced_intervals;
     using Yantra::voicing_analyzer_config;
 
     using Intervals = std::vector<std::pair<size_t, size_t>>;
@@ -109,6 +110,15 @@ namespace {
         EXPECT_DOUBLE_EQ(median[0], 1.5);
     }
 
+    TEST(IntervalStatisticsTest, IntersectionKeepsOnlyWhatBothSetsCover)
+    {
+        EXPECT_EQ(D::intersect_intervals({ { 0, 10 }, { 20, 30 } }, { { 5, 25 } }), (Intervals { { 5, 10 }, { 20, 25 } }));
+        EXPECT_EQ(D::intersect_intervals({ { 20, 30 }, { 0, 10 }, { 8, 12 } }, { { 0, 100 } }), (Intervals { { 0, 12 }, { 20, 30 } }));
+        EXPECT_EQ(D::intersect_intervals({ { 0, 10 } }, { { 10, 20 } }), Intervals {});
+        EXPECT_EQ(D::intersect_intervals({}, { { 0, 10 } }), Intervals {});
+        EXPECT_EQ(D::intersect_intervals({ { 0, 10 } }, {}), Intervals {});
+    }
+
     template <typename Fixture>
     class SpeechSegmenterGpuTest : public Fixture { };
 
@@ -151,6 +161,31 @@ namespace {
         EXPECT_DOUBLE_EQ(voicing.f0[1], 0.0);
         EXPECT_DOUBLE_EQ(voicing.voiced_fraction[2], 1.0);
         EXPECT_NEAR(voicing.f0[2], 200.0, 2.0);
+    }
+
+    TYPED_TEST(SpeechSegmenterGpuTest, VoicedIntervalsFollowTheToneAndSkipTheSilence)
+    {
+        constexpr uint32_t hop = 64;
+        StandardWaveformAnalyzer analyzer(voicing_analyzer_config(k_rate, hop));
+        auto samples = tone(24000, 80.0);
+        std::fill(samples.begin() + 8000, samples.begin() + 16000, 0.0);
+
+        const auto voiced = voiced_intervals(analyzer, samples, 0.5, hop);
+        ASSERT_EQ(voiced.size(), 2U);
+        EXPECT_LE(voiced[0].first, 300U);
+        EXPECT_GE(voiced[0].second, 7500U);
+        EXPECT_LE(voiced[0].second, 8400U);
+        EXPECT_GE(voiced[1].first, 15600U);
+        EXPECT_LE(voiced[1].first, 16500U);
+        EXPECT_GE(voiced[1].second, 23500U);
+        EXPECT_LE(voiced[1].second, samples.size());
+    }
+
+    TYPED_TEST(SpeechSegmenterGpuTest, NoiseAndShortInputsHaveNoVoicedIntervals)
+    {
+        StandardWaveformAnalyzer analyzer(voicing_analyzer_config(k_rate, 64));
+        EXPECT_TRUE(voiced_intervals(analyzer, noise(16000, 7), 0.5, 64).empty());
+        EXPECT_TRUE(voiced_intervals(analyzer, tone(100, 80.0), 0.5, 64).empty());
     }
 
     TYPED_TEST(SpeechSegmenterGpuTest, AnInputShorterThanOneWindowGivesZeros)
