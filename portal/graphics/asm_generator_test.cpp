@@ -1007,5 +1007,94 @@ namespace {
         EXPECT_TRUE(contains_none(emit_spirv_asm(too_wide), { { "%main = OpFunction", "1024 is the widest group" } }));
     }
 
+    ShaderSpec word_pair_map_spec(Portal::Graphics::WordPairOp op, uint32_t workgroup, size_t binding_count, size_t pc_count = 1)
+    {
+        auto assemble = ShaderSpec::Assemble {};
+        assemble.tmpl(KernelTemplate::WordPairMap).word_op(op);
+        const char* names[] = { "a", "b", "c", "d" };
+        for (size_t i = 0; i < binding_count && i < 4; ++i) {
+            const bool last = i + 1 == binding_count;
+            assemble.ssbo(last ? "result" : names[i], last ? BindingDirection::Output : BindingDirection::Input, GpuDataFormat::VEC2_U32);
+        }
+        for (size_t i = 0; i < pc_count; ++i) {
+            assemble.pc("count", GpuDataFormat::UINT32);
+        }
+        return assemble.workgroup(workgroup).build();
+    }
+
+    TEST(WordPairMapAsmTest, DivisionEmitsOnlyTheSoftDoubleDivision)
+    {
+        const std::string text = emit_spirv_asm(word_pair_map_spec(Portal::Graphics::WordPairOp::Div, 64, 3));
+
+        EXPECT_TRUE(contains_all(text,
+            { { "%sd_f64_div = OpFunction %v2u32", "the operation is the division" },
+                { "%wgid_var", "the group and local ids give the element" },
+                { "BuiltIn WorkgroupId", "the group id is decorated" },
+                { "BuiltIn LocalInvocationId", "the local id is decorated" },
+                { "LocalSize 64 1 1", "execution mode matches the workgroup" },
+                { "%main = OpFunction", "the entry point is emitted" } }));
+        EXPECT_TRUE(contains_none(text,
+            { { "%sd_f64_add = OpFunction", "division needs no addition" },
+                { "%sd_f64_mul = OpFunction", "division needs no multiplication" },
+                { "%sd_f64_sqrt = OpFunction", "no root in a division" },
+                { "%sd_f64_less = OpFunction", "no ordering in a division" },
+                { "OpFDiv", "arithmetic is integer only" },
+                { "OpCapability Float64", "no device float64" },
+                { "OpCapability Int64", "no device int64" },
+                { "OpLoopMerge", "the division steps are unrolled" } }));
+    }
+
+    TEST(WordPairMapAsmTest, SquareRootEmitsOnlyTheSoftDoubleRootAndTakesOneInput)
+    {
+        const std::string text = emit_spirv_asm(word_pair_map_spec(Portal::Graphics::WordPairOp::Sqrt, 64, 2));
+
+        EXPECT_TRUE(contains_all(text,
+            { { "%sd_f64_sqrt = OpFunction %v2u32", "the operation is the root" },
+                { "%buf_a", "the operand binding" },
+                { "%buf_result", "the result binding" },
+                { "%main = OpFunction", "the entry point is emitted" } }));
+        EXPECT_TRUE(contains_none(text,
+            { { "%sd_f64_div = OpFunction", "no division in a root" },
+                { "%buf_b", "a root has no second operand" },
+                { "OpExtInst %v2u32 %glsl Sqrt", "arithmetic is integer only" },
+                { "OpCapability Float64", "no device float64" },
+                { "OpLoopMerge", "the root steps are unrolled" } }));
+    }
+
+    TEST(WordPairMapAsmTest, AdditionAndMultiplicationEmitOnlyTheirOwnFunction)
+    {
+        const std::string sum = emit_spirv_asm(word_pair_map_spec(Portal::Graphics::WordPairOp::Add, 32, 3));
+        const std::string product = emit_spirv_asm(word_pair_map_spec(Portal::Graphics::WordPairOp::Mul, 32, 3));
+
+        EXPECT_TRUE(contains_all(sum, { { "%sd_f64_add = OpFunction", "a sum adds" } }));
+        EXPECT_TRUE(contains_none(sum, { { "%sd_f64_mul = OpFunction", "no product" }, { "%sd_f64_div = OpFunction", "no quotient" } }));
+        EXPECT_TRUE(contains_all(product, { { "%sd_f64_mul = OpFunction", "a product multiplies" } }));
+        EXPECT_TRUE(contains_none(product, { { "%sd_f64_add = OpFunction", "no sum" }, { "%sd_f64_div = OpFunction", "no quotient" } }));
+    }
+
+    TEST(WordPairMapAsmTest, ElementsPastTheCountAreGuardedByOneComparison)
+    {
+        const std::string text = emit_spirv_asm(word_pair_map_spec(Portal::Graphics::WordPairOp::Div, 128, 3));
+
+        EXPECT_EQ(occurrences(text, "OpSelectionMerge %wm_end"), 1U);
+        EXPECT_EQ(occurrences(text, "OpStore "), 1U);
+    }
+
+    TEST(WordPairMapAsmTest, AMalformedSpecEmitsNoEntryPoint)
+    {
+        using Portal::Graphics::WordPairOp;
+        const ShaderSpec divide_without_second = word_pair_map_spec(WordPairOp::Div, 64, 2);
+        const ShaderSpec root_with_second = word_pair_map_spec(WordPairOp::Sqrt, 64, 3);
+        const ShaderSpec no_count = word_pair_map_spec(WordPairOp::Div, 64, 3, 0);
+        const ShaderSpec two_counts = word_pair_map_spec(WordPairOp::Div, 64, 3, 2);
+        const ShaderSpec too_wide = word_pair_map_spec(WordPairOp::Div, 2048, 3);
+
+        EXPECT_TRUE(contains_none(emit_spirv_asm(divide_without_second), { { "%main = OpFunction", "a division needs two operands" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(root_with_second), { { "%main = OpFunction", "a root takes one operand" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(no_count), { { "%main = OpFunction", "the count is a push constant" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(two_counts), { { "%main = OpFunction", "exactly one push constant" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(too_wide), { { "%main = OpFunction", "1024 is the widest group" } }));
+    }
+
 } // namespace
 } // namespace MayaFlux::Test
