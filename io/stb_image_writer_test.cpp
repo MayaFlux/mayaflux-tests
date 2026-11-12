@@ -117,6 +117,28 @@ namespace {
         EXPECT_EQ(*normal->as_uint8(), pixels);
     }
 
+    TEST(STBImageWriterTest, PngCompressionLevelsAffectEncodedSize)
+    {
+        ScopedWorkingDir files;
+        auto source = byte_image(4, 64, 64);
+        std::ranges::fill(*source.as_uint8(), 42);
+        IO::STBImageWriter writer;
+        IO::ImageWriteOptions options;
+        options.compression = 0;
+        const auto uncompressed = absolute_path("uncompressed.png");
+        ASSERT_TRUE(writer.write(uncompressed, source, options)) << writer.get_last_error();
+        options.compression = 9;
+        const auto compressed = absolute_path("compressed.png");
+        ASSERT_TRUE(writer.write(compressed, source, options)) << writer.get_last_error();
+        EXPECT_GT(std::filesystem::file_size(uncompressed), std::filesystem::file_size(compressed));
+        for (const auto& path : { uncompressed, compressed }) {
+            const auto loaded = IO::ImageReader::load(path);
+            ASSERT_TRUE(loaded.has_value());
+            ASSERT_NE(loaded->as_uint8(), nullptr);
+            EXPECT_EQ(*loaded->as_uint8(), *source.as_uint8());
+        }
+    }
+
     TEST(STBImageWriterTest, BmpAndTgaRoundTripRgbAndRgba)
     {
         ScopedWorkingDir files;
@@ -283,6 +305,77 @@ namespace {
         EXPECT_TRUE(writer.get_last_error().empty());
     }
 
+    TEST(STBImageWriterTest, RejectsShortBuffersAndUnrepresentableDimensions)
+    {
+        ScopedWorkingDir files;
+        IO::STBImageWriter writer;
+        auto bytes = byte_image(3);
+        bytes.as_uint8()->pop_back();
+        for (const auto* extension : { "png", "jpg", "bmp", "tga" }) {
+            const auto path = absolute_path(std::string("short.") + extension);
+            EXPECT_FALSE(writer.write(path, bytes));
+            EXPECT_NE(writer.get_last_error().find("too small"), std::string::npos);
+            EXPECT_FALSE(std::filesystem::exists(path));
+        }
+
+        auto floats = Kakshya::ImageData::allocate(2, 2, 3, Kakshya::ImageFormat::RGBA32F);
+        ASSERT_TRUE(floats.has_value());
+        floats->as_float()->pop_back();
+        EXPECT_FALSE(writer.write(absolute_path("short.hdr"), *floats));
+        EXPECT_NE(writer.get_last_error().find("too small"), std::string::npos);
+
+        auto oversized = byte_image(4);
+        oversized.width = std::numeric_limits<uint32_t>::max();
+        EXPECT_FALSE(writer.write(absolute_path("oversized.png"), oversized));
+        EXPECT_NE(writer.get_last_error().find("limits"), std::string::npos);
+        auto too_many_channels = byte_image(4);
+        too_many_channels.channels = 5;
+        EXPECT_FALSE(writer.write(absolute_path("channels.png"), too_many_channels));
+        EXPECT_NE(writer.get_last_error().find("limits"), std::string::npos);
+    }
+
+    TEST(STBImageWriterTest, BmpTgaAndHdrHonorFlipWithoutInheritingEarlierWrites)
+    {
+        ScopedWorkingDir files;
+        auto bytes = Kakshya::ImageData::allocate(2, 2, 4, Kakshya::ImageFormat::RGBA8);
+        auto floats = Kakshya::ImageData::allocate(2, 2, 4, Kakshya::ImageFormat::RGBA32F);
+        ASSERT_TRUE(bytes.has_value());
+        ASSERT_TRUE(floats.has_value());
+        *bytes->as_uint8() = {
+            0, 0, 0, 255, 0, 0, 0, 255,
+            255, 255, 255, 255, 255, 255, 255, 255
+        };
+        *floats->as_float() = {
+            0.F, 0.F, 0.F, 1.F, 0.F, 0.F, 0.F, 1.F,
+            1.F, 1.F, 1.F, 1.F, 1.F, 1.F, 1.F, 1.F
+        };
+        const auto expected = *bytes->as_uint8();
+        std::vector<uint8_t> flipped(expected.begin() + 8, expected.end());
+        flipped.insert(flipped.end(), expected.begin(), expected.begin() + 8);
+        IO::ImageWriteOptions flip;
+        flip.flip_vertically = true;
+        IO::STBImageWriter writer;
+        for (const auto* extension : { "bmp", "tga", "hdr" }) {
+            SCOPED_TRACE(extension);
+            ASSERT_TRUE(writer.write(absolute_path("preceding.png"), *bytes, flip))
+                << writer.get_last_error();
+            const auto& source = std::string_view(extension) == "hdr" ? *floats : *bytes;
+            const auto normal_path = absolute_path(std::string("normal.") + extension);
+            ASSERT_TRUE(writer.write(normal_path, source)) << writer.get_last_error();
+            const auto normal = IO::ImageReader::load(normal_path);
+            ASSERT_TRUE(normal.has_value());
+            ASSERT_NE(normal->as_uint8(), nullptr);
+            EXPECT_EQ(*normal->as_uint8(), expected);
+
+            const auto flipped_path = absolute_path(std::string("flipped.") + extension);
+            ASSERT_TRUE(writer.write(flipped_path, source, flip)) << writer.get_last_error();
+            const auto loaded = IO::ImageReader::load(flipped_path);
+            ASSERT_TRUE(loaded.has_value());
+            ASSERT_NE(loaded->as_uint8(), nullptr);
+            EXPECT_EQ(*loaded->as_uint8(), flipped);
+        }
+    }
+
     TEST(STBImageWriterTest, RegistersFactoriesForSupportedExtensions)
     {
         IO::STBImageWriter writer;
@@ -313,6 +406,40 @@ namespace {
         ASSERT_TRUE(loaded.has_value());
         ASSERT_NE(loaded->as_uint8(), nullptr);
         EXPECT_EQ(*loaded->as_uint8(), expected);
+    }
+
+    TEST(STBImageWriterTest, ConcurrentAsynchronousWritesKeepTheirOwnOptions)
+    {
+        ScopedWorkingDir files;
+        const auto source = byte_image(4, 32, 32);
+        const auto& pixels = *source.as_uint8();
+        const size_t row_size = source.width * source.channels;
+        std::vector<uint8_t> flipped;
+        flipped.reserve(pixels.size());
+        for (size_t y = source.height; y > 0; --y) {
+            const auto row = pixels.begin() + static_cast<std::ptrdiff_t>((y - 1) * row_size);
+            flipped.insert(flipped.end(), row, row + static_cast<std::ptrdiff_t>(row_size));
+        }
+
+        Core::GlobalStreamInfo stream_info;
+        IO::IOManager manager(stream_info, 60, nullptr, nullptr);
+        std::vector<std::string> paths;
+        for (int i = 0; i < 16; ++i) {
+            IO::ImageWriteOptions options;
+            options.flip_vertically = (i % 2) != 0;
+            options.compression = (i % 2) != 0 ? 9 : 0;
+            const auto extension = (i / 2) % 2 == 0 ? ".png" : ".bmp";
+            paths.push_back(absolute_path("concurrent_" + std::to_string(i) + extension));
+            ASSERT_TRUE(manager.save_image(source, paths.back(), options));
+        }
+        manager.wait_for_pending_saves();
+        for (size_t i = 0; i < paths.size(); ++i) {
+            SCOPED_TRACE(paths[i]);
+            const auto loaded = IO::ImageReader::load(paths[i]);
+            ASSERT_TRUE(loaded.has_value());
+            ASSERT_NE(loaded->as_uint8(), nullptr);
+            EXPECT_EQ(*loaded->as_uint8(), (i % 2) != 0 ? flipped : pixels);
+        }
     }
 
 } // namespace

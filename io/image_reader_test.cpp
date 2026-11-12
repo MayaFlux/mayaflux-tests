@@ -9,6 +9,7 @@
 #include "MayaFlux/IO/IOManager.hpp"
 #include "MayaFlux/Core/GlobalStreamInfo.hpp"
 #include "MayaFlux/Buffers/Textures/TextureBuffer.hpp"
+#include "MayaFlux/Buffers/Textures/TextBuffer.hpp"
 
 namespace MayaFlux::Test {
 namespace {
@@ -197,6 +198,70 @@ namespace {
         EXPECT_EQ(*pixels, expected_rgba(Kakshya::Region::image_rect(1, 1, 2, 2)));
     }
 
+    TEST(ImageReaderTest, RejectsInvalidFileRegionsBeforeNarrowingCoordinates)
+    {
+        ScopedWorkingDir files;
+        files.write("image.pnm", make_image());
+        IO::ImageReader reader;
+        IO::FileRegion region;
+        region.start_coordinates = { 0, 0 };
+        region.end_coordinates = { 1, 1 };
+        EXPECT_TRUE(reader.read_region(region).empty());
+        ASSERT_TRUE(reader.open("image.pnm"));
+
+        for (const auto& bounds : std::vector<std::pair<std::vector<uint64_t>, std::vector<uint64_t>>> {
+                 { { 0 }, { 1, 1 } },
+                 { { 0, 0 }, { 1 } },
+                 { { 2, 0 }, { 1, 1 } },
+                 { { 0, 2 }, { 1, 1 } },
+                 { { 0, 0 }, { image_width + 1, 1 } },
+                 { { 0, 0 }, { 1, image_height + 1 } },
+                 { { 0, 0 }, { uint64_t { 1 } << 32, 1 } },
+                 { { (uint64_t { 1 } << 32) + 1, 0 }, { 2, 1 } },
+             }) {
+            region.start_coordinates = bounds.first;
+            region.end_coordinates = bounds.second;
+            EXPECT_TRUE(reader.read_region(region).empty());
+            EXPECT_FALSE(reader.get_last_error().empty());
+        }
+
+        region.start_coordinates = { image_width - 1, image_height - 1 };
+        region.end_coordinates = { image_width, image_height };
+        const auto values = reader.read_region(region);
+        ASSERT_EQ(values.size(), 1U);
+        const auto* pixels = std::get_if<std::vector<uint8_t>>(&values.front());
+        ASSERT_NE(pixels, nullptr);
+        EXPECT_EQ(*pixels, expected_rgba(Kakshya::Region::image_rect(3, 2, 3, 2)));
+    }
+
+    TEST(ImageExportTest, RejectsNullAndUninitializedInputs)
+    {
+        const std::shared_ptr<Core::VKImage> no_image;
+        const std::shared_ptr<Buffers::TextureBuffer> no_texture;
+        const std::shared_ptr<Buffers::TextBuffer> no_text;
+        EXPECT_FALSE(IO::download_image(no_image));
+        EXPECT_FALSE(IO::download_texture_buffer(no_texture));
+        EXPECT_FALSE(IO::save_image(no_image, "unused.png"));
+        EXPECT_FALSE(IO::save_texture_buffer(no_texture, "unused.png"));
+        EXPECT_FALSE(IO::save_text_buffer(no_text, "unused.png"));
+
+        auto texture = std::make_shared<Buffers::TextureBuffer>(
+            2, 2, Kakshya::ImageFormat::RGBA8);
+        auto text = std::make_shared<Buffers::TextBuffer>(
+            2, 2, Kakshya::ImageFormat::RGBA8);
+        EXPECT_FALSE(IO::download_texture_buffer(texture));
+        EXPECT_FALSE(IO::save_texture_buffer(texture, "unused.png"));
+        EXPECT_FALSE(IO::save_text_buffer(text, "unused.png"));
+
+        Core::GlobalStreamInfo stream_info;
+        IO::IOManager manager(stream_info, 60, nullptr, nullptr);
+        EXPECT_FALSE(manager.save_image(no_image, "unused.png"));
+        EXPECT_FALSE(manager.save_image(no_texture, "unused.png"));
+        EXPECT_FALSE(manager.save_image(no_text, "unused.png"));
+        EXPECT_FALSE(manager.save_image(texture, "unused.png"));
+        EXPECT_FALSE(manager.save_image(text, "unused.png"));
+    }
+
     TEST(ImageReaderTest, ConfiguredReaderCreatesCroppedTextureBuffer)
     {
         ScopedWorkingDir files;
@@ -338,6 +403,49 @@ namespace {
             ASSERT_NE(loaded->as_uint8(), nullptr);
             EXPECT_EQ(*loaded->as_uint8(), expected);
         }
+    }
+
+    TEST_F(ImageReaderTextureTest, ExportsRealTextureAndTextBuffersAndReportsFailures)
+    {
+        ScopedWorkingDir files;
+        files.write("image.pnm", make_image());
+        const auto image = IO::ImageReader::load_texture("image.pnm");
+        ASSERT_NE(image, nullptr);
+        auto texture = std::make_shared<Buffers::TextureBuffer>(
+            image_width, image_height, Kakshya::ImageFormat::RGBA8);
+        auto text = std::make_shared<Buffers::TextBuffer>(
+            image_width, image_height, Kakshya::ImageFormat::RGBA8);
+        texture->set_gpu_texture(image);
+        text->set_gpu_texture(image);
+
+        Core::GlobalStreamInfo stream_info;
+        IO::IOManager manager(stream_info, 60, nullptr, nullptr);
+        const auto dir = std::filesystem::current_path();
+        const auto texture_path = (dir / "texture.png").string();
+        const auto text_path = (dir / "text.png").string();
+        const auto async_texture = (dir / "async_texture.png").string();
+        const auto async_text = (dir / "async_text.png").string();
+        const auto expected = expected_rgba(Kakshya::Region::image_rect(0, 0, 3, 2));
+        const auto downloaded = IO::download_texture_buffer(texture);
+        ASSERT_TRUE(downloaded.has_value());
+        ASSERT_NE(downloaded->as_uint8(), nullptr);
+        EXPECT_EQ(*downloaded->as_uint8(), expected);
+        ASSERT_TRUE(IO::save_texture_buffer(texture, texture_path));
+        ASSERT_TRUE(IO::save_text_buffer(text, text_path));
+        ASSERT_TRUE(manager.save_image(texture, async_texture));
+        manager.wait_for_pending_saves();
+        ASSERT_TRUE(manager.save_image(text, async_text));
+        manager.wait_for_pending_saves();
+
+        for (const auto& path : { texture_path, text_path, async_texture, async_text }) {
+            const auto loaded = IO::ImageReader::load(path);
+            ASSERT_TRUE(loaded.has_value()) << path;
+            ASSERT_NE(loaded->as_uint8(), nullptr);
+            EXPECT_EQ(*loaded->as_uint8(), expected);
+        }
+        EXPECT_FALSE(IO::save_image(image, (dir / "unsupported.not_registered").string()));
+        EXPECT_FALSE(IO::save_image(image, (dir / "wrong_type.exr").string()));
+        EXPECT_FALSE(IO::save_image(image, (dir / "missing" / "output.png").string()));
     }
 
 } // namespace
