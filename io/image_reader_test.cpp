@@ -5,6 +5,9 @@
 #include "../support/vulkan_test_support.hpp"
 
 #include "MayaFlux/IO/Image/ImageReader.hpp"
+#include "MayaFlux/IO/Image/ImageExport.hpp"
+#include "MayaFlux/IO/IOManager.hpp"
+#include "MayaFlux/Core/GlobalStreamInfo.hpp"
 #include "MayaFlux/Buffers/Textures/TextureBuffer.hpp"
 
 namespace MayaFlux::Test {
@@ -92,6 +95,47 @@ namespace {
             std::filesystem::path("image.pnm"), 4);
         ASSERT_TRUE(explicit_channels.has_value());
         EXPECT_EQ(*explicit_channels->as_uint8(), *image->as_uint8());
+    }
+
+    TEST(ImageReaderTest, LoadsMemoryAndHandlesReaderLifecycleAndFailures)
+    {
+        ScopedWorkingDir files;
+        const auto bytes = make_image();
+        files.write("image.pnm", bytes);
+
+        const auto memory = IO::ImageReader::load_from_memory(bytes.data(), bytes.size());
+        ASSERT_TRUE(memory.has_value());
+        EXPECT_EQ(memory->width, image_width);
+        EXPECT_EQ(memory->height, image_height);
+        EXPECT_EQ(memory->format, Kakshya::ImageFormat::RGBA8);
+        ASSERT_NE(memory->as_uint8(), nullptr);
+        EXPECT_EQ(*memory->as_uint8(), expected_rgba(
+            Kakshya::Region::image_rect(0, 0, 3, 2)));
+
+        IO::ImageReader reader;
+        EXPECT_FALSE(reader.is_open());
+        EXPECT_TRUE(reader.read_all().empty());
+        EXPECT_FALSE(reader.open("image.unsupported"));
+        EXPECT_FALSE(reader.get_last_error().empty());
+        EXPECT_FALSE(reader.open("missing.png"));
+        ASSERT_TRUE(reader.open("image.pnm"));
+        EXPECT_TRUE(reader.is_open());
+        EXPECT_EQ(reader.get_dimension_sizes(), (std::vector<uint64_t> { image_width, image_height }));
+        const auto values = reader.read_all();
+        ASSERT_EQ(values.size(), 1U);
+        const auto* pixels = std::get_if<std::vector<uint8_t>>(&values.front());
+        ASSERT_NE(pixels, nullptr);
+        EXPECT_EQ(*pixels, *memory->as_uint8());
+        reader.close();
+        EXPECT_FALSE(reader.is_open());
+        EXPECT_TRUE(reader.get_dimension_sizes().empty());
+
+        EXPECT_FALSE(IO::ImageReader::load_from_memory(nullptr, 0));
+        EXPECT_FALSE(IO::ImageReader::load_from_memory(bytes.data(), 0));
+        const std::string invalid = "not an image";
+        EXPECT_FALSE(IO::ImageReader::load_from_memory(invalid.data(), invalid.size()));
+        files.write("invalid.png", invalid);
+        EXPECT_FALSE(IO::ImageReader::load(std::string("invalid.png")));
     }
 
     TEST(ImageReaderTest, CroppedGrayscaleMatchesTheCorrespondingFullImagePixels)
@@ -270,6 +314,30 @@ namespace {
         ASSERT_NE(crop_pixels->as_uint8(), nullptr);
         EXPECT_EQ(*crop_pixels->as_uint8(), expected_rgba(
             Kakshya::Region::image_rect(1, 1, 2, 2)));
+    }
+
+    TEST_F(ImageReaderTextureTest, SavesRealTextureSynchronouslyAndAsynchronously)
+    {
+        ScopedWorkingDir files;
+        files.write("image.pnm", make_image());
+        const auto texture = IO::ImageReader::load_texture("image.pnm");
+        ASSERT_NE(texture, nullptr);
+
+        Core::GlobalStreamInfo stream_info;
+        IO::IOManager manager(stream_info, 60, nullptr, nullptr);
+        const auto sync_path = (std::filesystem::current_path() / "sync.png").string();
+        const auto async_path = (std::filesystem::current_path() / "async.png").string();
+        ASSERT_TRUE(IO::save_image(texture, sync_path));
+        ASSERT_TRUE(manager.save_image(texture, async_path));
+        manager.wait_for_pending_saves();
+
+        const auto expected = expected_rgba(Kakshya::Region::image_rect(0, 0, 3, 2));
+        for (const auto& path : { sync_path, async_path }) {
+            const auto loaded = IO::ImageReader::load(path);
+            ASSERT_TRUE(loaded.has_value()) << path;
+            ASSERT_NE(loaded->as_uint8(), nullptr);
+            EXPECT_EQ(*loaded->as_uint8(), expected);
+        }
     }
 
 } // namespace
