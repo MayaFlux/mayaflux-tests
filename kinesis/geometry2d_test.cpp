@@ -438,4 +438,73 @@ TEST(Geometry2DPolygonOutlineTest, SidesBelowThreeAreClampedToThree)
     EXPECT_EQ(Kinesis::polygon_outline({ 0.F, 0.F }, 1.F, 1).size(), 6U);
 }
 
+// =============================================================================
+// triangulate_polygon with holes
+// =============================================================================
+
+TEST(Geometry2DTriangulateHolesTest, ASquareWithASquareHoleCoversTheRemainingArea)
+{
+    std::vector<glm::vec2> pts = square_ccw();
+    pts.insert(pts.end(), { { 0.3F, 0.3F }, { 0.7F, 0.3F }, { 0.7F, 0.7F }, { 0.3F, 0.7F } });
+    const std::vector<uint32_t> starts { 4 };
+
+    const auto tris = Kinesis::triangulate_polygon(pts, starts);
+
+    ASSERT_EQ(tris.size(), 8U);
+    EXPECT_NEAR(total_area(pts, tris), 0.84F, 1e-5F);
+}
+
+TEST(Geometry2DTriangulateHolesTest, HoleWindingDoesNotChangeTheResult)
+{
+    std::vector<glm::vec2> pts = square_ccw();
+    pts.insert(pts.end(), { { 0.3F, 0.7F }, { 0.7F, 0.7F }, { 0.7F, 0.3F }, { 0.3F, 0.3F } });
+    const std::vector<uint32_t> starts { 4 };
+
+    const auto tris = Kinesis::triangulate_polygon(pts, starts);
+
+    ASSERT_EQ(tris.size(), 8U);
+    EXPECT_NEAR(total_area(pts, tris), 0.84F, 1e-5F);
+}
+
+TEST(Geometry2DTriangulateHolesTest, TwoHolesAreBothCut)
+{
+    std::vector<glm::vec2> pts {
+        { 0.F, 0.F }, { 4.F, 0.F }, { 4.F, 1.F }, { 0.F, 1.F },
+        { 1.F, 0.25F }, { 1.5F, 0.25F }, { 1.5F, 0.75F }, { 1.F, 0.75F },
+        { 2.5F, 0.25F }, { 3.F, 0.25F }, { 3.F, 0.75F }, { 2.5F, 0.75F },
+    };
+    const std::vector<uint32_t> starts { 4, 8 };
+
+    const auto tris = Kinesis::triangulate_polygon(pts, starts);
+
+    ASSERT_EQ(tris.size(), 14U);
+    EXPECT_NEAR(total_area(pts, tris), 3.5F, 1e-4F);
+}
+
+TEST(Geometry2DTriangulateHolesTest, InvalidHolesGiveNothing)
+{
+    const std::vector<uint32_t> starts { 4 };
+
+    std::vector<glm::vec2> outside = square_ccw();
+    outside.insert(outside.end(), { { 2.F, 2.F }, { 3.F, 2.F }, { 3.F, 3.F }, { 2.F, 3.F } });
+    EXPECT_TRUE(Kinesis::triangulate_polygon(outside, starts).empty());
+
+    std::vector<glm::vec2> touching = square_ccw();
+    touching.insert(touching.end(), { { 0.F, 0.3F }, { 0.5F, 0.3F }, { 0.5F, 0.7F }, { 0.F, 0.7F } });
+    EXPECT_TRUE(Kinesis::triangulate_polygon(touching, starts).empty());
+
+    std::vector<glm::vec2> crossing = square_ccw();
+    crossing.insert(crossing.end(), { { 0.5F, 0.5F }, { 1.5F, 0.5F }, { 1.5F, 0.7F }, { 0.5F, 0.7F } });
+    EXPECT_TRUE(Kinesis::triangulate_polygon(crossing, starts).empty());
+}
+
+TEST(Geometry2DTriangulateHolesTest, AHoleStartBeforeTheOuterRingIsRejected)
+{
+    std::vector<glm::vec2> pts = square_ccw();
+    pts.insert(pts.end(), { { 0.3F, 0.3F }, { 0.7F, 0.3F }, { 0.7F, 0.7F }, { 0.3F, 0.7F } });
+    const std::vector<uint32_t> starts { 0 };
+
+    EXPECT_TRUE(Kinesis::triangulate_polygon(pts, starts).empty());
+}
+
 } // namespace MayaFlux::Test
