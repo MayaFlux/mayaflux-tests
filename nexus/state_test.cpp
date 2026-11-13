@@ -932,6 +932,75 @@ namespace {
         EXPECT_EQ(result.user_state.at("scene").get<int>(), 7);
     }
 
+    TEST_F(NexusTapestryStateTest, ASuccessfulEncodeLeavesNoStagingDirectory)
+    {
+        auto original = make_tapestry();
+        add_emitter(*original->create_fabric("alpha"), glm::vec3(1.0F));
+
+        ASSERT_TRUE(encoder.encode(*original, act_dir));
+
+        EXPECT_FALSE(std::filesystem::exists(act_dir + "/.staging"));
+    }
+
+    TEST_F(NexusTapestryStateTest, AFailedEncodeLeavesNoFilesBehind)
+    {
+        auto original = make_tapestry();
+        add_emitter(*original->create_fabric("alpha"), glm::vec3(1.0F));
+        add_emitter(*original->create_fabric(std::string(300, 'x')), glm::vec3(2.0F));
+
+        EXPECT_FALSE(encoder.encode(*original, act_dir));
+
+        EXPECT_FALSE(std::filesystem::exists(act_dir + "/tapestry.json"));
+        EXPECT_FALSE(std::filesystem::exists(act_dir + "/alpha.json"));
+        EXPECT_FALSE(std::filesystem::exists(act_dir + "/alpha.exr"));
+        EXPECT_FALSE(std::filesystem::exists(act_dir + "/.staging"));
+        EXPECT_FALSE(encoder.last_error().empty());
+    }
+
+    TEST_F(NexusTapestryStateTest, AFailedEncodeKeepsThePreviousSnapshotReadable)
+    {
+        auto first = make_tapestry();
+        add_emitter(*first->create_fabric("alpha"), glm::vec3(1.0F));
+        ASSERT_TRUE(encoder.encode(*first, act_dir, nlohmann::json { { "scene", 1 } }));
+
+        auto second = make_tapestry();
+        add_emitter(*second->create_fabric("alpha"), glm::vec3(5.0F));
+        add_emitter(*second->create_fabric(std::string(300, 'x')), glm::vec3(2.0F));
+        ASSERT_FALSE(encoder.encode(*second, act_dir, nlohmann::json { { "scene", 2 } }));
+
+        auto restored = make_tapestry();
+        const auto result = decoder.reconstruct(*restored, act_dir);
+        EXPECT_EQ(result.skipped, 0);
+        const auto alpha = restored->get_fabric("alpha");
+        ASSERT_NE(alpha, nullptr);
+        ASSERT_EQ(alpha->all_ids().size(), 1U);
+        const auto emitter = alpha->get_emitter(alpha->all_ids().front());
+        ASSERT_NE(emitter, nullptr);
+        ASSERT_TRUE(emitter->position().has_value());
+        EXPECT_NEAR(emitter->position()->x, 1.0F, 1e-4F);
+    }
+
+    TEST_F(NexusTapestryStateTest, EncodingOverAPreviousSnapshotReplacesIt)
+    {
+        auto first = make_tapestry();
+        add_emitter(*first->create_fabric("alpha"), glm::vec3(1.0F));
+        ASSERT_TRUE(encoder.encode(*first, act_dir));
+
+        auto second = make_tapestry();
+        add_emitter(*second->create_fabric("alpha"), glm::vec3(5.0F));
+        ASSERT_TRUE(encoder.encode(*second, act_dir));
+
+        auto restored = make_tapestry();
+        const auto result = decoder.reconstruct(*restored, act_dir);
+        EXPECT_EQ(result.skipped, 0);
+        const auto alpha = restored->get_fabric("alpha");
+        ASSERT_NE(alpha, nullptr);
+        const auto emitter = alpha->get_emitter(alpha->all_ids().front());
+        ASSERT_NE(emitter, nullptr);
+        ASSERT_TRUE(emitter->position().has_value());
+        EXPECT_NEAR(emitter->position()->x, 5.0F, 1e-4F);
+    }
+
     TEST_F(NexusTapestryStateTest, FabricCellSizesSurviveARoundTrip)
     {
         auto original = make_tapestry();

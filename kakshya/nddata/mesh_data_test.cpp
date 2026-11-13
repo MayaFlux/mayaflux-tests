@@ -60,7 +60,7 @@ namespace {
 
     TEST(MeshSubrangeTest, DescribedMembersRoundTripThroughFacets)
     {
-        static_assert(std::tuple_size_v<decltype(MeshSubrange::describe_facets())> == 7);
+        static_assert(std::tuple_size_v<decltype(Reflect::Generated::Description<MeshSubrange>::members())> == 7);
 
         const MeshSubrange sub {
             .index_start = 6,
