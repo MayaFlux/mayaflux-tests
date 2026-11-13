@@ -70,6 +70,82 @@ namespace {
         EXPECT_EQ(rows->at(9)->text("value"), std::string_view("mode"));
     }
 
+    TEST_F(XmlFixture, ElementFieldsExposeAttributesAndRepeatedChildren)
+    {
+        write("fields.xml",
+            "<?xml version=\"1.0\"?><root mode=\"fast\">"
+            "<vertex position=\"0 1 2\"/><group><vertex position=\"9 9 9\"/></group>"
+            "<vertex position=\"3 4 5\"/></root>");
+
+        XmlReader reader;
+        ASSERT_TRUE(reader.open(path("fields.xml")));
+        const auto root = reader.root_element();
+        ASSERT_TRUE(root);
+        EXPECT_EQ(root->name(), "root");
+        EXPECT_EQ(root->attribute("mode"), std::string_view("fast"));
+        EXPECT_FALSE(root->attribute("position"));
+
+        std::vector<std::string> fields;
+        std::vector<uint64_t> vertex_rows;
+        root->for_each_field([&](const IO::XmlFieldView& field) {
+            fields.emplace_back(field.name);
+            if (field.kind == IO::XmlFieldKind::Attribute) {
+                EXPECT_EQ(field.name, "mode");
+                EXPECT_EQ(field.value, "fast");
+                EXPECT_FALSE(field.element);
+            }
+            if (field.kind == IO::XmlFieldKind::Element && field.name == "vertex") {
+                ASSERT_TRUE(field.element);
+                EXPECT_EQ(field.element->row(), field.row);
+                vertex_rows.push_back(field.row);
+            }
+        });
+
+        EXPECT_EQ(fields, (std::vector<std::string> { "mode", "vertex", "group", "vertex" }));
+        ASSERT_EQ(vertex_rows.size(), 2U);
+        EXPECT_EQ(reader.element_at(vertex_rows[0])->attribute("position"),
+            std::string_view("0 1 2"));
+        EXPECT_EQ(reader.element_at(vertex_rows[1])->attribute("position"),
+            std::string_view("3 4 5"));
+
+        size_t visited = 0;
+        EXPECT_FALSE(root->for_each_field([&](const IO::XmlFieldView&) {
+            ++visited;
+            return false;
+        }));
+        EXPECT_EQ(visited, 1U);
+    }
+
+    TEST_F(XmlFixture, ElementFieldsSkipMixedContentAndKeepRawRowsAvailable)
+    {
+        write("mixed_fields.xml",
+            "<!--before--><root empty=\"\">left<child/>right<![CDATA[raw]]><!--note--></root>");
+
+        XmlReader reader;
+        ASSERT_TRUE(reader.open(path("mixed_fields.xml")));
+        const auto root = reader.root_element();
+        ASSERT_TRUE(root);
+        EXPECT_EQ(root->attribute("empty"), std::string_view(""));
+        EXPECT_FALSE(reader.element_at(0));
+        EXPECT_FALSE(reader.element_at(999));
+
+        std::vector<IO::XmlFieldKind> kinds;
+        root->for_each_field([&](const IO::XmlFieldView& field) {
+            kinds.push_back(field.kind);
+        });
+        EXPECT_EQ(kinds, (std::vector<IO::XmlFieldKind> {
+            IO::XmlFieldKind::Attribute, IO::XmlFieldKind::Element }));
+
+        const auto rows = reader.read_composite();
+        ASSERT_TRUE(rows);
+        EXPECT_EQ(rows->at(0)->text("kind"), std::string_view("comment"));
+        EXPECT_EQ(reader.root_element()->row(), root->row());
+
+        reader.close();
+        EXPECT_FALSE(reader.root_element());
+        EXPECT_FALSE(reader.element_at(root->row()));
+    }
+
     TEST_F(XmlFixture, ReaderKeepsEmptyValuesDistinctFromAbsentFields)
     {
         write("empty.xml", "<root empty=\"\"><child/></root>");
