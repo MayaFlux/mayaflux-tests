@@ -359,11 +359,6 @@ namespace {
     }
 
     struct Admission {
-        static constexpr auto describe_facets()
-        {
-            return std::tuple { FacetMember<&Admission::enabled> {} };
-        }
-
         bool enabled {};
     };
 

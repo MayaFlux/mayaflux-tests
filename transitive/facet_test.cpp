@@ -2,6 +2,8 @@
 
 #include "MayaFlux/Transitive/Facet/Facets.hpp"
 
+#include "facet_fixtures.hpp"
+
 namespace MayaFlux::Test {
 namespace {
 
@@ -234,28 +236,6 @@ namespace {
         }
         EXPECT_EQ(bag.size(), 1U);
     }
-
-    struct FacetFromSettings {
-        uint32_t window { 512 };
-        uint32_t hop { 256 };
-        double threshold { 0.1 };
-
-        static constexpr auto describe_facets()
-        {
-            return std::tuple {
-                FacetMember<&FacetFromSettings::window> {},
-                FacetMember<&FacetFromSettings::hop> {},
-                FacetMember<&FacetFromSettings::threshold> {},
-            };
-        }
-    };
-
-    struct FacetFromNothing {
-        static constexpr auto describe_facets()
-        {
-            return std::tuple<> {};
-        }
-    };
 
     TEST(FacetFromTest, WholeStructUsesOneStableTypeFacet)
     {

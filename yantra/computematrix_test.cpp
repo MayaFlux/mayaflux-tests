@@ -518,20 +518,10 @@ namespace {
     }
 
     struct RuntimeScale {
-        static constexpr auto describe_facets()
-        {
-            return std::tuple { FacetMember<&RuntimeScale::factor> {} };
-        }
-
         double factor { 1.0 };
     };
 
     struct ObservedContext {
-        static constexpr auto describe_facets()
-        {
-            return std::tuple { FacetMember<&ObservedContext::mode> {}, FacetMember<&ObservedContext::timeout> {} };
-        }
-
         ExecutionMode mode;
         std::chrono::milliseconds timeout;
     };

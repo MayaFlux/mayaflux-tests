@@ -12,7 +12,6 @@ namespace {
     enum class Stage : uint8_t { Add };
 
     struct AddConfig : OperationConfig {
-        static constexpr auto describe_facets() { return std::tuple<> {}; }
     };
 
     template <int Offset>

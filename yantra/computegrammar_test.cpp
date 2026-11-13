@@ -22,11 +22,6 @@ namespace {
     const Facet<int> implementation_id {};
 
     struct AccumulatorConfig : OperationConfig {
-        static constexpr auto describe_facets()
-        {
-            return std::tuple { FacetMember<&AccumulatorConfig::delta> {} };
-        }
-
         double delta { 2.0 };
     };
 
@@ -68,11 +63,6 @@ namespace {
     };
 
     struct Admission {
-        static constexpr auto describe_facets()
-        {
-            return std::tuple { FacetMember<&Admission::enabled> {} };
-        }
-
         bool enabled {};
     };
 
