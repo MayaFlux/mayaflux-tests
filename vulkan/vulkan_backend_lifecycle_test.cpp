@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "../support/vulkan_test_support.hpp"
 
@@ -8,6 +9,8 @@
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Registry/Service/ComputeService.hpp"
 #include "MayaFlux/Registry/Service/DisplayService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 
@@ -42,18 +45,18 @@ namespace {
 
 }
 
-TEST(VulkanBackendLifecycleTest, ReportsVulkanBackendType)
+MAYAFLUX_TEST_WITH(TEST, VulkanBackendLifecycleTest, ReportsVulkanBackendType, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     VulkanBackend backend;
     EXPECT_EQ(backend.get_backend_type(), GlobalGraphicsConfig::GraphicsApi::VULKAN);
 }
 
-TEST(VulkanBackendLifecycleTest, DestructionWithoutInitializeIsSafe)
+MAYAFLUX_TEST_WITH(TEST, VulkanBackendLifecycleTest, DestructionWithoutInitializeIsSafe, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     EXPECT_NO_THROW({ VulkanBackend backend; });
 }
 
-TEST(VulkanBackendLifecycleTest, CleanupWithoutInitializeIsNoOp)
+MAYAFLUX_TEST_WITH(TEST, VulkanBackendLifecycleTest, CleanupWithoutInitializeIsNoOp, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     VulkanBackend backend;
     EXPECT_NO_THROW(backend.cleanup());
@@ -62,7 +65,7 @@ TEST(VulkanBackendLifecycleTest, CleanupWithoutInitializeIsNoOp)
     EXPECT_FALSE(display_service_registered());
 }
 
-TEST(VulkanBackendLifecycleTest, RejectsNonVulkanApiWithoutRegisteringServices)
+MAYAFLUX_TEST_WITH(TEST, VulkanBackendLifecycleTest, RejectsNonVulkanApiWithoutRegisteringServices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     VulkanBackend backend;
     GlobalGraphicsConfig config = headless_graphics_config();

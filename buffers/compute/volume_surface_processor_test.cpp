@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 
 #include "volume_grid_fixture.hpp"
@@ -12,6 +13,8 @@
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
 #include "MayaFlux/Portal/Graphics/RenderFlow.hpp"
 #include "MayaFlux/Registry/Service/DisplayService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -400,7 +403,7 @@ namespace {
         bool flow_ready {};
     };
 
-    TEST_F(VolumeSurfacePresentationTest, ExtractedSphereIsVisibleAfterPresentation)
+    MAYAFLUX_TEST_WITH(TEST_F, VolumeSurfacePresentationTest, ExtractedSphereIsVisibleAfterPresentation, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         root->process_default();
         ASSERT_GT(volume->get_live_vertex_count().value_or(0U), 0U);

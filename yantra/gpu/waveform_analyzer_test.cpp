@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <random>
 
@@ -6,6 +7,8 @@
 
 #include "MayaFlux/Kinesis/Discrete/Analysis.hpp"
 #include "MayaFlux/Yantra/Analyzers/WaveformAnalyzer.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -616,24 +619,24 @@ namespace {
         EXPECT_EQ(first.peak, second.peak);
     }
 
-    TEST(WaveformAnalyzerConfigTest, TheDefaultsAreValid)
+    MAYAFLUX_TEST_WITH(TEST, WaveformAnalyzerConfigTest, TheDefaultsAreValid, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_NO_THROW(StandardWaveformAnalyzer {});
     }
 
-    TEST(WaveformAnalyzerConfigTest, AWindowShorterThanTwiceTheLongestPeriodIsRejected)
+    MAYAFLUX_TEST_WITH(TEST, WaveformAnalyzerConfigTest, AWindowShorterThanTwiceTheLongestPeriodIsRejected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 256, 128)), std::invalid_argument);
     }
 
-    TEST(WaveformAnalyzerConfigTest, AnyHopAboveZeroIsAccepted)
+    MAYAFLUX_TEST_WITH(TEST, WaveformAnalyzerConfigTest, AnyHopAboveZeroIsAccepted, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_NO_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 512, 100)));
         EXPECT_NO_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 512, 441)));
         EXPECT_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 512, 0)), std::invalid_argument);
     }
 
-    TEST(WaveformAnalyzerConfigTest, FrequenciesMustAscendBelowNyquist)
+    MAYAFLUX_TEST_WITH(TEST, WaveformAnalyzerConfigTest, FrequenciesMustAscendBelowNyquist, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto config = make_config();
         config.low_frequency = 400.0;
@@ -649,7 +652,7 @@ namespace {
         EXPECT_THROW(StandardWaveformAnalyzer { config }, std::invalid_argument);
     }
 
-    TEST(WaveformAnalyzerConfigTest, ARangeSpanningFewerThanTwoLagsIsRejected)
+    MAYAFLUX_TEST_WITH(TEST, WaveformAnalyzerConfigTest, ARangeSpanningFewerThanTwoLagsIsRejected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto config = make_config();
         config.low_frequency = 399.0;

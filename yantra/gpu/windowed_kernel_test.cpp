@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -7,6 +8,8 @@
 #include "../../support/gpu_dispatch_test_support.hpp"
 
 #include "MayaFlux/Yantra/Analyzers/WindowedKernelAnalyzer.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -159,7 +162,7 @@ void main()
         }
     }
 
-    TYPED_TEST(WindowedKernelGpuTest, AWholeCompFileRunsUnderTheSameLayout)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, WindowedKernelGpuTest, AWholeCompFileRunsUnderTheSameLayout, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         const auto path = std::filesystem::temp_directory_path() / "mayaflux_windowed_kernel_test.comp";
         {
@@ -242,7 +245,7 @@ void main()
         EXPECT_EQ(config.shader_id, Portal::Graphics::INVALID_SHADER);
     }
 
-    TEST(WindowedKernelConfigTest, ExactlyOneOfKernelAndShaderPathIsRequired)
+    MAYAFLUX_TEST_WITH(TEST, WindowedKernelConfigTest, ExactlyOneOfKernelAndShaderPathIsRequired, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         WindowedKernelConfig neither;
         EXPECT_THROW(StandardWindowedKernelAnalyzer { neither }, std::invalid_argument);
@@ -252,7 +255,7 @@ void main()
         EXPECT_THROW(StandardWindowedKernelAnalyzer { both }, std::invalid_argument);
     }
 
-    TEST(WindowedKernelConfigTest, OutputsAndWindowSettingsMustBePositive)
+    MAYAFLUX_TEST_WITH(TEST, WindowedKernelConfigTest, OutputsAndWindowSettingsMustBePositive, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_THROW(StandardWindowedKernelAnalyzer(make_config(k_window_sum, 0, 16, 16)), std::invalid_argument);
         EXPECT_THROW(StandardWindowedKernelAnalyzer(make_config(k_window_sum, 1, 0, 16)), std::invalid_argument);

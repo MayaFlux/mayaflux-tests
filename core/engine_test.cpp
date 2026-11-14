@@ -1,6 +1,7 @@
 #include <chrono>
 
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Core/Engine.hpp"
@@ -16,6 +17,8 @@
 #include "MayaFlux/Registry/Service/AudioBackendService.hpp"
 #include "MayaFlux/Vruta/Clock.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -259,7 +262,7 @@ namespace {
             EngineCase { "Mono44k", 44100, 256, 1 }),
         [](const auto& info) { return info.param.name; });
 
-    TEST(EngineLifecycleTest, ConstructorHasNoActiveManagers)
+    MAYAFLUX_TEST_WITH(TEST, EngineLifecycleTest, ConstructorHasNoActiveManagers, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         Core::Engine engine;
         EXPECT_FALSE(engine.is_configured());
@@ -271,7 +274,7 @@ namespace {
         EXPECT_NE(engine.get_stochastic_engine(), nullptr);
     }
 
-    TEST(EngineLifecycleTest, PauseResumeAndEndBeforeInitAreSafe)
+    MAYAFLUX_TEST_WITH(TEST, EngineLifecycleTest, PauseResumeAndEndBeforeInitAreSafe, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         Core::Engine engine;
         engine.Pause();
@@ -353,7 +356,7 @@ namespace {
             nullptr);
     }
 
-    TEST(EngineLifecycleTest, ShutdownRequestIsObservable)
+    MAYAFLUX_TEST_WITH(TEST, EngineLifecycleTest, ShutdownRequestIsObservable, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         Core::Engine engine;
         EXPECT_FALSE(engine.is_shutdown_requested());

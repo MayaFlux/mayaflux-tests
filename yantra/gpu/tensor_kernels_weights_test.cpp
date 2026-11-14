@@ -1,10 +1,13 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "../../support/gpu_dispatch_test_support.hpp"
 
 #include "MayaFlux/Yantra/Executors/ShaderExecutionContext.hpp"
 #include "MayaFlux/Yantra/Executors/TensorKernels/Stages.hpp"
 #include "MayaFlux/Yantra/Executors/TensorKernels/Weights.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -39,7 +42,7 @@ namespace {
         return set;
     }
 
-    TEST(TensorKernelsWeightsTest, CheckTensorsNamesTheFirstProblemInTheOrderRequired)
+    MAYAFLUX_TEST_WITH(TEST, TensorKernelsWeightsTest, CheckTensorsNamesTheFirstProblemInTheOrderRequired, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         TensorSet wrong;
         wrong.tensors.push_back(floats("w", { 2 }, 1.0F));
@@ -49,7 +52,7 @@ namespace {
         EXPECT_EQ(check_tensors(bias_then_weight(), required()), "");
     }
 
-    TEST(TensorKernelsWeightsTest, PackedTensorsFollowTheOrderRequiredNotTheOrderOfTheSet)
+    MAYAFLUX_TEST_WITH(TEST, TensorKernelsWeightsTest, PackedTensorsFollowTheOrderRequiredNotTheOrderOfTheSet, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto packed = pack_weights(bias_then_weight(), required());
 
@@ -60,7 +63,7 @@ namespace {
         EXPECT_EQ(packed->address(1000, 1), 1000U + sizeof(float));
     }
 
-    TEST(TensorKernelsWeightsTest, OtherElementTypesAreConvertedToFloat)
+    MAYAFLUX_TEST_WITH(TEST, TensorKernelsWeightsTest, OtherElementTypesAreConvertedToFloat, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         TensorSet set;
         set.tensors.push_back(TensorData::from_values<int32_t>(std::vector<int32_t> { 3 }, { 1, 1, 1 }, "w").value());
@@ -72,7 +75,7 @@ namespace {
         EXPECT_EQ(packed->values, (std::vector<float> { 3.0F, 0.5F }));
     }
 
-    TEST(TensorKernelsWeightsTest, AnElementTypeThatCannotBecomeFloatIsNamedWithItsReason)
+    MAYAFLUX_TEST_WITH(TEST, TensorKernelsWeightsTest, AnElementTypeThatCannotBecomeFloatIsNamedWithItsReason, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         TensorSet set;
         set.tensors.push_back(TensorData::from_values<std::complex<float>>(
@@ -85,7 +88,7 @@ namespace {
         EXPECT_TRUE(packed.error().starts_with("tensor 'w' cannot become float32: ")) << packed.error();
     }
 
-    TEST(TensorKernelsWeightsTest, PackingRefusesWhatCheckingRefuses)
+    MAYAFLUX_TEST_WITH(TEST, TensorKernelsWeightsTest, PackingRefusesWhatCheckingRefuses, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto packed = pack_weights(TensorSet {}, required());
 

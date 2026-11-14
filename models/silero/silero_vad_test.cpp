@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <filesystem>
 #include <random>
@@ -8,6 +9,8 @@
 #include "MayaFlux/IO/Tensor/SafetensorsFormat.hpp"
 #include "MayaFlux/Yantra/Analyzers/VadAnalyzer.hpp"
 #include "MayaFlux/Yantra/Executors/Audio/SileroVadModel.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -180,7 +183,7 @@ namespace {
     using HardwareOptions = ::testing::Types<GpuDispatchFixture<true>, GpuDispatchFixture<false>>;
     TYPED_TEST_SUITE(SileroVadGpuTest, HardwareOptions);
 
-    TYPED_TEST(SileroVadGpuTest, ProbabilitiesMatchAnIndependentHostForwardPass)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, ProbabilitiesMatchAnIndependentHostForwardPass, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
         if (!weights) {
@@ -199,7 +202,7 @@ namespace {
         }
     }
 
-    TYPED_TEST(SileroVadGpuTest, ASplitStreamGivesTheSameProbabilitiesAsOneCall)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, ASplitStreamGivesTheSameProbabilitiesAsOneCall, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
         if (!weights) {
@@ -220,7 +223,7 @@ namespace {
         }
     }
 
-    TYPED_TEST(SileroVadGpuTest, ACompletedChunkLeavesThePartialOneWaitingUntilFlushed)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, ACompletedChunkLeavesThePartialOneWaitingUntilFlushed, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
         if (!weights) {
@@ -245,7 +248,7 @@ namespace {
         EXPECT_NEAR(flushed[0], want[1], 1.0e-5);
     }
 
-    TYPED_TEST(SileroVadGpuTest, ResetRestoresTheInitialState)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, ResetRestoresTheInitialState, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
         if (!weights) {
@@ -276,7 +279,7 @@ namespace {
         return out;
     }
 
-    TYPED_TEST(SileroVadGpuTest, ProbabilitiesMatchTheOriginalNetworkOnTheReferenceSignal)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, ProbabilitiesMatchTheOriginalNetworkOnTheReferenceSignal, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
         const auto audio = read_floats("tests/models/silero/silero_reference_audio.f32");
@@ -295,7 +298,7 @@ namespace {
         }
     }
 
-    TYPED_TEST(SileroVadGpuTest, SilenceIsNotSpeech)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, SilenceIsNotSpeech, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
         if (!weights) {
@@ -312,7 +315,7 @@ namespace {
         }
     }
 
-    TYPED_TEST(SileroVadGpuTest, TheAnalyzerContinuesAStreamAndFlushesTheTail)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, TheAnalyzerContinuesAStreamAndFlushesTheTail, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
         if (!weights) {
@@ -368,7 +371,7 @@ namespace {
         EXPECT_FALSE(StandardVadAnalyzer::diagnose(config).empty());
     }
 
-    TEST(SileroVadRateTest, TheAnalyzerRefusesAnotherRateAtConstructionAndWhenTheConfigChanges)
+    MAYAFLUX_TEST_WITH(TEST, SileroVadRateTest, TheAnalyzerRefusesAnotherRateAtConstructionAndWhenTheConfigChanges, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights>() }))
     {
         const auto weights = load_weights();
         if (!weights) {
@@ -384,7 +387,7 @@ namespace {
         EXPECT_ANY_THROW(std::ignore = analyzer.analyze_speech(std::vector<Kakshya::DataVariant> { std::vector<double>(2048, 0.0) }));
     }
 
-    TEST(SileroVadWeightsTest, DiagnoseNamesTheFirstProblem)
+    MAYAFLUX_TEST_WITH(TEST, SileroVadWeightsTest, DiagnoseNamesTheFirstProblem, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights>() }))
     {
         const TensorSet empty;
         EXPECT_EQ(SileroVadModel::diagnose(empty), "missing tensor 'stft_conv.weight'");

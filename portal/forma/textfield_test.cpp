@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "../../support/scripted_window.hpp"
 #include "../../support/text_test_support.hpp"
@@ -9,6 +10,8 @@
 #include "MayaFlux/Portal/Forma/Primitives/TextField.hpp"
 #include "MayaFlux/Portal/Forma/Surface.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font>() }))
 
 namespace MayaFlux::Test {
 

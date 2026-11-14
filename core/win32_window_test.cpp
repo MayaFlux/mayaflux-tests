@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #if defined(MAYAFLUX_PLATFORM_WINDOWS)
 
@@ -6,6 +7,8 @@
 
 #include "MayaFlux/Core/Backends/Windowing/Win32/KeyMapping.hpp"
 #include "MayaFlux/Core/Backends/Windowing/Win32/Win32Window.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -469,7 +472,7 @@ namespace {
 
     class Win32RejectedTextTest : public ::testing::TestWithParam<RejectedTextCase> { };
 
-    TEST_P(Win32RejectedTextTest, CharMessageProducesNoTextEvent)
+    MAYAFLUX_TEST_WITH(TEST_P, Win32RejectedTextTest, CharMessageProducesNoTextEvent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         WindowHarness harness;
 
@@ -518,7 +521,7 @@ namespace {
 
     class Win32MouseButtonTest : public ::testing::TestWithParam<MouseButtonCase> { };
 
-    TEST_P(Win32MouseButtonTest, PressAndReleaseEmitButtonEventsAndTrackSourceState)
+    MAYAFLUX_TEST_WITH(TEST_P, Win32MouseButtonTest, PressAndReleaseEmitButtonEventsAndTrackSourceState, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto& param = GetParam();
         WindowHarness harness;
@@ -556,7 +559,7 @@ namespace {
 
     class Win32ScrollTest : public ::testing::TestWithParam<ScrollCase> { };
 
-    TEST_P(Win32ScrollTest, WheelDeltaIsReportedInNotches)
+    MAYAFLUX_TEST_WITH(TEST_P, Win32ScrollTest, WheelDeltaIsReportedInNotches, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         WindowHarness harness;
 
@@ -622,7 +625,7 @@ namespace {
     // Key mapping
     // ------------------------------------------------------------------
 
-    TEST(Win32KeyMappingTest, LettersAndDigitsMapToMatchingKeys)
+    MAYAFLUX_TEST_WITH(TEST, Win32KeyMappingTest, LettersAndDigitsMapToMatchingKeys, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(Core::from_win32_key('A'), IO::Keys::A);
         EXPECT_EQ(Core::to_win32_key(IO::Keys::A), static_cast<int>('A'));
@@ -637,7 +640,7 @@ namespace {
         }
     }
 
-    TEST(Win32KeyMappingTest, NavigationKeysRoundTripThroughTable)
+    MAYAFLUX_TEST_WITH(TEST, Win32KeyMappingTest, NavigationKeysRoundTripThroughTable, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(Core::from_win32_key(VK_LEFT), IO::Keys::Left);
         EXPECT_EQ(Core::from_win32_key(VK_RIGHT), IO::Keys::Right);
@@ -650,7 +653,7 @@ namespace {
         }
     }
 
-    TEST(Win32KeyMappingTest, UnmappedKeysReportUnknownAndZero)
+    MAYAFLUX_TEST_WITH(TEST, Win32KeyMappingTest, UnmappedKeysReportUnknownAndZero, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(Core::to_win32_key(IO::Keys::Unknown), 0);
         EXPECT_EQ(Core::from_win32_key(0), IO::Keys::Unknown);

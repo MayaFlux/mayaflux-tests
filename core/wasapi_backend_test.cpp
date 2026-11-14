@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #if defined(MAYAFLUX_PLATFORM_WINDOWS) && defined(WASAPI_BACKEND)
 
@@ -6,6 +7,8 @@
 #include <stdexcept>
 
 #include "MayaFlux/Core/Backends/Audio/WasapiBackend.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::wasapi>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -111,7 +114,7 @@ namespace {
         }
     }
 
-    TEST(WasapiBackendTest, OpensDefaultOutputAndReportsStreamState)
+    MAYAFLUX_TEST_WITH(TEST, WasapiBackendTest, OpensDefaultOutputAndReportsStreamState, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::wasapi>() }))
     {
         Core::WasapiBackend backend;
         auto devices = backend.create_device_manager();
@@ -161,7 +164,7 @@ namespace {
         EXPECT_ANY_THROW(backend.create_stream(static_cast<unsigned int>(outputs.size() + 1), 0, config, nullptr));
     }
 
-    TEST(WasapiBackendTest, DeliversOutputCallbacksThatWriteSilence)
+    MAYAFLUX_TEST_WITH(TEST, WasapiBackendTest, DeliversOutputCallbacksThatWriteSilence, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::wasapi>() }))
     {
         Core::WasapiBackend backend;
         auto devices = backend.create_device_manager();
@@ -188,7 +191,7 @@ namespace {
         EXPECT_FALSE(stream->is_open());
     }
 
-    TEST(WasapiBackendTest, RestartsPausesAndResumesOutputStream)
+    MAYAFLUX_TEST_WITH(TEST, WasapiBackendTest, RestartsPausesAndResumesOutputStream, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::wasapi>() }))
     {
         Core::WasapiBackend backend;
         auto devices = backend.create_device_manager();
@@ -229,7 +232,7 @@ namespace {
         stream->close();
     }
 
-    TEST(WasapiBackendTest, DeliversFullDuplexCallbackWhenInputAndOutputExist)
+    MAYAFLUX_TEST_WITH(TEST, WasapiBackendTest, DeliversFullDuplexCallbackWhenInputAndOutputExist, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_input, ::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::wasapi>() }))
     {
         Core::WasapiBackend backend;
         auto devices = backend.create_device_manager();

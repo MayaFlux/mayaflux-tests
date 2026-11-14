@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 
 #include "../support/vulkan_test_support.hpp"
@@ -8,6 +9,8 @@
 #include "MayaFlux/Buffers/VKBuffer.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -40,12 +43,12 @@ namespace {
         return run.topology == k_topology && run.vertex_offset == offset && run.vertex_count == count;
     }
 
-    TEST(SliceSetTest, ZeroStrideIsRejected)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, ZeroStrideIsRejected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_THROW(SliceSet(0, k_topology), std::invalid_argument);
     }
 
-    TEST(SliceSetTest, AddReturnsDistinctNonZeroIdsAndRejectsPartialVertices)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, AddReturnsDistinctNonZeroIdsAndRejectsPartialVertices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
 
@@ -65,7 +68,7 @@ namespace {
         EXPECT_EQ(set.size_bytes(), 3U * k_stride);
     }
 
-    TEST(SliceSetTest, FreshSetReportsOneEmptyRunListThenNothing)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, FreshSetReportsOneEmptyRunListThenNothing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
 
@@ -75,7 +78,7 @@ namespace {
         EXPECT_FALSE(set.take_runs().has_value());
     }
 
-    TEST(SliceSetTest, AdjacentVisibleSlicesCoalesceIntoOneRun)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, AdjacentVisibleSlicesCoalesceIntoOneRun, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         set.add(vertices(2, 1));
@@ -89,7 +92,7 @@ namespace {
         EXPECT_FALSE(set.take_runs().has_value());
     }
 
-    TEST(SliceSetTest, StripAndFanTopologiesNeverCoalesceAdjacentSlices)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, StripAndFanTopologiesNeverCoalesceAdjacentSlices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         for (const auto topology : { PrimitiveTopology::LINE_STRIP, PrimitiveTopology::TRIANGLE_STRIP, PrimitiveTopology::TRIANGLE_FAN }) {
             SliceSet set(k_stride, topology);
@@ -108,7 +111,7 @@ namespace {
         }
     }
 
-    TEST(SliceSetTest, SliceTopologyDefaultsToTheSetsAndDifferingNeighboursStaySeparate)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, SliceTopologyDefaultsToTheSetsAndDifferingNeighboursStaySeparate, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, PrimitiveTopology::TRIANGLE_LIST);
         set.add(vertices(3, 1));
@@ -131,7 +134,7 @@ namespace {
         EXPECT_EQ((*runs)[3].vertex_count, 2U);
     }
 
-    TEST(SliceSetTest, HidingTheMiddleSliceSplitsTheRun)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, HidingTheMiddleSliceSplitsTheRun, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         const auto a = set.add(vertices(2, 1));
@@ -157,7 +160,7 @@ namespace {
         static_cast<void>(c);
     }
 
-    TEST(SliceSetTest, SettingTheCurrentVisibilityReportsNoChange)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, SettingTheCurrentVisibilityReportsNoChange, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         const auto a = set.add(vertices(2, 1));
@@ -168,7 +171,7 @@ namespace {
         EXPECT_FALSE(set.take_runs().has_value());
     }
 
-    TEST(SliceSetTest, BringToFrontReordersDrawsWithoutMovingMemory)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, BringToFrontReordersDrawsWithoutMovingMemory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         const auto a = set.add(vertices(2, 1));
@@ -186,7 +189,7 @@ namespace {
         EXPECT_EQ(set.size_bytes(), 6U * k_stride);
     }
 
-    TEST(SliceSetTest, SendToBackReordersDrawsWithoutMovingMemory)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, SendToBackReordersDrawsWithoutMovingMemory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         set.add(vertices(2, 1));
@@ -203,7 +206,7 @@ namespace {
         EXPECT_TRUE(same_run((*runs)[1], 0, 5));
     }
 
-    TEST(SliceSetTest, ReorderingTheOnlyEdgeSliceIsANoOp)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, ReorderingTheOnlyEdgeSliceIsANoOp, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         set.add(vertices(1, 1));
@@ -215,7 +218,7 @@ namespace {
         EXPECT_FALSE(set.take_runs().has_value());
     }
 
-    TEST(SliceSetTest, RemovingASliceShiftsLaterSlicesDown)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, RemovingASliceShiftsLaterSlicesDown, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         set.add(vertices(2, 1));
@@ -234,7 +237,7 @@ namespace {
         EXPECT_TRUE(same_run((*runs)[0], 0, 3));
     }
 
-    TEST(SliceSetTest, SameSizeUpdateKeepsTheRunsUnchanged)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, SameSizeUpdateKeepsTheRunsUnchanged, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         const auto a = set.add(vertices(2, 1));
@@ -246,7 +249,7 @@ namespace {
         EXPECT_EQ(set.vertex_count(), 2U);
     }
 
-    TEST(SliceSetTest, ResizingASliceShiftsTheOnesAfterIt)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, ResizingASliceShiftsTheOnesAfterIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         const auto a = set.add(vertices(2, 1));
@@ -271,7 +274,7 @@ namespace {
         static_cast<void>(c);
     }
 
-    TEST(SliceSetTest, EmptySliceProducesNoRunButStaysLive)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, EmptySliceProducesNoRunButStaysLive, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         const auto empty = set.add({});
@@ -286,7 +289,7 @@ namespace {
         EXPECT_TRUE(same_run((*runs)[0], 0, 2));
     }
 
-    TEST(SliceSetTest, UnknownIdsAreIgnored)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, UnknownIdsAreIgnored, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         set.add(vertices(2, 1));
@@ -302,7 +305,7 @@ namespace {
         EXPECT_FALSE(set.take_runs().has_value());
     }
 
-    TEST(SliceSetTest, UpdateWithPartialVerticesIsRejected)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, UpdateWithPartialVerticesIsRejected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         const auto a = set.add(vertices(2, 1));
@@ -315,7 +318,7 @@ namespace {
         EXPECT_FALSE(set.take_runs().has_value());
     }
 
-    TEST(StagingUtilsTest, UploadIntervalsRejectsANullTarget)
+    MAYAFLUX_TEST_WITH(TEST, StagingUtilsTest, UploadIntervalsRejectsANullTarget, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         std::shared_ptr<VKBuffer> staging;
         const std::array<std::pair<size_t, size_t>, 1> intervals { { { 0, 4 } } };
@@ -324,14 +327,14 @@ namespace {
         EXPECT_THROW(Buffers::upload_intervals(source.data(), intervals, nullptr, staging), std::invalid_argument);
     }
 
-    TEST(StagingUtilsTest, UploadToGpuRejectsANullTarget)
+    MAYAFLUX_TEST_WITH(TEST, StagingUtilsTest, UploadToGpuRejectsANullTarget, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const uint8_t byte = 1;
 
         EXPECT_THROW(Buffers::upload_to_gpu(&byte, 1, nullptr), std::invalid_argument);
     }
 
-    TEST(SliceSetTest, FlushRejectsANullTarget)
+    MAYAFLUX_TEST_WITH(TEST, SliceSetTest, FlushRejectsANullTarget, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SliceSet set(k_stride, k_topology);
         std::shared_ptr<VKBuffer> staging;

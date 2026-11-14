@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "../../support/gpu_dispatch_test_support.hpp"
 
@@ -6,6 +7,8 @@
 #include "MayaFlux/Portal/Graphics/SamplerForge.hpp"
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 #include "MayaFlux/Yantra/Executors/GpuDispatchCore.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -552,7 +555,7 @@ void main()
         EXPECT_EQ(core.run_native(native).primary, float_scaled(native, 2.0F));
     }
 
-    TYPED_TEST(GpuDispatchCoreTest, NativeFloat64InputIsCopiedRawIntoAFloat64Binding)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, GpuDispatchCoreTest, NativeFloat64InputIsCopiedRawIntoAFloat64Binding, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::shader_float64, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         if (!device_supports_shader_float64()) {
             GTEST_SKIP() << "Selected device does not report shaderFloat64";
@@ -593,7 +596,7 @@ void main()
         EXPECT_EQ(core.run_native(native).primary, float_scaled(native, 2.0F));
     }
 
-    TYPED_TEST(GpuDispatchCoreTest, NativeFloat32InputIsRefusedByAFloat64Binding)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, GpuDispatchCoreTest, NativeFloat32InputIsRefusedByAFloat64Binding, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::shader_float64, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         if (!device_supports_shader_float64()) {
             GTEST_SKIP() << "Selected device does not report shaderFloat64";

@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "../kakshya/video_test_support.hpp"
 #include "../support/frame_scheduler.hpp"
@@ -17,6 +18,8 @@
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Vruta/ChronUtils.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -797,21 +800,21 @@ namespace {
         std::vector<std::shared_ptr<BufferPipeline>> pipelines;
     };
 
-    TEST_F(ChimeraGpuTest, ParamsOnALayerEnableTheLayerData)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraGpuTest, ParamsOnALayerEnableTheLayerData, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const Chimera chimera = builder().layer().from(still(1)).params(glm::vec4(0.1F, 0.2F, 0.3F, 0.4F)).start();
 
         EXPECT_TRUE(array->has_layer_data());
     }
 
-    TEST_F(ChimeraGpuTest, AskingForLayerDataCreatesItWithoutParams)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraGpuTest, AskingForLayerDataCreatesItWithoutParams, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const Chimera chimera = builder().layer_data().layer().from(still(1)).start();
 
         EXPECT_TRUE(array->has_layer_data());
     }
 
-    TEST_F(ChimeraGpuTest, ParamsSetOnARunningSetEnableTheLayerData)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraGpuTest, ParamsSetOnARunningSetEnableTheLayerData, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Chimera chimera = builder().layer().from(still(1)).start();
 
@@ -821,7 +824,7 @@ namespace {
         EXPECT_TRUE(array->has_layer_data());
     }
 
-    TEST_F(ChimeraGpuTest, ALayerFedFromThePipelineShowsTheFrameTheRecordingStored)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraGpuTest, ALayerFedFromThePipelineShowsTheFrameTheRecordingStored, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto frame = VideoSupport::frame_bytes(3);
         const auto source = make_buffer(frame.size());
@@ -915,7 +918,7 @@ namespace {
         inline static std::shared_ptr<Core::VulkanBackend> s_backend;
     };
 
-    TEST_F(ChimeraImageTest, AGpuImageLayerIsCopiedIntoItsLayerOnTheFirstFrame)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraImageTest, AGpuImageLayerIsCopiedIntoItsLayerOnTheFirstFrame, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const Chimera chimera = builder().layer().from(make_image(2)).layer().from(make_image(5)).start();
 
@@ -926,7 +929,7 @@ namespace {
         EXPECT_EQ(layer_bytes(2), blank());
     }
 
-    TEST_F(ChimeraImageTest, SettingAGpuImageReplacesTheLayerWithTheNewImage)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraImageTest, SettingAGpuImageReplacesTheLayerWithTheNewImage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Chimera chimera = builder().layer().from(make_image(2)).start();
 
@@ -937,7 +940,7 @@ namespace {
         EXPECT_EQ(layer_bytes(0), VideoSupport::frame_bytes(8));
     }
 
-    TEST_F(ChimeraImageTest, ACollectionFedFromABufferGivesAChimeraLayerTheNewestImageEachCycle)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraImageTest, ACollectionFedFromABufferGivesAChimeraLayerTheNewestImageEachCycle, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto image = make_image(0);
         const auto source = std::make_shared<Buffers::TextureBuffer>(VideoSupport::k_width, VideoSupport::k_height, Portal::Graphics::ImageFormat::RGBA8);
@@ -964,7 +967,7 @@ namespace {
         }
     }
 
-    TEST_F(ChimeraImageTest, ASourceBufferWithoutATextureAppendsNothing)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraImageTest, ASourceBufferWithoutATextureAppendsNothing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto source = std::make_shared<Buffers::TextureBuffer>(VideoSupport::k_width, VideoSupport::k_height, Portal::Graphics::ImageFormat::RGBA8);
         const auto collection = std::make_shared<Kakshya::TextureCollection>(
@@ -980,7 +983,7 @@ namespace {
         EXPECT_EQ(collection->get_write_head(), 0U);
     }
 
-    TEST_F(ChimeraImageTest, AnAsyncPushWritesTheHeadLayerAndAdvancesAroundTheRing)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraImageTest, AnAsyncPushWritesTheHeadLayerAndAdvancesAroundTheRing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         for (uint64_t n = 1; n <= 5; ++n) {
             ASSERT_TRUE(array->push_layer_async(make_image(n)));
@@ -992,7 +995,7 @@ namespace {
         EXPECT_EQ(layer_bytes(2), VideoSupport::frame_bytes(3));
     }
 
-    TEST_F(ChimeraImageTest, TheNewestFrameSitsOneBehindTheHeadAndOlderOnesFollowBackwards)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraImageTest, TheNewestFrameSitsOneBehindTheHeadAndOlderOnesFollowBackwards, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         for (uint64_t n = 1; n <= 7; ++n) {
             ASSERT_TRUE(array->push_layer_async(make_image(n)));
@@ -1005,7 +1008,7 @@ namespace {
         }
     }
 
-    TEST_F(ChimeraImageTest, ARingFedFromABufferHoldsTheLatestFramesOfTheSourceInOrder)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraImageTest, ARingFedFromABufferHoldsTheLatestFramesOfTheSourceInOrder, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto image = make_image(0);
         const auto source = std::make_shared<Buffers::TextureBuffer>(VideoSupport::k_width, VideoSupport::k_height, Portal::Graphics::ImageFormat::RGBA8);
@@ -1034,7 +1037,7 @@ namespace {
         EXPECT_EQ(layer_bytes(2), VideoSupport::frame_bytes(3));
     }
 
-    TEST_F(ChimeraImageTest, ARingWhoseSourceHasNoTextureStaysEmpty)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraImageTest, ARingWhoseSourceHasNoTextureStaysEmpty, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto source = std::make_shared<Buffers::TextureBuffer>(VideoSupport::k_width, VideoSupport::k_height, Portal::Graphics::ImageFormat::RGBA8);
         auto pipeline = BufferPipeline::create(*frames->scheduler, manager);
@@ -1047,7 +1050,7 @@ namespace {
         EXPECT_EQ(array->get_write_head(), 0U);
     }
 
-    TEST_F(ChimeraImageTest, AnAsyncPushOfASmallerImageClearsTheLayerBeforeItIsFitted)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraImageTest, AnAsyncPushOfASmallerImageClearsTheLayerBeforeItIsFitted, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto ring = std::make_shared<TextureArrayBuffer>(VideoSupport::rgba8_spec(1), Portal::Graphics::FitMode::CONTAIN);
         ASSERT_TRUE(ring->submit_layer(0, make_image(7)));
@@ -1070,7 +1073,7 @@ namespace {
         EXPECT_EQ(out, expected);
     }
 
-    TEST_F(ChimeraImageTest, AGpuImageLayerFollowsTheImageItsSourceIsRewrittenWith)
+    MAYAFLUX_TEST_WITH(TEST_F, ChimeraImageTest, AGpuImageLayerFollowsTheImageItsSourceIsRewrittenWith, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto source = make_image(2);
         const Chimera chimera = builder().layer().from(source).start();

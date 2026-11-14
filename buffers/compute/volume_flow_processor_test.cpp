@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 
 #include "volume_grid_fixture.hpp"
@@ -10,6 +11,8 @@
 #include "MayaFlux/Buffers/State/PressureProcessor.hpp"
 #include "MayaFlux/Buffers/State/SolenoidalProcessor.hpp"
 #include "MayaFlux/Buffers/State/WallProcessor.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {

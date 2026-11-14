@@ -1,7 +1,10 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 
 #include "MayaFlux/Portal/Text/GlyphMesh.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {

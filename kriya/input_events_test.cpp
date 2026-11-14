@@ -1,10 +1,13 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "../support/scripted_window.hpp"
 #include "MayaFlux/IO/Keys.hpp"
 #include "MayaFlux/Kriya/InputEvents.hpp"
 #include "MayaFlux/Vruta/Event.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 

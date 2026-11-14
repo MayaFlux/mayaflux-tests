@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include <chrono>
 #include <fstream>
@@ -22,6 +23,8 @@
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Registry/Service/DisplayService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -336,7 +339,7 @@ TEST_F(CompositeGeometryBufferDeviceTest, AggregateGrowthPreservesEveryVertexAcr
     EXPECT_EQ(read_bytes(expected.size()), expected);
 }
 
-TEST_F(CompositeGeometryBufferDeviceTest, PerCollectionRenderConfigSelectsIndependentMillingAndShaders)
+MAYAFLUX_TEST_WITH(TEST_F, CompositeGeometryBufferDeviceTest, PerCollectionRenderConfigSelectsIndependentMillingAndShaders, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 {
     add("points", geometry({ { 0, 0, 0 } }), PrimitiveTopology::POINT_LIST);
     add("wire",
@@ -474,7 +477,7 @@ protected:
     bool flow_ready {};
 };
 
-TEST_F(CompositeGeometryBufferPresentationTest, DrawsEachCollectionFromItsOwnStrideLayoutAndVertexRange)
+MAYAFLUX_TEST_WITH(TEST_F, CompositeGeometryBufferPresentationTest, DrawsEachCollectionFromItsOwnStrideLayoutAndVertexRange, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     const auto position_vertex = write_shader(".vert", R"(#version 460
 layout(location = 0) in vec3 position;

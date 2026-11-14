@@ -1,9 +1,12 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include <chrono>
 #include <string_view>
 
 #include "MayaFlux/Core/Backends/Network/UDPBackend.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::loopback_udp>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -123,7 +126,7 @@ namespace {
     // Lifecycle
     // ------------------------------------------------------------------
 
-    TEST(UDPBackendTest, ReportsIdentity)
+    MAYAFLUX_TEST_WITH(TEST, UDPBackendTest, ReportsIdentity, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         UdpRig rig;
 
@@ -134,7 +137,7 @@ namespace {
         EXPECT_FALSE(rig.backend.is_running());
     }
 
-    TEST(UDPBackendTest, LifecycleCallsAreIdempotent)
+    MAYAFLUX_TEST_WITH(TEST, UDPBackendTest, LifecycleCallsAreIdempotent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         UdpRig rig;
 

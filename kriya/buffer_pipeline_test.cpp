@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "../kakshya/video_test_support.hpp"
 
@@ -9,6 +10,8 @@
 #include "MayaFlux/Kakshya/Source/DynamicVideoStream.hpp"
 #include "MayaFlux/Kriya/Awaiters/DelayAwaiters.hpp"
 #include "MayaFlux/Kriya/BufferPipeline.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {

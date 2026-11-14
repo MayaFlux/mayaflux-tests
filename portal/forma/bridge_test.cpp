@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "../../support/frame_scheduler.hpp"
 #include "../../support/vulkan_test_support.hpp"
@@ -12,6 +13,8 @@
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 
@@ -69,7 +72,7 @@ protected:
 // Inbound
 // =============================================================================
 
-TEST_F(FormaBridgeTest, BindingACallableWritesIntoTheStateEveryFrame)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, BindingACallableWritesIntoTheStateEveryFrame, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto state = rig.add<float>(1, 0.F);
     float source = 0.25F;
@@ -83,7 +86,7 @@ TEST_F(FormaBridgeTest, BindingACallableWritesIntoTheStateEveryFrame)
     EXPECT_FLOAT_EQ(state->value, 0.5F);
 }
 
-TEST_F(FormaBridgeTest, BindingAnIntegerStateCastsTheFloat)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, BindingAnIntegerStateCastsTheFloat, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto state = rig.add<int>(2, 0);
     rig.bridge.bind(rig.ref(2), std::function<float()>([] { return 3.7F; }));
@@ -93,7 +96,7 @@ TEST_F(FormaBridgeTest, BindingAnIntegerStateCastsTheFloat)
     EXPECT_EQ(state->value, 3);
 }
 
-TEST_F(FormaBridgeTest, BindingANodeReadsItsLastOutputAndAppliesTheProjection)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, BindingANodeReadsItsLastOutputAndAppliesTheProjection, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto plain = rig.add<float>(3, 0.F);
     auto projected = rig.add<float>(4, 0.F);
@@ -108,7 +111,7 @@ TEST_F(FormaBridgeTest, BindingANodeReadsItsLastOutputAndAppliesTheProjection)
     EXPECT_FLOAT_EQ(projected->value, 4.0F);
 }
 
-TEST_F(FormaBridgeTest, ABindingReplacesTheElementsPreviousInboundBinding)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, ABindingReplacesTheElementsPreviousInboundBinding, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto state = rig.add<float>(5, 0.F);
     int first_calls = 0;
@@ -126,7 +129,7 @@ TEST_F(FormaBridgeTest, ABindingReplacesTheElementsPreviousInboundBinding)
     EXPECT_FLOAT_EQ(state->value, 2.F);
 }
 
-TEST_F(FormaBridgeTest, UnbindStopsTheInboundBinding)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, UnbindStopsTheInboundBinding, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto state = rig.add<float>(6, 0.F);
     int calls = 0;
@@ -143,7 +146,7 @@ TEST_F(FormaBridgeTest, UnbindStopsTheInboundBinding)
     EXPECT_EQ(calls, 1);
 }
 
-TEST_F(FormaBridgeTest, UnknownIdsAreIgnoredAcrossBindAndUnbind)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, UnknownIdsAreIgnoredAcrossBindAndUnbind, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     int calls = 0;
 
@@ -157,7 +160,7 @@ TEST_F(FormaBridgeTest, UnknownIdsAreIgnoredAcrossBindAndUnbind)
     EXPECT_EQ(calls, 0);
 }
 
-TEST_F(FormaBridgeTest, AStateWithNoFloatConversionIgnoresInboundWrites)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, AStateWithNoFloatConversionIgnoresInboundWrites, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto state = rig.add<std::string>(7, "keep");
     rig.bridge.bind(rig.ref(7), std::function<float()>([] { return 1.F; }));
@@ -171,7 +174,7 @@ TEST_F(FormaBridgeTest, AStateWithNoFloatConversionIgnoresInboundWrites)
 // Presentation sync
 // =============================================================================
 
-TEST_F(FormaBridgeTest, LayerSyncFollowsTheGeometryHitRegionEveryFrame)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, LayerSyncFollowsTheGeometryHitRegionEveryFrame, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto calls = std::make_shared<int>(0);
     auto mapped = add_slider(rig, layer, calls, 0.F);
@@ -187,7 +190,7 @@ TEST_F(FormaBridgeTest, LayerSyncFollowsTheGeometryHitRegionEveryFrame)
     EXPECT_FALSE(layer.hit_test({ 0.F, 0.F }).has_value());
 }
 
-TEST_F(FormaBridgeTest, UnbindStopsThePresentationSync)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, UnbindStopsThePresentationSync, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto calls = std::make_shared<int>(0);
     auto mapped = add_slider(rig, layer, calls, 0.F);
@@ -201,7 +204,7 @@ TEST_F(FormaBridgeTest, UnbindStopsThePresentationSync)
     EXPECT_EQ(*calls, 1);
 }
 
-TEST_F(FormaBridgeTest, StopSyncCancelsEveryTaskOwnedByTheLayer)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, StopSyncCancelsEveryTaskOwnedByTheLayer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto calls = std::make_shared<int>(0);
     auto mapped = add_slider(rig, layer, calls, 0.F);
@@ -223,7 +226,7 @@ TEST_F(FormaBridgeTest, StopSyncCancelsEveryTaskOwnedByTheLayer)
     rig.bridge.stop_sync(layer);
 }
 
-TEST_F(FormaBridgeTest, StopSyncLeavesOtherLayersRunning)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, StopSyncLeavesOtherLayersRunning, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto other = std::make_shared<Forma::Layer>();
     auto first_calls = std::make_shared<int>(0);
@@ -241,7 +244,7 @@ TEST_F(FormaBridgeTest, StopSyncLeavesOtherLayersRunning)
     EXPECT_EQ(*second_calls, 2);
 }
 
-TEST_F(FormaBridgeTest, StopSyncOnALayerWithNoTasksIsHarmless)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, StopSyncOnALayerWithNoTasksIsHarmless, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     Forma::Layer untouched;
 
@@ -252,7 +255,7 @@ TEST_F(FormaBridgeTest, StopSyncOnALayerWithNoTasksIsHarmless)
 // Outbound routes
 // =============================================================================
 
-TEST_F(FormaBridgeTest, ASinkReceivesTheScalarValueAsOneElement)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, ASinkReceivesTheScalarValueAsOneElement, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto state = rig.add<float>(10, 0.5F);
     std::vector<float> received;
@@ -265,7 +268,7 @@ TEST_F(FormaBridgeTest, ASinkReceivesTheScalarValueAsOneElement)
     EXPECT_EQ(received, std::vector<float> { 0.5F });
 }
 
-TEST_F(FormaBridgeTest, ASinkReceivesTheWholeVectorOfAVectorState)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, ASinkReceivesTheWholeVectorOfAVectorState, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto floats = rig.add<std::vector<float>>(11, std::vector<float> { 1.F, 2.F, 3.F });
     auto doubles = rig.add<std::vector<double>>(12, std::vector<double> { 4.0, 5.0 });
@@ -284,7 +287,7 @@ TEST_F(FormaBridgeTest, ASinkReceivesTheWholeVectorOfAVectorState)
     EXPECT_EQ(from_doubles, (std::vector<float> { 4.F, 5.F }));
 }
 
-TEST_F(FormaBridgeTest, ASinkReceivesTheComponentsOfAGlmVectorState)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, ASinkReceivesTheComponentsOfAGlmVectorState, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto position = rig.add<glm::vec2>(30, glm::vec2(0.25F, 0.75F));
     auto colour = rig.add<glm::vec3>(31, glm::vec3(0.1F, 0.2F, 0.3F));
@@ -303,7 +306,7 @@ TEST_F(FormaBridgeTest, ASinkReceivesTheComponentsOfAGlmVectorState)
     EXPECT_EQ(from_colour, (std::vector<float> { 0.1F, 0.2F, 0.3F }));
 }
 
-TEST_F(FormaBridgeTest, AConstantNodeFollowsTheStateEveryFrame)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, AConstantNodeFollowsTheStateEveryFrame, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto state = rig.add<float>(13, 0.75F);
     auto node = std::make_shared<Nodes::Constant>(0.0);
@@ -317,7 +320,7 @@ TEST_F(FormaBridgeTest, AConstantNodeFollowsTheStateEveryFrame)
     EXPECT_DOUBLE_EQ(node->get_constant(), -0.5);
 }
 
-TEST_F(FormaBridgeTest, UnbindStopsOutboundSinksAndConstants)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, UnbindStopsOutboundSinksAndConstants, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto state = rig.add<float>(14, 1.F);
     auto node = std::make_shared<Nodes::Constant>(0.0);
@@ -335,7 +338,7 @@ TEST_F(FormaBridgeTest, UnbindStopsOutboundSinksAndConstants)
     EXPECT_DOUBLE_EQ(node->get_constant(), 1.0);
 }
 
-TEST_F(FormaBridgeTest, AggregateRoutesSampleStatesInTheOrderGiven)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, AggregateRoutesSampleStatesInTheOrderGiven, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto a = std::make_shared<Forma::MappedState<float>>();
     auto b = std::make_shared<Forma::MappedState<float>>();
@@ -353,7 +356,7 @@ TEST_F(FormaBridgeTest, AggregateRoutesSampleStatesInTheOrderGiven)
     EXPECT_EQ(received, (std::vector<float> { 3.F, 1.F, 2.F }));
 }
 
-TEST_F(FormaBridgeTest, AnAggregateRouteSurvivesUnbindingAnElement)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, AnAggregateRouteSurvivesUnbindingAnElement, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto state = rig.add<float>(15, 1.F);
     int sink_calls = 0;
@@ -379,7 +382,7 @@ namespace {
     };
 }
 
-TEST_F(FormaBridgeTest, AnAssembledAggregateDeliversTheAuthoredDataVariant)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, AnAssembledAggregateDeliversTheAuthoredDataVariant, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto a = std::make_shared<Forma::MappedState<float>>();
     auto b = std::make_shared<Forma::MappedState<float>>();
@@ -405,7 +408,7 @@ TEST_F(FormaBridgeTest, AnAssembledAggregateDeliversTheAuthoredDataVariant)
     EXPECT_EQ(target->received.size(), 1U);
 }
 
-TEST_F(FormaBridgeTest, ABindingHandleForwardsEveryOperationToItsElement)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, ABindingHandleForwardsEveryOperationToItsElement, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     auto state = rig.add<float>(16, 0.F);
     std::vector<float> received;

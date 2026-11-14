@@ -1,10 +1,13 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "../video_test_support.hpp"
 
 #include "MayaFlux/Kakshya/Processors/FrameSeekProcessor.hpp"
 #include "MayaFlux/Kinesis/Tendency/TendencyFactories.hpp"
 #include "MayaFlux/Kinesis/Tendency/TimeMap.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {

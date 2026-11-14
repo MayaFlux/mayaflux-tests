@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "../../support/text_test_support.hpp"
 #include "../../support/vulkan_test_support.hpp"
@@ -7,6 +8,8 @@
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 #include "MayaFlux/Portal/Text/AtlasImage.hpp"
 #include "MayaFlux/Portal/Text/TypeSetter.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {

@@ -1,9 +1,12 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <string_view>
 #include <tuple>
 
 #include "MayaFlux/Portal/Graphics/SamplerForge.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {

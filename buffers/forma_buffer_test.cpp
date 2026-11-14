@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 
 #include "../support/scripted_window.hpp"
@@ -25,6 +26,8 @@
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Registry/Service/DisplayService.hpp"
 
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+
 namespace MayaFlux::Test {
 namespace {
 
@@ -41,7 +44,7 @@ std::vector<uint8_t> geometry_bytes(size_t count, uint8_t seed)
     return bytes;
 }
 
-TEST(FormaBufferConstructionTest, KeepsTheRequestedCapacityAndTopology)
+MAYAFLUX_TEST_WITH(TEST, FormaBufferConstructionTest, KeepsTheRequestedCapacityAndTopology, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     const FormaBuffer buffer(240, PrimitiveTopology::LINE_STRIP);
 
@@ -151,7 +154,7 @@ struct FormaGeometryCase {
 class FormaProcessorTopologyTest : public FormaBufferDeviceTest,
                                    public ::testing::WithParamInterface<FormaGeometryCase> { };
 
-TEST_P(FormaProcessorTopologyTest, SubmissionUploadsEveryByteAndUsesTheTopologyStride)
+MAYAFLUX_TEST_WITH(TEST_P, FormaProcessorTopologyTest, SubmissionUploadsEveryByteAndUsesTheTopologyStride, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     const auto& c = GetParam();
     ASSERT_TRUE(make_buffer(c.stride * 4, c.topology));
@@ -675,7 +678,7 @@ protected:
     bool loom_ready {};
 };
 
-TEST_F(FormaBufferPresentationTest, EmptyGeometryRemovesTheDrawAndLaterSubmissionRestoresIt)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBufferPresentationTest, EmptyGeometryRemovesTheDrawAndLaterSubmissionRestoresIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     prepare(false);
     ASSERT_NE(root, nullptr);
@@ -701,7 +704,7 @@ TEST_F(FormaBufferPresentationTest, EmptyGeometryRemovesTheDrawAndLaterSubmissio
     EXPECT_GT(restored[2], 200U);
 }
 
-TEST_F(FormaBufferPresentationTest, LayerVisibilityHidesAndRestoresExistingGeometry)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBufferPresentationTest, LayerVisibilityHidesAndRestoresExistingGeometry, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     prepare(false);
     ASSERT_NE(root, nullptr);
@@ -723,7 +726,7 @@ TEST_F(FormaBufferPresentationTest, LayerVisibilityHidesAndRestoresExistingGeome
     EXPECT_GT(center_pixel()[0], 200U);
 }
 
-TEST_F(FormaBufferPresentationTest, LastPendingTextureAndLaterReplacementChangeThePixels)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBufferPresentationTest, LastPendingTextureAndLaterReplacementChangeThePixels, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     prepare(true);
     ASSERT_NE(root, nullptr);
@@ -758,7 +761,7 @@ TEST_F(FormaBufferPresentationTest, LastPendingTextureAndLaterReplacementChangeT
     EXPECT_LT(replaced[2], 32U);
 }
 
-TEST_F(FormaBufferPresentationTest, TexturesQueuedBeforeProcessorSetupReplayInOrder)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBufferPresentationTest, TexturesQueuedBeforeProcessorSetupReplayInOrder, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     const std::array<uint8_t, 16> white {
         255, 255, 255, 255, 255, 255, 255, 255,
@@ -785,7 +788,7 @@ TEST_F(FormaBufferPresentationTest, TexturesQueuedBeforeProcessorSetupReplayInOr
     EXPECT_GT(pixel[2], 200U);
 }
 
-TEST_F(FormaBufferPresentationTest, TextureTickedBeforeRenderingSetupIsNotLost)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBufferPresentationTest, TextureTickedBeforeRenderingSetupIsNotLost, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     const std::array<uint8_t, 16> white {
         255, 255, 255, 255, 255, 255, 255, 255,
@@ -815,7 +818,7 @@ TEST_F(FormaBufferPresentationTest, TextureTickedBeforeRenderingSetupIsNotLost)
     EXPECT_GT(center_pixel()[0], 200U);
 }
 
-TEST_F(FormaBufferPresentationTest, RuntimeMultiTextureSlotReplacementChangesTheDraw)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBufferPresentationTest, RuntimeMultiTextureSlotReplacementChangesTheDraw, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     const std::array<uint8_t, 16> white {
         255, 255, 255, 255, 255, 255, 255, 255,
@@ -850,7 +853,7 @@ TEST_F(FormaBufferPresentationTest, RuntimeMultiTextureSlotReplacementChangesThe
     EXPECT_GT(center_pixel()[0], 200U);
 }
 
-TEST_F(FormaBufferPresentationTest, BoundPushConstantDrivesThePixels)
+MAYAFLUX_TEST_WITH(TEST_F, FormaBufferPresentationTest, BoundPushConstantDrivesThePixels, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     prepare(false);
     ASSERT_NE(root, nullptr);
@@ -1006,7 +1009,7 @@ protected:
     }
 };
 
-TEST_F(FormaTriangulatedBatchPresentationTest, MixedTopologySlicesDrawThroughOneMilledBatch)
+MAYAFLUX_TEST_WITH(TEST_F, FormaTriangulatedBatchPresentationTest, MixedTopologySlicesDrawThroughOneMilledBatch, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     prepare_batch();
     ASSERT_NE(root, nullptr);
@@ -1026,7 +1029,7 @@ TEST_F(FormaTriangulatedBatchPresentationTest, MixedTopologySlicesDrawThroughOne
     EXPECT_LT(right[0], 32U);
 }
 
-TEST_F(FormaTriangulatedBatchPresentationTest, HidingASliceRemovesOnlyItsPixelsAndShowingRestoresThem)
+MAYAFLUX_TEST_WITH(TEST_F, FormaTriangulatedBatchPresentationTest, HidingASliceRemovesOnlyItsPixelsAndShowingRestoresThem, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     prepare_batch();
     ASSERT_NE(root, nullptr);
@@ -1053,7 +1056,7 @@ TEST_F(FormaTriangulatedBatchPresentationTest, HidingASliceRemovesOnlyItsPixelsA
     EXPECT_GT(pixel_at(0.75F)[1], 200U);
 }
 
-TEST_F(FormaTriangulatedBatchPresentationTest, AStaticBatchIsMilledOnceHoweverManyFramesPresent)
+MAYAFLUX_TEST_WITH(TEST_F, FormaTriangulatedBatchPresentationTest, AStaticBatchIsMilledOnceHoweverManyFramesPresent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     prepare_batch();
     ASSERT_NE(root, nullptr);
@@ -1071,7 +1074,7 @@ TEST_F(FormaTriangulatedBatchPresentationTest, AStaticBatchIsMilledOnceHoweverMa
     EXPECT_GT(pixel_at(0.25F)[2], 200U);
 }
 
-TEST_F(FormaTriangulatedBatchPresentationTest, ASliceUpdateMillsAgainAndTheNewPixelsShow)
+MAYAFLUX_TEST_WITH(TEST_F, FormaTriangulatedBatchPresentationTest, ASliceUpdateMillsAgainAndTheNewPixelsShow, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     prepare_batch();
     ASSERT_NE(root, nullptr);
@@ -1089,7 +1092,7 @@ TEST_F(FormaTriangulatedBatchPresentationTest, ASliceUpdateMillsAgainAndTheNewPi
     EXPECT_LT(pixel_at(0.25F)[2], 32U);
 }
 
-TEST_F(FormaTriangulatedBatchPresentationTest, HidingAndShowingASliceMillsAgainAndSkippedFramesStayCorrect)
+MAYAFLUX_TEST_WITH(TEST_F, FormaTriangulatedBatchPresentationTest, HidingAndShowingASliceMillsAgainAndSkippedFramesStayCorrect, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     prepare_batch();
     ASSERT_NE(root, nullptr);
@@ -1110,7 +1113,7 @@ TEST_F(FormaTriangulatedBatchPresentationTest, HidingAndShowingASliceMillsAgainA
     EXPECT_GT(pixel_at(0.25F)[2], 200U);
 }
 
-TEST_F(FormaTriangulatedBatchPresentationTest, ANewMillSpecMillsAgain)
+MAYAFLUX_TEST_WITH(TEST_F, FormaTriangulatedBatchPresentationTest, ANewMillSpecMillsAgain, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     prepare_batch();
     ASSERT_NE(root, nullptr);
@@ -1129,7 +1132,7 @@ TEST_F(FormaTriangulatedBatchPresentationTest, ANewMillSpecMillsAgain)
     EXPECT_EQ(mill_passes(), settled + 1U);
 }
 
-TEST_F(FormaTriangulatedBatchPresentationTest, AViewFollowingBatchIsMilledEveryFrame)
+MAYAFLUX_TEST_WITH(TEST_F, FormaTriangulatedBatchPresentationTest, AViewFollowingBatchIsMilledEveryFrame, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     prepare_batch();
     ASSERT_NE(root, nullptr);
@@ -1144,7 +1147,7 @@ TEST_F(FormaTriangulatedBatchPresentationTest, AViewFollowingBatchIsMilledEveryF
     EXPECT_EQ(mill_passes(), settled + 3U);
 }
 
-TEST_F(FormaTriangulatedBatchPresentationTest, LineFillDrawsTheEdgesOfATriangleBatchAndLeavesTheInteriorEmpty)
+MAYAFLUX_TEST_WITH(TEST_F, FormaTriangulatedBatchPresentationTest, LineFillDrawsTheEdgesOfATriangleBatchAndLeavesTheInteriorEmpty, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     prepare_batch(Portal::Graphics::PolygonMode::LINE);
     ASSERT_NE(root, nullptr);

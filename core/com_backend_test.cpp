@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #if defined(MAYAFLUX_PLATFORM_WINDOWS)
 
@@ -9,6 +10,8 @@
 #include <windows.h>
 
 #include "MayaFlux/Core/Backends/System/COMBackend.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::desktop_dialog, ::MayaFlux::Test::Meta::Capability::display>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -131,7 +134,7 @@ namespace {
         backend.shutdown();
     }
 
-    TEST_P(ComDialogTest, UninitializedBackendReportsBackendErrorSynchronously)
+    MAYAFLUX_TEST_WITH(TEST_P, ComDialogTest, UninitializedBackendReportsBackendErrorSynchronously, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         Core::COMBackend backend;
         auto outcome = std::make_shared<DialogOutcome>();

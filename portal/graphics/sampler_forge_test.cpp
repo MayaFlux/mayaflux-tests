@@ -1,10 +1,13 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <string_view>
 
 #include "../../support/vulkan_test_support.hpp"
 
 #include "MayaFlux/Portal/Graphics/SamplerForge.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -200,7 +203,7 @@ namespace {
 
     class SamplerConfigEqualityTest : public ::testing::TestWithParam<FieldCase> { };
 
-    TEST_P(SamplerConfigEqualityTest, ChangingOneFieldMakesTheConfigsUnequal)
+    MAYAFLUX_TEST_WITH(TEST_P, SamplerConfigEqualityTest, ChangingOneFieldMakesTheConfigsUnequal, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const SamplerConfig baseline;
         SamplerConfig changed;
@@ -213,7 +216,7 @@ namespace {
         ::testing::ValuesIn(field_cases()),
         [](const ::testing::TestParamInfo<FieldCase>& info) { return std::string(info.param.name); });
 
-    TEST(SamplerPresetsTest, FilterPresetsSetTheirFiltersAndClampEveryAxis)
+    MAYAFLUX_TEST_WITH(TEST, SamplerPresetsTest, FilterPresetsSetTheirFiltersAndClampEveryAxis, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         namespace P = Portal::Graphics::SamplerPresets;
 
@@ -232,7 +235,7 @@ namespace {
         EXPECT_EQ(P::minify_nearest().min_filter, FilterMode::NEAREST);
     }
 
-    TEST(SamplerPresetsTest, AddressingPresetsSetEveryAxisAndTakeTheFilter)
+    MAYAFLUX_TEST_WITH(TEST, SamplerPresetsTest, AddressingPresetsSetEveryAxisAndTakeTheFilter, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         namespace P = Portal::Graphics::SamplerPresets;
 
@@ -245,7 +248,7 @@ namespace {
         EXPECT_EQ(P::mirrored(FilterMode::NEAREST).mag_filter, FilterMode::NEAREST);
     }
 
-    TEST(SamplerPresetsTest, ABorderedPresetClampsToTheBorderWithItsColour)
+    MAYAFLUX_TEST_WITH(TEST, SamplerPresetsTest, ABorderedPresetClampsToTheBorderWithItsColour, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         namespace P = Portal::Graphics::SamplerPresets;
 
@@ -259,7 +262,7 @@ namespace {
         }
     }
 
-    TEST(SamplerPresetsTest, AxesSetsEachAxisOnItsOwn)
+    MAYAFLUX_TEST_WITH(TEST, SamplerPresetsTest, AxesSetsEachAxisOnItsOwn, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         namespace P = Portal::Graphics::SamplerPresets;
 
@@ -272,7 +275,7 @@ namespace {
         EXPECT_EQ(P::axes(AddressMode::REPEAT, AddressMode::REPEAT).address_mode_w, AddressMode::CLAMP_TO_EDGE);
     }
 
-    TEST(SamplerPresetsTest, TheDepthPresetRepeatsOnlyTheDepthAxis)
+    MAYAFLUX_TEST_WITH(TEST, SamplerPresetsTest, TheDepthPresetRepeatsOnlyTheDepthAxis, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         namespace P = Portal::Graphics::SamplerPresets;
 
@@ -283,7 +286,7 @@ namespace {
         EXPECT_EQ(config.address_mode_w, AddressMode::REPEAT);
     }
 
-    TEST(SamplerPresetsTest, ObliqueClampsAnisotropyIntoOneToSixteen)
+    MAYAFLUX_TEST_WITH(TEST, SamplerPresetsTest, ObliqueClampsAnisotropyIntoOneToSixteen, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         namespace P = Portal::Graphics::SamplerPresets;
 
@@ -293,7 +296,7 @@ namespace {
         EXPECT_EQ(P::oblique(64.0F).max_anisotropy, 16.0F);
     }
 
-    TEST(SamplerPresetsTest, EveryNamedPresetIsADifferentConfig)
+    MAYAFLUX_TEST_WITH(TEST, SamplerPresetsTest, EveryNamedPresetIsADifferentConfig, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         namespace P = Portal::Graphics::SamplerPresets;
         const std::vector<SamplerConfig> all {
@@ -332,7 +335,7 @@ namespace {
         EXPECT_EQ(forge().get_sampler_count(), all.size());
     }
 
-    TEST(SamplerConfigValueTest, SeparatelyBuiltConfigsWithTheSameValuesAreEqual)
+    MAYAFLUX_TEST_WITH(TEST, SamplerConfigValueTest, SeparatelyBuiltConfigsWithTheSameValuesAreEqual, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto build = [] {
             SamplerConfig config;
@@ -468,7 +471,7 @@ namespace {
 
     class SamplerForgeAddressTest : public SamplerForgeTest, public ::testing::WithParamInterface<AddressCase> { };
 
-    TEST_P(SamplerForgeAddressTest, EveryAddressModeCreatesASampler)
+    MAYAFLUX_TEST_WITH(TEST_P, SamplerForgeAddressTest, EveryAddressModeCreatesASampler, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ASSERT_TRUE(forge().initialize(backend()));
         SamplerConfig config;
@@ -495,7 +498,7 @@ namespace {
 
     class SamplerForgeBorderTest : public SamplerForgeTest, public ::testing::WithParamInterface<BorderCase> { };
 
-    TEST_P(SamplerForgeBorderTest, EveryBorderColorCreatesAClampToBorderSampler)
+    MAYAFLUX_TEST_WITH(TEST_P, SamplerForgeBorderTest, EveryBorderColorCreatesAClampToBorderSampler, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ASSERT_TRUE(forge().initialize(backend()));
         SamplerConfig config;
@@ -523,7 +526,7 @@ namespace {
 
     class SamplerForgeFilterTest : public SamplerForgeTest, public ::testing::WithParamInterface<FilterCase> { };
 
-    TEST_P(SamplerForgeFilterTest, EachFilterCreatesASamplerWithAndWithoutMipmaps)
+    MAYAFLUX_TEST_WITH(TEST_P, SamplerForgeFilterTest, EachFilterCreatesASamplerWithAndWithoutMipmaps, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ASSERT_TRUE(forge().initialize(backend()));
         SamplerConfig config;

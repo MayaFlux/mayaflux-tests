@@ -1,9 +1,12 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Kinesis/Discrete/Kernels.hpp"
 #include "MayaFlux/Kinesis/Tendency/Tendency.hpp"
 #include "MayaFlux/Kinesis/Tendency/TendencyFactories.hpp"
 #include "MayaFlux/Kinesis/Tendency/TimeMap.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 

@@ -1,8 +1,11 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Kinesis/Discrete/Coefficients.hpp"
 #include "MayaFlux/Kinesis/Discrete/Kernels.hpp"
 #include "MayaFlux/Nodes/Generators/Polynomial.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 

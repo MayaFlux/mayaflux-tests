@@ -1,8 +1,11 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 
 #include "MayaFlux/MayaFlux.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 
 namespace MayaFlux::Test {
 namespace {

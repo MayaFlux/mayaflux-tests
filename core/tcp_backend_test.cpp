@@ -1,9 +1,12 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include <chrono>
 #include <string_view>
 
 #include "MayaFlux/Core/Backends/Network/TCPBackend.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::loopback_tcp>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -187,7 +190,7 @@ namespace {
     // Lifecycle
     // ------------------------------------------------------------------
 
-    TEST(TCPBackendTest, ReportsIdentity)
+    MAYAFLUX_TEST_WITH(TEST, TCPBackendTest, ReportsIdentity, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         TcpRig rig;
 
@@ -198,7 +201,7 @@ namespace {
         EXPECT_FALSE(rig.backend.is_running());
     }
 
-    TEST(TCPBackendTest, LifecycleCallsAreIdempotent)
+    MAYAFLUX_TEST_WITH(TEST, TCPBackendTest, LifecycleCallsAreIdempotent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         TcpRig rig;
 

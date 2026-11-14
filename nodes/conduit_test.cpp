@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Nodes/Conduit/Constant.hpp"
 #include "MayaFlux/Nodes/Conduit/NodeChain.hpp"
@@ -6,6 +7,8 @@
 #include "MayaFlux/Nodes/Conduit/StreamReaderNode.hpp"
 #include "MayaFlux/Nodes/Generators/Sine.hpp"
 #include "MayaFlux/Nodes/NodeGraphManager.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {

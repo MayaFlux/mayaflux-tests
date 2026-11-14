@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <random>
 
@@ -7,6 +8,8 @@
 #include "MayaFlux/Kinesis/Discrete/Analysis.hpp"
 #include "MayaFlux/Kinesis/Stochastic/Estimate.hpp"
 #include "MayaFlux/Yantra/Executors/Audio/LaggedPair.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {

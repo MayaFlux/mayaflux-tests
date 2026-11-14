@@ -1,10 +1,13 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "../../support/gpu_dispatch_test_support.hpp"
 
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/AudioCompute/AudioContextProcessor.hpp"
 #include "MayaFlux/Yantra/Executors/WordPairExecutionContext.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -116,7 +119,7 @@ void main() {
     using HardwareOptions = ::testing::Types<GpuDispatchFixture<true>, GpuDispatchFixture<false>>;
     TYPED_TEST_SUITE(AudioContextProcessorGpuTest, HardwareOptions);
 
-    TEST(AudioContextProcessorTest, ANullFactoryIsRejected)
+    MAYAFLUX_TEST_WITH(TEST, AudioContextProcessorTest, ANullFactoryIsRejected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_THROW(AudioContextProcessor(AudioContextProcessor::ContextFactory {}), std::invalid_argument);
     }

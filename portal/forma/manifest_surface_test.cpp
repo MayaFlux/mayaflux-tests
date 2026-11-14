@@ -1,4 +1,5 @@
 #include "../../support/forma_manifest_support.hpp"
+#include "../../support/test_metadata.hpp"
 #include "../../support/forma_rig.hpp"
 
 #include <fstream>
@@ -7,6 +8,8 @@
 #include "MayaFlux/IO/Composite/XmlRecordAccess.hpp"
 #include "MayaFlux/Portal/Forma/Manifest/Instantiate.hpp"
 #include "MayaFlux/Portal/Forma/Manifest/StaticGeometry.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 
@@ -127,7 +130,7 @@ protected:
 // A document from a file
 // =============================================================================
 
-TEST_F(FormaManifestSurfaceTest, PlacesADocumentLoadedFromXmlOntoTheBoundSurface)
+MAYAFLUX_TEST_WITH(TEST_F, FormaManifestSurfaceTest, PlacesADocumentLoadedFromXmlOntoTheBoundSurface, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 {
     const auto loaded = load_xml("places", R"(<?xml version="1.0" encoding="UTF-8"?>
 <forma version="1">
@@ -173,7 +176,7 @@ TEST_F(FormaManifestSurfaceTest, PlacesADocumentLoadedFromXmlOntoTheBoundSurface
     EXPECT_EQ(surfaces.at("main").layer().find("right"), elements[1].id);
 }
 
-TEST_F(FormaManifestSurfaceTest, AnXmlErrorCarriesTheRowOfTheElement)
+MAYAFLUX_TEST_WITH(TEST_F, FormaManifestSurfaceTest, AnXmlErrorCarriesTheRowOfTheElement, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 {
     const auto loaded = load_xml("rowed", R"(<?xml version="1.0" encoding="UTF-8"?>
 <forma version="1">

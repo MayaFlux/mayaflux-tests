@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 
 #include "../../support/vulkan_test_support.hpp"
@@ -8,6 +9,8 @@
 #include "MayaFlux/Portal/Graphics/PrimitiveMill.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -119,7 +122,7 @@ namespace {
 
     class TriangleVertexCountTest : public ::testing::TestWithParam<CountCase> { };
 
-    TEST_P(TriangleVertexCountTest, MatchesTheClosedForm)
+    MAYAFLUX_TEST_WITH(TEST_P, TriangleVertexCountTest, MatchesTheClosedForm, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(Portal::Graphics::triangle_vertex_count(GetParam().topology, GetParam().vertices), GetParam().expected);
     }
@@ -140,7 +143,7 @@ namespace {
             CountCase { "TriangleFanTriangles", PrimitiveTopology::TRIANGLE_FAN, 6, 12 }),
         [](const ::testing::TestParamInfo<CountCase>& info) { return std::string(info.param.name); });
 
-    TEST(PrimitiveMillTest, MilledVertexCountSumsEveryRun)
+    MAYAFLUX_TEST_WITH(TEST, PrimitiveMillTest, MilledVertexCountSumsEveryRun, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<DrawRun> runs {
             { PrimitiveTopology::POINT_LIST, 0, 2 },
@@ -156,7 +159,7 @@ namespace {
     // Host path
     // ------------------------------------------------------------------
 
-    TEST(MillOnHostTest, UnmillableLayoutsProduceNothing)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, UnmillableLayoutsProduceNothing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2) });
         const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } };
@@ -176,7 +179,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, NoRunsOrNothingToMillProducesNothing)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, NoRunsOrNothingToMillProducesNothing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1) });
         std::vector<uint8_t> dst;
@@ -186,7 +189,7 @@ namespace {
         EXPECT_EQ(Portal::Graphics::mill_on_host(src, vertex_layout(2), too_short, plane_spec(), {}, dst).vertex_count, 0U);
     }
 
-    TEST(MillOnHostTest, TriangleListIsCopiedBitForBitAndTheResultKeepsTheLayout)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, TriangleListIsCopiedBitForBitAndTheResultKeepsTheLayout, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<Vertex> source { vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2) };
         const auto src = bytes_of(source);
@@ -201,7 +204,7 @@ namespace {
         EXPECT_EQ(dst, src);
     }
 
-    TEST(MillOnHostTest, TriangleStripFlipsEveryOtherTriangle)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, TriangleStripFlipsEveryOtherTriangle, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) });
         const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4 } };
@@ -216,7 +219,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, TriangleFanSharesTheFirstVertex)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, TriangleFanSharesTheFirstVertex, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(1, 1, 2), vertex(0, 1, 3) });
         const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_FAN, 0, 4 } };
@@ -231,7 +234,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, APointBecomesAQuadAroundItWithTheSourceVertexCopiedToEveryCorner)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, APointBecomesAQuadAroundItWithTheSourceVertexCopiedToEveryCorner, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(5, 5, 7) });
         const std::vector<DrawRun> runs { { PrimitiveTopology::POINT_LIST, 0, 1 } };
@@ -249,7 +252,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, ALineSegmentBecomesARibbonWithUvsAlongItsLength)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, ALineSegmentBecomesARibbonWithUvsAlongItsLength, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(2, 0, 1) });
         const std::vector<DrawRun> runs { { PrimitiveTopology::LINE_LIST, 0, 2 } };
@@ -272,7 +275,7 @@ namespace {
         EXPECT_EQ(at(dst, 5).color[0], 1.0F);
     }
 
-    TEST(MillOnHostTest, TurningOffUvSynthesisKeepsTheSourceUv)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, TurningOffUvSynthesisKeepsTheSourceUv, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto spec = plane_spec();
         spec.synthesize_uv = false;
@@ -288,7 +291,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, AZeroLengthSegmentCollapsesToItsStartAndCopiesNoAttributes)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, AZeroLengthSegmentCollapsesToItsStartAndCopiesNoAttributes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(3, 3, 9), vertex(3, 3, 9) });
         const std::vector<DrawRun> runs { { PrimitiveTopology::LINE_LIST, 0, 2 } };
@@ -303,7 +306,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, RunsAreMilledInOrderFromTheirOwnOffsets)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, RunsAreMilledInOrderFromTheirOwnOffsets, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(8, 8, 3) });
         const std::vector<DrawRun> runs {
@@ -332,7 +335,7 @@ namespace {
 
     class ModalityFormatTest : public ::testing::TestWithParam<FormatCase> { };
 
-    TEST_P(ModalityFormatTest, MapsToItsVertexFormat)
+    MAYAFLUX_TEST_WITH(TEST_P, ModalityFormatTest, MapsToItsVertexFormat, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(VertexLayoutTranslator::modality_to_vk_format(GetParam().modality), GetParam().format);
     }
@@ -350,7 +353,7 @@ namespace {
             FormatCase { "Scalar", DataModality::SCALAR_F32, vk::Format::eR32Sfloat }),
         [](const ::testing::TestParamInfo<FormatCase>& info) { return std::string(info.param.name); });
 
-    TEST(VertexLayoutTranslatorTest, TranslateGivesOneBindingAndOneAttributePerAttributeInOrder)
+    MAYAFLUX_TEST_WITH(TEST, VertexLayoutTranslatorTest, TranslateGivesOneBindingAndOneAttributePerAttributeInOrder, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto [bindings, attributes] = VertexLayoutTranslator::translate_layout(vertex_layout(4), 2);
 
@@ -370,7 +373,7 @@ namespace {
         }
     }
 
-    TEST(VertexLayoutTranslatorTest, EmptyAttributesOrZeroStrideTranslateToNothing)
+    MAYAFLUX_TEST_WITH(TEST, VertexLayoutTranslatorTest, EmptyAttributesOrZeroStrideTranslateToNothing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         VertexLayout empty;
         empty.stride_bytes = 12;
@@ -382,7 +385,7 @@ namespace {
         EXPECT_TRUE(VertexLayoutTranslator::translate_layout(zero_stride).second.empty());
     }
 
-    TEST(VertexLayoutTranslatorTest, ModalitySizesMatchTheirFormats)
+    MAYAFLUX_TEST_WITH(TEST, VertexLayoutTranslatorTest, ModalitySizesMatchTheirFormats, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(VertexLayoutTranslator::get_modality_size_bytes(DataModality::VERTEX_POSITIONS_3D), 12U);
         EXPECT_EQ(VertexLayoutTranslator::get_modality_size_bytes(DataModality::VERTEX_COLORS_RGB), 12U);
@@ -393,7 +396,7 @@ namespace {
         EXPECT_EQ(VertexLayoutTranslator::get_modality_size_bytes(DataModality::VERTICES_3D), 68U);
     }
 
-    TEST(VertexLayoutTranslatorTest, DescriptionsNameTheAttributeShape)
+    MAYAFLUX_TEST_WITH(TEST, VertexLayoutTranslatorTest, DescriptionsNameTheAttributeShape, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(VertexLayoutTranslator::describe_modality(DataModality::VERTEX_POSITIONS_3D), "vec3 (positions)");
         EXPECT_EQ(VertexLayoutTranslator::describe_modality(DataModality::TEXTURE_COORDS_2D), "vec2 (UV)");
@@ -406,7 +409,7 @@ namespace {
     // Fill emulation and indexed spans, host path
     // ------------------------------------------------------------------
 
-    TEST(PrimitiveMillTest, PointFillCountsSixMilledVerticesPerSourceVertex)
+    MAYAFLUX_TEST_WITH(TEST, PrimitiveMillTest, PointFillCountsSixMilledVerticesPerSourceVertex, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         using Portal::Graphics::triangle_vertex_count;
 
@@ -418,7 +421,7 @@ namespace {
         EXPECT_EQ(triangle_vertex_count(PrimitiveTopology::LINE_LIST, 4, PolygonMode::POINT), 24U);
     }
 
-    TEST(PrimitiveMillTest, MilledVertexCountHonoursEachRunsFill)
+    MAYAFLUX_TEST_WITH(TEST, PrimitiveMillTest, MilledVertexCountHonoursEachRunsFill, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<DrawRun> runs {
             { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::POINT },
@@ -429,7 +432,7 @@ namespace {
         EXPECT_EQ(PrimitiveMill::milled_vertex_count(runs), 18U + 3U + 3U);
     }
 
-    TEST(MillOnHostTest, TriangleListsFetchTheirVerticesThroughTheIndices)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, TriangleListsFetchTheirVerticesThroughTheIndices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) });
         const std::vector<uint32_t> indices { 3, 0, 2, 1, 2, 3 };
@@ -445,7 +448,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, StripsAndFansWalkTheIndicesNotTheVertices)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, StripsAndFansWalkTheIndicesNotTheVertices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) });
         const std::vector<uint32_t> indices { 3, 2, 1, 0 };
@@ -468,7 +471,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, PointFillDrawsEveryVertexOfATriangleSpanAsAQuad)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, PointFillDrawsEveryVertexOfATriangleSpanAsAQuad, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) });
         const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::POINT } };
@@ -484,7 +487,7 @@ namespace {
         EXPECT_EQ(at(dst, 12).color[0], 2.0F);
     }
 
-    TEST(MillOnHostTest, PointFillOnAnIndexedSpanQuadsTheIndexedVertices)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, PointFillOnAnIndexedSpanQuadsTheIndexedVertices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) });
         const std::vector<uint32_t> indices { 2, 2, 0 };
@@ -499,7 +502,7 @@ namespace {
         EXPECT_EQ(at(dst, 12).color[0], 0.0F);
     }
 
-    TEST(MillOnHostTest, LineFillKeepsTheTrianglesAndMarksEachCornerWithItsBarycentricWeights)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, LineFillKeepsTheTrianglesAndMarksEachCornerWithItsBarycentricWeights, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<Vertex> source { vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) };
         const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::LINE } };
@@ -518,7 +521,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, LineFillOnALayoutWithoutUvsLeavesTheTrianglesUntouched)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, LineFillOnALayoutWithoutUvsLeavesTheTrianglesUntouched, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) });
         auto layout = vertex_layout(3);
@@ -531,7 +534,7 @@ namespace {
         EXPECT_EQ(dst, src);
     }
 
-    TEST(MillOnHostTest, LineFillKeepsTheRibbonGeometryOfLineSpansAndOnlyMarksTheUv)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, LineFillKeepsTheRibbonGeometryOfLineSpansAndOnlyMarksTheUv, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(2, 0, 1) });
         std::vector<uint8_t> plain;
@@ -980,7 +983,7 @@ namespace {
                                              << y << ", " << z << ", " << w << ")";
     }
 
-    TEST(MillOnHostTest, LineRibbonInLineFillCarriesTheWireMarkerPerTriangle)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, LineRibbonInLineFillCarriesTheWireMarkerPerTriangle, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(4, 0, 1) });
         std::vector<uint8_t> dst;
@@ -994,7 +997,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, LineRibbonInFillKeepsItsRibbonUv)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, LineRibbonInFillKeepsItsRibbonUv, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(4, 0, 1) });
         std::vector<uint8_t> dst;
@@ -1007,7 +1010,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, LineRunInPointFillBecomesOnePointQuadPerVertex)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, LineRunInPointFillBecomesOnePointQuadPerVertex, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = bytes_of({ vertex(0, 0, 0), vertex(4, 0, 1) });
         std::vector<uint8_t> dst;
@@ -1022,7 +1025,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, BillboardPointKeepsTheCenterAndStoresTheCornerOffsetInTheTangent)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, BillboardPointKeepsTheCenterAndStoresTheCornerOffsetInTheTangent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = tangent_bytes({ { 3.0F, 2.0F, 0.0F } });
         std::vector<uint8_t> dst;
@@ -1044,7 +1047,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, BillboardRibbonKeepsItsEndpointsAndStoresDirectionAndSignedHalfWidth)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, BillboardRibbonKeepsItsEndpointsAndStoresDirectionAndSignedHalfWidth, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = tangent_bytes({ { 0.0F, 0.0F, 0.0F }, { 4.0F, 0.0F, 0.0F } });
         std::vector<uint8_t> dst;
@@ -1062,7 +1065,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, BillboardDegenerateRibbonSegmentClearsTheTangent)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, BillboardDegenerateRibbonSegmentClearsTheTangent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = tangent_bytes({ { 1.0F, 1.0F, 0.0F }, { 1.0F, 1.0F, 0.0F } });
         std::vector<uint8_t> dst;
@@ -1073,7 +1076,7 @@ namespace {
             EXPECT_TRUE(tangent_is(tangent_at(dst, i), 0.0F, 0.0F, 0.0F, 0.0F)) << "vertex " << i;
     }
 
-    TEST(MillOnHostTest, BillboardLeavesTrianglePassthroughTangentsAlone)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, BillboardLeavesTrianglePassthroughTangentsAlone, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto src = tangent_bytes({ { 0.0F, 0.0F, 0.0F }, { 4.0F, 0.0F, 0.0F }, { 0.0F, 4.0F, 0.0F } });
         std::vector<uint8_t> dst;
@@ -1089,7 +1092,7 @@ namespace {
         }
     }
 
-    TEST(MillOnHostTest, WithoutTheBillboardFlagPointQuadsAreExpandedAndTheTangentIsKept)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, WithoutTheBillboardFlagPointQuadsAreExpandedAndTheTangentIsKept, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto spec = billboard_spec();
         spec.billboard_instances = false;
@@ -1107,7 +1110,7 @@ namespace {
             k_source_tangent[2], k_source_tangent[3]));
     }
 
-    TEST(MillOnHostTest, WorldPlaneIgnoresTheBillboardFlag)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, WorldPlaneIgnoresTheBillboardFlag, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto spec = billboard_spec();
         spec.ribbon = MillSpec::Ribbon::WorldPlane;
@@ -1121,7 +1124,7 @@ namespace {
             k_source_tangent[2], k_source_tangent[3]));
     }
 
-    TEST(MillOnHostTest, BillboardOnALayoutWithoutATangentFallsBackToExpandedGeometry)
+    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, BillboardOnALayoutWithoutATangentFallsBackToExpandedGeometry, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto spec = billboard_spec();
         spec.ribbon = MillSpec::Ribbon::WorldFacing;

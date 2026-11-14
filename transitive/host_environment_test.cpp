@@ -1,9 +1,12 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "../support/scoped_env.hpp"
 #include "MayaFlux/Transitive/Platform/HostEnvironment.hpp"
 
 #include <fstream>
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -73,7 +76,7 @@ namespace {
         EXPECT_EQ(MayaFlux::Config::project_root(), previous);
     }
 
-    TEST(HostEnvironmentTest, SafeGetenvReadsValuesAndTreatsUnsetVariablesAsEmpty)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, SafeGetenvReadsValuesAndTreatsUnsetVariablesAsEmpty, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         constexpr char variable[] = "MAYAFLUX_HOST_ENVIRONMENT_TEST_VALUE";
         MayaFlux::Test::ScopedEnv set_value(variable, "fixture-value");
@@ -83,7 +86,7 @@ namespace {
         EXPECT_TRUE(MayaFlux::Platform::safe_getenv(variable).empty());
     }
 
-    TEST(HostEnvironmentTest, ExecCommandCapturesStdoutAndTrimOutputNormalizesIt)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, ExecCommandCapturesStdoutAndTrimOutputNormalizesIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::process_exec>() }))
     {
 #if defined(MAYAFLUX_PLATFORM_WINDOWS)
         auto output = MayaFlux::Platform::exec_command("cmd /c echo FixtureOutput");
@@ -100,7 +103,7 @@ namespace {
         EXPECT_TRUE(whitespace.empty());
     }
 
-    TEST(HostEnvironmentTest, HostDiscoveryUsesPlatformPathsAndTransientCpath)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, HostDiscoveryUsesPlatformPathsAndTransientCpath, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::host_toolchain, ::MayaFlux::Test::Meta::Capability::process_exec, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         static FixtureTree fixture;
         const auto include_root = fixture.root() / "temporary-include-root";
@@ -156,7 +159,7 @@ namespace {
         }
     }
 
-    TEST(HostEnvironmentTest, MagicEnumIncludeDiscoveryFindsTheVendoredSourceHeader)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, MagicEnumIncludeDiscoveryFindsTheVendoredSourceHeader, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets>() }))
     {
         const auto& resolved = MayaFlux::Platform::SystemConfig::get_dep_includes("magic_enum");
 
@@ -164,7 +167,7 @@ namespace {
         EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(resolved) / "magic_enum.hpp"));
     }
 
-    TEST(HostEnvironmentTest, DependencyIncludeHintsOnlyReturnExistingDirectories)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyIncludeHintsOnlyReturnExistingDirectories, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         for (const auto* name : { "Eigen", "freetype2" }) {
             const auto& include = MayaFlux::Platform::SystemConfig::get_dep_includes(name);
@@ -174,7 +177,7 @@ namespace {
         }
     }
 
-    TEST(HostEnvironmentTest, DependencyLibrarySearchChecksAllPrefixLibraryDirectories)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyLibrarySearchChecksAllPrefixLibraryDirectories, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         for (const auto* subdirectory : { "lib", "lib64", "bin" }) {
             FixtureTree fixture;
@@ -187,7 +190,7 @@ namespace {
         }
     }
 
-    TEST(HostEnvironmentTest, DependencyLibrarySearchReturnsEmptyForMissingLibraries)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyLibrarySearchReturnsEmptyForMissingLibraries, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         FixtureTree fixture;
         const auto name = unique_library_name();
@@ -201,7 +204,7 @@ namespace {
         EXPECT_EQ(MayaFlux::Platform::PathSeparator, '\\');
     }
 
-    TEST(HostEnvironmentTest, WindowsLibrarySearchDoesNotDuplicateDllExtension)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, WindowsLibrarySearchDoesNotDuplicateDllExtension, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         FixtureTree fixture;
         const auto name = unique_library_name() + ".dll";
@@ -211,14 +214,14 @@ namespace {
         EXPECT_EQ(std::filesystem::path(resolved), expected);
     }
 
-    TEST(HostEnvironmentTest, WindowsExecCommandMergesStderrWhenRedirected)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, WindowsExecCommandMergesStderrWhenRedirected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::process_exec>() }))
     {
         const auto output = MayaFlux::Platform::exec_command(
             "cmd /c \"echo FixtureError 1>&2\" 2>&1");
         EXPECT_NE(output.find("FixtureError"), std::string::npos);
     }
 
-    TEST(HostEnvironmentTest, WindowsSdkDiscoveryOnlyReturnsExistingDirectories)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, WindowsSdkDiscoveryOnlyReturnsExistingDirectories, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto& includes = MayaFlux::Platform::SystemConfig::get_system_includes();
         const auto& libraries = MayaFlux::Platform::SystemConfig::get_system_libraries();
@@ -231,7 +234,7 @@ namespace {
         }
     }
 
-    TEST(HostEnvironmentTest, WindowsSdkDiscoveryIgnoresNonexistentSdkDirectory)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, WindowsSdkDiscoveryIgnoresNonexistentSdkDirectory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         static FixtureTree fixture;
         const auto missing_root = fixture.root() / "missing-windows-sdk";
@@ -250,7 +253,7 @@ namespace {
         }
     }
 
-    TEST(HostEnvironmentTest, WindowsMsvcDiscoveryProvidesToolchainHeadersAndLibraries)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, WindowsMsvcDiscoveryProvidesToolchainHeadersAndLibraries, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::host_toolchain, ::MayaFlux::Test::Meta::Capability::process_exec>() }))
     {
         const auto& includes = MayaFlux::Platform::SystemConfig::get_system_includes();
         const auto& libraries = MayaFlux::Platform::SystemConfig::get_system_libraries();
@@ -275,7 +278,7 @@ namespace {
         EXPECT_EQ(MayaFlux::Platform::PathSeparator, '/');
     }
 
-    TEST(HostEnvironmentTest, LinuxLibrarySearchAddsLibPrefixAndSoExtension)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, LinuxLibrarySearchAddsLibPrefixAndSoExtension, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         FixtureTree fixture;
         const auto name = unique_library_name();
@@ -285,7 +288,7 @@ namespace {
         EXPECT_EQ(std::filesystem::path(resolved), expected);
     }
 
-    TEST(HostEnvironmentTest, LinuxLibrarySearchDoesNotDuplicateSoExtension)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, LinuxLibrarySearchDoesNotDuplicateSoExtension, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         FixtureTree fixture;
         const auto name = unique_library_name() + ".so";
@@ -295,7 +298,7 @@ namespace {
         EXPECT_EQ(std::filesystem::path(resolved), expected);
     }
 
-    TEST(HostEnvironmentTest, LinuxLibrarySearchPreservesArchiveExtension)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, LinuxLibrarySearchPreservesArchiveExtension, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         FixtureTree fixture;
         const auto name = unique_library_name() + ".a";
@@ -305,14 +308,14 @@ namespace {
         EXPECT_EQ(std::filesystem::path(resolved), expected);
     }
 
-    TEST(HostEnvironmentTest, LinuxExecCommandMergesStderrWhenRedirected)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, LinuxExecCommandMergesStderrWhenRedirected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::process_exec>() }))
     {
         const auto output = MayaFlux::Platform::exec_command(
             "sh -c 'echo FixtureError >&2' 2>&1");
         EXPECT_NE(output.find("FixtureError"), std::string::npos);
     }
 
-    TEST(HostEnvironmentTest, LinuxLibraryDiscoveryOnlyReturnsExistingPaths)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, LinuxLibraryDiscoveryOnlyReturnsExistingPaths, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto& libraries = MayaFlux::Platform::SystemConfig::get_system_libraries();
 
@@ -328,7 +331,7 @@ namespace {
         EXPECT_EQ(MayaFlux::Platform::PathSeparator, '/');
     }
 
-    TEST(HostEnvironmentTest, MacLibrarySearchAddsLibPrefixAndDylibExtension)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, MacLibrarySearchAddsLibPrefixAndDylibExtension, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         FixtureTree fixture;
         const auto name = unique_library_name();
@@ -338,7 +341,7 @@ namespace {
         EXPECT_EQ(std::filesystem::path(resolved), expected);
     }
 
-    TEST(HostEnvironmentTest, MacLibrarySearchDoesNotDuplicateDylibExtension)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, MacLibrarySearchDoesNotDuplicateDylibExtension, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         FixtureTree fixture;
         const auto name = unique_library_name() + ".dylib";
@@ -348,7 +351,7 @@ namespace {
         EXPECT_EQ(std::filesystem::path(resolved), expected);
     }
 
-    TEST(HostEnvironmentTest, MacLibrarySearchPreservesLibPrefixedFilename)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, MacLibrarySearchPreservesLibPrefixedFilename, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         FixtureTree fixture;
         const auto name = "lib" + unique_library_name() + ".dylib";
@@ -358,14 +361,14 @@ namespace {
         EXPECT_EQ(std::filesystem::path(resolved), expected);
     }
 
-    TEST(HostEnvironmentTest, MacExecCommandMergesStderrWhenRedirected)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, MacExecCommandMergesStderrWhenRedirected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::process_exec>() }))
     {
         const auto output = MayaFlux::Platform::exec_command(
             "sh -c 'echo FixtureError >&2' 2>&1");
         EXPECT_NE(output.find("FixtureError"), std::string::npos);
     }
 
-    TEST(HostEnvironmentTest, MacLibraryDiscoveryOnlyReturnsExistingPaths)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, MacLibraryDiscoveryOnlyReturnsExistingPaths, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto& libraries = MayaFlux::Platform::SystemConfig::get_system_libraries();
 
@@ -374,7 +377,7 @@ namespace {
         }
     }
 
-    TEST(HostEnvironmentTest, MacHomebrewPathsAreIncludedWhenPresent)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, MacHomebrewPathsAreIncludedWhenPresent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::homebrew_paths>() }))
     {
         const std::filesystem::path homebrew_include = "/opt/homebrew/include";
         const std::filesystem::path homebrew_library = "/opt/homebrew/lib";
@@ -393,7 +396,7 @@ namespace {
         }
     }
 
-    TEST(HostEnvironmentTest, MacSdkDiscoveryReturnsAValidSdkAndFeedsSystemIncludes)
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, MacSdkDiscoveryReturnsAValidSdkAndFeedsSystemIncludes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::host_toolchain, ::MayaFlux::Test::Meta::Capability::process_exec>() }))
     {
         const auto sdk = MayaFlux::Platform::SystemConfig::get_macos_sdk_path();
         const auto includes = MayaFlux::Platform::SystemConfig::get_system_includes();

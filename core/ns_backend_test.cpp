@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #if defined(MAYAFLUX_PLATFORM_MACOS)
 
@@ -12,6 +13,8 @@
 
 #include "../support/cocoa_event_injector.hpp"
 #include "../support/cocoa_panel_driver.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::desktop_dialog, ::MayaFlux::Test::Meta::Capability::display>() }))
 
 #define REQUIRE_DISPLAY()                                                      \
     do {                                                                       \
@@ -156,7 +159,7 @@ namespace {
         backend.shutdown();
     }
 
-    TEST_P(NsDialogTest, UninitializedBackendReportsBackendErrorSynchronously)
+    MAYAFLUX_TEST_WITH(TEST_P, NsDialogTest, UninitializedBackendReportsBackendErrorSynchronously, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         Core::NSBackend backend;
         auto outcome = std::make_shared<DialogOutcome>();
@@ -333,7 +336,7 @@ namespace {
         ::testing::ValuesIn(filter_cases()),
         [](const ::testing::TestParamInfo<FilterCase>& info) { return info.param.name; });
 
-    TEST(NsBackendTest, OpenPanelSelectsSingleFilesOnly)
+    MAYAFLUX_TEST_WITH(TEST, NsBackendTest, OpenPanelSelectsSingleFilesOnly, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::desktop_dialog, ::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         REQUIRE_DISPLAY();
         Core::NSBackend backend;
@@ -351,7 +354,7 @@ namespace {
         backend.shutdown();
     }
 
-    TEST_P(NsDialogTest, PanelOpensInRequestedStartDirectory)
+    MAYAFLUX_TEST_WITH(TEST_P, NsDialogTest, PanelOpensInRequestedStartDirectory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::desktop_dialog, ::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         REQUIRE_DISPLAY();
         const ScratchDirectory scratch;
@@ -386,7 +389,7 @@ namespace {
         backend.shutdown();
     }
 
-    TEST(NsBackendTest, AcceptingSavePanelDeliversStartDirectoryAndSuggestedName)
+    MAYAFLUX_TEST_WITH(TEST, NsBackendTest, AcceptingSavePanelDeliversStartDirectoryAndSuggestedName, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::desktop_dialog, ::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         REQUIRE_DISPLAY();
         const ScratchDirectory scratch;

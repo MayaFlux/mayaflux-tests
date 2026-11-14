@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -8,6 +9,8 @@
 #include "MayaFlux/IO/Tensor/SafetensorsFormat.hpp"
 #include "MayaFlux/Yantra/Analyzers/PhonemeAnalyzer.hpp"
 #include "MayaFlux/Yantra/Executors/Audio/HubertPhonemeModel.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -79,7 +82,7 @@ namespace {
     using HardwareOptions = ::testing::Types<GpuDispatchFixture<true>, GpuDispatchFixture<false>>;
     TYPED_TEST_SUITE(HubertPhonemeGpuTest, HardwareOptions);
 
-    TYPED_TEST(HubertPhonemeGpuTest, PosteriorsMatchTheOriginalNetworkOnTheReferenceSignal)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, HubertPhonemeGpuTest, PosteriorsMatchTheOriginalNetworkOnTheReferenceSignal, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto& weights = hubert_weights();
         const auto audio = hubert_floats("tests/models/hubert_phoneme/hubert_reference_audio.f32");
@@ -98,7 +101,7 @@ namespace {
         }
     }
 
-    TYPED_TEST(HubertPhonemeGpuTest, RecordedSpeechGivesTheOriginalNetworksPosteriorsAndPhonemes)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, HubertPhonemeGpuTest, RecordedSpeechGivesTheOriginalNetworksPosteriorsAndPhonemes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto& weights = hubert_weights();
         const auto audio = hubert_floats("tests/models/hubert_phoneme/hubert_speech_audio.f32");
@@ -121,7 +124,7 @@ namespace {
         EXPECT_TRUE(std::equal(opening.begin(), opening.end(), phonemes.begin()));
     }
 
-    TYPED_TEST(HubertPhonemeGpuTest, EveryFrameIsADistributionAndTheStatesHaveOneRowPerFrame)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, HubertPhonemeGpuTest, EveryFrameIsADistributionAndTheStatesHaveOneRowPerFrame, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto& weights = hubert_weights();
         const auto audio = hubert_floats("tests/models/hubert_phoneme/hubert_speech_audio.f32");
@@ -145,7 +148,7 @@ namespace {
         EXPECT_TRUE(std::ranges::any_of(states, [](float value) { return value != 0.0F; }));
     }
 
-    TYPED_TEST(HubertPhonemeGpuTest, ASecondUtteranceIsNotAffectedByTheFirst)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, HubertPhonemeGpuTest, ASecondUtteranceIsNotAffectedByTheFirst, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto& weights = hubert_weights();
         const auto speech = hubert_floats("tests/models/hubert_phoneme/hubert_speech_audio.f32");
@@ -163,7 +166,7 @@ namespace {
         EXPECT_EQ(got, want);
     }
 
-    TYPED_TEST(HubertPhonemeGpuTest, AnUtteranceShorterThanOneFrameGivesNothingAndOneTooLongIsRefused)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, HubertPhonemeGpuTest, AnUtteranceShorterThanOneFrameGivesNothingAndOneTooLongIsRefused, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto& weights = hubert_weights();
         if (!weights) {
@@ -176,7 +179,7 @@ namespace {
         EXPECT_THROW(static_cast<void>(model.process(std::vector<float>(HubertPhonemeModel::max_samples + 1, 0.0F))), std::invalid_argument);
     }
 
-    TYPED_TEST(HubertPhonemeGpuTest, TheAnalyzerReportsThePhonemesTheirFramesAndTheBroadClasses)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, HubertPhonemeGpuTest, TheAnalyzerReportsThePhonemesTheirFramesAndTheBroadClasses, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto& weights = hubert_weights();
         const auto audio = hubert_floats("tests/models/hubert_phoneme/hubert_speech_audio.f32");
@@ -238,7 +241,7 @@ namespace {
         EXPECT_NE(analysis.embedding_tensor("states"), nullptr);
     }
 
-    TYPED_TEST(HubertPhonemeGpuTest, CompositeOutputIsOneRecordPerRecognisedPhoneme)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, HubertPhonemeGpuTest, CompositeOutputIsOneRecordPerRecognisedPhoneme, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto& weights = hubert_weights();
         const auto audio = hubert_floats("tests/models/hubert_phoneme/hubert_speech_audio.f32");
@@ -270,7 +273,7 @@ namespace {
         }
     }
 
-    TYPED_TEST(HubertPhonemeGpuTest, HeldClassesMarkEveryFrameOnceAndFollowTheEstimatedRanges)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, HubertPhonemeGpuTest, HeldClassesMarkEveryFrameOnceAndFollowTheEstimatedRanges, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto& weights = hubert_weights();
         const auto audio = hubert_floats("tests/models/hubert_phoneme/hubert_speech_audio.f32");
@@ -361,7 +364,7 @@ namespace {
         EXPECT_FALSE(HubertPhonemeModel::is_vowel(HubertPhonemeModel::blank_class));
     }
 
-    TEST(HubertPhonemeWeightsTest, DiagnoseNamesTheFirstProblem)
+    MAYAFLUX_TEST_WITH(TEST, HubertPhonemeWeightsTest, DiagnoseNamesTheFirstProblem, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights>() }))
     {
         const auto& weights = hubert_weights();
         if (!weights) {

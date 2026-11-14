@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include <chrono>
 #include <condition_variable>
@@ -16,6 +17,8 @@
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/AudioBackendService.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output>() }))
 
 #define REQUIRE_AUDIO(rig)                                                                    \
     do {                                                                                      \

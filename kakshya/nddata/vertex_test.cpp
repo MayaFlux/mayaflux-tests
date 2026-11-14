@@ -1,8 +1,11 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "MayaFlux/Kakshya/NDData/VertexAccess.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexInsertion.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {

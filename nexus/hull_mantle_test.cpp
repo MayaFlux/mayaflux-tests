@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -15,6 +16,8 @@
 #include "MayaFlux/Nexus/Principals/Agent.hpp"
 #include "MayaFlux/Nodes/Network/Operators/PhysicsOperator.hpp"
 #include "MayaFlux/Nodes/Network/ParticleNetwork.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {

@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 
 #include "../support/scoped_working_dir.hpp"
@@ -6,6 +7,8 @@
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKContext.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKShaderModule.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -117,7 +120,7 @@ OpFunctionEnd
 
 }
 
-TEST(VKShaderModuleStageDetectionTest, MapsKnownExtensions)
+MAYAFLUX_TEST_WITH(TEST, VKShaderModuleStageDetectionTest, MapsKnownExtensions, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     using S = vk::ShaderStageFlagBits;
     EXPECT_EQ(VKShaderModule::detect_stage_from_extension("a/b/shader.comp"), S::eCompute);
@@ -130,20 +133,20 @@ TEST(VKShaderModuleStageDetectionTest, MapsKnownExtensions)
     EXPECT_EQ(VKShaderModule::detect_stage_from_extension("shader.task"), S::eTaskEXT);
 }
 
-TEST(VKShaderModuleStageDetectionTest, IgnoresExtensionCase)
+MAYAFLUX_TEST_WITH(TEST, VKShaderModuleStageDetectionTest, IgnoresExtensionCase, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     EXPECT_EQ(VKShaderModule::detect_stage_from_extension("shader.COMP"), vk::ShaderStageFlagBits::eCompute);
     EXPECT_EQ(VKShaderModule::detect_stage_from_extension("shader.Frag"), vk::ShaderStageFlagBits::eFragment);
 }
 
-TEST(VKShaderModuleStageDetectionTest, UnknownOrMissingExtensionHasNoStage)
+MAYAFLUX_TEST_WITH(TEST, VKShaderModuleStageDetectionTest, UnknownOrMissingExtensionHasNoStage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     EXPECT_FALSE(VKShaderModule::detect_stage_from_extension("shader.glsl").has_value());
     EXPECT_FALSE(VKShaderModule::detect_stage_from_extension("shader").has_value());
     EXPECT_FALSE(VKShaderModule::detect_stage_from_extension("").has_value());
 }
 
-TEST(VKShaderModuleUninitializedTest, DefaultModuleIsInvalid)
+MAYAFLUX_TEST_WITH(TEST, VKShaderModuleUninitializedTest, DefaultModuleIsInvalid, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     VKShaderModule module;
     EXPECT_FALSE(module.is_valid());
@@ -153,7 +156,7 @@ TEST(VKShaderModuleUninitializedTest, DefaultModuleIsInvalid)
     EXPECT_TRUE(module.get_reflection().bindings.empty());
 }
 
-TEST(VKShaderModuleUninitializedTest, StageCreateInfoOfInvalidModuleIsEmpty)
+MAYAFLUX_TEST_WITH(TEST, VKShaderModuleUninitializedTest, StageCreateInfoOfInvalidModuleIsEmpty, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     VKShaderModule module;
     const auto info = module.get_stage_create_info();
@@ -219,7 +222,7 @@ TEST_F(VKShaderModuleTest, MissingGlslFileFails)
     EXPECT_FALSE(module.is_valid());
 }
 
-TEST_F(VKShaderModuleTest, UserShaderDirectoryWinsOverALibraryShaderOfTheSameName)
+MAYAFLUX_TEST_WITH(TEST_F, VKShaderModuleTest, UserShaderDirectoryWinsOverALibraryShaderOfTheSameName, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 {
     ScopedWorkingDir cwd;
     cwd.write("shaders/dilate.comp", k_user_workgroup_source);
@@ -231,7 +234,7 @@ TEST_F(VKShaderModuleTest, UserShaderDirectoryWinsOverALibraryShaderOfTheSameNam
     EXPECT_EQ(*workgroup, (std::array<uint32_t, 3> { 4, 2, 1 }));
 }
 
-TEST_F(VKShaderModuleTest, DataShadersDirectoryAlsoWinsOverALibraryShaderOfTheSameName)
+MAYAFLUX_TEST_WITH(TEST_F, VKShaderModuleTest, DataShadersDirectoryAlsoWinsOverALibraryShaderOfTheSameName, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 {
     ScopedWorkingDir cwd;
     cwd.write("data/shaders/dilate.comp", k_user_workgroup_source);
@@ -243,7 +246,7 @@ TEST_F(VKShaderModuleTest, DataShadersDirectoryAlsoWinsOverALibraryShaderOfTheSa
     EXPECT_EQ(*workgroup, (std::array<uint32_t, 3> { 4, 2, 1 }));
 }
 
-TEST_F(VKShaderModuleTest, LibraryShaderIsUsedWhenNoUserCopyExists)
+MAYAFLUX_TEST_WITH(TEST_F, VKShaderModuleTest, LibraryShaderIsUsedWhenNoUserCopyExists, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 {
     ScopedWorkingDir cwd;
 

@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <stdexcept>
 
@@ -22,6 +23,8 @@
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Registry/Service/DisplayService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -55,21 +58,21 @@ namespace {
         return cells;
     }
 
-    TEST(RelaxationGridConfigTest, PathStagesRequireAnExplicitStateFormat)
+    MAYAFLUX_TEST_WITH(TEST, RelaxationGridConfigTest, PathStagesRequireAnExplicitStateFormat, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto config = conway_config();
         config.rule.state.reset();
         EXPECT_THROW(static_cast<void>(RelaxationGridBuffer { config }), std::invalid_argument);
     }
 
-    TEST(RelaxationGridConfigTest, RuleAndEmitMustUseTheSameCellFormat)
+    MAYAFLUX_TEST_WITH(TEST, RelaxationGridConfigTest, RuleAndEmitMustUseTheSameCellFormat, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto config = conway_config();
         config.emit.state = Kakshya::GpuDataFormat::FLOAT32;
         EXPECT_THROW(static_cast<void>(RelaxationGridBuffer { config }), std::invalid_argument);
     }
 
-    TEST(RelaxationGridConfigTest, ThreeComponentCellFormatsAreRejected)
+    MAYAFLUX_TEST_WITH(TEST, RelaxationGridConfigTest, ThreeComponentCellFormatsAreRejected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto config = conway_config();
         config.rule.state = Kakshya::GpuDataFormat::VEC3_F32;
@@ -605,7 +608,7 @@ namespace {
         bool flow_ready {};
     };
 
-    TEST_F(RelaxationGridPresentationTest, SeededPointIsVisibleAfterPresentation)
+    MAYAFLUX_TEST_WITH(TEST_F, RelaxationGridPresentationTest, SeededPointIsVisibleAfterPresentation, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         root->process_default();
         Buffers::PresentProcessor presenter;

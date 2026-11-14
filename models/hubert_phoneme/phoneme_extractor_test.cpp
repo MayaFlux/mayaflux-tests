@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -8,6 +9,8 @@
 #include "MayaFlux/IO/Tensor/SafetensorsFormat.hpp"
 #include "MayaFlux/Yantra/Extractors/PhonemeExtractor.hpp"
 #include "MayaFlux/Yantra/Extractors/SpeechSegmenter.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -84,7 +87,7 @@ namespace {
     using HardwareOptions = ::testing::Types<GpuDispatchFixture<true>, GpuDispatchFixture<false>>;
     TYPED_TEST_SUITE(PhonemeExtractorGpuTest, HardwareOptions);
 
-    TYPED_TEST(PhonemeExtractorGpuTest, SpeechIsFoundAndTheSilenceBetweenIsLeftOut)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, SpeechIsFoundAndTheSilenceBetweenIsLeftOut, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
         const auto hubert = read_weights(k_hubert_weights);
@@ -109,7 +112,7 @@ namespace {
         }
     }
 
-    TYPED_TEST(PhonemeExtractorGpuTest, EachSpeechIntervalOpensWithTheSameWords)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, EachSpeechIntervalOpensWithTheSameWords, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
         const auto hubert = read_weights(k_hubert_weights);
@@ -131,7 +134,7 @@ namespace {
         }
     }
 
-    TYPED_TEST(PhonemeExtractorGpuTest, RangesAreContiguousWithinASpeechInterval)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, RangesAreContiguousWithinASpeechInterval, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
         const auto hubert = read_weights(k_hubert_weights);
@@ -152,7 +155,7 @@ namespace {
         }
     }
 
-    TYPED_TEST(PhonemeExtractorGpuTest, VowelSelectionKeepsOnlyVowelRecords)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, VowelSelectionKeepsOnlyVowelRecords, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
         const auto hubert = read_weights(k_hubert_weights);
@@ -181,7 +184,7 @@ namespace {
         }
     }
 
-    TYPED_TEST(PhonemeExtractorGpuTest, AudioOutputHoldsTheSelectedRanges)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, AudioOutputHoldsTheSelectedRanges, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
         const auto hubert = read_weights(k_hubert_weights);
@@ -205,7 +208,7 @@ namespace {
         EXPECT_EQ(audio->size(), expected);
     }
 
-    TYPED_TEST(PhonemeExtractorGpuTest, RegionOutputHasOneRegionPerPhoneme)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, RegionOutputHasOneRegionPerPhoneme, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
         const auto hubert = read_weights(k_hubert_weights);
@@ -257,7 +260,7 @@ namespace {
         EXPECT_EQ(output.data.size(), 0U);
     }
 
-    TYPED_TEST(PhonemeExtractorGpuTest, MergeAdjacentJoinsTouchingRanges)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, MergeAdjacentJoinsTouchingRanges, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
         const auto hubert = read_weights(k_hubert_weights);
@@ -289,7 +292,7 @@ namespace {
         EXPECT_EQ(audio->size(), expected);
     }
 
-    TYPED_TEST(PhonemeExtractorGpuTest, SpeechIntervalsAreTheSegmentersAndStayWithinTheirBounds)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, SpeechIntervalsAreTheSegmentersAndStayWithinTheirBounds, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
         const auto hubert = read_weights(k_hubert_weights);
@@ -321,7 +324,7 @@ namespace {
         }
     }
 
-    TYPED_TEST(PhonemeExtractorGpuTest, VoicingGateTrimsVowelAudioToVoicedStretches)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, VoicingGateTrimsVowelAudioToVoicedStretches, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
         const auto hubert = read_weights(k_hubert_weights);
@@ -356,7 +359,7 @@ namespace {
         EXPECT_EQ(gated_record->events.size(), plain_record->events.size());
     }
 
-    TYPED_TEST(PhonemeExtractorGpuTest, VoicingGateLeavesOtherSelectionsAndRefusesBadSettings)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, VoicingGateLeavesOtherSelectionsAndRefusesBadSettings, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
         const auto hubert = read_weights(k_hubert_weights);

@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include <stdexcept>
 
@@ -10,6 +11,8 @@
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -278,7 +281,7 @@ namespace {
     // No backend
     // ------------------------------------------------------------------
 
-    TEST(TextureProcessorNoBackendTest, AttachWithoutABufferServiceThrows)
+    MAYAFLUX_TEST_WITH(TEST, TextureProcessorNoBackendTest, AttachWithoutABufferServiceThrows, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         if (Registry::BackendRegistry::instance().get_service<Registry::Service::BufferService>()) {
             GTEST_SKIP() << "a graphics backend is registered in this process";

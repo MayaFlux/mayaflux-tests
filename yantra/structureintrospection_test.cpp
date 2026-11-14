@@ -5,6 +5,9 @@
 #include "../support/log_capture.hpp"
 
 #include <gtest/gtest.h>
+#include "../support/test_metadata.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {

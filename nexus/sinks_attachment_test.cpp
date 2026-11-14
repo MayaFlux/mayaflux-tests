@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -25,6 +26,8 @@
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -260,7 +263,7 @@ namespace {
         std::vector<Nexus::RenderSink> sinks;
     };
 
-    TEST_F(NexusRenderSinkTest, AddingASinkRegistersItsBufferWithTheGraphicsToken)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, AddingASinkRegistersItsBufferWithTheGraphicsToken, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::add_render_sink(sinks, manager, render_config());
 
@@ -269,7 +272,7 @@ namespace {
         EXPECT_EQ(sinks.front().window, window);
     }
 
-    TEST_F(NexusRenderSinkTest, TheSinkRendererIsThePrimaryProcessorOfItsBuffer)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, TheSinkRendererIsThePrimaryProcessorOfItsBuffer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::add_render_sink(sinks, manager, render_config());
 
@@ -277,7 +280,7 @@ namespace {
         EXPECT_EQ(sinks.front().buf->get_render_processor(), sinks.front().renderer);
     }
 
-    TEST_F(NexusRenderSinkTest, RemovingASinkDeregistersItsBuffer)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, RemovingASinkDeregistersItsBuffer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::add_render_sink(sinks, manager, render_config());
         const auto buffer = sinks.front().buf;
@@ -288,7 +291,7 @@ namespace {
         EXPECT_FALSE(registered(buffer));
     }
 
-    TEST_F(NexusRenderSinkTest, RemovingAnUnknownWindowChangesNothing)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, RemovingAnUnknownWindowChangesNothing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::add_render_sink(sinks, manager, render_config());
         const auto other = std::make_shared<ScriptedWindow>(100U, 100U);
@@ -299,7 +302,7 @@ namespace {
         EXPECT_TRUE(registered(sinks.front().buf));
     }
 
-    TEST_F(NexusRenderSinkTest, EveryTopologyBuildsASink)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, EveryTopologyBuildsASink, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         for (const auto topology : {
                  Portal::Graphics::PrimitiveTopology::POINT_LIST,
@@ -320,7 +323,7 @@ namespace {
         }
     }
 
-    TEST_F(NexusRenderSinkTest, DispatchCallsEachProducerWithTheContext)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, DispatchCallsEachProducerWithTheContext, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         glm::vec3 seen {};
         int calls = 0;
@@ -337,14 +340,14 @@ namespace {
         expect_near(seen, ctx.position);
     }
 
-    TEST_F(NexusRenderSinkTest, DispatchSkipsASinkWithoutAProducer)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, DispatchSkipsASinkWithoutAProducer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::add_render_sink(sinks, manager, render_config(), {}, {}, glm::vec3(1.0F));
 
         EXPECT_NO_THROW(Nexus::dispatch_render_sinks(sinks, InfluenceContext {}));
     }
 
-    TEST_F(NexusRenderSinkTest, AnAgentFindsTheRendererOfItsSinkByWindow)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, AnAgentFindsTheRendererOfItsSinkByWindow, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::Agent agent(1.0F);
         agent.render(manager, render_config());
@@ -358,7 +361,7 @@ namespace {
         EXPECT_EQ(agent.get_render_processor(window), nullptr);
     }
 
-    TEST_F(NexusRenderSinkTest, AnAgentDroppedOutsideAFabricLeavesItsRenderSinkRegistered)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, AnAgentDroppedOutsideAFabricLeavesItsRenderSinkRegistered, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         std::shared_ptr<Buffers::VKBuffer> buffer;
         {
@@ -370,7 +373,7 @@ namespace {
         EXPECT_TRUE(registered(buffer));
     }
 
-    TEST_F(NexusRenderSinkTest, RemovingAnAgentFromItsFabricUnregistersItsRenderSink)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, RemovingAnAgentFromItsFabricUnregistersItsRenderSink, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::Fabric fabric(scheduler, events, manager, 1.0F);
         auto agent = std::make_shared<Nexus::Agent>(1.0F);
@@ -385,7 +388,7 @@ namespace {
         EXPECT_TRUE(agent->render_sinks().empty());
     }
 
-    TEST_F(NexusRenderSinkTest, RemovingAnEmitterFromItsFabricUnregistersItsRenderSink)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, RemovingAnEmitterFromItsFabricUnregistersItsRenderSink, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::Fabric fabric(scheduler, events, manager, 1.0F);
         auto emitter = std::make_shared<Nexus::Emitter>();
@@ -399,7 +402,7 @@ namespace {
         EXPECT_TRUE(emitter->render_sinks().empty());
     }
 
-    TEST_F(NexusRenderSinkTest, DestroyingAFabricUnregistersTheRenderSinksOfItsEntities)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, DestroyingAFabricUnregistersTheRenderSinksOfItsEntities, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         auto agent = std::make_shared<Nexus::Agent>(1.0F);
         agent->render(manager, render_config());
@@ -508,7 +511,7 @@ namespace {
         std::shared_ptr<Buffers::RenderProcessor> renderer;
     };
 
-    TEST_F(NexusAttachmentTest, AnAttachmentAnchorsAtTheSurfaceCentroid)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, AnAttachmentAnchorsAtTheSurfaceCentroid, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto attachment = attach();
 
@@ -516,7 +519,7 @@ namespace {
         expect_near(attachment.applied, attachment.anchor);
     }
 
-    TEST_F(NexusAttachmentTest, AnAttachmentAnchorsAtTheIndexedVertex)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, AnAttachmentAnchorsAtTheIndexedVertex, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         AttachConfig config;
         config.index = 1U;
@@ -524,7 +527,7 @@ namespace {
         expect_near(attach(config).anchor, { 4.0F, 0.0F, 0.0F });
     }
 
-    TEST_F(NexusAttachmentTest, AnAttachmentToAnUnreadableBufferAnchorsAtTheOrigin)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, AnAttachmentToAnUnreadableBufferAnchorsAtTheOrigin, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto empty = std::make_shared<Buffers::VKBuffer>(
             256, Buffers::VKBuffer::Usage::VERTEX, Kakshya::DataModality::VERTICES_3D);
@@ -534,7 +537,7 @@ namespace {
         expect_near(attachment.anchor, { 0.0F, 0.0F, 0.0F });
     }
 
-    TEST_F(NexusAttachmentTest, TheOffsetIsAddedToTheAppliedPosition)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, TheOffsetIsAddedToTheAppliedPosition, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         AttachConfig config;
         config.offset = { 0.0F, 0.0F, 1.0F };
@@ -544,7 +547,7 @@ namespace {
         expect_near(attachment.applied, attachment.anchor + glm::vec3(0.0F, 0.0F, 1.0F));
     }
 
-    TEST_F(NexusAttachmentTest, TheOffsetTurnsWithTheOrientation)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, TheOffsetTurnsWithTheOrientation, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         AttachConfig config;
         config.offset = { 0.0F, 0.0F, 1.0F };
@@ -555,7 +558,7 @@ namespace {
         expect_near(attachment.applied, attachment.anchor + glm::vec3(1.0F, 0.0F, 0.0F));
     }
 
-    TEST_F(NexusAttachmentTest, PlacingInstallsASourceThatReadsTheTransform)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, PlacingInstallsASourceThatReadsTheTransform, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         auto attachment = attach();
         EXPECT_FALSE(static_cast<bool>(renderer->get_geometry_transform_source()));
@@ -567,7 +570,7 @@ namespace {
         expect_near(placed(buffer, { 0.0F, 0.0F, 0.0F }), { 1.0F, 2.0F, 3.0F });
     }
 
-    TEST_F(NexusAttachmentTest, PlacingTwiceFollowsTheProcessorOnce)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, PlacingTwiceFollowsTheProcessorOnce, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         auto attachment = attach();
 
@@ -577,7 +580,7 @@ namespace {
         EXPECT_EQ(attachment.followed.size(), 1U);
     }
 
-    TEST_F(NexusAttachmentTest, ReleasingRestoresAFixedTransform)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, ReleasingRestoresAFixedTransform, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto fixed = glm::scale(glm::mat4(1.0F), { 2.0F, 2.0F, 2.0F });
         renderer->set_geometry_transform(fixed);
@@ -593,7 +596,7 @@ namespace {
         EXPECT_EQ(*attachment.transform, glm::mat4(1.0F));
     }
 
-    TEST_F(NexusAttachmentTest, ReleasingRestoresTheAbsenceOfATransform)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, ReleasingRestoresTheAbsenceOfATransform, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         auto attachment = attach();
         Nexus::place_attachment(attachment);
@@ -604,7 +607,7 @@ namespace {
         EXPECT_EQ(Nexus::read_placement(buffer), glm::mat4(1.0F));
     }
 
-    TEST_F(NexusAttachmentTest, ReleasingRestoresATransformSource)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, ReleasingRestoresATransformSource, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         renderer->set_geometry_transform_source([] { return glm::translate(glm::mat4(1.0F), { 0.0F, 9.0F, 0.0F }); });
         auto attachment = attach();
@@ -615,7 +618,7 @@ namespace {
         expect_near(placed(buffer, { 0.0F, 0.0F, 0.0F }), { 0.0F, 9.0F, 0.0F });
     }
 
-    TEST_F(NexusAttachmentTest, LaterAttachmentsStackOutsideEarlierOnes)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, LaterAttachmentsStackOutsideEarlierOnes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         auto first = attach();
         auto second = attach();
@@ -627,7 +630,7 @@ namespace {
         expect_near(placed(buffer, { 0.0F, 0.0F, 0.0F }), { 2.0F, 0.0F, 0.0F });
     }
 
-    TEST_F(NexusAttachmentTest, EachAttachmentIsReleasedOnItsOwn)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, EachAttachmentIsReleasedOnItsOwn, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         auto first = attach();
         auto second = attach();
@@ -644,7 +647,7 @@ namespace {
         EXPECT_FALSE(static_cast<bool>(renderer->get_geometry_transform_source()));
     }
 
-    TEST_F(NexusAttachmentTest, AnInfluenceMovesTheAnchorToTheContextPosition)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, AnInfluenceMovesTheAnchorToTheContextPosition, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         auto attachment = attach();
         InfluenceContext ctx;
@@ -655,7 +658,7 @@ namespace {
         expect_near(placed(buffer, attachment.anchor), ctx.position);
     }
 
-    TEST_F(NexusAttachmentTest, TheOffsetIsLeftBehindTheContextPosition)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, TheOffsetIsLeftBehindTheContextPosition, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         AttachConfig config;
         config.offset = { 0.0F, 1.0F, 0.0F };
@@ -668,7 +671,7 @@ namespace {
         expect_near(placed(buffer, attachment.anchor), { 5.0F, -1.0F, 0.0F });
     }
 
-    TEST_F(NexusAttachmentTest, AMoveFromOutsideBecomesTheOffset)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, AMoveFromOutsideBecomesTheOffset, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         auto attachment = attach();
         std::optional<glm::vec3> position = attachment.applied + glm::vec3(2.0F, 0.0F, 0.0F);
@@ -680,7 +683,7 @@ namespace {
         expect_near(*position, attachment.anchor + glm::vec3(2.0F, 0.0F, 0.0F));
     }
 
-    TEST_F(NexusAttachmentTest, AMoveFromOutsideCanCarryTheBuffer)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, AMoveFromOutsideCanCarryTheBuffer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         AttachConfig config;
         config.on_move = AttachConfig::OnMove::Carry;
@@ -694,7 +697,7 @@ namespace {
         expect_near(*position, attachment.anchor + glm::vec3(2.0F, 0.0F, 0.0F));
     }
 
-    TEST_F(NexusAttachmentTest, FollowingWithoutAPositionSetsItFromTheBuffer)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, FollowingWithoutAPositionSetsItFromTheBuffer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         AttachConfig config;
         config.offset = { 0.0F, 0.0F, 1.0F };
@@ -707,7 +710,7 @@ namespace {
         expect_near(*position, attachment.anchor + glm::vec3(0.0F, 0.0F, 1.0F));
     }
 
-    TEST_F(NexusAttachmentTest, RecenteringMovesTheAnchorAndKeepsThePosition)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, RecenteringMovesTheAnchorAndKeepsThePosition, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         auto attachment = attach();
         std::optional<glm::vec3> position = attachment.applied;
@@ -722,7 +725,7 @@ namespace {
         expect_near(attachment.config.offset, kept - attachment.anchor);
     }
 
-    TEST_F(NexusAttachmentTest, AnAgentAttachesToABufferAndTakesItsPosition)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, AnAgentAttachesToABufferAndTakesItsPosition, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::Agent agent(1.0F);
 
@@ -733,7 +736,7 @@ namespace {
         expect_near(*agent.position(), { 4.0F / 3.0F, 4.0F / 3.0F, 0.0F });
     }
 
-    TEST_F(NexusAttachmentTest, AnAgentIgnoresANullBuffer)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, AnAgentIgnoresANullBuffer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::Agent agent(1.0F);
 
@@ -742,7 +745,7 @@ namespace {
         EXPECT_FALSE(agent.attached());
     }
 
-    TEST_F(NexusAttachmentTest, AnAgentInfluencePlacesTheAttachedBuffer)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, AnAgentInfluencePlacesTheAttachedBuffer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::Agent agent(1.0F);
         agent.attach(buffer);
@@ -754,7 +757,7 @@ namespace {
         expect_near(placed(buffer, { 4.0F / 3.0F, 4.0F / 3.0F, 0.0F }), ctx.position);
     }
 
-    TEST_F(NexusAttachmentTest, DetachingGivesTheBufferItsPlacementBack)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, DetachingGivesTheBufferItsPlacementBack, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::Agent agent(1.0F);
         agent.attach(buffer);
@@ -769,7 +772,7 @@ namespace {
         EXPECT_EQ(Nexus::read_placement(buffer), glm::mat4(1.0F));
     }
 
-    TEST_F(NexusAttachmentTest, AttachingAgainReplacesThePreviousAttachment)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, AttachingAgainReplacesThePreviousAttachment, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::Agent agent(1.0F);
         agent.attach(buffer);
@@ -785,7 +788,7 @@ namespace {
         EXPECT_FALSE(static_cast<bool>(renderer->get_geometry_transform_source()));
     }
 
-    TEST_F(NexusAttachmentTest, ADroppedAgentGivesTheBufferItsPlacementBack)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, ADroppedAgentGivesTheBufferItsPlacementBack, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         {
             Nexus::Agent agent(1.0F);
@@ -800,7 +803,7 @@ namespace {
         EXPECT_EQ(Nexus::read_placement(buffer), glm::mat4(1.0F));
     }
 
-    TEST_F(NexusAttachmentTest, ADroppedEmitterGivesTheBufferItsPlacementBack)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, ADroppedEmitterGivesTheBufferItsPlacementBack, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         {
             Nexus::Emitter emitter;
@@ -814,7 +817,7 @@ namespace {
         EXPECT_FALSE(static_cast<bool>(renderer->get_geometry_transform_source()));
     }
 
-    TEST_F(NexusAttachmentTest, RemovingAnAgentFromItsFabricGivesTheBufferItsPlacementBack)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, RemovingAnAgentFromItsFabricGivesTheBufferItsPlacementBack, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         Nexus::Fabric fabric(scheduler, events, manager, 1.0F);
         auto agent = std::make_shared<Nexus::Agent>(1.0F);
@@ -829,7 +832,7 @@ namespace {
         EXPECT_FALSE(static_cast<bool>(renderer->get_geometry_transform_source()));
     }
 
-    TEST_F(NexusAttachmentTest, DestroyingAFabricGivesTheBuffersOfItsEntitiesTheirPlacementBack)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, DestroyingAFabricGivesTheBuffersOfItsEntitiesTheirPlacementBack, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         auto agent = std::make_shared<Nexus::Agent>(1.0F);
         agent->attach(buffer);
@@ -870,14 +873,14 @@ namespace {
         bool seen_at_influence {};
     };
 
-    TEST_F(NexusLocusViewTest, ANullTargetIsIgnored)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, ANullTargetIsIgnored, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         locus->add_view_target(nullptr);
 
         EXPECT_TRUE(locus->view_targets().empty());
     }
 
-    TEST_F(NexusLocusViewTest, AddingTheSameTargetTwiceKeepsOne)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, AddingTheSameTargetTwiceKeepsOne, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         locus->add_view_target(first);
         locus->add_view_target(first);
@@ -885,7 +888,7 @@ namespace {
         EXPECT_EQ(locus->view_targets().size(), 1U);
     }
 
-    TEST_F(NexusLocusViewTest, RemovingATargetLeavesTheOthers)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, RemovingATargetLeavesTheOthers, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         locus->add_view_target(first);
         locus->add_view_target(second);
@@ -896,7 +899,7 @@ namespace {
         EXPECT_EQ(locus->view_targets().front(), second);
     }
 
-    TEST_F(NexusLocusViewTest, InfluenceGivesEveryTargetTheCurrentView)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, InfluenceGivesEveryTargetTheCurrentView, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         locus->add_view_target(first);
         locus->add_view_target(second);
@@ -910,7 +913,7 @@ namespace {
         }
     }
 
-    TEST_F(NexusLocusViewTest, ARemovedTargetIsLeftAlone)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, ARemovedTargetIsLeftAlone, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         locus->add_view_target(first);
         locus->add_view_target(second);
@@ -922,7 +925,7 @@ namespace {
         EXPECT_FALSE(second->get_view_transform().has_value());
     }
 
-    TEST_F(NexusLocusViewTest, TheViewIsPushedBeforeTheInfluenceFunctionRuns)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, TheViewIsPushedBeforeTheInfluenceFunctionRuns, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         locus->add_view_target(first);
 
@@ -931,7 +934,7 @@ namespace {
         EXPECT_TRUE(seen_at_influence);
     }
 
-    TEST_F(NexusLocusViewTest, ATurnedLocusPushesTheNewView)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, ATurnedLocusPushesTheNewView, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         locus->add_view_target(first);
         locus->invoke_influence(InfluenceContext {});

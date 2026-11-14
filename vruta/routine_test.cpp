@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Kriya/Awaiters/ConditionAwaiter.hpp"
 #include "MayaFlux/Kriya/Awaiters/DelayAwaiters.hpp"
@@ -6,6 +7,8 @@
 #include "MayaFlux/Vruta/Routine.hpp"
 
 #include <stdexcept>
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 

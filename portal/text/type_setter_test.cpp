@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <string_view>
 
@@ -6,6 +7,8 @@
 
 #include "MayaFlux/Portal/Text/GlyphAtlas.hpp"
 #include "MayaFlux/Portal/Text/TypeSetter.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -364,7 +367,7 @@ namespace {
 
     class IsControlTest : public ::testing::TestWithParam<ControlCase> { };
 
-    TEST_P(IsControlTest, ClassifiesByUnicodeCategory)
+    MAYAFLUX_TEST_WITH(TEST_P, IsControlTest, ClassifiesByUnicodeCategory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(Portal::Text::is_control(GetParam().codepoint), GetParam().control);
     }
@@ -391,7 +394,7 @@ namespace {
 
     class EncodeUtf8Test : public ::testing::TestWithParam<EncodeCase> { };
 
-    TEST_P(EncodeUtf8Test, EncodesToTheShortestSequence)
+    MAYAFLUX_TEST_WITH(TEST_P, EncodeUtf8Test, EncodesToTheShortestSequence, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(Portal::Text::encode_utf8(GetParam().codepoint), std::string(GetParam().bytes));
     }
@@ -413,7 +416,7 @@ namespace {
 
     class NextCodepointTest : public ::testing::TestWithParam<StepCase> { };
 
-    TEST_P(NextCodepointTest, StepsOverWholeSequencesAndClampsAtTheEnd)
+    MAYAFLUX_TEST_WITH(TEST_P, NextCodepointTest, StepsOverWholeSequencesAndClampsAtTheEnd, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::string text = "a\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80";
         EXPECT_EQ(Portal::Text::next_codepoint_offset(text, GetParam().offset), GetParam().next);
@@ -427,7 +430,7 @@ namespace {
 
     class PreviousCodepointTest : public ::testing::TestWithParam<StepCase> { };
 
-    TEST_P(PreviousCodepointTest, StepsBackToTheStartOfTheSequence)
+    MAYAFLUX_TEST_WITH(TEST_P, PreviousCodepointTest, StepsBackToTheStartOfTheSequence, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::string text = "a\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80";
         EXPECT_EQ(Portal::Text::previous_codepoint_offset(text, GetParam().offset), GetParam().next);
@@ -439,7 +442,7 @@ namespace {
             StepCase { 0, 0 }, StepCase { 1, 0 }, StepCase { 2, 1 }, StepCase { 3, 1 },
             StepCase { 5, 3 }, StepCase { 6, 3 }, StepCase { 10, 6 }));
 
-    TEST(NextCodepointInvalidInputTest, InvalidByteIsSteppedOverAsOne)
+    MAYAFLUX_TEST_WITH(TEST, NextCodepointInvalidInputTest, InvalidByteIsSteppedOverAsOne, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(Portal::Text::next_codepoint_offset(std::string_view("\xFF" "a", 2), 0), 1U);
     }

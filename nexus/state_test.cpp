@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "../support/frame_scheduler.hpp"
 #include "../support/scoped_working_dir.hpp"
@@ -12,6 +13,8 @@
 #include "MayaFlux/Nexus/State/Encoder.hpp"
 #include "MayaFlux/Transitive/IO/JSONSerializer.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 
 namespace MayaFlux::Test {
 namespace {

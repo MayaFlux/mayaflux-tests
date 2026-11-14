@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <random>
 
@@ -7,6 +8,8 @@
 #include "MayaFlux/Kinesis/Discrete/Spectral.hpp"
 #include "MayaFlux/Kinesis/Discrete/Taper.hpp"
 #include "MayaFlux/Yantra/Analyzers/SpectralAnalyzer.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -242,7 +245,7 @@ namespace {
         EXPECT_EQ(four_bands.channels[0].values.size(), 2U);
     }
 
-    TEST(SpectralAnalyzerTest, SettingsThatCannotRunAreRejected)
+    MAYAFLUX_TEST_WITH(TEST, SpectralAnalyzerTest, SettingsThatCannotRunAreRejected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_THROW(StandardSpectralAnalyzer(make_config(100, 50, SpectralMethod::TOTAL_POWER)), std::invalid_argument);
         EXPECT_THROW(StandardSpectralAnalyzer(make_config(4096, 512, SpectralMethod::TOTAL_POWER)), std::invalid_argument);

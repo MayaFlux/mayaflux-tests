@@ -1,10 +1,13 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Nodes/Network/Operators/AssemblyOperator.hpp"
 #include "MayaFlux/Nodes/Network/Operators/FieldOperator.hpp"
 #include "MayaFlux/Nodes/Network/Operators/PathOperator.hpp"
 #include "MayaFlux/Nodes/Network/Operators/PhysicsOperator.hpp"
 #include "MayaFlux/Nodes/Network/Operators/TopologyOperator.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 

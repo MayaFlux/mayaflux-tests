@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/BufferManager.hpp"
@@ -6,6 +7,8 @@
 #include "MayaFlux/Buffers/Input/InputAudioBuffer.hpp"
 #include "MayaFlux/Buffers/Root/RootAudioBuffer.hpp"
 #include "MayaFlux/Buffers/Root/RootParallelAudioBuffer.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 

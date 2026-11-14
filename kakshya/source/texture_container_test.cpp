@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <stdexcept>
 #include <string_view>
@@ -12,6 +13,8 @@
 #include "MayaFlux/Kakshya/Region/RegionSegment.hpp"
 #include "MayaFlux/Kakshya/Source/TextureCollection.hpp"
 #include "MayaFlux/Kakshya/Source/TextureContainer.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -289,7 +292,7 @@ namespace {
         EXPECT_EQ(tc.as_uint8(0).size(), 16U);
     }
 
-    TEST_F(TextureContainerGpuTest, ToImageRefreshesLayerAndFromImageReadsItBack)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, ToImageRefreshesLayerAndFromImageReadsItBack, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer source(2, 2, ImageFormat::RGBA8, 2U);
         const auto first = ramp(16, 3);
@@ -310,7 +313,7 @@ namespace {
         EXPECT_TRUE(std::ranges::equal(destination.as_uint8(0), updated));
     }
 
-    TEST_F(TextureContainerGpuTest, ToImageArrayAndFromImageArrayPreserveLayerOrder)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, ToImageArrayAndFromImageArrayPreserveLayerOrder, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer source(2, 2, ImageFormat::RGBA8, 3U);
         const auto first = ramp(16, 5);
@@ -337,7 +340,7 @@ namespace {
         EXPECT_TRUE(std::ranges::equal(destination.as_uint8(2), third));
     }
 
-    TEST_F(TextureContainerGpuTest, UploadImageWritesTheSelectedLayerToAnExistingImage)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, UploadImageWritesTheSelectedLayerToAnExistingImage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer source(2, 2, ImageFormat::RGBA8, 2U);
         const auto first = ramp(16, 15);
@@ -353,7 +356,7 @@ namespace {
         EXPECT_FALSE(source.upload_image(nullptr, 0));
     }
 
-    TEST_F(TextureContainerGpuTest, UploadImageArrayWritesAllLayersToAnExistingImage)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, UploadImageArrayWritesAllLayersToAnExistingImage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer source(2, 2, ImageFormat::RGBA8, 2U);
         const auto first = ramp(16, 25);
@@ -371,7 +374,7 @@ namespace {
         EXPECT_FALSE(source.upload_image_array(nullptr));
     }
 
-    TEST_F(TextureContainerGpuTest, TypedSixteenBitAndFloatPixelsSurviveGpuRoundTrips)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, TypedSixteenBitAndFloatPixelsSurviveGpuRoundTrips, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer u16(4, 1, ImageFormat::R16);
         const std::vector<uint16_t> wide { 0, 1, 32768, 65535 };
@@ -676,7 +679,7 @@ namespace {
         EXPECT_EQ(single.all_channel_data().size(), 1U);
     }
 
-    TEST_F(TextureContainerGpuTest, ImageConstructorReadsTheImagePixels)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, ImageConstructorReadsTheImagePixels, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto pixels = ramp(16, 21);
         const auto image = loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
@@ -688,7 +691,7 @@ namespace {
         EXPECT_TRUE(std::ranges::equal(tc.as_uint8(0), pixels));
     }
 
-    TEST_F(TextureContainerGpuTest, FromImageOutOfRangeLayerLeavesTheContainerUnchanged)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, FromImageOutOfRangeLayerLeavesTheContainerUnchanged, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer tc(2, 2, ImageFormat::RGBA8, 2U);
         const auto kept = ramp(16, 4);
@@ -703,7 +706,7 @@ namespace {
         EXPECT_TRUE(std::ranges::all_of(tc.as_uint8(1), [](uint8_t v) { return v == 0; }));
     }
 
-    TEST_F(TextureContainerGpuTest, FromImageArrayWithTooFewLayersLeavesEveryLayerUnchanged)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, FromImageArrayWithTooFewLayersLeavesEveryLayerUnchanged, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer tc(2, 2, ImageFormat::RGBA8, 3U);
         const auto first = ramp(16, 5);
@@ -720,7 +723,7 @@ namespace {
         EXPECT_TRUE(std::ranges::all_of(tc.as_uint8(2), [](uint8_t v) { return v == 0; }));
     }
 
-    TEST_F(TextureContainerGpuTest, GpuHeldLayerIsDownloadedOnTheFirstCpuRead)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, GpuHeldLayerIsDownloadedOnTheFirstCpuRead, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto pixels = ramp(16, 31);
         const auto source = loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
@@ -732,7 +735,7 @@ namespace {
         EXPECT_TRUE(std::ranges::equal(collection.as_uint8(0), pixels));
     }
 
-    TEST_F(TextureContainerGpuTest, CpuWriteReplacesAGpuHeldLayer)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, CpuWriteReplacesAGpuHeldLayer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto before = ramp(16, 41);
         const auto source = loom().create_2d(2, 2, ImageFormat::RGBA8, before.data());
@@ -750,7 +753,7 @@ namespace {
         EXPECT_EQ(read_image(image, after.size()), after);
     }
 
-    TEST_F(TextureContainerGpuTest, ClearZeroesALayerHeldOnlyOnTheGpu)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, ClearZeroesALayerHeldOnlyOnTheGpu, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto pixels = ramp(16, 51);
         const auto source = loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());

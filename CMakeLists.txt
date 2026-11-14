@@ -38,7 +38,6 @@ endif()
 target_link_libraries(MayaFluxTests PRIVATE
     MayaFluxLib
     GTest::gtest
-    GTest::gtest_main
 )
 
 if(UNIX AND NOT APPLE AND MAYAFLUX_AUDIO_BACKEND STREQUAL "PIPEWIRE_BACKEND")
@@ -82,4 +81,38 @@ if(APPLE AND MAYAFLUX_WINDOWING_BACKEND STREQUAL "COCOA_BACKEND")
 endif()
 
 include(GoogleTest)
-gtest_discover_tests(MayaFluxTests)
+gtest_discover_tests(MayaFluxTests
+    NO_PRETTY_TYPES
+    NO_PRETTY_VALUES
+    TEST_LIST MayaFluxDiscoveredTests
+    DISCOVERY_MODE POST_BUILD
+)
+
+set(MAYAFLUX_TEST_METADATA_FILE
+    "${CMAKE_CURRENT_BINARY_DIR}/MayaFluxTests_metadata_$<CONFIG>.cmake"
+)
+
+add_custom_command(TARGET MayaFluxTests POST_BUILD
+    COMMAND $<TARGET_FILE:MayaFluxTests>
+        --mayaflux-emit-ctest "${MAYAFLUX_TEST_METADATA_FILE}"
+    VERBATIM
+)
+
+set(MAYAFLUX_TEST_METADATA_INCLUDE
+    "${CMAKE_CURRENT_BINARY_DIR}/MayaFluxTests_metadata_include.cmake"
+)
+
+get_property(MAYAFLUX_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(MAYAFLUX_MULTI_CONFIG)
+    set(MAYAFLUX_CTEST_CONFIG "\${CTEST_CONFIGURATION_TYPE}")
+else()
+    set(MAYAFLUX_CTEST_CONFIG "${CMAKE_BUILD_TYPE}")
+endif()
+
+file(WRITE "${MAYAFLUX_TEST_METADATA_INCLUDE}"
+    "if(DEFINED MayaFluxDiscoveredTests)\n  set(_mayaflux_metadata_file \"${CMAKE_CURRENT_BINARY_DIR}/MayaFluxTests_metadata_${MAYAFLUX_CTEST_CONFIG}.cmake\")\n  if(NOT EXISTS \"\${_mayaflux_metadata_file}\")\n    message(FATAL_ERROR \"MayaFluxTests metadata was not generated\")\n  endif()\n  include(\"\${_mayaflux_metadata_file}\")\nendif()\n"
+)
+
+set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
+    "${MAYAFLUX_TEST_METADATA_INCLUDE}"
+)

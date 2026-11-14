@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 
 #include "volume_grid_fixture.hpp"
@@ -6,6 +7,8 @@
 #include "MayaFlux/Buffers/Shaders/RenderProcessor.hpp"
 #include "MayaFlux/Buffers/State/RaymarchBuffer.hpp"
 #include "MayaFlux/Buffers/State/RaymarchProcessor.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {

@@ -1,6 +1,9 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "../../support/vision_test_support.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test::Vision {
 
@@ -336,14 +339,14 @@ TEST_F(VisionExecutorConfigGpuTest, ImplementedOpsReturnACompiledShaderPath)
     }
 }
 
-TEST(VisionExecutorConfigTest, OpsWithoutAGpuImplementationReturnAnInvalidShader)
+MAYAFLUX_TEST_WITH(TEST, VisionExecutorConfigTest, OpsWithoutAGpuImplementationReturnAnInvalidShader, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     const auto config = VisionGpuExecutor::config(VisionOp::Snapshot, VisionParams {});
     EXPECT_EQ(config.shader_id, Portal::Graphics::INVALID_SHADER);
     EXPECT_TRUE(config.shader_path.empty());
 }
 
-TEST(VisionExecutorConfigTest, ConfigIsStatelessAndRepeatable)
+MAYAFLUX_TEST_WITH(TEST, VisionExecutorConfigTest, ConfigIsStatelessAndRepeatable, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     const VisionParams params {};
     const auto first = VisionGpuExecutor::config(VisionOp::Sobel, params);

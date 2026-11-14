@@ -1,7 +1,10 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 
 #include "MayaFlux/Core/Backends/Input/TabletBackend.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -67,7 +70,7 @@ namespace {
     // Descriptor parsing
     // ------------------------------------------------------------------
 
-    TEST(TabletDescriptorTest, EmptyDescriptorYieldsEmptyLayout)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, EmptyDescriptorYieldsEmptyLayout, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const TabletLayout layout = layout_of({});
 
@@ -78,7 +81,7 @@ namespace {
         EXPECT_FALSE(layout.has_serial);
     }
 
-    TEST(TabletDescriptorTest, PenDescriptorProducesOneFieldPerReportedUsage)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, PenDescriptorProducesOneFieldPerReportedUsage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const TabletLayout layout = layout_of(pen_descriptor());
 
@@ -88,7 +91,7 @@ namespace {
         EXPECT_FALSE(layout.has_serial);
     }
 
-    TEST(TabletDescriptorTest, PenDescriptorPlacesFieldsAtCumulativeBitOffsets)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, PenDescriptorPlacesFieldsAtCumulativeBitOffsets, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const TabletLayout layout = layout_of(pen_descriptor());
 
@@ -118,7 +121,7 @@ namespace {
         }
     }
 
-    TEST(TabletDescriptorTest, PenDescriptorMapsUsagesToFrameSlots)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, PenDescriptorMapsUsagesToFrameSlots, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const TabletLayout layout = layout_of(pen_descriptor());
 
@@ -129,7 +132,7 @@ namespace {
         EXPECT_EQ(find_field(layout, k_page_digitizer, 0x3E)->slot, TabletFrame::TILT_Y);
     }
 
-    TEST(TabletDescriptorTest, SwitchUsagesAreNotFrameSlots)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, SwitchUsagesAreNotFrameSlots, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const TabletLayout layout = layout_of(pen_descriptor());
 
@@ -140,7 +143,7 @@ namespace {
         }
     }
 
-    TEST(TabletDescriptorTest, PenDescriptorReportsPressureAndTiltAxesOnly)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, PenDescriptorReportsPressureAndTiltAxesOnly, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const TabletLayout layout = layout_of(pen_descriptor());
 
@@ -149,7 +152,7 @@ namespace {
         EXPECT_FALSE(Core::has_axis(layout.axes, TabletAxes::DISTANCE));
     }
 
-    TEST(TabletDescriptorTest, LogicalRangesFollowDescriptorIncludingSignedMinimum)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, LogicalRangesFollowDescriptorIncludingSignedMinimum, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const TabletLayout layout = layout_of(pen_descriptor());
 
@@ -167,7 +170,7 @@ namespace {
         EXPECT_EQ(tilt->logical_max, 127);
     }
 
-    TEST(TabletDescriptorTest, SerialRotationAndWheelAreRecognised)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, SerialRotationAndWheelAreRecognised, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const TabletLayout layout = layout_of(serial_rotation_wheel_descriptor());
 
@@ -191,7 +194,7 @@ namespace {
         EXPECT_EQ(wheel->slot, TabletFrame::WHEEL);
     }
 
-    TEST(TabletDescriptorTest, ReportIdsKeepIndependentBitCursors)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, ReportIdsKeepIndependentBitCursors, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<uint8_t> descriptor {
             0x05, 0x0D, 0x09, 0x02, 0xA1, 0x01,
@@ -214,7 +217,7 @@ namespace {
         EXPECT_EQ(tilt->bit_offset, 0U);
     }
 
-    TEST(TabletDescriptorTest, PopRestoresGlobalStateSavedByPush)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, PopRestoresGlobalStateSavedByPush, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<uint8_t> descriptor {
             0x05, 0x0D, 0x09, 0x02, 0xA1, 0x01, 0x85, 0x01,
@@ -237,7 +240,7 @@ namespace {
         EXPECT_EQ(tilt->bit_offset, 16U);
     }
 
-    TEST(TabletDescriptorTest, ExtendedUsageCarriesItsOwnPage)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, ExtendedUsageCarriesItsOwnPage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<uint8_t> descriptor {
             0x05, 0x01, 0x09, 0x02, 0xA1, 0x01,
@@ -255,7 +258,7 @@ namespace {
         EXPECT_EQ(layout.axes, TabletAxes::PRESSURE);
     }
 
-    TEST(TabletDescriptorTest, UsageRangeExpandsAcrossReportCount)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, UsageRangeExpandsAcrossReportCount, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<uint8_t> descriptor {
             0x05, 0x0D, 0x09, 0x02, 0xA1, 0x01,
@@ -275,7 +278,7 @@ namespace {
         EXPECT_EQ(layout.fields[1].bit_offset, 8U);
     }
 
-    TEST(TabletDescriptorTest, DescriptorWithoutDigitizerPageIsNotATablet)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, DescriptorWithoutDigitizerPageIsNotATablet, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<uint8_t> mouse {
             0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x09, 0x01, 0xA1, 0x00,
@@ -292,7 +295,7 @@ namespace {
         EXPECT_TRUE(layout.fields.empty());
     }
 
-    TEST(TabletDescriptorTest, ConstantPaddingProducesNoFieldsButAdvancesCursor)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, ConstantPaddingProducesNoFieldsButAdvancesCursor, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const TabletLayout layout = layout_of(pen_descriptor());
 
@@ -302,7 +305,7 @@ namespace {
         }
     }
 
-    TEST(TabletDescriptorTest, TruncatedItemStopsParsingWithoutFault)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, TruncatedItemStopsParsingWithoutFault, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<uint8_t> truncated {
             0x05, 0x0D, 0x09, 0x02, 0xA1, 0x01, 0x26, 0xFF
@@ -314,7 +317,7 @@ namespace {
         });
     }
 
-    TEST(TabletDescriptorTest, ZeroSizedInputItemIsSkipped)
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, ZeroSizedInputItemIsSkipped, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<uint8_t> descriptor {
             0x05, 0x0D, 0x09, 0x02, 0xA1, 0x01,
@@ -331,7 +334,7 @@ namespace {
     // Lifecycle
     // ------------------------------------------------------------------
 
-    TEST(TabletBackendTest, ReportsIdentityBeforeInitialization)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, ReportsIdentityBeforeInitialization, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         TabletBackend backend;
 
@@ -342,7 +345,7 @@ namespace {
         EXPECT_FALSE(backend.is_running());
     }
 
-    TEST(TabletBackendTest, QueriesBeforeInitializationAreEmpty)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, QueriesBeforeInitializationAreEmpty, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         TabletBackend backend;
 
@@ -355,7 +358,7 @@ namespace {
         EXPECT_EQ(backend.get_layout(1), std::nullopt);
     }
 
-    TEST(TabletBackendTest, InitializeIsIdempotentAndShutdownReleases)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, InitializeIsIdempotentAndShutdownReleases, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend backend;
 
@@ -369,7 +372,7 @@ namespace {
         EXPECT_NO_THROW(backend.shutdown());
     }
 
-    TEST(TabletBackendTest, StartRequiresInitialization)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, StartRequiresInitialization, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         TabletBackend backend;
 
@@ -378,7 +381,7 @@ namespace {
         EXPECT_FALSE(backend.is_running());
     }
 
-    TEST(TabletBackendTest, StartAndStopAreIdempotent)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, StartAndStopAreIdempotent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend backend;
         ASSERT_TRUE(backend.initialize());
@@ -395,7 +398,7 @@ namespace {
         EXPECT_NO_THROW(backend.stop());
     }
 
-    TEST(TabletBackendTest, ShutdownStopsARunningBackend)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, ShutdownStopsARunningBackend, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend backend;
         ASSERT_TRUE(backend.initialize());
@@ -407,7 +410,7 @@ namespace {
         EXPECT_FALSE(backend.is_initialized());
     }
 
-    TEST(TabletBackendTest, DestructionWhileRunningIsClean)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, DestructionWhileRunningIsClean, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         auto backend = std::make_unique<TabletBackend>();
         ASSERT_TRUE(backend->initialize());
@@ -416,7 +419,7 @@ namespace {
         EXPECT_NO_THROW(backend.reset());
     }
 
-    TEST(TabletBackendTest, RestartsRepeatedlyInOneProcess)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, RestartsRepeatedlyInOneProcess, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend backend;
 
@@ -430,7 +433,7 @@ namespace {
         }
     }
 
-    TEST(TabletBackendTest, SequentialBackendsInitializeIndependently)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, SequentialBackendsInitializeIndependently, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         {
             TabletBackend first;
@@ -441,7 +444,7 @@ namespace {
         EXPECT_TRUE(second.initialize());
     }
 
-    TEST(TabletBackendTest, ProbingOnlyAnnouncedDigitizersStillInitializes)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, ProbingOnlyAnnouncedDigitizersStillInitializes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend::Config config;
         config.probe_all_devices = false;
@@ -450,7 +453,7 @@ namespace {
         EXPECT_TRUE(backend.initialize());
     }
 
-    TEST(TabletBackendTest, UnknownIdsAreRejectedOrIgnored)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, UnknownIdsAreRejectedOrIgnored, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend backend;
         ASSERT_TRUE(backend.initialize());
@@ -463,7 +466,7 @@ namespace {
         EXPECT_EQ(backend.get_layout(unknown), std::nullopt);
     }
 
-    TEST(TabletBackendTest, DeviceCallbackAnnouncesEveryAdoptedToolOnInitialize)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, DeviceCallbackAnnouncesEveryAdoptedToolOnInitialize, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend backend;
         std::vector<Core::InputDeviceInfo> announced;
@@ -483,7 +486,7 @@ namespace {
             EXPECT_EQ(info.backend_type, Core::InputType::TABLET);
     }
 
-    TEST(TabletBackendTest, RefreshDoesNotDuplicateAdoptedTools)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, RefreshDoesNotDuplicateAdoptedTools, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend backend;
         ASSERT_TRUE(backend.initialize());
@@ -503,7 +506,7 @@ namespace {
             GTEST_SKIP() << "No tablet device available"; \
     } while (0)
 
-    TEST(TabletBackendTest, ToolInfoAndLayoutAgreeWithEnumeration)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, ToolInfoAndLayoutAgreeWithEnumeration, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend backend;
         ASSERT_TRUE(backend.initialize());
@@ -526,7 +529,7 @@ namespace {
         }
     }
 
-    TEST(TabletBackendTest, DisablingEraserSplitReportsPensOnly)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, DisablingEraserSplitReportsPensOnly, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend::Config config;
         config.split_eraser = false;
@@ -541,7 +544,7 @@ namespace {
         }
     }
 
-    TEST(TabletBackendTest, PenAndEraserOfOneTabletShareLayoutAndName)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, PenAndEraserOfOneTabletShareLayoutAndName, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend backend;
         ASSERT_TRUE(backend.initialize());
@@ -566,7 +569,7 @@ namespace {
         }
     }
 
-    TEST(TabletBackendTest, ToolsAreOpenAfterInitializeAndReopenAfterClose)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, ToolsAreOpenAfterInitializeAndReopenAfterClose, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend backend;
         ASSERT_TRUE(backend.initialize());
@@ -583,7 +586,7 @@ namespace {
         EXPECT_TRUE(backend.is_device_open(id));
     }
 
-    TEST(TabletBackendTest, OpeningAnOpenToolKeepsItOpen)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, OpeningAnOpenToolKeepsItOpen, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend backend;
         ASSERT_TRUE(backend.initialize());
@@ -594,7 +597,7 @@ namespace {
         EXPECT_TRUE(backend.is_device_open(id));
     }
 
-    TEST(TabletBackendTest, RunningBackendSurvivesCloseAndReopenOfATool)
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, RunningBackendSurvivesCloseAndReopenOfATool, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::tablet_enumeration, ::MayaFlux::Test::Meta::Capability::tablet_open>() }))
     {
         TabletBackend backend;
         ASSERT_TRUE(backend.initialize());

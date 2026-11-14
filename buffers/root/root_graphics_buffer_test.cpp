@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <stdexcept>
 
@@ -13,6 +14,8 @@
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Registry/Service/DisplayService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -719,7 +722,7 @@ void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
         bool flow_ready {};
     };
 
-    TEST_F(RootGraphicsPresentationTest, BatchRecordsARealDrawAndPresenterConsumesIt)
+    MAYAFLUX_TEST_WITH(TEST_F, RootGraphicsPresentationTest, BatchRecordsARealDrawAndPresenterConsumesIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw();
         ASSERT_NE(root, nullptr);
@@ -741,7 +744,7 @@ void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
             Portal::Graphics::INVALID_COMMAND_BUFFER);
     }
 
-    TEST_F(RootGraphicsPresentationTest, CustomPresenterReceivesRealDrawWithoutFallbackConsumption)
+    MAYAFLUX_TEST_WITH(TEST_F, RootGraphicsPresentationTest, CustomPresenterReceivesRealDrawWithoutFallbackConsumption, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw();
         ASSERT_NE(root, nullptr);
@@ -769,7 +772,7 @@ void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
         root_chain->remove_processor_anywhere(presenter, root);
     }
 
-    TEST_F(RootGraphicsPresentationTest, ExplicitRefreshIsConsumedAfterASecondPresentation)
+    MAYAFLUX_TEST_WITH(TEST_F, RootGraphicsPresentationTest, ExplicitRefreshIsConsumedAfterASecondPresentation, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw();
         ASSERT_NE(root, nullptr);
@@ -790,7 +793,7 @@ void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
         EXPECT_TRUE(root->get_renderable_buffers().empty());
     }
 
-    TEST_F(RootGraphicsPresentationTest, DetachedWindowStopsItsRenderProcessorAndLeavesTheChild)
+    MAYAFLUX_TEST_WITH(TEST_F, RootGraphicsPresentationTest, DetachedWindowStopsItsRenderProcessorAndLeavesTheChild, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw();
         ASSERT_NE(root, nullptr);
@@ -812,7 +815,7 @@ void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
         EXPECT_EQ(processing_calls, 2U);
     }
 
-    TEST_F(RootGraphicsPresentationTest, NullWindowDetachmentLeavesTheCompositionAlone)
+    MAYAFLUX_TEST_WITH(TEST_F, RootGraphicsPresentationTest, NullWindowDetachmentLeavesTheCompositionAlone, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw();
         ASSERT_NE(root, nullptr);
@@ -825,7 +828,7 @@ void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
         EXPECT_EQ(chain->get_final_processor(child), render);
     }
 
-    TEST_F(RootGraphicsPresentationTest, RemovedChildRequestsAWindowClear)
+    MAYAFLUX_TEST_WITH(TEST_F, RootGraphicsPresentationTest, RemovedChildRequestsAWindowClear, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw();
         ASSERT_NE(root, nullptr);
@@ -844,7 +847,7 @@ void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
         EXPECT_TRUE(root->get_pending_presentation_refreshes().empty());
     }
 
-    TEST_F(RootGraphicsPresentationTest, RefreshWithoutDrawsPresentsAClearFrame)
+    MAYAFLUX_TEST_WITH(TEST_F, RootGraphicsPresentationTest, RefreshWithoutDrawsPresentsAClearFrame, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         window = make_window();
         ASSERT_NE(window, nullptr);
@@ -862,7 +865,7 @@ void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
         EXPECT_TRUE(root->get_pending_presentation_refreshes().empty());
     }
 
-    TEST_F(RootGraphicsPresentationTest, RefreshForAnUnregisteredWindowIsDiscarded)
+    MAYAFLUX_TEST_WITH(TEST_F, RootGraphicsPresentationTest, RefreshForAnUnregisteredWindowIsDiscarded, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         window = make_window();
         ASSERT_NE(window, nullptr);
@@ -875,7 +878,7 @@ void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
         EXPECT_TRUE(root->get_pending_presentation_refreshes().empty());
     }
 
-    TEST_F(RootGraphicsPresentationTest, DepthDrawRequestsAWindowDepthAttachment)
+    MAYAFLUX_TEST_WITH(TEST_F, RootGraphicsPresentationTest, DepthDrawRequestsAWindowDepthAttachment, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw();
         ASSERT_NE(root, nullptr);
@@ -895,7 +898,7 @@ void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
             static_cast<uint32_t>(vk::Format::eUndefined));
     }
 
-    TEST_F(RootGraphicsPresentationTest, ChildRefreshRebuildsTheWindowComposition)
+    MAYAFLUX_TEST_WITH(TEST_F, RootGraphicsPresentationTest, ChildRefreshRebuildsTheWindowComposition, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw();
         ASSERT_NE(root, nullptr);
@@ -912,7 +915,7 @@ void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
         EXPECT_EQ(root->get_renderable_buffers()[0].buffer, child);
     }
 
-    TEST_F(RootGraphicsPresentationTest, HiddenDrawClearsTheWindowAndShowingItRestoresTheDraw)
+    MAYAFLUX_TEST_WITH(TEST_F, RootGraphicsPresentationTest, HiddenDrawClearsTheWindowAndShowingItRestoresTheDraw, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw();
         ASSERT_NE(root, nullptr);
@@ -933,7 +936,7 @@ void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
         EXPECT_EQ(root->get_renderable_buffers()[0].buffer, child);
     }
 
-    TEST_F(RootGraphicsPresentationTest, PresenterConsumesDrawsForTwoWindows)
+    MAYAFLUX_TEST_WITH(TEST_F, RootGraphicsPresentationTest, PresenterConsumesDrawsForTwoWindows, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw();
         ASSERT_NE(root, nullptr);

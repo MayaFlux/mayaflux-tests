@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 
 #include "../../support/native_window_test_support.hpp"
@@ -19,6 +20,8 @@
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Registry/Service/DisplayService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -603,7 +606,7 @@ namespace {
         bool flow_ready {};
     };
 
-    TEST_F(MeshNetworkBufferPresentationTest, DefaultShadersDrawSlotColorsAtTheirUploadedWorldTransforms)
+    MAYAFLUX_TEST_WITH(TEST_F, MeshNetworkBufferPresentationTest, DefaultShadersDrawSlotColorsAtTheirUploadedWorldTransforms, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         buffer->setup_rendering(MeshNetworkBuffer::RenderConfig { .target_window = window });
         const auto render = buffer->get_render_processor();
@@ -624,7 +627,7 @@ namespace {
         EXPECT_LT(right[2], 40U);
     }
 
-    TEST_F(MeshNetworkBufferPresentationTest, MilledLineModeDrawsWireframesForEachTransformedSlot)
+    MAYAFLUX_TEST_WITH(TEST_F, MeshNetworkBufferPresentationTest, MilledLineModeDrawsWireframesForEachTransformedSlot, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         buffer->setup_rendering(MeshNetworkBuffer::RenderConfig {
             .target_window = window,
@@ -646,7 +649,7 @@ namespace {
         EXPECT_LT(left_interior[1], 40U);
     }
 
-    TEST_F(MeshNetworkBufferPresentationTest, MilledPointModeDrawsVertexMarkersForEachTransformedSlot)
+    MAYAFLUX_TEST_WITH(TEST_F, MeshNetworkBufferPresentationTest, MilledPointModeDrawsVertexMarkersForEachTransformedSlot, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         buffer->setup_rendering(MeshNetworkBuffer::RenderConfig {
             .target_window = window,

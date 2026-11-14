@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 
 #include "../../support/vulkan_test_support.hpp"
@@ -13,6 +14,8 @@
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+
 namespace MayaFlux::Test {
 namespace {
 
@@ -20,7 +23,7 @@ namespace {
     using Buffers::UVProjectionMode;
     using Kakshya::MeshVertex;
 
-    TEST(UVFieldProcessorConfigTest, DeclaresOnlyTheVertexBindingByDefault)
+    MAYAFLUX_TEST_WITH(TEST, UVFieldProcessorConfigTest, DeclaresOnlyTheVertexBindingByDefault, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         UVFieldProcessor processor;
         const auto& config = processor.get_config();

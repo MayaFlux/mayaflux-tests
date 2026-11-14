@@ -1,10 +1,13 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/BufferSpec.hpp"
 #include "MayaFlux/Buffers/Recursive/FeedbackBuffer.hpp"
 #include "MayaFlux/Kinesis/Discrete/Kernels.hpp"
 #include "MayaFlux/Kinesis/Tendency/TendencyFactories.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 

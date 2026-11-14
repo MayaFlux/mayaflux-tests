@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <string_view>
 
@@ -7,6 +8,8 @@
 
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 #include "MayaFlux/Portal/Graphics/ShaderSpec.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -84,12 +87,12 @@ void main() {
 
     class ShaderStageTableTest : public ::testing::TestWithParam<StageCase> { };
 
-    TEST_P(ShaderStageTableTest, MapsToItsVulkanStage)
+    MAYAFLUX_TEST_WITH(TEST_P, ShaderStageTableTest, MapsToItsVulkanStage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(ShaderFoundry::to_vulkan_stage(GetParam().stage), GetParam().vulkan);
     }
 
-    TEST_P(ShaderStageTableTest, IsDetectedFromItsFileExtension)
+    MAYAFLUX_TEST_WITH(TEST_P, ShaderStageTableTest, IsDetectedFromItsFileExtension, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(ShaderFoundry::detect_stage_from_extension(std::string(GetParam().file)), GetParam().stage);
     }
@@ -106,7 +109,7 @@ void main() {
             StageCase { "Task", ShaderStage::TASK, vk::ShaderStageFlagBits::eTaskEXT, "a.task" }),
         [](const ::testing::TestParamInfo<StageCase>& info) { return std::string(info.param.name); });
 
-    TEST(ShaderStageTest, UnknownExtensionHasNoStage)
+    MAYAFLUX_TEST_WITH(TEST, ShaderStageTest, UnknownExtensionHasNoStage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_FALSE(ShaderFoundry::detect_stage_from_extension("notes.txt").has_value());
         EXPECT_FALSE(ShaderFoundry::detect_stage_from_extension("noextension").has_value());
@@ -238,7 +241,7 @@ void main() {
         EXPECT_EQ(foundry().load_shader(spec), INVALID_SHADER);
     }
 
-    TEST_F(ShaderFoundryTest, UserKernelWithADoubleBindingLoadsWhenTheDeviceSupportsIt)
+    MAYAFLUX_TEST_WITH(TEST_F, ShaderFoundryTest, UserKernelWithADoubleBindingLoadsWhenTheDeviceSupportsIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::shader_float64, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         ASSERT_TRUE(foundry().initialize(backend()));
         if (!foundry().get_physical_device().getFeatures().shaderFloat64) {
@@ -371,7 +374,7 @@ layout(local_size_x = 4, local_size_y = 2, local_size_z = 1) in;
 void main() { }
 )";
 
-    TEST_F(ShaderFoundryTest, UserShaderDirectoryWinsOverALibraryShaderOfTheSameName)
+    MAYAFLUX_TEST_WITH(TEST_F, ShaderFoundryTest, UserShaderDirectoryWinsOverALibraryShaderOfTheSameName, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         ASSERT_TRUE(foundry().initialize(backend()));
         ScopedWorkingDir cwd;
@@ -385,7 +388,7 @@ void main() { }
         EXPECT_EQ(*workgroup, (std::array<uint32_t, 3> { 4, 2, 1 }));
     }
 
-    TEST_F(ShaderFoundryTest, DataShadersDirectoryAlsoWinsOverALibraryShaderOfTheSameName)
+    MAYAFLUX_TEST_WITH(TEST_F, ShaderFoundryTest, DataShadersDirectoryAlsoWinsOverALibraryShaderOfTheSameName, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         ASSERT_TRUE(foundry().initialize(backend()));
         ScopedWorkingDir cwd;
@@ -399,7 +402,7 @@ void main() { }
         EXPECT_EQ(*workgroup, (std::array<uint32_t, 3> { 4, 2, 1 }));
     }
 
-    TEST_F(ShaderFoundryTest, LibraryShaderIsUsedWhenNoUserCopyExists)
+    MAYAFLUX_TEST_WITH(TEST_F, ShaderFoundryTest, LibraryShaderIsUsedWhenNoUserCopyExists, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         ASSERT_TRUE(foundry().initialize(backend()));
         ScopedWorkingDir cwd;

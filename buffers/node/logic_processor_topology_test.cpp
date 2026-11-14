@@ -1,10 +1,13 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/Node/LogicProcessor.hpp"
 #include "MayaFlux/Kinesis/Discrete/Boolean.hpp"
 #include "MayaFlux/Kinesis/Discrete/Word.hpp"
 #include "MayaFlux/Nodes/Generators/Logic.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 

@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 
 #include "../../support/native_window_test_support.hpp"
@@ -18,6 +19,8 @@
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Registry/Service/DisplayService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -340,7 +343,7 @@ protected:
     bool flow_ready {};
 };
 
-TEST_F(InstanceNetworkBufferPresentationTest, RotatedInstanceKeepsItsMilledPointFacingTheView)
+MAYAFLUX_TEST_WITH(TEST_F, InstanceNetworkBufferPresentationTest, RotatedInstanceKeepsItsMilledPointFacingTheView, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     root->process_default();
     Buffers::PresentProcessor presenter;
@@ -354,7 +357,7 @@ TEST_F(InstanceNetworkBufferPresentationTest, RotatedInstanceKeepsItsMilledPoint
     EXPECT_GT(red_at(0.5F, 0.08F), 200U);
 }
 
-TEST_F(InstanceNetworkBufferPresentationTest, WorldPlaneHoldsARotatedInstanceEdgeOn)
+MAYAFLUX_TEST_WITH(TEST_F, InstanceNetworkBufferPresentationTest, WorldPlaneHoldsARotatedInstanceEdgeOn, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     const auto render = buffer->get_render_processor();
     ASSERT_NE(render, nullptr);

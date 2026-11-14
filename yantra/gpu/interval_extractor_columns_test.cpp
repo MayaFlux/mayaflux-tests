@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <cmath>
 #include <tuple>
@@ -7,6 +8,8 @@
 
 #include "MayaFlux/Kinesis/Discrete/IntervalScan.hpp"
 #include "MayaFlux/Yantra/Extractors/IntervalExtractor.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {

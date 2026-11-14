@@ -1,8 +1,11 @@
 #include "../mock_signalsourcecontainer.hpp"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Kinesis/MatrixTransforms.hpp"
 #include "MayaFlux/Yantra/Analyzers/StatisticalAnalyzer.hpp"
 #include "MayaFlux/Yantra/OperationSpec/MatrixHelper.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 using namespace MayaFlux::Yantra;
 using namespace MayaFlux::Kakshya;

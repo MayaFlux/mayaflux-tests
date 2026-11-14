@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #if defined(MAYAFLUX_PLATFORM_MACOS) && defined(COCOA_BACKEND)
 
@@ -8,6 +9,8 @@
 #include "MayaFlux/Core/Backends/Windowing/Cocoa/KeyMapping.hpp"
 
 #include "../support/cocoa_event_injector.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display>() }))
 
 #define REQUIRE_DISPLAY()                                                      \
     do {                                                                       \
@@ -594,7 +597,7 @@ namespace {
 
     class CocoaModifierMaskTest : public ::testing::TestWithParam<ModifierCase> { };
 
-    TEST_P(CocoaModifierMaskTest, KeyEventsCarryModifierBits)
+    MAYAFLUX_TEST_WITH(TEST_P, CocoaModifierMaskTest, KeyEventsCarryModifierBits, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         REQUIRE_DISPLAY();
         const auto& param = GetParam();
@@ -634,7 +637,7 @@ namespace {
 
     class CocoaModifierKeyTest : public ::testing::TestWithParam<ModifierKeyCase> { };
 
-    TEST_P(CocoaModifierKeyTest, FlagsChangedEmitsPressThenRelease)
+    MAYAFLUX_TEST_WITH(TEST_P, CocoaModifierKeyTest, FlagsChangedEmitsPressThenRelease, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         REQUIRE_DISPLAY();
         const auto& param = GetParam();
@@ -750,7 +753,7 @@ namespace {
 
     class CocoaRejectedTextTest : public ::testing::TestWithParam<RejectedTextCase> { };
 
-    TEST_P(CocoaRejectedTextTest, CommittedTextProducesNoTextEvent)
+    MAYAFLUX_TEST_WITH(TEST_P, CocoaRejectedTextTest, CommittedTextProducesNoTextEvent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         REQUIRE_DISPLAY();
         WindowHarness harness;
@@ -796,7 +799,7 @@ namespace {
 
     class CocoaMouseButtonTest : public ::testing::TestWithParam<MouseButtonCase> { };
 
-    TEST_P(CocoaMouseButtonTest, PressAndReleaseEmitButtonEventsAndTrackSourceState)
+    MAYAFLUX_TEST_WITH(TEST_P, CocoaMouseButtonTest, PressAndReleaseEmitButtonEventsAndTrackSourceState, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         REQUIRE_DISPLAY();
         const auto number = static_cast<int>(GetParam().button);
@@ -864,7 +867,7 @@ namespace {
 
     class CocoaScrollTest : public ::testing::TestWithParam<ScrollCase> { };
 
-    TEST_P(CocoaScrollTest, PreciseDeltasAreScaledAndHorizontalIsFlipped)
+    MAYAFLUX_TEST_WITH(TEST_P, CocoaScrollTest, PreciseDeltasAreScaledAndHorizontalIsFlipped, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         REQUIRE_DISPLAY();
         const auto& param = GetParam();
@@ -971,7 +974,7 @@ namespace {
         EXPECT_EQ(events[2].type, WindowEventType::KEY_RELEASED);
     }
 
-    TEST(CocoaKeyMappingTest, LettersAndNavigationKeysRoundTripThroughTable)
+    MAYAFLUX_TEST_WITH(TEST, CocoaKeyMappingTest, LettersAndNavigationKeysRoundTripThroughTable, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         for (auto raw = static_cast<int16_t>(IO::Keys::A); raw <= static_cast<int16_t>(IO::Keys::Z); ++raw) {
             const auto key = static_cast<IO::Keys>(raw);
@@ -988,7 +991,7 @@ namespace {
         }
     }
 
-    TEST(CocoaKeyMappingTest, ModifierKeysMapToDistinctCodes)
+    MAYAFLUX_TEST_WITH(TEST, CocoaKeyMappingTest, ModifierKeysMapToDistinctCodes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::array modifiers {
             IO::Keys::LShift, IO::Keys::RShift, IO::Keys::LCtrl, IO::Keys::RCtrl,
@@ -1008,7 +1011,7 @@ namespace {
         EXPECT_EQ(std::ranges::adjacent_find(codes), codes.end());
     }
 
-    TEST(CocoaKeyMappingTest, UnmappedKeysReportUnknownAndNegativeOne)
+    MAYAFLUX_TEST_WITH(TEST, CocoaKeyMappingTest, UnmappedKeysReportUnknownAndNegativeOne, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(Core::to_cocoa_key(IO::Keys::Unknown), -1);
         EXPECT_EQ(Core::from_cocoa_key(0xFFFF), IO::Keys::Unknown);

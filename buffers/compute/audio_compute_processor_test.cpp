@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <fstream>
 
@@ -8,6 +9,8 @@
 #include "MayaFlux/Buffers/AudioCompute/AudioComputeProcessor.hpp"
 #include "MayaFlux/Buffers/Root/RootParallelAudioBuffer.hpp"
 #include "MayaFlux/Buffers/VKBuffer.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -283,7 +286,7 @@ void main() {
         expect_bits_equal(child->get_data(), sign_flipped(grown));
     }
 
-    TEST_F(AudioComputeProcessorDeviceTest, MissingShaderClearsTheChildAndNeverReplaysOldSamples)
+    MAYAFLUX_TEST_WITH(TEST_F, AudioComputeProcessorDeviceTest, MissingShaderClearsTheChildAndNeverReplaysOldSamples, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto missing = (std::filesystem::temp_directory_path()
             / ("mayaflux_audio_compute_missing_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)) + ".comp"))
@@ -328,7 +331,7 @@ void main() {
         expect_bits_equal(child->get_data(), sign_flipped(grown));
     }
 
-    TEST_F(AudioComputeProcessorDeviceTest, MissingShaderAtAttachDoesNotThrowAndLoadsNothing)
+    MAYAFLUX_TEST_WITH(TEST_F, AudioComputeProcessorDeviceTest, MissingShaderAtAttachDoesNotThrowAndLoadsNothing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto missing = (std::filesystem::temp_directory_path()
             / ("mayaflux_audio_compute_attach_missing_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)) + ".comp"))
@@ -441,7 +444,7 @@ void main() {
         EXPECT_FALSE(processor.is_native_f64());
     }
 
-    TEST_F(AudioComputeProcessorDeviceTest, NativeF64DispatchesWhenTheDeviceSupportsIt)
+    MAYAFLUX_TEST_WITH(TEST_F, AudioComputeProcessorDeviceTest, NativeF64DispatchesWhenTheDeviceSupportsIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::shader_float64, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         if (!device_supports_shader_float64()) {
             GTEST_SKIP() << "Selected device does not report shaderFloat64";

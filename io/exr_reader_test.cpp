@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "../support/scoped_working_dir.hpp"
 #include "../support/vulkan_test_support.hpp"
@@ -10,6 +11,8 @@
 #include "MayaFlux/Core/GlobalStreamInfo.hpp"
 
 #include <tinyexr.h>
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -309,7 +312,7 @@ namespace {
         static inline std::shared_ptr<Core::VulkanBackend> s_backend;
     };
 
-    TEST_F(EXRReaderGpuTest, UploadsFloatPixelsToARealTextureAndReadsThemBack)
+    MAYAFLUX_TEST_WITH(TEST_F, EXRReaderGpuTest, UploadsFloatPixelsToARealTextureAndReadsThemBack, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         ScopedWorkingDir files;
         const auto source = float_image(4);
@@ -327,7 +330,7 @@ namespace {
         EXPECT_EQ(*readback->as_float(), *source.as_float());
     }
 
-    TEST_F(EXRReaderGpuTest, SavesRealTextureSynchronouslyAndAsynchronously)
+    MAYAFLUX_TEST_WITH(TEST_F, EXRReaderGpuTest, SavesRealTextureSynchronouslyAndAsynchronously, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         ScopedWorkingDir files;
         const auto source = float_image(4);

@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include <cctype>
 
@@ -7,6 +8,8 @@
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKContext.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKDevice.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -92,7 +95,7 @@ namespace {
 
 }
 
-TEST(QueueFamilyIndicesTest, EmptyIndicesAreIncompleteAndPresentNowhere)
+MAYAFLUX_TEST_WITH(TEST, QueueFamilyIndicesTest, EmptyIndicesAreIncompleteAndPresentNowhere, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     const QueueFamilyIndices indices;
 
@@ -101,14 +104,14 @@ TEST(QueueFamilyIndicesTest, EmptyIndicesAreIncompleteAndPresentNowhere)
     EXPECT_FALSE(indices.preferred_present_family().has_value());
 }
 
-TEST(QueueFamilyIndicesTest, GraphicsFamilyMakesTheIndicesComplete)
+MAYAFLUX_TEST_WITH(TEST, QueueFamilyIndicesTest, GraphicsFamilyMakesTheIndicesComplete, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     QueueFamilyIndices indices;
     indices.graphics_family = 2;
     EXPECT_TRUE(indices.is_complete());
 }
 
-TEST(QueueFamilyIndicesTest, PresentMaskIsReadPerFamilyAndBoundedByItsWidth)
+MAYAFLUX_TEST_WITH(TEST, QueueFamilyIndicesTest, PresentMaskIsReadPerFamilyAndBoundedByItsWidth, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     QueueFamilyIndices indices;
     indices.present_family_mask = (1U << 0) | (1U << 5) | (1U << 31);
@@ -121,7 +124,7 @@ TEST(QueueFamilyIndicesTest, PresentMaskIsReadPerFamilyAndBoundedByItsWidth)
     EXPECT_FALSE(indices.can_present(1000));
 }
 
-TEST(QueueFamilyIndicesTest, PreferredPresentFamilyIsGraphicsWhenItCanPresent)
+MAYAFLUX_TEST_WITH(TEST, QueueFamilyIndicesTest, PreferredPresentFamilyIsGraphicsWhenItCanPresent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     QueueFamilyIndices indices;
     indices.graphics_family = 3;
@@ -130,7 +133,7 @@ TEST(QueueFamilyIndicesTest, PreferredPresentFamilyIsGraphicsWhenItCanPresent)
     EXPECT_EQ(indices.preferred_present_family(), std::optional<uint32_t> { 3 });
 }
 
-TEST(QueueFamilyIndicesTest, PreferredPresentFamilyFallsBackToTheLowestPresentingFamily)
+MAYAFLUX_TEST_WITH(TEST, QueueFamilyIndicesTest, PreferredPresentFamilyFallsBackToTheLowestPresentingFamily, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     QueueFamilyIndices indices;
     indices.graphics_family = 0;
@@ -139,7 +142,7 @@ TEST(QueueFamilyIndicesTest, PreferredPresentFamilyFallsBackToTheLowestPresentin
     EXPECT_EQ(indices.preferred_present_family(), std::optional<uint32_t> { 2 });
 }
 
-TEST(QueueFamilyIndicesTest, PreferredPresentFamilyIsEmptyWithoutAnyPresentingFamily)
+MAYAFLUX_TEST_WITH(TEST, QueueFamilyIndicesTest, PreferredPresentFamilyIsEmptyWithoutAnyPresentingFamily, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     QueueFamilyIndices indices;
     indices.graphics_family = 0;

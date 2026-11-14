@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "../../support/gpu_dispatch_test_support.hpp"
 
@@ -6,6 +7,8 @@
 #include "MayaFlux/Yantra/Sorters/BitonicSorter.hpp"
 
 #include <random>
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -76,7 +79,7 @@ namespace {
         return std::get<std::vector<double>>(result.data.at(channel));
     }
 
-    TEST(BitonicSorterRegistryTest, IsAVulkanCandidateBesideTheCpuSorters)
+    MAYAFLUX_TEST_WITH(TEST, BitonicSorterRegistryTest, IsAVulkanCandidateBesideTheCpuSorters, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         static_assert(Yantra::target_of_v<BitonicSorter<>> == Yantra::targets::vulkan);
 
@@ -90,7 +93,7 @@ namespace {
         EXPECT_GE(count_of(Yantra::targets::cpu), 1);
     }
 
-    TEST(BitonicSorterDeclineTest, DeclinesOnlyWhatTheDeviceCannotRun)
+    MAYAFLUX_TEST_WITH(TEST, BitonicSorterDeclineTest, DeclinesOnlyWhatTheDeviceCannotRun, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto accepts = [](SortingDirection direction, SortingStrategy strategy, size_t chunk_size = 1024) {
             StandardSorterConfig config;
@@ -109,7 +112,7 @@ namespace {
         EXPECT_FALSE(accepts(SortingDirection::ASCENDING, SortingStrategy::CHUNKED_SORT, 0));
     }
 
-    TEST(BitonicSorterDeclineTest, EveryAlgorithmIsAccepted)
+    MAYAFLUX_TEST_WITH(TEST, BitonicSorterDeclineTest, EveryAlgorithmIsAccepted, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         for (const auto algorithm : { Yantra::SortingAlgorithm::STANDARD, Yantra::SortingAlgorithm::STABLE,
                  Yantra::SortingAlgorithm::PARTIAL, Yantra::SortingAlgorithm::NTH_ELEMENT,

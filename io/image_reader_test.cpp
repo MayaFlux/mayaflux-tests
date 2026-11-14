@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 
 #include "../support/scoped_working_dir.hpp"
@@ -10,6 +11,8 @@
 #include "MayaFlux/Core/GlobalStreamInfo.hpp"
 #include "MayaFlux/Buffers/Textures/TextureBuffer.hpp"
 #include "MayaFlux/Buffers/Textures/TextBuffer.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -356,7 +359,7 @@ namespace {
         static inline std::shared_ptr<Core::VulkanBackend> s_backend;
     };
 
-    TEST_F(ImageReaderTextureTest, UploadsCroppedPixelsAndKeepsWholeImageBehavior)
+    MAYAFLUX_TEST_WITH(TEST_F, ImageReaderTextureTest, UploadsCroppedPixelsAndKeepsWholeImageBehavior, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         ScopedWorkingDir files;
         files.write("image.pnm", make_image());
@@ -381,7 +384,7 @@ namespace {
             Kakshya::Region::image_rect(1, 1, 2, 2)));
     }
 
-    TEST_F(ImageReaderTextureTest, SavesRealTextureSynchronouslyAndAsynchronously)
+    MAYAFLUX_TEST_WITH(TEST_F, ImageReaderTextureTest, SavesRealTextureSynchronouslyAndAsynchronously, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         ScopedWorkingDir files;
         files.write("image.pnm", make_image());
@@ -405,7 +408,7 @@ namespace {
         }
     }
 
-    TEST_F(ImageReaderTextureTest, ExportsRealTextureAndTextBuffersAndReportsFailures)
+    MAYAFLUX_TEST_WITH(TEST_F, ImageReaderTextureTest, ExportsRealTextureAndTextBuffersAndReportsFailures, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         ScopedWorkingDir files;
         files.write("image.pnm", make_image());

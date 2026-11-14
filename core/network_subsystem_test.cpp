@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include <chrono>
 #include <string_view>
@@ -11,6 +12,8 @@
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/NetworkService.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -704,7 +707,7 @@ namespace {
     // Real UDP loopback through the service
     // ------------------------------------------------------------------
 
-    TEST(NetworkSubsystemTest, UdpLoopbackThroughTheRegisteredService)
+    MAYAFLUX_TEST_WITH(TEST, NetworkSubsystemTest, UdpLoopbackThroughTheRegisteredService, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::loopback_udp>() }))
     {
         Inbox inbox;
         SubsystemRig rig(GlobalNetworkConfig::with_udp());
@@ -737,7 +740,7 @@ namespace {
         EXPECT_EQ(service->get_endpoint_state(receiver_id), EndpointState::OPEN);
     }
 
-    TEST(NetworkSubsystemTest, UdpKeepsDeliveringAfterPauseAndResume)
+    MAYAFLUX_TEST_WITH(TEST, NetworkSubsystemTest, UdpKeepsDeliveringAfterPauseAndResume, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::loopback_udp>() }))
     {
         Inbox inbox;
         SubsystemRig rig(GlobalNetworkConfig::with_udp());

@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "../../support/native_window_test_support.hpp"
 #include "../../support/scripted_window.hpp"
@@ -21,6 +22,8 @@
 #include "MayaFlux/Transitive/Memory/Persist.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 
@@ -96,7 +99,7 @@ protected:
 // Lifecycle
 // =============================================================================
 
-TEST_F(FormaAtelierLifecycleTest, UninitializedAtelierRefusesEveryConstructionPath)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, UninitializedAtelierRefusesEveryConstructionPath, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     Forma::internal::atelier().shutdown();
 
@@ -108,7 +111,7 @@ TEST_F(FormaAtelierLifecycleTest, UninitializedAtelierRefusesEveryConstructionPa
         std::runtime_error);
 }
 
-TEST_F(FormaAtelierLifecycleTest, InitializeExposesAStableBridgeAndInspector)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, InitializeExposesAStableBridgeAndInspector, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     ASSERT_TRUE(harness.up());
 
@@ -118,7 +121,7 @@ TEST_F(FormaAtelierLifecycleTest, InitializeExposesAStableBridgeAndInspector)
     EXPECT_EQ(&atelier.inspector(), &atelier.inspector());
 }
 
-TEST_F(FormaAtelierLifecycleTest, SecondInitializeKeepsTheFirstSetOfManagers)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, SecondInitializeKeepsTheFirstSetOfManagers, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     ASSERT_TRUE(harness.up());
     auto* first_bridge = &Forma::internal::atelier().bridge();
@@ -132,7 +135,7 @@ TEST_F(FormaAtelierLifecycleTest, SecondInitializeKeepsTheFirstSetOfManagers)
     EXPECT_EQ(other.buffers.use_count(), 1);
 }
 
-TEST_F(FormaAtelierLifecycleTest, ShutdownReleasesTheHeldManagers)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, ShutdownReleasesTheHeldManagers, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     ASSERT_TRUE(harness.up());
     EXPECT_GT(harness.scheduler.use_count(), 1);
@@ -150,7 +153,7 @@ TEST_F(FormaAtelierLifecycleTest, ShutdownReleasesTheHeldManagers)
     EXPECT_THROW((void)Forma::internal::atelier().bridge(), std::runtime_error);
 }
 
-TEST_F(FormaAtelierLifecycleTest, ShutdownIsRepeatableAndInitializeWorksAgain)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, ShutdownIsRepeatableAndInitializeWorksAgain, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     ASSERT_TRUE(harness.up());
 
@@ -167,7 +170,7 @@ TEST_F(FormaAtelierLifecycleTest, ShutdownIsRepeatableAndInitializeWorksAgain)
 // Layers and surfaces
 // =============================================================================
 
-TEST_F(FormaAtelierLifecycleTest, CreateLayerReturnsAnEmptyLayerWithAContext)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, CreateLayerReturnsAnEmptyLayerWithAContext, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     ASSERT_TRUE(harness.up());
 
@@ -178,7 +181,7 @@ TEST_F(FormaAtelierLifecycleTest, CreateLayerReturnsAnEmptyLayerWithAContext)
     EXPECT_TRUE(layer->empty());
 }
 
-TEST_F(FormaAtelierLifecycleTest, CreateLayerKeepsTheContextAliveForTheProcess)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, CreateLayerKeepsTheContextAliveForTheProcess, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     ASSERT_TRUE(harness.up());
 
@@ -191,7 +194,7 @@ TEST_F(FormaAtelierLifecycleTest, CreateLayerKeepsTheContextAliveForTheProcess)
     EXPECT_FALSE(weak.expired());
 }
 
-TEST_F(FormaAtelierLifecycleTest, CreateSurfaceBuildsAMissingLayerAndContext)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, CreateSurfaceBuildsAMissingLayerAndContext, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     ASSERT_TRUE(harness.up());
 
@@ -207,7 +210,7 @@ TEST_F(FormaAtelierLifecycleTest, CreateSurfaceBuildsAMissingLayerAndContext)
     EXPECT_TRUE(surface.layer().empty());
 }
 
-TEST_F(FormaAtelierLifecycleTest, CreateSurfaceUsesASuppliedLayerAndContextAsIs)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, CreateSurfaceUsesASuppliedLayerAndContextAsIs, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     ASSERT_TRUE(harness.up());
 
@@ -224,7 +227,7 @@ TEST_F(FormaAtelierLifecycleTest, CreateSurfaceUsesASuppliedLayerAndContextAsIs)
     EXPECT_EQ(surface.ctx_ptr(), ctx);
 }
 
-TEST_F(FormaAtelierLifecycleTest, CreateSurfaceBuildsAContextAroundASuppliedLayer)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, CreateSurfaceBuildsAContextAroundASuppliedLayer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     ASSERT_TRUE(harness.up());
 
@@ -241,7 +244,7 @@ TEST_F(FormaAtelierLifecycleTest, CreateSurfaceBuildsAContextAroundASuppliedLaye
     EXPECT_EQ(surface.ctx_ptr()->layer(), layer);
 }
 
-TEST_F(FormaAtelierLifecycleTest, CreateSurfaceTakesTheLayerOfASuppliedContext)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, CreateSurfaceTakesTheLayerOfASuppliedContext, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     ASSERT_TRUE(harness.up());
 
@@ -257,7 +260,7 @@ TEST_F(FormaAtelierLifecycleTest, CreateSurfaceTakesTheLayerOfASuppliedContext)
     EXPECT_EQ(surface.layer_ptr(), layer);
 }
 
-TEST_F(FormaAtelierLifecycleTest, PlacingAnEmptySeriesSpecAddsNoAdornments)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, PlacingAnEmptySeriesSpecAddsNoAdornments, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     ASSERT_TRUE(harness.up());
 
@@ -538,7 +541,7 @@ protected:
     AtelierHarness harness;
 };
 
-TEST_F(FormaAtelierWindowTest, CreateWindowRegistersAWindowWithTheManager)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierWindowTest, CreateWindowRegistersAWindowWithTheManager, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     auto info = native_window_info("atelier-window");
     const size_t before = manager().window_count();
@@ -551,7 +554,7 @@ TEST_F(FormaAtelierWindowTest, CreateWindowRegistersAWindowWithTheManager)
     EXPECT_EQ(manager().find_window("atelier-window"), window);
 }
 
-TEST_F(FormaAtelierWindowTest, CreateSurfaceFromWindowInfoBuildsTheWindowAndTheSurface)
+MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierWindowTest, CreateSurfaceFromWindowInfoBuildsTheWindowAndTheSurface, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     auto info = native_window_info("atelier-surface-window");
 

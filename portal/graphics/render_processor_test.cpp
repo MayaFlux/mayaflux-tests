@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 
 #include "../../support/native_window_test_support.hpp"
@@ -17,6 +18,8 @@
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Registry/Service/DisplayService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -514,7 +517,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
     class RenderProcessorUnchangedSetterTest : public RenderProcessorPresentationTest,
                                                public ::testing::WithParamInterface<UnchangedSetterCase> { };
 
-    TEST_P(RenderProcessorUnchangedSetterTest, RepeatingTheSameValueKeepsThePipeline)
+    MAYAFLUX_TEST_WITH(TEST_P, RenderProcessorUnchangedSetterTest, RepeatingTheSameValueKeepsThePipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         prepare_draw(k_push_vertex, true, sizeof(float));
         render->set_push_constant_data(1.0F);

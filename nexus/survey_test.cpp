@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -18,6 +19,8 @@
 #include "MayaFlux/Nodes/Network/MeshNetwork.hpp"
 #include "MayaFlux/Nodes/Network/Operators/PhysicsOperator.hpp"
 #include "MayaFlux/Nodes/Network/ParticleNetwork.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -306,7 +309,7 @@ namespace {
 
     class NexusSurveyVolumeTest : public VolumeGridDeviceFixture { };
 
-    TEST_F(NexusSurveyVolumeTest, BoundsOfAVolumeAreItsLatticeBounds)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusSurveyVolumeTest, BoundsOfAVolumeAreItsLatticeBounds, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto volume = attach({ scalar_decl("density") }, unit_cell_lattice());
 
@@ -317,7 +320,7 @@ namespace {
         expect_near(bounds->max, { 4.0F, 4.0F, 4.0F });
     }
 
-    TEST_F(NexusSurveyVolumeTest, AVolumeHasNoAnchor)
+    MAYAFLUX_TEST_WITH(TEST_F, NexusSurveyVolumeTest, AVolumeHasNoAnchor, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto volume = attach({ scalar_decl("density") }, unit_cell_lattice());
 

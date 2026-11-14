@@ -1,9 +1,12 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "MayaFlux/Kakshya/NDData/CompositeAccess.hpp"
 #include "MayaFlux/Kakshya/NDData/CompositeInsertion.hpp"
 #include "MayaFlux/Kakshya/Region/RegionSegment.hpp"
 #include "MayaFlux/Kakshya/Source/CompositeContainer.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {

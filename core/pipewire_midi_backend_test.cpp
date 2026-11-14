@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #if defined(MAYAFLUX_PLATFORM_LINUX) && defined(PIPEWIRE_BACKEND)
 
@@ -11,6 +12,8 @@
 
 #include "MayaFlux/Core/Backends/Audio/PipewireBackend.hpp"
 #include "MayaFlux/Core/Backends/Input/PipewireMidiBackend.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::pipewire>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -250,7 +253,7 @@ namespace {
         backend.shutdown();
     }
 
-    TEST(PipewireMidiBackendTest, FiltersRegisteredPortsAndReportsDeviceChanges)
+    MAYAFLUX_TEST_WITH(TEST, PipewireMidiBackendTest, FiltersRegisteredPortsAndReportsDeviceChanges, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::alsa_sequencer, ::MayaFlux::Test::Meta::Capability::pipewire>() }))
     {
         const auto accepted_name = unique_name("MayaFluxPipeWireMidiAccepted");
         Core::PipewireMidiBackend::Config config;
@@ -280,7 +283,7 @@ namespace {
         EXPECT_TRUE(changes.front().second);
     }
 
-    TEST(PipewireMidiBackendTest, OpensAndClosesAlsaInputAndRejectsUnknownIds)
+    MAYAFLUX_TEST_WITH(TEST, PipewireMidiBackendTest, OpensAndClosesAlsaInputAndRejectsUnknownIds, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::alsa_sequencer, ::MayaFlux::Test::Meta::Capability::pipewire>() }))
     {
         TestAlsaMidiSource source;
         if (!source.create(unique_name("MayaFluxPipeWireMidiOpenSource"))) {
@@ -319,7 +322,7 @@ namespace {
         EXPECT_FALSE(backend.is_device_open(device_id));
     }
 
-    TEST(PipewireMidiBackendTest, DeliversMidiInputFromAnOpenedAlsaSource)
+    MAYAFLUX_TEST_WITH(TEST, PipewireMidiBackendTest, DeliversMidiInputFromAnOpenedAlsaSource, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::alsa_sequencer, ::MayaFlux::Test::Meta::Capability::pipewire>() }))
     {
         TestAlsaMidiSource source;
         if (!source.create(unique_name("MayaFluxPipeWireMidiInputSource"))) {

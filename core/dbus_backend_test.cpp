@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #if defined(MAYAFLUX_PLATFORM_LINUX)
 
@@ -15,6 +16,8 @@
 #include <dbus/dbus.h>
 
 #include "MayaFlux/Core/Backends/System/DBusBackend.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::dbus_daemon, ::MayaFlux::Test::Meta::Capability::process_exec, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -516,7 +519,7 @@ namespace {
         backend.shutdown();
     }
 
-    TEST_P(DBusDialogTest, UninitializedBackendReportsBackendErrorSynchronously)
+    MAYAFLUX_TEST_WITH(TEST_P, DBusDialogTest, UninitializedBackendReportsBackendErrorSynchronously, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         Core::DBusBackend backend;
         auto outcome = std::make_shared<DialogOutcome>();

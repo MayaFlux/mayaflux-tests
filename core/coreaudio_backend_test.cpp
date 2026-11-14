@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #if defined(MAYAFLUX_PLATFORM_MACOS) && defined(COREAUDIO_BACKEND)
 
@@ -6,6 +7,8 @@
 #include <stdexcept>
 
 #include "MayaFlux/Core/Backends/Audio/CoreAudioBackend.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::coreaudio>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -84,7 +87,7 @@ namespace {
         }
     }
 
-    TEST(CoreAudioBackendTest, OpensDefaultOutputAndFallsBackForInvalidDeviceIndex)
+    MAYAFLUX_TEST_WITH(TEST, CoreAudioBackendTest, OpensDefaultOutputAndFallsBackForInvalidDeviceIndex, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::coreaudio>() }))
     {
         Core::CoreAudioBackend backend;
         auto devices = backend.create_device_manager();
@@ -124,7 +127,7 @@ namespace {
         EXPECT_FALSE(stream->is_running());
     }
 
-    TEST(CoreAudioBackendTest, DeliversOutputCallbacksThatWriteSilence)
+    MAYAFLUX_TEST_WITH(TEST, CoreAudioBackendTest, DeliversOutputCallbacksThatWriteSilence, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::coreaudio>() }))
     {
         Core::CoreAudioBackend backend;
         auto devices = backend.create_device_manager();
@@ -164,7 +167,7 @@ namespace {
         EXPECT_FALSE(stream->is_open());
     }
 
-    TEST(CoreAudioBackendTest, RestartsPausesAndResumesOutputStream)
+    MAYAFLUX_TEST_WITH(TEST, CoreAudioBackendTest, RestartsPausesAndResumesOutputStream, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::coreaudio>() }))
     {
         Core::CoreAudioBackend backend;
         auto devices = backend.create_device_manager();
@@ -213,7 +216,7 @@ namespace {
         stream->close();
     }
 
-    TEST(CoreAudioBackendTest, DeliversFullDuplexCallbackWhenInputAndOutputExist)
+    MAYAFLUX_TEST_WITH(TEST, CoreAudioBackendTest, DeliversFullDuplexCallbackWhenInputAndOutputExist, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_input, ::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::coreaudio>() }))
     {
         Core::CoreAudioBackend backend;
         auto devices = backend.create_device_manager();

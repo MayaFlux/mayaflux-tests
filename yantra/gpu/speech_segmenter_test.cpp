@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -9,6 +10,8 @@
 #include "MayaFlux/IO/Tensor/SafetensorsFormat.hpp"
 #include "MayaFlux/Kinesis/Discrete/Extract.hpp"
 #include "MayaFlux/Yantra/Extractors/SpeechSegmenter.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -75,7 +78,7 @@ namespace {
         return out;
     }
 
-    TEST(IntervalStatisticsTest, ShareAboveCountsValuesAtOrAboveTheThreshold)
+    MAYAFLUX_TEST_WITH(TEST, IntervalStatisticsTest, ShareAboveCountsValuesAtOrAboveTheThreshold, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<double> values { 0.1, 0.5, 0.9, 0.4, 0.6, 0.2 };
         const std::vector<size_t> positions { 0, 10, 20, 30, 40, 50 };
@@ -88,7 +91,7 @@ namespace {
         EXPECT_DOUBLE_EQ(share[2], 0.0);
     }
 
-    TEST(IntervalStatisticsTest, MedianTakesTheMiddleValueOrTheMeanOfTheMiddlePair)
+    MAYAFLUX_TEST_WITH(TEST, IntervalStatisticsTest, MedianTakesTheMiddleValueOrTheMeanOfTheMiddlePair, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<double> values { 5.0, 1.0, 3.0, 8.0, 2.0, 4.0 };
         const std::vector<size_t> positions { 0, 10, 20, 30, 40, 50 };
@@ -101,7 +104,7 @@ namespace {
         EXPECT_DOUBLE_EQ(median[2], 0.0);
     }
 
-    TEST(IntervalStatisticsTest, IntervalsAreHalfOpen)
+    MAYAFLUX_TEST_WITH(TEST, IntervalStatisticsTest, IntervalsAreHalfOpen, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<double> values { 1.0, 2.0, 3.0 };
         const std::vector<size_t> positions { 10, 20, 30 };
@@ -110,7 +113,7 @@ namespace {
         EXPECT_DOUBLE_EQ(median[0], 1.5);
     }
 
-    TEST(IntervalStatisticsTest, IntersectionKeepsOnlyWhatBothSetsCover)
+    MAYAFLUX_TEST_WITH(TEST, IntervalStatisticsTest, IntersectionKeepsOnlyWhatBothSetsCover, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(D::intersect_intervals({ { 0, 10 }, { 20, 30 } }, { { 5, 25 } }), (Intervals { { 5, 10 }, { 20, 25 } }));
         EXPECT_EQ(D::intersect_intervals({ { 20, 30 }, { 0, 10 }, { 8, 12 } }, { { 0, 100 } }), (Intervals { { 0, 12 }, { 20, 30 } }));
@@ -197,7 +200,7 @@ namespace {
         EXPECT_DOUBLE_EQ(voicing.f0[0], 0.0);
     }
 
-    TYPED_TEST(SpeechSegmenterGpuTest, SpeechPitchLiesInsideTheSearchedRange)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, SpeechSegmenterGpuTest, SpeechPitchLiesInsideTheSearchedRange, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = read_weights(k_vad_weights);
         const auto speech = read_floats(k_speech);
@@ -226,7 +229,7 @@ namespace {
         }
     }
 
-    TYPED_TEST(SpeechSegmenterGpuTest, MeasuresAreLeftEmptyUnlessAsked)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, SpeechSegmenterGpuTest, MeasuresAreLeftEmptyUnlessAsked, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = read_weights(k_vad_weights);
         const auto speech = read_floats(k_speech);

@@ -1,4 +1,5 @@
 #include "file_contract_fixture.hpp"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/IO/GlmTextCodec.hpp"
 
@@ -6,6 +7,8 @@
 #include "MayaFlux/IO/Composite/DescribedRecords.hpp"
 #include "MayaFlux/IO/Composite/XmlRecordAccess.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 
 namespace MayaFlux::Test {
 
@@ -53,7 +56,7 @@ namespace {
         }
     };
 
-    TEST(GlmTextCodecTest, VectorsDecodeOneNumberPerComponent)
+    MAYAFLUX_TEST_WITH(TEST, GlmTextCodecTest, VectorsDecodeOneNumberPerComponent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         Reflect::TextError error = Reflect::TextError::Unsupported;
         glm::vec3 position {};
@@ -67,7 +70,7 @@ namespace {
         EXPECT_EQ(Reflect::TextCodec<glm::vec4>::extent, 4U);
     }
 
-    TEST(GlmTextCodecTest, VectorsRejectWrongCountAndBadTokens)
+    MAYAFLUX_TEST_WITH(TEST, GlmTextCodecTest, VectorsRejectWrongCountAndBadTokens, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         Reflect::TextError error = Reflect::TextError::Unsupported;
         glm::vec3 position(7.F);
@@ -78,7 +81,7 @@ namespace {
         EXPECT_EQ(position, glm::vec3(7.F));
     }
 
-    TEST(GlmTextCodecTest, SequencesGroupNumbersByComponentCount)
+    MAYAFLUX_TEST_WITH(TEST, GlmTextCodecTest, SequencesGroupNumbersByComponentCount, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         Reflect::TextError error = Reflect::TextError::Unsupported;
         std::vector<glm::vec2> points;
@@ -91,7 +94,7 @@ namespace {
         EXPECT_TRUE(points.empty());
     }
 
-    TEST(GlmTextCodecTest, SequencesRejectAPartialGroupAndBadTokens)
+    MAYAFLUX_TEST_WITH(TEST, GlmTextCodecTest, SequencesRejectAPartialGroupAndBadTokens, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         Reflect::TextError error = Reflect::TextError::Unsupported;
         std::vector<glm::vec3> points { glm::vec3(5.F) };
@@ -103,7 +106,7 @@ namespace {
         EXPECT_EQ(points[0], glm::vec3(5.F));
     }
 
-    TEST(GlmTextCodecTest, DiagnosticsSpeakOfGroupsForSequences)
+    MAYAFLUX_TEST_WITH(TEST, GlmTextCodecTest, DiagnosticsSpeakOfGroupsForSequences, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         std::vector<glm::vec2> points;
         std::string error;

@@ -1,10 +1,13 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 
 #include "../support/vulkan_test_support.hpp"
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKGraphicsPipeline.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -98,7 +101,7 @@ void main() { }
 
 }
 
-TEST(VKGraphicsPipelineUninitializedTest, DefaultPipelineIsInvalidAndIgnoresCommands)
+MAYAFLUX_TEST_WITH(TEST, VKGraphicsPipelineUninitializedTest, DefaultPipelineIsInvalidAndIgnoresCommands, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     VKGraphicsPipeline pipeline;
 
@@ -109,7 +112,7 @@ TEST(VKGraphicsPipelineUninitializedTest, DefaultPipelineIsInvalidAndIgnoresComm
     EXPECT_NO_THROW(pipeline.draw(vk::CommandBuffer {}, 3));
 }
 
-TEST(VKGraphicsPipelineUninitializedTest, CreateWithNullDeviceFails)
+MAYAFLUX_TEST_WITH(TEST, VKGraphicsPipelineUninitializedTest, CreateWithNullDeviceFails, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     VKGraphicsPipeline pipeline;
     EXPECT_FALSE(pipeline.create(vk::Device {}, GraphicsPipelineConfig::default_2d()));

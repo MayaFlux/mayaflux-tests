@@ -1,8 +1,11 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include <chrono>
 
 #include "MayaFlux/Core/Backends/Input/HIDBackend.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hid_enumeration>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -95,7 +98,7 @@ namespace {
 
     class HIDDeviceFilterTest : public ::testing::TestWithParam<FilterCase> { };
 
-    TEST_P(HIDDeviceFilterTest, MatchesOnlyWhenEveryConstrainedFieldAgrees)
+    MAYAFLUX_TEST_WITH(TEST_P, HIDDeviceFilterTest, MatchesOnlyWhenEveryConstrainedFieldAgrees, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto& param = GetParam();
         EXPECT_EQ(param.filter.matches(param.vid, param.pid, param.usage_page, param.usage), param.expected);
@@ -126,7 +129,7 @@ namespace {
     // Identity and unopened state
     // ------------------------------------------------------------------
 
-    TEST(HIDBackendTest, ReportsIdentityBeforeInitialization)
+    MAYAFLUX_TEST_WITH(TEST, HIDBackendTest, ReportsIdentityBeforeInitialization, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         HIDBackend backend;
 
@@ -137,7 +140,7 @@ namespace {
         EXPECT_FALSE(backend.is_running());
     }
 
-    TEST(HIDBackendTest, QueriesAndIoBeforeInitializationAreInert)
+    MAYAFLUX_TEST_WITH(TEST, HIDBackendTest, QueriesAndIoBeforeInitializationAreInert, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         HIDBackend backend;
         const std::array<uint8_t, 2> report { 0x01, 0x02 };
@@ -189,7 +192,7 @@ namespace {
         EXPECT_NO_THROW(backend.shutdown());
     }
 
-    TEST(HIDBackendTest, StartRequiresInitialization)
+    MAYAFLUX_TEST_WITH(TEST, HIDBackendTest, StartRequiresInitialization, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         HIDBackend backend;
 
@@ -425,7 +428,7 @@ namespace {
     // Opening devices
     // ------------------------------------------------------------------
 
-    TEST(HIDBackendTest, OpenDeviceTracksOpenStateAndClosesAndReopens)
+    MAYAFLUX_TEST_WITH(TEST, HIDBackendTest, OpenDeviceTracksOpenStateAndClosesAndReopens, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hid_enumeration, ::MayaFlux::Test::Meta::Capability::hid_open>() }))
     {
         HIDBackend backend;
         ASSERT_TRUE(backend.initialize());
@@ -449,7 +452,7 @@ namespace {
         EXPECT_TRUE(backend.is_device_open(*id));
     }
 
-    TEST(HIDBackendTest, ShutdownClosesOpenDevices)
+    MAYAFLUX_TEST_WITH(TEST, HIDBackendTest, ShutdownClosesOpenDevices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hid_enumeration, ::MayaFlux::Test::Meta::Capability::hid_open>() }))
     {
         HIDBackend backend;
         ASSERT_TRUE(backend.initialize());
@@ -464,7 +467,7 @@ namespace {
         EXPECT_TRUE(backend.get_open_devices().empty());
     }
 
-    TEST(HIDBackendTest, PollingAnOpenDeviceDeliversWellFormedReportsOnly)
+    MAYAFLUX_TEST_WITH(TEST, HIDBackendTest, PollingAnOpenDeviceDeliversWellFormedReportsOnly, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hid_enumeration, ::MayaFlux::Test::Meta::Capability::hid_open>() }))
     {
         HIDBackend backend;
         ASSERT_TRUE(backend.initialize());
@@ -495,7 +498,7 @@ namespace {
         }
     }
 
-    TEST(HIDBackendTest, RestartingPollingKeepsOpenDevices)
+    MAYAFLUX_TEST_WITH(TEST, HIDBackendTest, RestartingPollingKeepsOpenDevices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hid_enumeration, ::MayaFlux::Test::Meta::Capability::hid_open>() }))
     {
         HIDBackend backend;
         ASSERT_TRUE(backend.initialize());

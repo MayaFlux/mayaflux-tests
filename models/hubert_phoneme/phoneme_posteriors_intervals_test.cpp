@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -9,6 +10,8 @@
 #include "MayaFlux/Kinesis/Discrete/IntervalScan.hpp"
 #include "MayaFlux/Yantra/Analyzers/PhonemeAnalyzer.hpp"
 #include "MayaFlux/Yantra/Extractors/IntervalExtractor.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {

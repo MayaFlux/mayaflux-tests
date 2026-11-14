@@ -1,8 +1,11 @@
 #include "../../support/forma_rig.hpp"
+#include "../../support/test_metadata.hpp"
 
 #include "MayaFlux/Portal/Forma/Internal/TextRow.hpp"
 #include "MayaFlux/Portal/Forma/Internal/TextSlice.hpp"
 #include "MayaFlux/Portal/Forma/Primitives/TextField.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 

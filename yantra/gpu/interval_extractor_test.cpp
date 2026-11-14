@@ -1,10 +1,13 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "../../support/gpu_dispatch_test_support.hpp"
 #include "../../support/interval_reference_support.hpp"
 
 #include "MayaFlux/Kinesis/Discrete/IntervalScan.hpp"
 #include "MayaFlux/Yantra/Extractors/IntervalExtractor.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -743,7 +746,7 @@ namespace {
         EXPECT_THROW(std::ignore = extractor.extract_intervals(matrix_of({ { 0, 1 }, { 0, 1 } })), std::runtime_error);
     }
 
-    TEST(IntervalExtractorTest, RegionsSpanTheIntervalsInclusivelyAndSkipEmptyOnes)
+    MAYAFLUX_TEST_WITH(TEST, IntervalExtractorTest, RegionsSpanTheIntervalsInclusivelyAndSkipEmptyOnes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const ChannelIntervals intervals { .intervals = { { 15, 55 }, { 60, 60 }, { 70, 71 } } };
 
@@ -756,7 +759,7 @@ namespace {
         EXPECT_EQ(group.regions[1].end_coordinates, (std::vector<uint64_t> { 70, 1 }));
     }
 
-    TEST(IntervalExtractorTest, InvalidSettingsAreRefused)
+    MAYAFLUX_TEST_WITH(TEST, IntervalExtractorTest, InvalidSettingsAreRefused, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         IntervalExtractorConfig no_hop;
         no_hop.scan.samples_per_score = 0;

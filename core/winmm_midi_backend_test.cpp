@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #if defined(MAYAFLUX_PLATFORM_WINDOWS)
 
@@ -6,6 +7,8 @@
 #include <condition_variable>
 
 #include "MayaFlux/Core/Backends/Input/WinMmMidiBackend.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::winmm_input>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -345,7 +348,7 @@ namespace {
         backend.shutdown();
     }
 
-    TEST(WinMmMidiBackendTest, DeliversShortAndSystemExclusiveMessagesFromLoopback)
+    MAYAFLUX_TEST_WITH(TEST, WinMmMidiBackendTest, DeliversShortAndSystemExclusiveMessagesFromLoopback, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::loopmidi, ::MayaFlux::Test::Meta::Capability::winmm_input>() }))
     {
         const auto port_name = find_loopback_port_name();
         if (!port_name)
@@ -398,7 +401,7 @@ namespace {
         backend.shutdown();
     }
 
-    TEST(WinMmMidiBackendTest, StopsDeliveringAfterPortIsClosed)
+    MAYAFLUX_TEST_WITH(TEST, WinMmMidiBackendTest, StopsDeliveringAfterPortIsClosed, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::loopmidi, ::MayaFlux::Test::Meta::Capability::winmm_input>() }))
     {
         const auto port_name = find_loopback_port_name();
         if (!port_name)

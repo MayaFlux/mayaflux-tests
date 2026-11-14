@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 
 #include "../support/vulkan_test_support.hpp"
@@ -6,6 +7,8 @@
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKComputePipeline.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -248,7 +251,7 @@ void main()
 
 }
 
-TEST(VKComputePipelineDispatchMathTest, DispatchSizesRoundUpToWholeWorkgroups)
+MAYAFLUX_TEST_WITH(TEST, VKComputePipelineDispatchMathTest, DispatchSizesRoundUpToWholeWorkgroups, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     EXPECT_EQ(VKComputePipeline::calculate_dispatch_1d(1000, 64), (std::array<uint32_t, 3> { 16, 1, 1 }));
     EXPECT_EQ(VKComputePipeline::calculate_dispatch_1d(1024, 64), (std::array<uint32_t, 3> { 16, 1, 1 }));
@@ -257,13 +260,13 @@ TEST(VKComputePipelineDispatchMathTest, DispatchSizesRoundUpToWholeWorkgroups)
     EXPECT_EQ(VKComputePipeline::calculate_dispatch_3d(10, 10, 10, 4, 4, 4), (std::array<uint32_t, 3> { 3, 3, 3 }));
 }
 
-TEST(VKComputePipelineDispatchMathTest, EmptyWorkOrZeroWorkgroupSizeYieldsNoGroups)
+MAYAFLUX_TEST_WITH(TEST, VKComputePipelineDispatchMathTest, EmptyWorkOrZeroWorkgroupSizeYieldsNoGroups, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     EXPECT_EQ(VKComputePipeline::calculate_dispatch_1d(0, 64)[0], 0U);
     EXPECT_EQ(VKComputePipeline::calculate_dispatch_1d(10, 0)[0], 0U);
 }
 
-TEST(VKComputePipelineUninitializedTest, DefaultPipelineIsInvalidAndIgnoresCommands)
+MAYAFLUX_TEST_WITH(TEST, VKComputePipelineUninitializedTest, DefaultPipelineIsInvalidAndIgnoresCommands, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     VKComputePipeline pipeline;
 
@@ -276,14 +279,14 @@ TEST(VKComputePipelineUninitializedTest, DefaultPipelineIsInvalidAndIgnoresComma
     EXPECT_NO_THROW(pipeline.dispatch_indirect(vk::CommandBuffer {}, vk::Buffer {}));
 }
 
-TEST(VKComputePipelineUninitializedTest, CreateWithoutShaderFails)
+MAYAFLUX_TEST_WITH(TEST, VKComputePipelineUninitializedTest, CreateWithoutShaderFails, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     VKComputePipeline pipeline;
     EXPECT_FALSE(pipeline.create(vk::Device {}, ComputePipelineConfig {}));
     EXPECT_FALSE(pipeline.is_valid());
 }
 
-TEST(VKComputePipelineUninitializedTest, CreateSpecializedWithoutShaderFails)
+MAYAFLUX_TEST_WITH(TEST, VKComputePipelineUninitializedTest, CreateSpecializedWithoutShaderFails, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     VKComputePipeline pipeline;
     EXPECT_FALSE(pipeline.create_specialized(vk::Device {}, ComputePipelineConfig {}, { { 0U, 1U } }));

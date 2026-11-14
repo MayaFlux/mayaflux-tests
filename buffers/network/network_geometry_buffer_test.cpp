@@ -1,7 +1,10 @@
 #include "network_buffer_fixture.hpp"
+#include "../../support/test_metadata.hpp"
 
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
 #include "MayaFlux/Nodes/Network/PointCloudNetwork.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -64,7 +67,7 @@ namespace {
 
     // Processor wiring
 
-    TEST_F(NetworkBufferDeviceTest, SetupProcessorsBindsTheNetworkUnderItsName)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, SetupProcessorsBindsTheNetworkUnderItsName, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(32));
 
@@ -75,7 +78,7 @@ namespace {
         EXPECT_EQ(buffer->get_default_processor(), processor);
     }
 
-    TEST_F(NetworkBufferDeviceTest, UpdateNetworkRespectsTheNetworkEnabledFlag)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, UpdateNetworkRespectsTheNetworkEnabledFlag, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         auto particles = physics_particles(16);
         attach(particles);
@@ -87,7 +90,7 @@ namespace {
 
     // Auxiliary state fields
 
-    TEST_F(NetworkBufferDeviceTest, DeclareStateRejectsEmptyNamesZeroSizesAndDuplicates)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, DeclareStateRejectsEmptyNamesZeroSizesAndDuplicates, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
 
@@ -99,7 +102,7 @@ namespace {
         EXPECT_EQ(buffer->get_state_bytes("field"), 16U);
     }
 
-    TEST_F(NetworkBufferDeviceTest, UndeclaredStateResolvesToNothing)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, UndeclaredStateResolvesToNothing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
 
@@ -112,7 +115,7 @@ namespace {
         EXPECT_NO_THROW(buffer->swap_state("missing"));
     }
 
-    TEST_F(NetworkBufferDeviceTest, SingleSlotStateReadsAndWritesTheSameHandleAndIgnoresSwap)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, SingleSlotStateReadsAndWritesTheSameHandleAndIgnoresSwap, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         ASSERT_TRUE(buffer->declare_state("single", 4, 4, false));
@@ -126,7 +129,7 @@ namespace {
         EXPECT_EQ(handle, buffer->write_state_handle("single"));
     }
 
-    TEST_F(NetworkBufferDeviceTest, DoubleBufferedStateExchangesReadAndWriteOnSwap)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, DoubleBufferedStateExchangesReadAndWriteOnSwap, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         ASSERT_TRUE(buffer->declare_state("ping", 4, 4, true));
@@ -143,7 +146,7 @@ namespace {
         EXPECT_EQ(buffer->read_state_handle("ping"), read_before);
     }
 
-    TEST_F(NetworkBufferDeviceTest, StateFieldsKeepIndependentStorage)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, StateFieldsKeepIndependentStorage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         ASSERT_TRUE(buffer->declare_state("first", 4, sizeof(uint32_t), false));
@@ -158,7 +161,7 @@ namespace {
 
     // Cluster ids
 
-    TEST_F(NetworkBufferDeviceTest, EnsureClusterIdsDeclaresOneZeroedEntryPerVertex)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, EnsureClusterIdsDeclaresOneZeroedEntryPerVertex, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(48));
 
@@ -169,7 +172,7 @@ namespace {
         EXPECT_EQ(read_state<uint32_t>("hash_cluster_id"), std::vector<uint32_t>(48, 0U));
     }
 
-    TEST_F(NetworkBufferDeviceTest, EnsureClusterIdsIsIdempotent)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, EnsureClusterIdsIsIdempotent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(48));
         ASSERT_TRUE(buffer->ensure_cluster_ids());
@@ -179,7 +182,7 @@ namespace {
         EXPECT_EQ(buffer->read_state_handle("hash_cluster_id"), handle);
     }
 
-    TEST_F(NetworkBufferDeviceTest, EnsureClusterIdsFailsWithoutAGraphicsOperator)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, EnsureClusterIdsFailsWithoutAGraphicsOperator, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(std::make_shared<PointCloudNetwork>());
 
@@ -189,7 +192,7 @@ namespace {
 
     // Render configuration
 
-    TEST_F(NetworkBufferDeviceTest, PointTopologyGetsThePointShaders)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, PointTopologyGetsThePointShaders, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         render();
@@ -201,7 +204,7 @@ namespace {
         ASSERT_NE(buffer->get_render_processor(), nullptr);
     }
 
-    TEST_F(NetworkBufferDeviceTest, LineTopologyGetsTheLineShadersAndGeometryStage)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, LineTopologyGetsTheLineShadersAndGeometryStage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         render(RenderConfig { .topology = PrimitiveTopology::LINE_LIST });
@@ -218,7 +221,7 @@ namespace {
         EXPECT_EQ(buffer->get_render_processor()->is_triangulate(), !has_geometry_stage);
     }
 
-    TEST_F(NetworkBufferDeviceTest, TriangulatedLinesDropTheGeometryStage)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, TriangulatedLinesDropTheGeometryStage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         render(RenderConfig { .topology = PrimitiveTopology::LINE_LIST, .triangulate = true });
@@ -229,7 +232,7 @@ namespace {
         EXPECT_TRUE(buffer->get_render_processor()->is_triangulate());
     }
 
-    TEST_F(NetworkBufferDeviceTest, TriangleTopologyGetsTheTriangleShaders)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, TriangleTopologyGetsTheTriangleShaders, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         render(RenderConfig { .topology = PrimitiveTopology::TRIANGLE_LIST });
@@ -239,7 +242,7 @@ namespace {
         EXPECT_EQ(config.fragment_shader, "triangle.frag.spv");
     }
 
-    TEST_F(NetworkBufferDeviceTest, MilledPointModeStopsUsingTheVertexExtent)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, MilledPointModeStopsUsingTheVertexExtent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         render(RenderConfig { .polygon_mode = PolygonMode::POINT, .triangulate = true });
@@ -250,7 +253,7 @@ namespace {
         EXPECT_FALSE(processor->get_mill_spec().use_vertex_extent);
     }
 
-    TEST_F(NetworkBufferDeviceTest, SetupRenderingAddsTheRenderProcessorAfterTheNetworkProcessor)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, SetupRenderingAddsTheRenderProcessorAfterTheNetworkProcessor, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         render();
@@ -261,7 +264,7 @@ namespace {
         EXPECT_EQ(render_at, processors.end() - 1);
     }
 
-    TEST_F(NetworkBufferDeviceTest, RenderRunsAreHandedToThePrimaryProcessor)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, RenderRunsAreHandedToThePrimaryProcessor, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         render(RenderConfig { .polygon_mode = PolygonMode::POINT, .triangulate = true });
@@ -279,7 +282,7 @@ namespace {
         EXPECT_EQ(runs[1].vertex_count, 3U);
     }
 
-    TEST_F(NetworkBufferDeviceTest, UpdateRenderRunsBeforeRenderingIsInert)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, UpdateRenderRunsBeforeRenderingIsInert, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         EXPECT_NO_THROW(buffer->update_render_runs({ { .vertex_count = 4 } }));
@@ -288,7 +291,7 @@ namespace {
 
     // Chain render processors
 
-    TEST_F(NetworkBufferDeviceTest, ChainRenderProcessorsAreAddressedByIndexAndBoundsChecked)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, ChainRenderProcessorsAreAddressedByIndexAndBoundsChecked, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         render();
@@ -300,7 +303,7 @@ namespace {
         EXPECT_EQ(buffer->get_chain_render_processor(1), nullptr);
     }
 
-    TEST_F(NetworkBufferDeviceTest, ChainRangeIndexZeroTargetsThePrimaryProcessorAndTheRestTargetChainEntries)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, ChainRangeIndexZeroTargetsThePrimaryProcessorAndTheRestTargetChainEntries, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
         render(RenderConfig { .polygon_mode = PolygonMode::POINT, .triangulate = true });
@@ -323,7 +326,7 @@ namespace {
         EXPECT_EQ(chain_runs[0].vertex_count, 4U);
     }
 
-    TEST_F(NetworkBufferDeviceTest, ChainRangeOutOfBoundsAndBeforeRenderingAreInert)
+    MAYAFLUX_TEST_WITH(TEST_F, NetworkBufferDeviceTest, ChainRangeOutOfBoundsAndBeforeRenderingAreInert, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         attach(physics_particles(16));
 

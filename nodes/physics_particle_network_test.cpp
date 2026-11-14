@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Nodes/Generators/Impulse.hpp"
 #include "MayaFlux/Nodes/NodeGraphManager.hpp"
@@ -8,6 +9,8 @@
 #include "MayaFlux/Nodes/Network/Operators/TopologyOperator.hpp"
 #include "MayaFlux/Nodes/Network/ParticleNetwork.hpp"
 #include "MayaFlux/Nodes/Network/PointCloudNetwork.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 

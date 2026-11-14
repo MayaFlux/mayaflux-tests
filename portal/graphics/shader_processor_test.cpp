@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <fstream>
 
@@ -7,6 +8,8 @@
 #include "MayaFlux/Buffers/Shaders/ShaderProcessor.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -172,7 +175,7 @@ namespace {
         return value;
     }
 
-    TEST(ShaderProcessorTest, ConfigurationAndBindingIntrospection)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, ConfigurationAndBindingIntrospection, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto config = config_with_binding();
         config.shader_path = "shader.comp";
@@ -191,7 +194,7 @@ namespace {
         EXPECT_FALSE(processor.is_compatible_with(nullptr));
     }
 
-    TEST(ShaderProcessorTest, BindingConfigurationAndUsageHints)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, BindingConfigurationAndUsageHints, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         processor.clear_rebuild_flags();
@@ -205,7 +208,7 @@ namespace {
         EXPECT_FALSE(processor.is_in_place_operation("input"));
     }
 
-    TEST(ShaderProcessorTest, PushConstantDataAndBufferFragmentsMergeAtOffsets)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, PushConstantDataAndBufferFragmentsMergeAtOffsets, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         auto buffer = host_buffer();
@@ -227,7 +230,7 @@ namespace {
         EXPECT_EQ(read_bytes<uint32_t>(processor.get_push_constant_data(), 4), 11U);
     }
 
-    TEST(ShaderProcessorTest, TypedPushConstantsSizeTheBlockAndOversizeRawWriteIsRejected)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, TypedPushConstantsSizeTheBlockAndOversizeRawWriteIsRejected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         const std::array<uint32_t, 2> value { 3, 5 };
@@ -242,7 +245,7 @@ namespace {
         EXPECT_EQ(read_bytes<uint32_t>(processor.get_push_constant_data(), 0), 3U);
     }
 
-    TEST(ShaderProcessorTest, NamedAndExplicitFeedsWriteTheirOwnPushConstantRanges)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, NamedAndExplicitFeedsWriteTheirOwnPushConstantRanges, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto config = config_with_binding();
         config.pc_fields = {
@@ -267,7 +270,7 @@ namespace {
         EXPECT_TRUE(processor.has_feed("gain"));
     }
 
-    TEST(ShaderProcessorTest, InvalidFeedsDoNotRegisterAndMismatchedValuesKeepPriorData)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, InvalidFeedsDoNotRegisterAndMismatchedValuesKeepPriorData, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         processor.feed("missing", [] { return ShaderProcessor::FeedValue { 1.0 }; });
@@ -286,7 +289,7 @@ namespace {
         EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 0), 3.0F);
     }
 
-    TEST(ShaderProcessorTest, TypedFeedWritesItsOwnFormatAtTheOffset)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, TypedFeedWritesItsOwnFormatAtTheOffset, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         processor.feed("direction", [] {
@@ -301,7 +304,7 @@ namespace {
         EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 12), 3.0F);
     }
 
-    TEST(ShaderProcessorTest, NamedFeedsAfterAVec3SitAtTheirAlignedOffsets)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, NamedFeedsAfterAVec3SitAtTheirAlignedOffsets, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto config = config_with_binding();
         config.pc_fields = {
@@ -322,7 +325,7 @@ namespace {
         EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 28), 5.0F);
     }
 
-    TEST(ShaderProcessorTest, NamedFeedRefusesAValueOfADifferentFormatThanItsField)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, NamedFeedRefusesAValueOfADifferentFormatThanItsField, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto config = config_with_binding();
         config.pc_fields = {
@@ -340,7 +343,7 @@ namespace {
         EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 4), 7.0F);
     }
 
-    TEST(ShaderProcessorTest, NamedFeedAcceptsAValueOfItsOwnFormat)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, NamedFeedAcceptsAValueOfItsOwnFormat, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto config = config_with_binding();
         config.pc_fields = { { "count", Kakshya::GpuDataFormat::UINT32 } };
@@ -352,7 +355,7 @@ namespace {
         EXPECT_EQ(read_bytes<uint32_t>(processor.get_push_constant_data(), 0), 12U);
     }
 
-    TEST(ShaderProcessorTest, ExplicitOffsetFeedsAcceptAnyFormat)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, ExplicitOffsetFeedsAcceptAnyFormat, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         processor.feed("loose", [] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { glm::vec2 { 1.0F, 2.0F } } }; }, 8);
@@ -362,7 +365,7 @@ namespace {
         EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 12), 2.0F);
     }
 
-    TEST(ShaderProcessorTest, TypedFeedKeepsIntegerBitsUnconverted)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, TypedFeedKeepsIntegerBitsUnconverted, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         processor.feed("count", [] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { uint32_t { 0xDEADBEEF } } }; }, 0);
@@ -372,7 +375,7 @@ namespace {
         EXPECT_EQ(read_bytes<uint32_t>(processor.get_push_constant_data(), 0), 0xDEADBEEFU);
     }
 
-    TEST(ShaderProcessorTest, TypedFeedWritesAMatrix)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, TypedFeedWritesAMatrix, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         glm::mat4 value(1.0F);
@@ -385,7 +388,7 @@ namespace {
         EXPECT_FLOAT_EQ(read_bytes<float>(processor.get_push_constant_data(), 12 * sizeof(float)), 5.0F);
     }
 
-    TEST(ShaderProcessorTest, TypedFeedFollowsTheValueEachCycle)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, TypedFeedFollowsTheValueEachCycle, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         int32_t counter = 0;
@@ -397,7 +400,7 @@ namespace {
         EXPECT_EQ(read_bytes<int32_t>(processor.get_push_constant_data(), 0), 1);
     }
 
-    TEST(ShaderProcessorTest, TypedFeedIsRefusedByAStorageDescriptor)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, TypedFeedIsRefusedByAStorageDescriptor, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         processor.feed("data", [] { return ShaderProcessor::FeedValue { Kakshya::GpuValue { 1.0F } }; });
@@ -407,7 +410,7 @@ namespace {
         EXPECT_EQ(processor.get_bound_buffer("data"), nullptr);
     }
 
-    TEST(ShaderProcessorTest, StorageFeedRejectsAScalarValue)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, StorageFeedRejectsAScalarValue, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         processor.feed("data", [] { return ShaderProcessor::FeedValue { 3.0 }; });
@@ -418,7 +421,7 @@ namespace {
         EXPECT_EQ(processor.get_bound_buffer("data"), nullptr);
     }
 
-    TEST(ShaderProcessorTest, ConfigurationChangesMarkTheRelevantRebuilds)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, ConfigurationChangesMarkTheRelevantRebuilds, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         processor.clear_rebuild_flags();
@@ -436,7 +439,7 @@ namespace {
         EXPECT_TRUE(processor.needs_pipeline_rebuild());
     }
 
-    TEST(ShaderProcessorTest, SettingTheSamePushConstantSizeDoesNotMarkARebuild)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, SettingTheSamePushConstantSizeDoesNotMarkARebuild, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         processor.set_push_constant_size(16);
@@ -447,7 +450,7 @@ namespace {
         EXPECT_FALSE(processor.needs_pipeline_rebuild());
     }
 
-    TEST(ShaderProcessorTest, DescriptorSetIndexSkipsAPushedSetZero)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, DescriptorSetIndexSkipsAPushedSetZero, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         processor.set_descriptor_count(2);
@@ -462,7 +465,7 @@ namespace {
         EXPECT_FALSE(processor.descriptor_index(3).has_value());
     }
 
-    TEST(ShaderProcessorTest, NullBufferIsRejectedBeforeShaderLoading)
+    MAYAFLUX_TEST_WITH(TEST, ShaderProcessorTest, NullBufferIsRejectedBeforeShaderLoading, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ShaderProcessorProbe processor(config_with_binding());
         processor.processing_function(nullptr);
@@ -821,7 +824,7 @@ void main() {
         EXPECT_EQ(processor.pipeline_creations, 2U);
     }
 
-    TEST_F(ShaderProcessorDeviceTest, HotReloadReplacesTheShaderAndRebuildsThePipeline)
+    MAYAFLUX_TEST_WITH(TEST_F, ShaderProcessorDeviceTest, HotReloadReplacesTheShaderAndRebuildsThePipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
         TemporaryComputeShader shader(this);
         ASSERT_TRUE(std::filesystem::exists(shader.path));

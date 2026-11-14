@@ -1,10 +1,12 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "../support/vulkan_test_support.hpp"
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKContext.hpp"
 
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -421,7 +423,7 @@ TEST_F(VKCommandManagerTest, StandaloneCleanupFreesBuffersStillAllocated)
     EXPECT_NO_THROW(manager.cleanup());
 }
 
-TEST(TimelineSnapshotTest, APointFillsOnlyItsOwnTimeline)
+MAYAFLUX_TEST_WITH(TEST, TimelineSnapshotTest, APointFillsOnlyItsOwnTimeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     const Core::TimelineSnapshot snapshot(Core::TimelinePoint { .timeline = 1, .value = 5 });
 
@@ -430,7 +432,7 @@ TEST(TimelineSnapshotTest, APointFillsOnlyItsOwnTimeline)
     EXPECT_EQ(snapshot.values[2], 0U);
 }
 
-TEST(TimelineSnapshotTest, AnOutOfRangeTimelineIsIgnored)
+MAYAFLUX_TEST_WITH(TEST, TimelineSnapshotTest, AnOutOfRangeTimelineIsIgnored, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     const Core::TimelineSnapshot snapshot(Core::TimelinePoint { .timeline = Core::k_max_timelines, .value = 5 });
 
@@ -439,7 +441,7 @@ TEST(TimelineSnapshotTest, AnOutOfRangeTimelineIsIgnored)
     }
 }
 
-TEST(TimelineSnapshotTest, AnEmptyPointIsFalseAndAnAssignedOneIsTrue)
+MAYAFLUX_TEST_WITH(TEST, TimelineSnapshotTest, AnEmptyPointIsFalseAndAnAssignedOneIsTrue, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     EXPECT_FALSE(Core::TimelinePoint {});
     EXPECT_TRUE((Core::TimelinePoint { .timeline = 0, .value = 1 }));
@@ -979,7 +981,7 @@ TEST_F(VKCommandManagerTest, DeferredKeepAliveIsReleasedWhenTheBatchIsFlushedByS
     EXPECT_TRUE(watch.expired());
 }
 
-TEST(VKCommandManagerUninitializedTest, CleanupWithoutInitializeIsSafe)
+MAYAFLUX_TEST_WITH(TEST, VKCommandManagerUninitializedTest, CleanupWithoutInitializeIsSafe, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     Core::VKCommandManager manager;
     EXPECT_NO_THROW(manager.cleanup());

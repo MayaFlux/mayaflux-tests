@@ -1,10 +1,13 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Nodes/Generators/Sine.hpp"
 #include "MayaFlux/Nodes/NodeGraphManager.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
 
 #include "MayaFlux/MayaFlux.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -226,7 +229,7 @@ TEST_P(ApiCoreThreadsTest, GettersRacingEndNeverStallIt)
     }
 }
 
-TEST_P(ApiCoreEngineTest, GlobalGetterOnTheAudioThreadDoesNotDeadlockEnd)
+MAYAFLUX_TEST_WITH(TEST_P, ApiCoreEngineTest, GlobalGetterOnTheAudioThreadDoesNotDeadlockEnd, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     auto calls = std::make_shared<std::atomic<int>>(0);
     auto sine = std::make_shared<Nodes::Generator::Sine>(440.0F, 0.5F);
@@ -244,7 +247,7 @@ TEST_P(ApiCoreEngineTest, GlobalGetterOnTheAudioThreadDoesNotDeadlockEnd)
     EXPECT_FALSE(MayaFlux::is_initialized());
 }
 
-TEST_P(ApiCoreEngineTest, GlobalGettersOnEveryDomainThreadDoNotDeadlockEnd)
+MAYAFLUX_TEST_WITH(TEST_P, ApiCoreEngineTest, GlobalGettersOnEveryDomainThreadDoNotDeadlockEnd, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     auto calls = std::make_shared<std::atomic<int>>(0);
     auto sine = std::make_shared<Nodes::Generator::Sine>(440.0F, 0.5F);

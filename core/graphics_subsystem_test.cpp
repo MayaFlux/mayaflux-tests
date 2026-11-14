@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include <chrono>
 
@@ -16,6 +17,8 @@
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Vruta/Clock.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -89,7 +92,7 @@ namespace {
 
 }
 
-TEST(GraphicsSubsystemTest, ConstructorExposesGraphicsTokensAndIsIdle)
+MAYAFLUX_TEST_WITH(TEST, GraphicsSubsystemTest, ConstructorExposesGraphicsTokensAndIsIdle, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     GraphicsSubsystemRig rig;
 
@@ -105,14 +108,14 @@ TEST(GraphicsSubsystemTest, ConstructorExposesGraphicsTokensAndIsIdle)
     EXPECT_FALSE(rig.subsystem->is_running());
 }
 
-TEST(GraphicsSubsystemTest, ProcessingHandleIsNullBeforeInitialize)
+MAYAFLUX_TEST_WITH(TEST, GraphicsSubsystemTest, ProcessingHandleIsNullBeforeInitialize, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     GraphicsSubsystemRig rig;
     EXPECT_EQ(rig.subsystem->get_processing_context_handle(), nullptr);
     EXPECT_NO_THROW(rig.subsystem->process());
 }
 
-TEST(GraphicsSubsystemTest, UnsupportedApiHasNoBackendAndInitializeThrows)
+MAYAFLUX_TEST_WITH(TEST, GraphicsSubsystemTest, UnsupportedApiHasNoBackendAndInitializeThrows, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     GlobalGraphicsConfig config = subsystem_config();
     config.requested_api = GlobalGraphicsConfig::GraphicsApi::OPENGL;
@@ -124,14 +127,14 @@ TEST(GraphicsSubsystemTest, UnsupportedApiHasNoBackendAndInitializeThrows)
     EXPECT_NO_THROW(rig.subsystem->shutdown());
 }
 
-TEST(GraphicsSubsystemTest, ShutdownWithoutInitializeIsSafe)
+MAYAFLUX_TEST_WITH(TEST, GraphicsSubsystemTest, ShutdownWithoutInitializeIsSafe, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     GraphicsSubsystemRig rig;
     EXPECT_NO_THROW(rig.subsystem->shutdown());
     EXPECT_FALSE(rig.subsystem->is_ready());
 }
 
-TEST(GraphicsSubsystemTest, RegisterCallbacksBeforeInitializeThrows)
+MAYAFLUX_TEST_WITH(TEST, GraphicsSubsystemTest, RegisterCallbacksBeforeInitializeThrows, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     GraphicsSubsystemRig rig;
     EXPECT_THROW(rig.subsystem->register_callbacks(), std::runtime_error);

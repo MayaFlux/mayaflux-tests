@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "../support/scoped_working_dir.hpp"
 
@@ -8,6 +9,8 @@
 #include "MayaFlux/IO/IOManager.hpp"
 #include "MayaFlux/Kakshya/Source/DynamicSoundStream.hpp"
 #include "MayaFlux/Kriya/BufferPipeline.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 
 namespace MayaFlux::Test {
 namespace {

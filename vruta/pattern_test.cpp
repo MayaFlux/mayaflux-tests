@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Kinesis/Discrete/Boolean.hpp"
 #include "MayaFlux/Kinesis/Tendency/TimeMap.hpp"
@@ -6,6 +7,8 @@
 #include "MayaFlux/Vruta/Scheduler.hpp"
 
 #include "MayaFlux/MayaFlux.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 

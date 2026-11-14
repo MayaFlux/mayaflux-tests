@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Kriya/Chain.hpp"
@@ -8,6 +9,8 @@
 #include "MayaFlux/Vruta/Scheduler.hpp"
 
 #include "MayaFlux/MayaFlux.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 
@@ -697,7 +700,7 @@ TEST_F(TasksTest, EventChainReplacedByNameNotifiesTheOldChainOnce)
 // Time operator and scheduler edges
 //-----------------------------------------------------------------------------
 
-TEST_F(TasksTest, TimeOperatorRemovesTheNodeAfterItsDuration)
+MAYAFLUX_TEST_WITH(TEST_F, TasksTest, TimeOperatorRemovesTheNodeAfterItsDuration, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     MayaFlux::Init();
 

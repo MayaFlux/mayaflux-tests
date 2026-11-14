@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -9,6 +10,8 @@
 #include "MayaFlux/Yantra/Analyzers/VadAnalyzer.hpp"
 #include "MayaFlux/Yantra/Executors/Audio/SileroVadModel.hpp"
 #include "MayaFlux/Yantra/Extractors/IntervalExtractor.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -65,7 +68,7 @@ namespace {
     using HardwareOptions = ::testing::Types<GpuDispatchFixture<true>, GpuDispatchFixture<false>>;
     TYPED_TEST_SUITE(SileroChainGpuTest, HardwareOptions);
 
-    TYPED_TEST(SileroChainGpuTest, TheNetworkAndTheScanShareOneSubmissionAndGiveTheOfflineIntervals)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, SileroChainGpuTest, TheNetworkAndTheScanShareOneSubmissionAndGiveTheOfflineIntervals, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
         const auto audio = read_floats("tests/models/silero/silero_reference_audio.f32");
@@ -99,7 +102,7 @@ namespace {
         EXPECT_EQ(got, want);
     }
 
-    TYPED_TEST(SileroChainGpuTest, ASubmittedChainCompletesWithoutBlockingTheCaller)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, SileroChainGpuTest, ASubmittedChainCompletesWithoutBlockingTheCaller, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
         const auto audio = read_floats("tests/models/silero/silero_reference_audio.f32");
@@ -169,7 +172,7 @@ namespace {
         EXPECT_THROW(started.share_recording(recording), std::logic_error);
     }
 
-    TYPED_TEST(SileroChainGpuTest, AVadAnalyzerSharesItsRecordingAndTheScanReadsItsProbabilitiesInPlace)
+    MAYAFLUX_TEST_WITH(TYPED_TEST, SileroChainGpuTest, AVadAnalyzerSharesItsRecordingAndTheScanReadsItsProbabilitiesInPlace, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
         const auto audio = read_floats("tests/models/silero/silero_reference_audio.f32");

@@ -1,10 +1,13 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #if defined(MAYAFLUX_PLATFORM_LINUX) && defined(PIPEWIRE_BACKEND)
 
 #include <chrono>
 
 #include "MayaFlux/Core/Backends/Audio/PipewireBackend.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::pipewire>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -106,7 +109,7 @@ namespace {
         }
     }
 
-    TEST(PipewireBackendTest, RunsOutputStreamAndDeliversCallbacks)
+    MAYAFLUX_TEST_WITH(TEST, PipewireBackendTest, RunsOutputStreamAndDeliversCallbacks, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::pipewire>() }))
     {
         Core::PipewireBackend backend;
         auto devices = backend.create_device_manager();
@@ -139,7 +142,7 @@ namespace {
         EXPECT_FALSE(stream->is_open());
     }
 
-    TEST(PipewireBackendTest, OpensAndClosesWithoutStarting)
+    MAYAFLUX_TEST_WITH(TEST, PipewireBackendTest, OpensAndClosesWithoutStarting, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::pipewire>() }))
     {
         Core::PipewireBackend backend;
         auto devices = backend.create_device_manager();
@@ -163,7 +166,7 @@ namespace {
         EXPECT_FALSE(stream->is_running());
     }
 
-    TEST(PipewireBackendTest, RestartsAnOpenOutputStream)
+    MAYAFLUX_TEST_WITH(TEST, PipewireBackendTest, RestartsAnOpenOutputStream, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::pipewire>() }))
     {
         Core::PipewireBackend backend;
         auto devices = backend.create_device_manager();
@@ -196,7 +199,7 @@ namespace {
         stream->close();
     }
 
-    TEST(PipewireBackendTest, PausesAndResumesAnOutputStream)
+    MAYAFLUX_TEST_WITH(TEST, PipewireBackendTest, PausesAndResumesAnOutputStream, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::pipewire>() }))
     {
         Core::PipewireBackend backend;
         auto devices = backend.create_device_manager();
@@ -229,7 +232,7 @@ namespace {
         stream->close();
     }
 
-    TEST(PipewireBackendTest, DeliversInputToFullDuplexCallback)
+    MAYAFLUX_TEST_WITH(TEST, PipewireBackendTest, DeliversInputToFullDuplexCallback, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_input, ::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::pipewire>() }))
     {
         Core::PipewireBackend backend;
         auto devices = backend.create_device_manager();

@@ -1,4 +1,5 @@
 #include "file_contract_fixture.hpp"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/IO/Composite/DelimitedTextReader.hpp"
 #include "MayaFlux/IO/Composite/DelimitedTextWriter.hpp"
@@ -6,6 +7,8 @@
 #include "MayaFlux/IO/Composite/XmlWriter.hpp"
 #include "MayaFlux/IO/StagedFileSet.hpp"
 #include "MayaFlux/Kakshya/NDData/CompositeInsertion.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 
 namespace MayaFlux::Test {
 namespace {

@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 
 #include "../../support/scripted_window.hpp"
@@ -16,6 +17,8 @@
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -44,7 +47,7 @@ namespace {
         return out;
     }
 
-    TEST(FormaTargetTest, AnEmptyHandleIsFalseAndEveryCallIsHarmless)
+    MAYAFLUX_TEST_WITH(TEST, FormaTargetTest, AnEmptyHandleIsFalseAndEveryCallIsHarmless, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         FormaTarget target;
 
@@ -62,7 +65,7 @@ namespace {
         EXPECT_FALSE(target.move_to(nullptr));
     }
 
-    TEST(FormaTargetTest, ANullBufferMakesAnEmptyHandle)
+    MAYAFLUX_TEST_WITH(TEST, FormaTargetTest, ANullBufferMakesAnEmptyHandle, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const FormaTarget from_null_buffer { std::shared_ptr<FormaBuffer> {} };
         const FormaTarget from_nullptr = nullptr;
@@ -71,7 +74,7 @@ namespace {
         EXPECT_FALSE(from_nullptr);
     }
 
-    TEST(FormaTargetTest, ABufferConvertsToAHandleOnTheWholeBuffer)
+    MAYAFLUX_TEST_WITH(TEST, FormaTargetTest, ABufferConvertsToAHandleOnTheWholeBuffer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto buffer = std::make_shared<FormaBuffer>(240, PrimitiveTopology::TRIANGLE_LIST);
 
@@ -85,7 +88,7 @@ namespace {
         EXPECT_EQ(&*target, buffer.get());
     }
 
-    TEST(FormaTargetTest, HandlesCompareByBufferAndSlice)
+    MAYAFLUX_TEST_WITH(TEST, FormaTargetTest, HandlesCompareByBufferAndSlice, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto buffer = std::make_shared<FormaBuffer>(240, PrimitiveTopology::TRIANGLE_LIST);
         auto other = std::make_shared<FormaBuffer>(240, PrimitiveTopology::TRIANGLE_LIST);
@@ -101,12 +104,12 @@ namespace {
         EXPECT_EQ(first.slice(), 1U);
     }
 
-    TEST(FormaTargetTest, SliceOfANullBufferIsAnEmptyHandle)
+    MAYAFLUX_TEST_WITH(TEST, FormaTargetTest, SliceOfANullBufferIsAnEmptyHandle, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_FALSE(FormaTarget::slice_of(nullptr));
     }
 
-    TEST(FormaTargetTest, SliceOfABufferWithoutProcessorsIsAnEmptyHandle)
+    MAYAFLUX_TEST_WITH(TEST, FormaTargetTest, SliceOfABufferWithoutProcessorsIsAnEmptyHandle, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto buffer = std::make_shared<FormaBuffer>(240, PrimitiveTopology::TRIANGLE_LIST);
 

@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 
 #include "../../support/native_window_test_support.hpp"
@@ -20,6 +21,8 @@
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Registry/Service/DisplayService.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -64,7 +67,7 @@ namespace {
         };
     }
 
-    TEST(ComputeMeshBufferSizingTest, CapacityUsesTheMeshVertexStride)
+    MAYAFLUX_TEST_WITH(TEST, ComputeMeshBufferSizingTest, CapacityUsesTheMeshVertexStride, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         ComputeMeshBuffer buffer(config_for(fields::plane.cpu));
 
@@ -815,7 +818,7 @@ namespace {
         bool flow_ready {};
     };
 
-    TEST_F(ComputeMeshBufferPresentationTest, GpuGeneratedSphereIsVisibleAfterPresentation)
+    MAYAFLUX_TEST_WITH(TEST_F, ComputeMeshBufferPresentationTest, GpuGeneratedSphereIsVisibleAfterPresentation, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         root->process_default();
         ASSERT_TRUE(buffer->get_live_vertex_count().has_value());

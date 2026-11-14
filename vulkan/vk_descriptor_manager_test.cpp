@@ -1,8 +1,11 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "../support/vulkan_test_support.hpp"
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKDescriptorManager.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -54,7 +57,7 @@ namespace {
 
 }
 
-TEST(VKDescriptorManagerUninitializedTest, InitializeRejectsNullDevice)
+MAYAFLUX_TEST_WITH(TEST, VKDescriptorManagerUninitializedTest, InitializeRejectsNullDevice, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 {
     VKDescriptorManager manager;
     EXPECT_FALSE(manager.initialize(vk::Device {}, 4));
@@ -129,7 +132,7 @@ TEST_F(VKDescriptorManagerTest, AllocatingWithNullLayoutFails)
     EXPECT_EQ(manager.get_pool_stats().first, 0U);
 }
 
-TEST(VKDescriptorManagerValidationTest, AllocatesBeyondTheInitialNominalPoolCapacity)
+MAYAFLUX_TEST_WITH(TEST, VKDescriptorManagerValidationTest, AllocatesBeyondTheInitialNominalPoolCapacity, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
 {
     Core::VulkanBackend validation_backend;
     auto config = headless_graphics_config();
@@ -167,7 +170,7 @@ TEST_F(VKDescriptorManagerTest, AllocateSetsReturnsOneSetPerLayout)
     EXPECT_EQ(manager.get_pool_stats().first, 3U);
 }
 
-TEST(VKDescriptorManagerValidationTest, BatchAllocationSucceedsBeyondInitialNominalPoolCapacity)
+MAYAFLUX_TEST_WITH(TEST, VKDescriptorManagerValidationTest, BatchAllocationSucceedsBeyondInitialNominalPoolCapacity, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
 {
     Core::VulkanBackend validation_backend;
     auto config = headless_graphics_config();

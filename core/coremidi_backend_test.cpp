@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #if defined(MAYAFLUX_PLATFORM_MACOS)
 
@@ -10,6 +11,8 @@
 #include <condition_variable>
 
 #include "MayaFlux/Core/Backends/Input/CoreMidiBackend.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::coremidi>() }))
 
 namespace MayaFlux::Test {
 namespace {

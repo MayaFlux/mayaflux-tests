@@ -1,10 +1,13 @@
 #include "MayaFlux/Yantra/Sorters/StandardSorter.hpp"
 
 #include <gtest/gtest.h>
+#include "../support/test_metadata.hpp"
 
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {

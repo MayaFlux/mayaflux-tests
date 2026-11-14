@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #if defined(MAYAFLUX_PLATFORM_LINUX) && defined(WAYLAND_BACKEND)
 
@@ -11,6 +12,8 @@
 #include "MayaFlux/Kriya/Awaiters/GetPromise.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
 #include "MayaFlux/Vruta/WindowEventSource.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display>() }))
 
 namespace MayaFlux::Test {
 
@@ -411,7 +414,7 @@ namespace {
     // Key mapping
     // ------------------------------------------------------------------
 
-    TEST(WaylandKeyMappingTest, PrintableKeysymsMapToUppercaseKeys)
+    MAYAFLUX_TEST_WITH(TEST, WaylandKeyMappingTest, PrintableKeysymsMapToUppercaseKeys, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(Core::from_xkb_keysym(XKB_KEY_a), IO::Keys::A);
         EXPECT_EQ(Core::from_xkb_keysym(XKB_KEY_A), IO::Keys::A);
@@ -420,7 +423,7 @@ namespace {
         EXPECT_EQ(Core::from_xkb_keysym(XKB_KEY_space), IO::Keys::Space);
     }
 
-    TEST(WaylandKeyMappingTest, NamedKeysRoundTripThroughKeysym)
+    MAYAFLUX_TEST_WITH(TEST, WaylandKeyMappingTest, NamedKeysRoundTripThroughKeysym, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         constexpr std::array keys {
             IO::Keys::A, IO::Keys::Z, IO::Keys::N0, IO::Keys::N9, IO::Keys::Space,
@@ -446,7 +449,7 @@ namespace {
         }
     }
 
-    TEST(WaylandKeyMappingTest, ModifierKeysMapToDistinctCodes)
+    MAYAFLUX_TEST_WITH(TEST, WaylandKeyMappingTest, ModifierKeysMapToDistinctCodes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         constexpr std::array syms {
             XKB_KEY_Shift_L, XKB_KEY_Shift_R, XKB_KEY_Control_L, XKB_KEY_Control_R,
@@ -465,7 +468,7 @@ namespace {
                 EXPECT_NE(mapped[i], mapped[j]);
     }
 
-    TEST(WaylandKeyMappingTest, UnmappedKeysymsReportUnknownAndInvalid)
+    MAYAFLUX_TEST_WITH(TEST, WaylandKeyMappingTest, UnmappedKeysymsReportUnknownAndInvalid, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         constexpr std::array unmapped {
             XKB_KEY_eacute, XKB_KEY_Hyper_L, XKB_KEY_ISO_Left_Tab, XKB_KEY_Multi_key
@@ -480,7 +483,7 @@ namespace {
         EXPECT_EQ(Core::from_xkb_keysym(XKB_KEY_NoSymbol), IO::Keys::Unknown);
     }
 
-    TEST(WaylandKeyMappingTest, ValidKeysymsAreReportedValid)
+    MAYAFLUX_TEST_WITH(TEST, WaylandKeyMappingTest, ValidKeysymsAreReportedValid, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_TRUE(Core::is_valid_xkb_keysym(XKB_KEY_a));
         EXPECT_TRUE(Core::is_valid_xkb_keysym(XKB_KEY_Escape));
@@ -488,7 +491,7 @@ namespace {
         EXPECT_TRUE(Core::is_valid_xkb_keysym(XKB_KEY_KP_Enter));
     }
 
-    TEST(WaylandKeyMappingTest, UnmappedKeysConvertToNoSymbol)
+    MAYAFLUX_TEST_WITH(TEST, WaylandKeyMappingTest, UnmappedKeysConvertToNoSymbol, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         EXPECT_EQ(Core::to_xkb_keysym(IO::Keys::Unknown), static_cast<xkb_keysym_t>(XKB_KEY_NoSymbol));
     }
@@ -501,7 +504,7 @@ namespace {
 
     class WaylandEvdevScancodeTest : public ::testing::TestWithParam<ScancodeCase> { };
 
-    TEST_P(WaylandEvdevScancodeTest, KeypadScancodeMapsToPhysicalKey)
+    MAYAFLUX_TEST_WITH(TEST_P, WaylandEvdevScancodeTest, KeypadScancodeMapsToPhysicalKey, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto& param = GetParam();
         EXPECT_EQ(Core::from_evdev_scancode(param.scancode), param.key);

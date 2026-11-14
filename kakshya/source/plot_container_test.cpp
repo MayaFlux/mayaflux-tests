@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include "MayaFlux/Kakshya/DataProcessingChain.hpp"
 #include "MayaFlux/Kakshya/NDData/DataAccess.hpp"
@@ -7,6 +8,8 @@
 #include "MayaFlux/Kakshya/Region/RegionGroup.hpp"
 #include "MayaFlux/Kakshya/Region/RegionSegment.hpp"
 #include "MayaFlux/Kakshya/Source/PlotContainer.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 

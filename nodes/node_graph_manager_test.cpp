@@ -1,8 +1,11 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Nodes/Conduit/Constant.hpp"
 #include "MayaFlux/Nodes/Network/NodeNetwork.hpp"
 #include "MayaFlux/Nodes/NodeGraphManager.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 

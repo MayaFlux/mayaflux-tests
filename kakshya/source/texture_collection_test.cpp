@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include "../../support/test_metadata.hpp"
 
 #include <vector>
 
@@ -6,6 +7,8 @@
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
 #include "MayaFlux/Kakshya/Source/TextureCollection.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 namespace {
@@ -98,7 +101,7 @@ namespace {
         static inline std::shared_ptr<Core::VulkanBackend> s_backend;
     };
 
-    TEST_F(TextureCollectionGpuTest, AppendStoresEachImageAsTheNextLayer)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureCollectionGpuTest, AppendStoresEachImageAsTheNextLayer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureCollection collection(TextureCollectionSpec { .width = 2, .height = 2 });
         const auto first = ramp(16, 3);
@@ -116,7 +119,7 @@ namespace {
         EXPECT_EQ(read_layer(collection, 1, second.size()), second);
     }
 
-    TEST_F(TextureCollectionGpuTest, AppendRejectsANullImage)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureCollectionGpuTest, AppendRejectsANullImage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureCollection collection(TextureCollectionSpec { .width = 2, .height = 2 });
 
@@ -125,7 +128,7 @@ namespace {
         EXPECT_EQ(collection.get_write_head(), 0U);
     }
 
-    TEST_F(TextureCollectionGpuTest, SmallerImageIsCenteredOnAZeroedBackground)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureCollectionGpuTest, SmallerImageIsCenteredOnAZeroedBackground, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureCollection collection(TextureCollectionSpec { .width = 4, .height = 4 });
         const auto source = ramp(2U * 4U * 4U, 7);
@@ -145,7 +148,7 @@ namespace {
         EXPECT_EQ(read_layer(collection, 0, expected.size()), expected);
     }
 
-    TEST_F(TextureCollectionGpuTest, LargerUniformImageFillsTheLayer)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureCollectionGpuTest, LargerUniformImageFillsTheLayer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureCollection collection(TextureCollectionSpec { .width = 4, .height = 4 });
 
@@ -153,7 +156,7 @@ namespace {
         EXPECT_EQ(read_layer(collection, 0, 4U * 4U * 4U), uniform(4U * 4U * 4U, 200));
     }
 
-    TEST_F(TextureCollectionGpuTest, LinearCollectionStopsAtTheByteCap)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureCollectionGpuTest, LinearCollectionStopsAtTheByteCap, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureCollection collection(TextureCollectionSpec { .width = 2, .height = 2, .max_bytes = 32 });
         ASSERT_TRUE(collection.append(make_image(2, 2, ramp(16, 1))));
@@ -166,7 +169,7 @@ namespace {
         EXPECT_EQ(collection.get_write_head(), 2U);
     }
 
-    TEST_F(TextureCollectionGpuTest, CircularCollectionOverwritesTheOldestAndIgnoresTheCap)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureCollectionGpuTest, CircularCollectionOverwritesTheOldestAndIgnoresTheCap, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureCollection collection(TextureCollectionSpec {
             .width = 2, .height = 2, .max_bytes = 16, .ring_layers = 2 });
@@ -185,7 +188,7 @@ namespace {
         EXPECT_EQ(read_layer(collection, 1, b.size()), b);
     }
 
-    TEST_F(TextureCollectionGpuTest, AsyncAppendIsReadableAfterwards)
+    MAYAFLUX_TEST_WITH(TEST_F, TextureCollectionGpuTest, AsyncAppendIsReadableAfterwards, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureCollection collection(TextureCollectionSpec { .width = 2, .height = 2 });
         const auto pixels = ramp(16, 44);

@@ -1,7 +1,10 @@
 #include "network_buffer_fixture.hpp"
+#include "../../support/test_metadata.hpp"
 
 #include "MayaFlux/Nodes/Network/AssemblyNetwork.hpp"
 #include "MayaFlux/Nodes/Network/Operators/AssemblyOperator.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
 namespace MayaFlux::Test {
 namespace {

@@ -1,9 +1,12 @@
 #include "gtest/gtest.h"
+#include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Kriya/BroadcastEvents.hpp"
 #include "MayaFlux/Vruta/BroadcastSource.hpp"
 #include "MayaFlux/Vruta/Event.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
+
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
 
