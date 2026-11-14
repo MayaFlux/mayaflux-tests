@@ -15,6 +15,11 @@ endif()
 
 add_executable(MayaFluxTests ${TEST_SOURCES})
 
+if(WIN32)
+    target_sources(MayaFluxTests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src/MayaFlux/IO/Image/TinyExrImpl.cpp"
+    )
+endif()
 
 set_target_properties(MayaFluxTests PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
