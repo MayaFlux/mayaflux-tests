@@ -210,6 +210,30 @@ TEST_F(FormaDropdownTest, OpeningTheListLiftsItAboveElementsAddedLater)
     EXPECT_EQ(dropdown.selected->value, 1U);
 }
 
+TEST_F(FormaDropdownTest, OpeningTheListDrawsItsRowsAndHeaderAfterElementsPlacedLater)
+{
+    auto dropdown = place_dropdown();
+    auto later = Forma::create_element<float>(
+        *surface,
+        [](float, std::vector<uint8_t>& out, Forma::Element&) { out.assign(sizeof(Kakshya::MeshVertex) * 4, 0); },
+        0.F);
+    const auto batch = surface->layer().batch();
+    ASSERT_NE(batch, nullptr);
+    ASSERT_EQ(later.element.buffer.buffer(), batch);
+
+    click(header_centre);
+    batch->process_default();
+
+    ASSERT_NE(batch->get_render_processor(), nullptr);
+    const auto& runs = batch->get_render_processor()->get_runs();
+    ASSERT_EQ(runs.size(), 3U);
+    EXPECT_EQ(runs[0].topology, Portal::Graphics::PrimitiveTopology::TRIANGLE_STRIP);
+    EXPECT_EQ(runs[1].topology, Portal::Graphics::PrimitiveTopology::TRIANGLE_LIST);
+    EXPECT_EQ(runs[2].topology, Portal::Graphics::PrimitiveTopology::TRIANGLE_LIST);
+    EXPECT_EQ(runs[2].vertex_offset, 0U);
+    EXPECT_GT(runs[1].vertex_offset, runs[2].vertex_offset);
+}
+
 TEST_F(FormaDropdownTest, TheChosenIndexReachesABridgeSink)
 {
     auto dropdown = place_dropdown();

@@ -72,6 +72,77 @@ TEST_F(FormaTextSliceTest, WithTextDrawsOneQuadPerGlyphAndBindsTheAtlasImage)
     EXPECT_EQ(atlas_image.generation(), 1U);
 }
 
+TEST_F(FormaTextSliceTest, ABatchUsesTheBatchShaderAndDeclaresOneTextSlot)
+{
+    auto batch = Forma::internal::atelier().create_batch(*surface);
+
+    const auto config = batch->get_render_config();
+    EXPECT_EQ(config.fragment_shader, "forma_plot.frag.spv");
+    ASSERT_EQ(config.additional_textures.size(), 1U);
+    EXPECT_EQ(config.additional_textures.front().name, "text");
+}
+
+TEST_F(FormaTextSliceTest, ABatchBindsTheDefaultAtlasImageAndTextKeepsIt)
+{
+    auto* atlas = Portal::Text::TypeFaceFoundry::instance().get_default_glyph_atlas();
+    ASSERT_NE(atlas, nullptr);
+
+    auto batch = Forma::internal::atelier().create_batch(*surface);
+    auto& atlas_image = Forma::internal::atelier().atlas_image(*atlas);
+    const auto image = atlas_image.image();
+    ASSERT_NE(image, nullptr);
+    EXPECT_EQ(batch->get_render_config().additional_textures.front().image, image);
+
+    Forma::Element el;
+    el.with_buffer(Forma::FormaTarget::slice_of(batch, PrimitiveTopology::TRIANGLE_LIST))
+        .with_text("ab", params_for(), k_region);
+
+    EXPECT_EQ(atlas_image.image(), image);
+    EXPECT_EQ(atlas_image.generation(), 1U);
+}
+
+TEST_F(FormaTextSliceTest, CreateBatchMakesAnUnregisteredBufferEachTime)
+{
+    auto first = Forma::internal::atelier().create_batch(*surface);
+    auto second = Forma::internal::atelier().create_batch(*surface);
+
+    EXPECT_NE(first, second);
+    EXPECT_EQ(surface->layer().batch(), nullptr);
+}
+
+TEST_F(FormaTextSliceTest, TheSurfaceBatchIsMadeOnceAndReplacedAfterItsLastSliceIsRetired)
+{
+    auto& atelier = Forma::internal::atelier();
+    EXPECT_EQ(surface->layer().batch(), nullptr);
+
+    auto first = atelier.surface_batch(*surface);
+    EXPECT_EQ(atelier.surface_batch(*surface), first);
+    EXPECT_EQ(surface->layer().batch(), first);
+
+    const auto slice = atelier.batch_slice(*surface, PrimitiveTopology::TRIANGLE_LIST);
+    EXPECT_EQ(slice.buffer(), first);
+    slice.retire();
+    EXPECT_TRUE(first->needs_removal());
+
+    auto second = atelier.surface_batch(*surface);
+    EXPECT_NE(second, first);
+    EXPECT_FALSE(second->needs_removal());
+}
+
+TEST_F(FormaTextSliceTest, ScrollBatchesDrawAboveTheSurfaceBatchInTheOrderTheyWereMade)
+{
+    auto& atelier = Forma::internal::atelier();
+
+    auto shared = atelier.surface_batch(*surface);
+    auto first_scroll = atelier.create_scroll_batch(*surface);
+    auto second_scroll = atelier.create_scroll_batch(*surface);
+
+    EXPECT_EQ(shared->get_render_config().draw_priority, 0);
+    EXPECT_GT(first_scroll->get_render_config().draw_priority, shared->get_render_config().draw_priority);
+    EXPECT_GT(second_scroll->get_render_config().draw_priority, first_scroll->get_render_config().draw_priority);
+    EXPECT_EQ(surface->layer().batch(), shared);
+}
+
 TEST_F(FormaTextSliceTest, SetTextRedrawsTheGlyphsForTheNewText)
 {
     auto buffer = text_buffer();
@@ -183,14 +254,18 @@ TEST_F(FormaTextSliceTest, ASliceWhoseTargetWasRemovedIsNotWrittenAgain)
     EXPECT_EQ(buffer->slice_count(), 0U);
 }
 
-TEST_F(FormaTextSliceTest, ATextRowWithoutABatchGetsABufferOfItsOwn)
+TEST_F(FormaTextSliceTest, TextRowsWithoutABatchAreSlicesOfTheSurfaceBuffer)
 {
     const AABB2D row { .min = { -1.F, 0.F }, .max = { 1.F, 0.2F } };
 
     auto first = Forma::internal::add_text_row(*surface, "one", row, { 200, 24 });
     auto second = Forma::internal::add_text_row(*surface, "two", row, { 200, 24 });
 
-    EXPECT_NE(first.second->buffer.buffer(), second.second->buffer.buffer());
+    ASSERT_NE(surface->layer().batch(), nullptr);
+    EXPECT_EQ(first.second->buffer.buffer(), surface->layer().batch());
+    EXPECT_EQ(second.second->buffer.buffer(), surface->layer().batch());
+    EXPECT_NE(first.second->buffer.slice(), second.second->buffer.slice());
+    EXPECT_EQ(surface->layer().batch()->slice_count(), 2U);
 }
 
 TEST_F(FormaTextSliceTest, TextRowsOfABatchAreSlicesOfOneBuffer)

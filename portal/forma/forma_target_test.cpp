@@ -59,6 +59,7 @@ namespace {
         EXPECT_NO_THROW(target.bring_to_front(3));
         EXPECT_NO_THROW(target.send_to_back(-3));
         EXPECT_NO_THROW(target.retire());
+        EXPECT_FALSE(target.move_to(nullptr));
     }
 
     TEST(FormaTargetTest, ANullBufferMakesAnEmptyHandle)
@@ -143,19 +144,25 @@ namespace {
 
         void TearDown() override
         {
-            if (buffer) {
-                if (auto render = buffer->get_render_processor())
-                    buffer->get_processing_chain()->remove_processor_anywhere(render, buffer);
-                buffer->set_default_processor(nullptr);
-                if (buffer->is_initialized()) {
+            release(buffer);
+            release(destination);
+            window.reset();
+        }
+
+        static void release(std::shared_ptr<FormaBuffer>& target)
+        {
+            if (target) {
+                if (auto render = target->get_render_processor())
+                    target->get_processing_chain()->remove_processor_anywhere(render, target);
+                target->set_default_processor(nullptr);
+                if (target->is_initialized()) {
                     auto* service = Registry::BackendRegistry::instance()
                                         .get_service<Registry::Service::BufferService>();
                     if (service)
-                        service->destroy_buffer(buffer);
+                        service->destroy_buffer(target);
                 }
             }
-            buffer.reset();
-            window.reset();
+            target.reset();
         }
 
         bool ready(PrimitiveTopology topology = PrimitiveTopology::TRIANGLE_LIST, size_t vertex_capacity = 16)
@@ -172,6 +179,35 @@ namespace {
             window = std::make_shared<ScriptedWindow>(128, 128);
             buffer->setup_rendering({ .target_window = window });
             return buffer->get_default_processor() != nullptr;
+        }
+
+        bool ready_destination()
+        {
+            destination = std::make_shared<FormaBuffer>(k_target_stride * 16, PrimitiveTopology::TRIANGLE_LIST);
+            auto* service = Registry::BackendRegistry::instance()
+                                .get_service<Registry::Service::BufferService>();
+            if (!service)
+                return false;
+            service->initialize_buffer(destination);
+            if (!destination->is_initialized())
+                return false;
+            destination->setup_processors(ProcessingToken::GRAPHICS_BACKEND);
+            destination->setup_rendering({ .target_window = window });
+            return destination->get_default_processor() != nullptr;
+        }
+
+        [[nodiscard]] static uint32_t vertex_count_of(const std::shared_ptr<FormaBuffer>& target)
+        {
+            const auto layout = target->get_vertex_layout();
+            return layout ? layout->vertex_count : 0;
+        }
+
+        [[nodiscard]] static std::vector<uint8_t> read_bytes_of(const std::shared_ptr<FormaBuffer>& target, size_t count)
+        {
+            std::vector<uint8_t> bytes(target->get_size_bytes());
+            Buffers::download_from_gpu(target, bytes.data(), bytes.size());
+            bytes.resize(count);
+            return bytes;
         }
 
         [[nodiscard]] uint32_t vertex_count() const
@@ -194,6 +230,7 @@ namespace {
         }
 
         std::shared_ptr<FormaBuffer> buffer;
+        std::shared_ptr<FormaBuffer> destination;
         std::shared_ptr<ScriptedWindow> window;
 
     private:
@@ -496,6 +533,176 @@ namespace {
 
         ASSERT_TRUE(layer.remove(id));
         EXPECT_TRUE(buffer->needs_removal());
+    }
+
+    TEST_F(FormaTargetDeviceTest, MovingASliceTakesItsVerticesToTheDestinationAndOffTheSource)
+    {
+        ASSERT_TRUE(ready());
+        ASSERT_TRUE(ready_destination());
+        const auto first = FormaTarget::slice_of(buffer);
+        const auto second = FormaTarget::slice_of(buffer);
+        first.submit(target_vertices(2, 1));
+        second.submit(target_vertices(1, 2));
+        buffer->process_default();
+
+        ASSERT_TRUE(second.move_to(destination));
+        buffer->process_default();
+        destination->process_default();
+
+        EXPECT_EQ(second.buffer(), destination);
+        EXPECT_NE(second.slice(), 0U);
+        EXPECT_EQ(buffer->slice_count(), 1U);
+        EXPECT_EQ(destination->slice_count(), 1U);
+        EXPECT_EQ(vertex_count_of(buffer), 2U);
+        EXPECT_EQ(read_bytes_of(buffer, 2 * k_target_stride), target_vertices(2, 1));
+        EXPECT_EQ(vertex_count_of(destination), 1U);
+        EXPECT_EQ(read_bytes_of(destination, k_target_stride), target_vertices(1, 2));
+    }
+
+    TEST_F(FormaTargetDeviceTest, EveryCopyOfAHandleFollowsAMove)
+    {
+        ASSERT_TRUE(ready());
+        ASSERT_TRUE(ready_destination());
+        const auto slice = FormaTarget::slice_of(buffer);
+        const FormaTarget copy = slice;
+        slice.submit(target_vertices(1, 4));
+
+        Layer layer;
+        Element element;
+        element.with_buffer(slice);
+        const uint32_t id = layer.add(std::move(element));
+
+        ASSERT_TRUE(slice.move_to(destination));
+
+        EXPECT_EQ(copy.buffer(), destination);
+        EXPECT_EQ(copy.slice(), slice.slice());
+        ASSERT_NE(layer.get(id), nullptr);
+        EXPECT_EQ(layer.get(id)->buffer.buffer(), destination);
+        EXPECT_EQ(layer.get(id)->buffer.slice(), slice.slice());
+    }
+
+    TEST_F(FormaTargetDeviceTest, ALayerDrivesAnElementThroughTheDestinationAfterItsSliceMoves)
+    {
+        ASSERT_TRUE(ready());
+        ASSERT_TRUE(ready_destination());
+        const auto slice = FormaTarget::slice_of(buffer);
+        slice.submit(target_vertices(1, 4));
+
+        Layer layer;
+        Element element;
+        element.with_buffer(slice);
+        const uint32_t id = layer.add(std::move(element));
+        ASSERT_TRUE(slice.move_to(destination));
+        destination->process_default();
+        ASSERT_EQ(vertex_count_of(destination), 1U);
+
+        ASSERT_TRUE(layer.set_visible(id, false));
+        destination->process_default();
+        EXPECT_EQ(vertex_count_of(destination), 0U);
+
+        ASSERT_TRUE(layer.remove(id));
+        EXPECT_EQ(destination->slice_count(), 0U);
+        EXPECT_TRUE(destination->needs_removal());
+    }
+
+    TEST_F(FormaTargetDeviceTest, MovingTheLastSliceRetiresTheSourceBuffer)
+    {
+        ASSERT_TRUE(ready());
+        ASSERT_TRUE(ready_destination());
+        const auto slice = FormaTarget::slice_of(buffer);
+        slice.submit(target_vertices(1, 4));
+
+        ASSERT_TRUE(slice.move_to(destination));
+
+        EXPECT_EQ(buffer->slice_count(), 0U);
+        EXPECT_TRUE(buffer->needs_removal());
+        EXPECT_FALSE(destination->needs_removal());
+    }
+
+    TEST_F(FormaTargetDeviceTest, AHiddenSliceStaysHiddenInTheDestination)
+    {
+        ASSERT_TRUE(ready());
+        ASSERT_TRUE(ready_destination());
+        const auto slice = FormaTarget::slice_of(buffer);
+        slice.submit(target_vertices(1, 4));
+        slice.set_visible(false);
+        buffer->process_default();
+
+        ASSERT_TRUE(slice.move_to(destination));
+        destination->process_default();
+
+        EXPECT_EQ(destination->slice_count(), 1U);
+        EXPECT_EQ(vertex_count_of(destination), 0U);
+
+        slice.set_visible(true);
+        destination->process_default();
+
+        EXPECT_EQ(vertex_count_of(destination), 1U);
+    }
+
+    TEST_F(FormaTargetDeviceTest, AMovedSliceKeepsItsTopology)
+    {
+        ASSERT_TRUE(ready());
+        ASSERT_TRUE(ready_destination());
+        const auto slice = FormaTarget::slice_of(buffer, PrimitiveTopology::LINE_LIST);
+        slice.submit(target_vertices(2, 6));
+
+        ASSERT_TRUE(slice.move_to(destination));
+
+        const auto moved = destination->read_slice(slice.slice());
+        ASSERT_TRUE(moved.has_value());
+        EXPECT_EQ(moved->topology, PrimitiveTopology::LINE_LIST);
+        EXPECT_EQ(moved->bytes, target_vertices(2, 6));
+    }
+
+    TEST_F(FormaTargetDeviceTest, ASubmitAfterAMoveWritesTheDestination)
+    {
+        ASSERT_TRUE(ready());
+        ASSERT_TRUE(ready_destination());
+        const auto slice = FormaTarget::slice_of(buffer);
+        const auto stay = FormaTarget::slice_of(buffer);
+        stay.submit(target_vertices(1, 1));
+        slice.submit(target_vertices(1, 4));
+        ASSERT_TRUE(slice.move_to(destination));
+
+        slice.submit(target_vertices(2, 9));
+        buffer->process_default();
+        destination->process_default();
+
+        EXPECT_EQ(vertex_count_of(buffer), 1U);
+        EXPECT_EQ(read_bytes_of(buffer, k_target_stride), target_vertices(1, 1));
+        EXPECT_EQ(vertex_count_of(destination), 2U);
+        EXPECT_EQ(read_bytes_of(destination, 2 * k_target_stride), target_vertices(2, 9));
+    }
+
+    TEST_F(FormaTargetDeviceTest, AMoveThatCannotApplyChangesNothing)
+    {
+        ASSERT_TRUE(ready());
+        ASSERT_TRUE(ready_destination());
+        const auto slice = FormaTarget::slice_of(buffer);
+        const auto other = FormaTarget::slice_of(buffer);
+        slice.submit(target_vertices(1, 4));
+        const auto original = slice.slice();
+
+        FormaTarget whole = buffer;
+        EXPECT_FALSE(whole.move_to(destination));
+        EXPECT_EQ(whole.buffer(), buffer);
+
+        EXPECT_FALSE(slice.move_to(nullptr));
+        EXPECT_FALSE(slice.move_to(buffer));
+
+        auto bare = std::make_shared<FormaBuffer>(240, PrimitiveTopology::TRIANGLE_LIST);
+        EXPECT_FALSE(slice.move_to(bare));
+
+        EXPECT_EQ(slice.buffer(), buffer);
+        EXPECT_EQ(slice.slice(), original);
+        EXPECT_EQ(buffer->slice_count(), 2U);
+        EXPECT_EQ(destination->slice_count(), 0U);
+
+        buffer->remove_slice(other.slice());
+        const FormaTarget stale { buffer, other.slice() };
+        EXPECT_FALSE(stale.move_to(destination));
+        EXPECT_EQ(destination->slice_count(), 0U);
     }
 
 }

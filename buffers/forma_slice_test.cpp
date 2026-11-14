@@ -412,6 +412,43 @@ namespace {
         EXPECT_TRUE(is_run(runs()[1], PrimitiveTopology::TRIANGLE_LIST, 3, 2));
     }
 
+    TEST_F(FormaSliceDeviceTest, ReadingASliceCopiesItsBytesTopologyAndVisibility)
+    {
+        ASSERT_TRUE(ready());
+        attach_rendering();
+        const auto a = buffer->add_slice(vertices(2, 1));
+        const auto b = buffer->add_slice(vertices(3, 2), PrimitiveTopology::LINE_LIST);
+
+        const auto read = buffer->read_slice(b);
+        ASSERT_TRUE(read.has_value());
+        EXPECT_EQ(read->bytes, vertices(3, 2));
+        EXPECT_EQ(read->topology, PrimitiveTopology::LINE_LIST);
+        EXPECT_TRUE(read->visible);
+        ASSERT_TRUE(buffer->read_slice(a).has_value());
+        EXPECT_EQ(buffer->read_slice(a)->bytes, vertices(2, 1));
+
+        buffer->set_slice_visible(b, false);
+        buffer->update_slice(a, vertices(4, 7));
+
+        ASSERT_TRUE(buffer->read_slice(a).has_value());
+        ASSERT_TRUE(buffer->read_slice(b).has_value());
+        EXPECT_FALSE(buffer->read_slice(b)->visible);
+        EXPECT_EQ(buffer->read_slice(a)->bytes, vertices(4, 7));
+        EXPECT_EQ(buffer->read_slice(b)->bytes, vertices(3, 2));
+    }
+
+    TEST_F(FormaSliceDeviceTest, ReadingAnUnknownSliceOrBeforeTheProcessorExistsGivesNothing)
+    {
+        ASSERT_TRUE(make_buffer(k_stride * 4, PrimitiveTopology::TRIANGLE_LIST));
+        EXPECT_FALSE(buffer->read_slice(1).has_value());
+
+        ASSERT_TRUE(attach());
+        buffer->add_slice(vertices(1, 1));
+
+        EXPECT_FALSE(buffer->read_slice(999).has_value());
+        EXPECT_EQ(buffer->slice_count(), 1U);
+    }
+
     TEST_F(FormaSliceDeviceTest, UnknownSliceIdsLeaveTheBufferUnchanged)
     {
         ASSERT_TRUE(ready());

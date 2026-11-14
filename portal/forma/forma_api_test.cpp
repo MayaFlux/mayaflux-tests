@@ -256,13 +256,183 @@ TEST_F(FormaApiTest, ScrollableStillScissorsATrackedElementThatHasABufferOfItsOw
     auto panel = Forma::make_scrollable(
         Forma::FormaTarget::slice_of(batch, PrimitiveTopology::TRIANGLE_STRIP), surface, viewport);
 
+    auto own = Forma::create_buffer(surface.render_config());
     Forma::Geometry::Form<float> form { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
-    auto child = Forma::create<float>(surface, std::move(form), 0.F);
+    auto child = Forma::create<float>(surface, own, std::move(form), 0.F);
     Forma::internal::atelier().track<float>(panel, surface.layer(), child, viewport);
 
+    EXPECT_EQ(child.element.buffer.buffer(), own);
     EXPECT_NE(child.element.buffer.buffer(), batch);
-    ASSERT_NE(child.element.buffer->get_render_processor(), nullptr);
-    EXPECT_EQ(child.element.buffer->get_render_processor()->get_scissor(), Kinesis::Scissor::from(viewport));
+    ASSERT_NE(own->get_render_processor(), nullptr);
+    EXPECT_EQ(own->get_render_processor()->get_scissor(), Kinesis::Scissor::from(viewport));
+}
+
+TEST_F(FormaApiTest, ScrollableMovesATrackedElementOutOfTheSurfaceBufferIntoItsOwn)
+{
+    const AABB2D viewport { .min = { -0.5F, -0.5F }, .max = { 0.5F, 0.5F } };
+    auto surface = make_surface("api-scroll-move");
+    auto panel = Forma::Scrollable {}.place(surface, viewport);
+    auto panel_buffer = panel.buf.buffer();
+
+    Forma::Geometry::Form<float> form { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    auto child = Forma::create<float>(surface, std::move(form), 0.F);
+    const auto shared = surface.layer().batch();
+    ASSERT_NE(shared, nullptr);
+    ASSERT_EQ(child.element.buffer.buffer(), shared);
+
+    Forma::internal::atelier().track<float>(panel, surface.layer(), child, viewport);
+
+    EXPECT_EQ(child.element.buffer.buffer(), panel_buffer);
+    EXPECT_NE(panel_buffer, shared);
+    EXPECT_EQ(panel_buffer->slice_count(), 2U);
+    EXPECT_TRUE(shared->needs_removal());
+    ASSERT_NE(panel_buffer->get_render_processor(), nullptr);
+    EXPECT_EQ(panel_buffer->get_render_processor()->get_scissor(), Kinesis::Scissor::from(viewport));
+    EXPECT_GT(panel_buffer->get_render_config().draw_priority, 0);
+}
+
+TEST_F(FormaApiTest, ATrackedElementMovesAlongsideTheOthersLeftOnTheSurfaceBuffer)
+{
+    const AABB2D viewport { .min = { -0.5F, -0.5F }, .max = { 0.5F, 0.5F } };
+    auto surface = make_surface("api-scroll-move-one");
+    auto panel = Forma::Scrollable {}.place(surface, viewport);
+
+    Forma::Geometry::Form<float> tracked_form { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    Forma::Geometry::Form<float> other_form { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    auto tracked = Forma::create<float>(surface, std::move(tracked_form), 0.F);
+    auto other = Forma::create<float>(surface, std::move(other_form), 0.F);
+    const auto shared = surface.layer().batch();
+
+    Forma::internal::atelier().track<float>(panel, surface.layer(), tracked, viewport);
+
+    EXPECT_EQ(other.element.buffer.buffer(), shared);
+    EXPECT_FALSE(shared->needs_removal());
+    EXPECT_EQ(shared->slice_count(), 1U);
+    EXPECT_EQ(tracked.element.buffer.buffer(), panel.buf.buffer());
+    ASSERT_NE(shared->get_render_processor(), nullptr);
+    EXPECT_FALSE(shared->get_render_processor()->get_scissor().has_value());
+}
+
+TEST_F(FormaApiTest, FormsCreatedWithoutABufferShareTheSurfaceBuffer)
+{
+    auto surface = make_surface("api-default-batch");
+
+    auto a = Forma::create<float>(
+        surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F);
+    auto b = Forma::create<float>(
+        surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F);
+
+    ASSERT_NE(surface.layer().batch(), nullptr);
+    EXPECT_EQ(a.element.buffer.buffer(), surface.layer().batch());
+    EXPECT_EQ(b.element.buffer.buffer(), surface.layer().batch());
+    EXPECT_NE(a.element.buffer.slice(), b.element.buffer.slice());
+    EXPECT_EQ(surface.layer().batch()->slice_count(), 2U);
+}
+
+TEST_F(FormaApiTest, SliceGivesATargetInTheSurfaceBufferWithTheRequestedTopology)
+{
+    auto surface = make_surface("api-slice");
+
+    const auto first = Forma::slice(surface);
+    const auto second = Forma::slice(surface, PrimitiveTopology::POINT_LIST);
+
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(second);
+    EXPECT_EQ(first.buffer(), surface.layer().batch());
+    EXPECT_EQ(second.buffer(), surface.layer().batch());
+    EXPECT_NE(first.slice(), second.slice());
+    const auto read = second.buffer()->read_slice(second.slice());
+    ASSERT_TRUE(read.has_value());
+    EXPECT_EQ(read->topology, PrimitiveTopology::POINT_LIST);
+}
+
+TEST_F(FormaApiTest, TendWithoutABufferPlacesItsElementOnTheSurfaceBuffer)
+{
+    auto surface = make_surface("api-tend-default-batch");
+    Forma::Tend<float> tend;
+    tend.form = Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) };
+    tend.place(surface);
+
+    EXPECT_EQ(tend.result->element.buffer.buffer(), surface.layer().batch());
+    EXPECT_NE(tend.result->element.buffer.slice(), 0U);
+}
+
+TEST_F(FormaApiTest, DestroyingTheLastElementRetiresTheSurfaceBufferAndTheNextOneGetsANewBuffer)
+{
+    auto surface = make_surface("api-batch-retire");
+    auto first = Forma::create<float>(
+        surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F);
+    const auto old_batch = surface.layer().batch();
+
+    Forma::destroy(surface, first.element.id);
+
+    EXPECT_TRUE(old_batch->needs_removal());
+
+    auto second = Forma::create<float>(
+        surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F);
+
+    EXPECT_NE(second.element.buffer.buffer(), old_batch);
+    EXPECT_EQ(second.element.buffer.buffer(), surface.layer().batch());
+}
+
+TEST_F(FormaApiTest, RaisingAnElementDrawsItsSliceLastInTheSurfaceBuffer)
+{
+    auto surface = make_surface("api-raise-order");
+    auto first = Forma::create<float>(
+        surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F);
+    std::vector<Forma::Mapped<float>> others;
+    for (int i = 0; i < 2; ++i) {
+        others.push_back(Forma::create<float>(
+            surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F));
+    }
+    const auto batch = surface.layer().batch();
+    ASSERT_NE(batch, nullptr);
+    ASSERT_EQ(batch->slice_count(), 3U);
+
+    ASSERT_TRUE(surface.layer().bring_to_front(first.element.id));
+    batch->process_default();
+
+    ASSERT_NE(batch->get_render_processor(), nullptr);
+    const auto& runs = batch->get_render_processor()->get_runs();
+    ASSERT_EQ(runs.size(), 3U);
+    EXPECT_EQ(runs[0].vertex_offset, 4U);
+    EXPECT_EQ(runs[1].vertex_offset, 8U);
+    EXPECT_EQ(runs[2].vertex_offset, 0U);
+}
+
+TEST_F(FormaApiTest, ARaisedBufferElementDrawsAboveEveryScrollBatchMadeBeforeItAndBelowThoseAfter)
+{
+    const AABB2D viewport { .min = { -0.5F, -0.5F }, .max = { 0.5F, 0.5F } };
+    auto surface = make_surface("api-raise-priority");
+    auto first_panel = Forma::Scrollable {}.place(surface, viewport);
+
+    auto own = Forma::create_buffer(surface.render_config());
+    auto element = Forma::create_element<float>(
+        surface, Forma::FormaTarget(own), counting_geometry(std::make_shared<int>(0), k_origin_hint), 0.F);
+    ASSERT_TRUE(surface.layer().bring_to_front(element.element.id));
+
+    auto second_panel = Forma::Scrollable {}.place(surface, viewport);
+
+    const auto priority_of = [](const std::shared_ptr<Buffers::FormaBuffer>& buffer) {
+        return buffer->get_render_config().draw_priority;
+    };
+    EXPECT_GT(priority_of(own), priority_of(first_panel.buf.buffer()));
+    EXPECT_GT(priority_of(second_panel.buf.buffer()), priority_of(own));
+}
+
+TEST_F(FormaApiTest, ClearingALayerRetiresTheSurfaceBuffer)
+{
+    auto surface = make_surface("api-batch-clear");
+    auto element = Forma::create<float>(
+        surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F);
+    const auto old_batch = surface.layer().batch();
+    ASSERT_NE(old_batch, nullptr);
+
+    surface.layer().clear();
+
+    EXPECT_TRUE(old_batch->needs_removal());
+    EXPECT_EQ(surface.layer().batch(), nullptr);
+    EXPECT_TRUE(surface.layer().empty());
 }
 
 TEST_F(FormaApiTest, TendBridgeReturnsTheHandleOfItsElement)
@@ -318,12 +488,47 @@ TEST_F(FormaApiTest, CreateTextFieldRegistersAnElementOnTheSurface)
     EXPECT_EQ(field.state->value.text, "hello");
 }
 
+TEST_F(FormaApiTest, AScrollableTextFieldNeedsNoBufferAndDrawsInThePanelsOwn)
+{
+    const AABB2D viewport { .min = { -0.5F, -0.5F }, .max = { 0.5F, 0.5F } };
+    auto surface = make_surface("api-text-panel");
+    auto panel = Forma::Scrollable {}.place(surface, viewport);
+
+    auto field = Forma::TextField {}.scrollable(surface, panel, nullptr, "hello");
+
+    EXPECT_NE(field.element_id, 0U);
+    EXPECT_EQ(field.buf.buffer(), panel.buf.buffer());
+    EXPECT_NE(field.buf.slice(), panel.buf.slice());
+    EXPECT_EQ(field.state->value.text, "hello");
+    EXPECT_FALSE(surface.layer().batch());
+    ASSERT_NE(panel.buf->get_render_processor(), nullptr);
+    EXPECT_EQ(panel.buf->get_render_processor()->get_scissor(), Kinesis::Scissor::from(viewport));
+}
+
+TEST_F(FormaApiTest, AScrollableTextFieldOnAnUnplacedScrollerDoesNothing)
+{
+    auto surface = make_surface("api-text-unplaced");
+    Forma::Scrollable unplaced;
+
+    auto field = Forma::TextField {}.scrollable(surface, unplaced, nullptr, "hello");
+
+    EXPECT_EQ(field.element_id, 0U);
+    EXPECT_TRUE(surface.layer().empty());
+}
+
 TEST_F(FormaApiTest, DestroyingAScrollableTextFieldTearsDownTheViewportToo)
 {
     auto surface = make_surface("api-text-scroll");
 
     auto field = Forma::create_text_field(surface, k_origin_hint, nullptr, "hello", true);
     ASSERT_GT(surface.layer().size(), 1U);
+
+    const auto& elements = surface.layer().elements();
+    const auto viewport = std::ranges::find_if(elements, [](const Forma::Element& el) {
+        return el.name == "scrollable_viewport";
+    });
+    ASSERT_NE(viewport, elements.end());
+    EXPECT_EQ(viewport->buffer.buffer(), field.buf.buffer());
 
     Forma::destroy(surface, field.element_id);
 
