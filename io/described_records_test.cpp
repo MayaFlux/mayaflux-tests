@@ -78,6 +78,39 @@ namespace {
         EXPECT_EQ(position, glm::vec3(7.F));
     }
 
+    TEST(GlmTextCodecTest, SequencesGroupNumbersByComponentCount)
+    {
+        Reflect::TextError error = Reflect::TextError::Unsupported;
+        std::vector<glm::vec2> points;
+        EXPECT_TRUE(Reflect::TextCodec<std::vector<glm::vec2>>::decode("0 0  1 0\n1 1", points, error));
+        ASSERT_EQ(points.size(), 3U);
+        EXPECT_EQ(points[1], glm::vec2(1.F, 0.F));
+        EXPECT_EQ(points[2], glm::vec2(1.F, 1.F));
+
+        EXPECT_TRUE(Reflect::TextCodec<std::vector<glm::vec2>>::decode("", points, error));
+        EXPECT_TRUE(points.empty());
+    }
+
+    TEST(GlmTextCodecTest, SequencesRejectAPartialGroupAndBadTokens)
+    {
+        Reflect::TextError error = Reflect::TextError::Unsupported;
+        std::vector<glm::vec3> points { glm::vec3(5.F) };
+        EXPECT_FALSE(Reflect::TextCodec<std::vector<glm::vec3>>::decode("1 2 3 4", points, error));
+        EXPECT_EQ(error, Reflect::TextError::Cardinality);
+        EXPECT_FALSE(Reflect::TextCodec<std::vector<glm::vec3>>::decode("1 2 x", points, error));
+        EXPECT_EQ(error, Reflect::TextError::Invalid);
+        ASSERT_EQ(points.size(), 1U);
+        EXPECT_EQ(points[0], glm::vec3(5.F));
+    }
+
+    TEST(GlmTextCodecTest, DiagnosticsSpeakOfGroupsForSequences)
+    {
+        std::vector<glm::vec2> points;
+        std::string error;
+        EXPECT_FALSE(Reflect::decode_text_field("points", "1 2 3", points, "shape", error));
+        EXPECT_EQ(error, "<shape> needs 2 numbers per group in points");
+    }
+
     TEST_F(DescribedRecordsFixture, XmlChildrenBecomeTypedRows)
     {
         write("scene.xml",

@@ -13,7 +13,7 @@ struct TextBindingSample {
     bool flag {};
     std::optional<int32_t> count;
     TextBindingMode mode { TextBindingMode::Alpha };
-    std::vector<float> unsupported;
+    std::vector<std::string> unsupported;
 };
 
 struct RecordBindingItem {
@@ -222,6 +222,37 @@ namespace {
         EXPECT_EQ(text, " as is ");
     }
 
+    TEST(TextCodecTest, ScalarSequencesTakeEveryToken)
+    {
+        static_assert(Reflect::TextCodec<std::vector<float>>::sequence);
+        Reflect::TextError error = Reflect::TextError::Unsupported;
+        std::vector<float> values { 9.F };
+        EXPECT_TRUE(Reflect::TextCodec<std::vector<float>>::decode("1 2.5 -3", values, error));
+        EXPECT_EQ(values, (std::vector<float> { 1.F, 2.5F, -3.F }));
+
+        EXPECT_TRUE(Reflect::TextCodec<std::vector<float>>::decode("", values, error));
+        EXPECT_TRUE(values.empty());
+
+        values = { 7.F };
+        EXPECT_FALSE(Reflect::TextCodec<std::vector<float>>::decode("1 x", values, error));
+        EXPECT_EQ(error, Reflect::TextError::Invalid);
+        EXPECT_EQ(values, (std::vector<float> { 7.F }));
+    }
+
+    TEST(TextCodecTest, IntegerSequencesRejectFractionsAndAnOptionalSequenceDecodes)
+    {
+        Reflect::TextError error = Reflect::TextError::Unsupported;
+        std::vector<uint32_t> counts;
+        EXPECT_TRUE(Reflect::TextCodec<std::vector<uint32_t>>::decode("3 5 8", counts, error));
+        EXPECT_EQ(counts, (std::vector<uint32_t> { 3, 5, 8 }));
+        EXPECT_FALSE(Reflect::TextCodec<std::vector<uint32_t>>::decode("3 5.5", counts, error));
+
+        std::optional<std::vector<float>> maybe;
+        EXPECT_TRUE(Reflect::TextCodec<std::optional<std::vector<float>>>::decode("1 2", maybe, error));
+        ASSERT_TRUE(maybe);
+        EXPECT_EQ(maybe->size(), 2U);
+    }
+
     TEST(TextBindingTest, DecodeFieldNamesTheOwnerAndTheFailure)
     {
         std::string error;
@@ -235,7 +266,7 @@ namespace {
         EXPECT_FALSE(Reflect::decode_text_field("mode", "Gamma", mode, "owner", error));
         EXPECT_EQ(error, "<owner> has an unsupported mode Gamma");
 
-        std::vector<float> unsupported;
+        std::vector<std::string> unsupported;
         EXPECT_FALSE(Reflect::decode_text_field("w", "1", unsupported, "owner", error));
         EXPECT_EQ(error, "<owner> has an unsupported attribute w");
 
