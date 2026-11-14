@@ -526,5 +526,67 @@ namespace {
         EXPECT_EQ(inner->region(), nullptr);
     }
 
+    TEST(CompositeContainerForestTest, IndexesAndTraversesTheContainersParentLinks)
+    {
+        const CompositeContainer container(sample_rows());
+        std::string error;
+        const auto index = container.index_forest("parent", error);
+        ASSERT_TRUE(index) << error;
+
+        const auto forest = container.traverse_forest(*index);
+        EXPECT_TRUE(forest.matches());
+
+        std::vector<std::string> names;
+        forest.for_each_child(0, [&](size_t, const Composite& row) { names.push_back(name_of(row)); });
+        EXPECT_EQ(names, (std::vector<std::string> { "B", "C" }));
+
+        const auto branch = forest.subtree(2);
+        ASSERT_TRUE(branch);
+        EXPECT_EQ(branch->size(), 2U);
+    }
+
+    TEST(CompositeContainerForestTest, IndexForestReportsABadParentField)
+    {
+        const CompositeContainer container(sample_rows());
+        std::string error;
+        EXPECT_FALSE(container.index_forest("absent", error));
+        EXPECT_NE(error.find("no uint64_t field"), std::string::npos);
+    }
+
+    TEST(CompositeContainerForestTest, MaterializeSubtreeFillsTheWindowWithARebasedBranch)
+    {
+        CompositeContainer container(sample_rows());
+        std::string error;
+        const auto index = container.index_forest("parent", error);
+        ASSERT_TRUE(index) << error;
+
+        ASSERT_TRUE(container.materialize_subtree(*index, "parent", 2, error)) << error;
+        const CompositeArray& window = container.get_materialized_data();
+        ASSERT_EQ(window.size(), 2U);
+        EXPECT_EQ(name_of(*window.at(0)), "C");
+        EXPECT_EQ(name_of(*window.at(1)), "D");
+        EXPECT_FALSE(window.at(0)->has("parent"));
+        EXPECT_EQ(window.at(1)->get<uint64_t>("parent"), std::optional<uint64_t> { 0 });
+        EXPECT_EQ(container.position(), 0U);
+        EXPECT_TRUE(Kakshya::index_composite_forest(window, "parent", error));
+    }
+
+    TEST(CompositeContainerForestTest, AFailedMaterializeSubtreeKeepsThePriorWindow)
+    {
+        CompositeContainer container(sample_rows(), 1);
+        ASSERT_TRUE(container.materialize_next());
+        ASSERT_EQ(container.get_materialized_data().size(), 1U);
+
+        std::string error;
+        const auto index = container.index_forest("parent", error);
+        ASSERT_TRUE(index) << error;
+        EXPECT_FALSE(container.materialize_subtree(*index, "parent", 99, error));
+        EXPECT_FALSE(error.empty());
+
+        ASSERT_EQ(container.get_materialized_data().size(), 1U);
+        EXPECT_EQ(name_of(*container.get_materialized_data().at(0)), "A");
+        EXPECT_EQ(container.position(), 1U);
+    }
+
 }
 }
