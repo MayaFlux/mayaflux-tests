@@ -11,52 +11,6 @@
 
 namespace MayaFlux::Test {
 
-struct FormaManifestProbe {
-    float gain { 1.F };
-    std::string label;
-    bool on { false };
-};
-
-struct FormaManifestSpot {
-    glm::vec2 at {};
-    float scale { 1.F };
-};
-
-}
-
-namespace MayaFlux::Reflect::Generated {
-
-template <>
-struct Description<::MayaFlux::Test::FormaManifestProbe> {
-    static constexpr std::string_view name = "MayaFlux::Test::FormaManifestProbe";
-
-    static constexpr auto members()
-    {
-        return std::tuple {
-            Member<&::MayaFlux::Test::FormaManifestProbe::gain> { "gain" },
-            Member<&::MayaFlux::Test::FormaManifestProbe::label> { "label" },
-            Member<&::MayaFlux::Test::FormaManifestProbe::on> { "on" },
-        };
-    }
-};
-
-template <>
-struct Description<::MayaFlux::Test::FormaManifestSpot> {
-    static constexpr std::string_view name = "MayaFlux::Test::FormaManifestSpot";
-
-    static constexpr auto members()
-    {
-        return std::tuple {
-            Member<&::MayaFlux::Test::FormaManifestSpot::at> { "at" },
-            Member<&::MayaFlux::Test::FormaManifestSpot::scale> { "scale" },
-        };
-    }
-};
-
-}
-
-namespace MayaFlux::Test {
-
 namespace Forma = Portal::Forma;
 using Kinesis::AABB2D;
 using Portal::Graphics::PrimitiveTopology;
@@ -176,14 +130,14 @@ namespace {
                     return std::nullopt;
                 }
                 return StubTable::Placer([log, id, size = manifest_attribute(factory, "size")](
-                                             Forma::Surface& surface, std::string& place_error) {
+                                             Forma::Surface& surface, std::string& place_error) -> std::optional<uint32_t> {
                     if (id == log->refuse_place) {
                         place_error = "stub could not place " + id;
-                        return false;
+                        return std::nullopt;
                     }
                     log->placed.push_back(size + ":" + id);
                     log->surfaces.push_back(&surface);
-                    return true;
+                    return surface.add(Forma::Element {}.with_rect({ -1.F, -1.F }, { 1.F, 1.F })).id();
                 });
             });
         return table;
@@ -219,6 +173,18 @@ TEST(FormaManifestTableTest, TheDocumentsReservedNamesAreSkippedOnAPlacement)
 {
     const auto table = make_probe_table(std::make_shared<ProbeLog>());
     const auto pair = make_probe_pair({}, { { "id", "i" }, { "template", "t" }, { "at", "0 0" } });
+
+    std::string error;
+    EXPECT_TRUE(decode(table, pair, error)) << error;
+}
+
+TEST(FormaManifestTableTest, EveryPrefixedAttributeIsLeftToTheDriverOnAPlacement)
+{
+    const auto table = make_probe_table(std::make_shared<ProbeLog>());
+    auto attributes = valid_instance();
+    attributes.emplace_back("mf:hidden", "true");
+    attributes.emplace_back("mf:anything", "else");
+    const auto pair = make_probe_pair({}, attributes);
 
     std::string error;
     EXPECT_TRUE(decode(table, pair, error)) << error;
@@ -457,7 +423,7 @@ protected:
         return Forma::Surface(Forma::SurfaceConfig { .window = window, .layer = layer, .ctx = ctx, .detach_on_close = false });
     }
 
-    std::optional<size_t> run(const FormaManifestElement& document)
+    std::optional<Forma::PlacedInstances> run(const FormaManifestElement& document)
     {
         return Forma::instantiate_document(table, document, surfaces, error);
     }
@@ -485,7 +451,7 @@ TEST_F(FormaManifestDriverTest, PlacesEveryInstanceInDocumentOrderOnTheBoundSurf
     const auto count = run(manifest_document());
 
     ASSERT_TRUE(count) << error;
-    EXPECT_EQ(*count, 3U);
+    EXPECT_EQ(count->size(), 3U);
     EXPECT_EQ(log->placed, (std::vector<std::string> { "3:a", "5:b", "3:c" }));
     for (Forma::Surface* placed_on : log->surfaces)
         EXPECT_EQ(placed_on, &surfaces.at("main"));
@@ -499,7 +465,7 @@ TEST_F(FormaManifestDriverTest, TheSectionsMayAppearInEitherOrder)
     const auto count = run(manifest_numbered(document));
 
     ASSERT_TRUE(count) << error;
-    EXPECT_EQ(*count, 3U);
+    EXPECT_EQ(count->size(), 3U);
 }
 
 TEST_F(FormaManifestDriverTest, ADocumentWithoutSurfacesPlacesNothingAndSucceeds)
@@ -510,7 +476,7 @@ TEST_F(FormaManifestDriverTest, ADocumentWithoutSurfacesPlacesNothingAndSucceeds
     const auto count = run(manifest_numbered(document));
 
     ASSERT_TRUE(count) << error;
-    EXPECT_EQ(*count, 0U);
+    EXPECT_EQ(count->size(), 0U);
 }
 
 TEST_F(FormaManifestDriverTest, SuccessClearsAStaleError)
@@ -532,7 +498,7 @@ TEST_F(FormaManifestDriverTest, EachSurfaceReceivesItsOwnInstances)
     const auto count = run(manifest_numbered(document));
 
     ASSERT_TRUE(count) << error;
-    EXPECT_EQ(*count, 4U);
+    EXPECT_EQ(count->size(), 4U);
     EXPECT_EQ(log->surfaces[0], &surfaces.at("main"));
     EXPECT_EQ(log->surfaces[2], &surfaces.at("main"));
     EXPECT_EQ(log->surfaces[3], &surfaces.at("side"));
@@ -759,6 +725,169 @@ TEST_F(FormaManifestDriverTest, RowsAreStillCheckedAgainstTheWholeDocument)
         surfaces.at("main"), error));
 
     EXPECT_NE(error.find("root element must be <forma>"), std::string::npos) << error;
+}
+
+// =============================================================================
+// instantiate_document: the result, names and the document's Layer attributes
+// =============================================================================
+
+namespace {
+
+    FormaManifestElement& manifest_instance(FormaManifestElement& document, size_t index)
+    {
+        return document.children[1].children[index];
+    }
+
+}
+
+TEST_F(FormaManifestDriverTest, TheResultMapsEachInstanceToItsSurfaceAndElement)
+{
+    const auto placed = run(manifest_document());
+
+    ASSERT_TRUE(placed) << error;
+    ASSERT_EQ(placed->size(), 3U);
+    for (const char* id : { "a", "b", "c" }) {
+        const auto found = placed->find(id);
+        ASSERT_NE(found, placed->end()) << id;
+        EXPECT_EQ(found->second.surface, "main");
+        EXPECT_NE(surfaces.at("main").layer().get(found->second.element), nullptr) << id;
+    }
+}
+
+TEST_F(FormaManifestDriverTest, EveryPlacedElementIsNamedAfterItsInstanceAndFoundByThatName)
+{
+    const auto placed = run(manifest_document());
+    ASSERT_TRUE(placed) << error;
+
+    const Forma::Layer& layer = surfaces.at("main").layer();
+    for (const auto& [id, instance] : *placed)
+        EXPECT_EQ(layer.get(instance.element)->name, id);
+    EXPECT_EQ(layer.find("b"), std::optional<uint32_t>(placed->at("b").element));
+    EXPECT_FALSE(layer.find("ghost"));
+}
+
+TEST_F(FormaManifestDriverTest, HiddenInteractiveAndClipAreAppliedToThePlacedElement)
+{
+    auto document = manifest_document();
+    manifest_instance(document, 0).attributes.emplace_back("mf:hidden", "true");
+    manifest_instance(document, 1).attributes.emplace_back("mf:interactive", "false");
+    manifest_instance(document, 2).attributes.emplace_back("mf:clip", "-0.5 -0.5 1 1");
+
+    const auto placed = run(manifest_numbered(document));
+    ASSERT_TRUE(placed) << error;
+
+    const Forma::Layer& layer = surfaces.at("main").layer();
+    EXPECT_FALSE(layer.get(placed->at("a").element)->visible);
+    EXPECT_TRUE(layer.get(placed->at("a").element)->interactive);
+    EXPECT_FALSE(layer.get(placed->at("b").element)->interactive);
+    EXPECT_TRUE(layer.get(placed->at("b").element)->visible);
+    const Forma::Element* clipped = layer.get(placed->at("c").element);
+    ASSERT_TRUE(clipped->clip);
+    EXPECT_EQ(clipped->clip->min, glm::vec2(-0.5F, -0.5F));
+    EXPECT_EQ(clipped->clip->max, glm::vec2(0.5F, 0.5F));
+}
+
+TEST_F(FormaManifestDriverTest, RelateTiesAnInstanceToAnotherOnTheSameSurface)
+{
+    auto document = manifest_document();
+    manifest_instance(document, 1).attributes.emplace_back("mf:relate", "a");
+
+    const auto placed = run(manifest_numbered(document));
+    ASSERT_TRUE(placed) << error;
+
+    const Forma::Layer& layer = surfaces.at("main").layer();
+    EXPECT_EQ(layer.related_ids(placed->at("a").element),
+        std::vector<uint32_t> { placed->at("b").element });
+    EXPECT_TRUE(layer.related_ids(placed->at("c").element).empty());
+}
+
+TEST_F(FormaManifestDriverTest, FrontAndBackChangeWhichOverlappingInstanceIsHit)
+{
+    const glm::vec2 point { 0.F, 0.F };
+
+    const auto untouched = run(manifest_document());
+    ASSERT_TRUE(untouched) << error;
+    EXPECT_EQ(surfaces.at("main").layer().hit_test(point), untouched->at("c").element);
+
+    auto back = manifest_document();
+    manifest_instance(back, 2).attributes.emplace_back("mf:back", "true");
+    surfaces.at("main").layer().clear();
+    const auto sent_back = run(manifest_numbered(back));
+    ASSERT_TRUE(sent_back) << error;
+    EXPECT_EQ(surfaces.at("main").layer().hit_test(point), sent_back->at("b").element);
+
+    auto front = manifest_document();
+    manifest_instance(front, 0).attributes.emplace_back("mf:front", "true");
+    surfaces.at("main").layer().clear();
+    const auto brought_front = run(manifest_numbered(front));
+    ASSERT_TRUE(brought_front) << error;
+    EXPECT_EQ(surfaces.at("main").layer().hit_test(point), brought_front->at("a").element);
+}
+
+TEST_F(FormaManifestDriverTest, LayerAttributesAreCheckedBeforeAnythingIsPlaced)
+{
+    auto unknown = manifest_document();
+    manifest_instance(unknown, 0).attributes.emplace_back("mf:bogus", "1");
+    unknown = manifest_numbered(unknown);
+    expect_rejected(unknown, "unsupported attribute mf:bogus", manifest_instance(unknown, 0).row);
+
+    auto invalid = manifest_document();
+    manifest_instance(invalid, 1).attributes.emplace_back("mf:hidden", "maybe");
+    expect_rejected(manifest_numbered(invalid), "invalid mf:hidden attribute");
+
+    auto both = manifest_document();
+    manifest_instance(both, 0).attributes.emplace_back("mf:front", "true");
+    manifest_instance(both, 0).attributes.emplace_back("mf:back", "true");
+    expect_rejected(manifest_numbered(both), "cannot both be set");
+
+    auto clip_numbers = manifest_document();
+    manifest_instance(clip_numbers, 0).attributes.emplace_back("mf:clip", "1 2 3");
+    expect_rejected(manifest_numbered(clip_numbers), "four numbers in mf:clip");
+
+    auto clip_area = manifest_document();
+    manifest_instance(clip_area, 0).attributes.emplace_back("mf:clip", "0 0 0 1");
+    expect_rejected(manifest_numbered(clip_area), "mf:clip needs a positive width and height");
+
+    EXPECT_EQ(log->decodes, 0);
+}
+
+TEST_F(FormaManifestDriverTest, RelateMustNameAnotherInstanceOfTheSameSurface)
+{
+    auto empty = manifest_document();
+    manifest_instance(empty, 0).attributes.emplace_back("mf:relate", "");
+    expect_rejected(manifest_numbered(empty), "needs an instance id");
+
+    auto unknown = manifest_document();
+    manifest_instance(unknown, 0).attributes.emplace_back("mf:relate", "ghost");
+    unknown = manifest_numbered(unknown);
+    expect_rejected(unknown, "mf:relate refers to ghost, which is not an instance of surface main",
+        manifest_instance(unknown, 0).row);
+
+    auto self = manifest_document();
+    manifest_instance(self, 0).attributes.emplace_back("mf:relate", "a");
+    expect_rejected(manifest_numbered(self), "may not name the instance itself");
+
+    surfaces.emplace("side", make_surface("manifest-side"));
+    auto across = manifest_document();
+    across.children.push_back(manifest_node("surface", { { "id", "side" } },
+        { manifest_node("instance", { { "id", "d" }, { "template", "second" }, { "mf:relate", "a" } }) }));
+    expect_rejected(manifest_numbered(across), "not an instance of surface side");
+}
+
+TEST_F(FormaManifestDriverTest, AnElementThePlacerReturnsThatTheSurfaceDoesNotHoldIsReported)
+{
+    table.expose_placement("ghost", [](const FormaManifestElement&, const FormaManifestElement&,
+                                        std::string&) -> std::optional<StubTable::Placer> {
+        return StubTable::Placer([](Forma::Surface&, std::string&) -> std::optional<uint32_t> { return 9999U; });
+    });
+    auto document = manifest_document();
+    document.children[0].children[0].children[0].name = "ghost";
+    document = manifest_numbered(document);
+
+    EXPECT_FALSE(run(document));
+
+    EXPECT_NE(error.find("placed an element the surface does not hold"), std::string::npos) << error;
+    EXPECT_TRUE(error.starts_with(row_prefix(manifest_instance(document, 0).row))) << error;
 }
 
 // =============================================================================
@@ -1342,6 +1471,261 @@ TEST(FormaManifestInteractionTest, TablesMergeUnderAPrefixAndRefuseCollisions)
 
     EXPECT_FALSE(second.merge(first, "ui.", error));
     EXPECT_NE(error.find("ui.flip"), std::string::npos) << error;
+}
+
+TEST(FormaManifestInteractionTest, AttachLeavesTheFormAloneForAnEmptyName)
+{
+    const Forma::InteractionTable<bool> table;
+    Forma::Geometry::Form<bool> form;
+
+    std::string error;
+    EXPECT_TRUE(table.attach(form, "", std::nullopt, error));
+
+    EXPECT_FALSE(static_cast<bool>(form.wire));
+}
+
+TEST(FormaManifestInteractionTest, AttachSetsTheWireFromARegisteredName)
+{
+    Forma::InteractionTable<bool> table;
+    table.expose("flip", Forma::press_flip_interaction());
+    Forma::Geometry::Form<bool> form;
+
+    std::string error;
+    EXPECT_TRUE(table.attach(form, "flip", std::nullopt, error)) << error;
+
+    EXPECT_TRUE(static_cast<bool>(form.wire));
+}
+
+TEST(FormaManifestInteractionTest, AttachReportsAnUnknownNameAndLeavesTheFormUnwired)
+{
+    Forma::InteractionTable<bool> table;
+    Forma::Geometry::Form<bool> form;
+
+    std::string error;
+    EXPECT_FALSE(table.attach(form, "none", std::nullopt, error));
+
+    EXPECT_NE(error.find("none"), std::string::npos) << error;
+    EXPECT_FALSE(static_cast<bool>(form.wire));
+}
+
+TEST(FormaManifestInteractionTest, AttachPassesThePlacementBoundsToTheProvider)
+{
+    std::optional<AABB2D> seen;
+    Forma::InteractionTable<float> table;
+    table.expose("probe",
+        [&seen](const Forma::InteractionSource& source, std::string&) -> std::optional<Forma::InteractionFn<float>> {
+            seen = source.placement;
+            return Forma::InteractionFn<float> {};
+        });
+    Forma::Geometry::Form<float> form;
+    const AABB2D bounds { .min = { 0.F, 0.F }, .max = { 2.F, 3.F } };
+
+    std::string error;
+    ASSERT_TRUE(table.attach(form, "probe", bounds, error)) << error;
+
+    ASSERT_TRUE(seen);
+    EXPECT_EQ(seen->max, bounds.max);
+}
+
+TEST(FormaManifestInteractionTest, AFixedInteractionIgnoresThePlacement)
+{
+    const auto provider = Forma::fixed_interaction<float>(Forma::InteractionFn<float>(
+        [](Forma::Context&, uint32_t, const std::shared_ptr<Forma::MappedState<float>>&) { }));
+    const AABB2D bounds { .min = { 0.F, 0.F }, .max = { 1.F, 1.F } };
+
+    std::string error;
+    const auto without = provider(Forma::InteractionSource {}, error);
+    const auto with = provider(Forma::InteractionSource { .placement = bounds }, error);
+
+    ASSERT_TRUE(without) << error;
+    ASSERT_TRUE(with) << error;
+    EXPECT_TRUE(static_cast<bool>(*without));
+    EXPECT_TRUE(static_cast<bool>(*with));
+}
+
+TEST(FormaManifestInteractionTest, ABoundedInteractionReportsMissingBoundsAndOtherwiseReceivesThem)
+{
+    std::optional<AABB2D> seen;
+    const auto provider = Forma::bounded_interaction<float>(
+        [&seen](const AABB2D& bounds) {
+            seen = bounds;
+            return Forma::InteractionFn<float> {};
+        });
+
+    std::string error;
+    EXPECT_FALSE(provider(Forma::InteractionSource {}, error));
+    EXPECT_NE(error.find("placement bounds"), std::string::npos) << error;
+    EXPECT_FALSE(seen);
+
+    const AABB2D bounds { .min = { -1.F, -2.F }, .max = { 1.F, 2.F } };
+    ASSERT_TRUE(provider(Forma::InteractionSource { .placement = bounds }, error)) << error;
+    ASSERT_TRUE(seen);
+    EXPECT_EQ(seen->min, bounds.min);
+}
+
+TEST(FormaManifestContainmentTest, ResolveOrUsesTheFallbackForAnEmptyName)
+{
+    const Forma::ContainmentTable table;
+    const auto fallback = Forma::rect_containment({ .min = { 0.F, 0.F }, .max = { 1.F, 1.F } });
+
+    std::string error;
+    const auto hit = table.resolve_or("", {}, fallback, error);
+
+    ASSERT_TRUE(hit) << error;
+    ASSERT_TRUE(hit->bounds);
+    EXPECT_EQ(hit->bounds->max, glm::vec2(1.F, 1.F));
+}
+
+TEST(FormaManifestContainmentTest, ResolveOrRunsANamedProviderAndReportsAnUnknownOne)
+{
+    Forma::ContainmentTable table;
+    table.expose("wide", [](const Forma::ContainmentSource&, std::string&) -> std::optional<Forma::Containment> {
+        return Forma::rect_containment({ .min = { 0.F, 0.F }, .max = { 2.F, 2.F } });
+    });
+    const auto fallback = Forma::rect_containment({ .min = { 0.F, 0.F }, .max = { 1.F, 1.F } });
+
+    std::string error;
+    const auto named = table.resolve_or("wide", {}, fallback, error);
+    ASSERT_TRUE(named) << error;
+    EXPECT_EQ(named->bounds->max, glm::vec2(2.F, 2.F));
+
+    EXPECT_FALSE(table.resolve_or("none", {}, fallback, error));
+    EXPECT_NE(error.find("none"), std::string::npos) << error;
+}
+
+TEST(FormaManifestContainmentTest, GeometryWithContainmentDrawsTheValueAndWritesTheRegionEachTime)
+{
+    std::vector<float> seen;
+    const AABB2D box { .min = { 0.F, 0.F }, .max = { 1.F, 1.F } };
+    const auto fn = Forma::geometry_with_containment<float>(
+        [&seen](const float& value, std::vector<uint8_t>& out) {
+            seen.push_back(value);
+            out.assign(2, 7);
+        },
+        Forma::rect_containment(box));
+
+    Forma::Element element;
+    std::vector<uint8_t> bytes;
+    fn(1.5F, bytes, element);
+    EXPECT_EQ(bytes, (std::vector<uint8_t> { 7, 7 }));
+    ASSERT_TRUE(element.bounds_hint);
+    EXPECT_EQ(element.bounds_hint->max, box.max);
+
+    element.bounds_hint.reset();
+    fn(2.5F, bytes, element);
+    EXPECT_EQ(seen, (std::vector<float> { 1.5F, 2.5F }));
+    EXPECT_TRUE(element.bounds_hint);
+}
+
+// =============================================================================
+// Placements
+// =============================================================================
+
+TEST(FormaManifestPlacementTest, ARectPlacementCoversItsOriginAndSize)
+{
+    std::string error;
+    const auto region = Forma::region_of(rect_placement(-0.5F, -0.25F, 1.F, 0.5F), error);
+
+    ASSERT_TRUE(region) << error;
+    EXPECT_EQ(region->min, glm::vec2(-0.5F, -0.25F));
+    EXPECT_EQ(region->max, glm::vec2(0.5F, 0.25F));
+}
+
+TEST(FormaManifestPlacementTest, ARectWithoutAreaIsRefusedWithItsReason)
+{
+    std::string error;
+
+    EXPECT_FALSE(Forma::region_of(rect_placement(0.F, 0.F, 0.F, 1.F), error));
+    EXPECT_EQ(error, "rect needs a positive width and height");
+
+    error.clear();
+    EXPECT_FALSE(Forma::region_of(rect_placement(0.F, 0.F, 1.F, -1.F), error));
+    EXPECT_EQ(error, "rect needs a positive width and height");
+}
+
+TEST(FormaManifestPlacementTest, ARadialPlacementCoversTheBoxAroundItsCircle)
+{
+    std::string error;
+    const auto region = Forma::region_of(
+        Forma::RadialPlacementInputs { .center = { 0.5F, -0.5F }, .radius = 0.25F }, error);
+
+    ASSERT_TRUE(region) << error;
+    EXPECT_EQ(region->min, glm::vec2(0.25F, -0.75F));
+    EXPECT_EQ(region->max, glm::vec2(0.75F, -0.25F));
+}
+
+TEST(FormaManifestPlacementTest, ARadialPlacementNeedsAPositiveRadius)
+{
+    std::string error;
+
+    EXPECT_FALSE(Forma::region_of(Forma::RadialPlacementInputs {}, error));
+    EXPECT_NE(error.find("radius"), std::string::npos) << error;
+
+    error.clear();
+    EXPECT_FALSE(Forma::region_of(Forma::RadialPlacementInputs { .radius = -1.F }, error));
+    EXPECT_NE(error.find("radius"), std::string::npos) << error;
+}
+
+TEST(FormaManifestPlacementTest, TheRectBindingRequiresRectAndDecodesIt)
+{
+    const auto binding = Forma::rect_placement_binding<FormaManifestElement>();
+
+    std::string error;
+    EXPECT_FALSE(binding.read(manifest_node("instance"), error));
+    EXPECT_NE(error.find("rect"), std::string::npos) << error;
+
+    const auto decoded = binding.read(manifest_node("instance", { { "rect", "1 2 3 4" } }), error);
+    ASSERT_TRUE(decoded) << error;
+    EXPECT_EQ(decoded->rect, glm::vec4(1.F, 2.F, 3.F, 4.F));
+}
+
+TEST(FormaManifestPlacementTest, TheRadialBindingRequiresCenterAndRadiusAndDecodesThem)
+{
+    const auto binding = Forma::radial_placement_binding<FormaManifestElement>();
+
+    std::string error;
+    EXPECT_FALSE(binding.read(manifest_node("instance", { { "center", "1 2" } }), error));
+    EXPECT_NE(error.find("radius"), std::string::npos) << error;
+
+    error.clear();
+    EXPECT_FALSE(binding.read(manifest_node("instance", { { "radius", "3" } }), error));
+    EXPECT_NE(error.find("center"), std::string::npos) << error;
+
+    const auto decoded = binding.read(
+        manifest_node("instance", { { "center", "1 2" }, { "radius", "3" } }), error);
+    ASSERT_TRUE(decoded) << error;
+    EXPECT_EQ(decoded->center, glm::vec2(1.F, 2.F));
+    EXPECT_FLOAT_EQ(decoded->radius, 3.F);
+}
+
+// =============================================================================
+// Initial state from a member
+// =============================================================================
+
+TEST(FormaManifestTableTest, AMemberPointerOfTheInputOrThePlacementCanSupplyTheInitialState)
+{
+    Reflect::RecordBinding<FormaManifestProbe, FormaManifestElement> input;
+    Reflect::RecordBinding<FormaManifestSpot, FormaManifestElement> placement;
+    const auto make_form = [](const FormaManifestProbe&, const FormaManifestSpot&,
+                               std::string&) -> std::optional<Forma::Geometry::Form<float>> {
+        return Forma::Geometry::Form<float> {
+            [](float, std::vector<uint8_t>& out, Forma::Element&) { out.assign(4, 0); },
+            PrimitiveTopology::TRIANGLE_LIST,
+            64,
+        };
+    };
+
+    ProbeTable table;
+    table.expose_typed<float>("from_input", input, placement, make_form, &FormaManifestProbe::gain);
+    table.expose_typed<float>("from_placement", input, placement, make_form, &FormaManifestSpot::scale);
+
+    const auto pair = make_probe_pair({ { "gain", "0.5" } }, { { "at", "0 0" }, { "scale", "2" } });
+    std::string error;
+    for (const char* name : { "from_input", "from_placement" }) {
+        const auto* instantiator = table.find(name);
+        ASSERT_NE(instantiator, nullptr) << name;
+        EXPECT_TRUE(std::invoke(*instantiator, pair.factory, pair.instance, error)) << name << ": " << error;
+    }
 }
 
 }

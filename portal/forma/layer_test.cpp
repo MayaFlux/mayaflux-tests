@@ -846,4 +846,41 @@ TEST(FormaLayerRemovalTest, IdsAreNotReusedAfterRemoval)
     EXPECT_NE(a, b);
 }
 
+// =============================================================================
+// Finding by name
+// =============================================================================
+
+TEST(FormaLayerFindTest, FindsTheFirstElementWithAName)
+{
+    Layer layer;
+    const uint32_t first = layer.add(whole().with_name("panel"));
+    const uint32_t second = layer.add(whole().with_name("panel"));
+    (void)layer.add(whole().with_name("other"));
+
+    EXPECT_NE(first, second);
+    EXPECT_EQ(layer.find("panel"), first);
+}
+
+TEST(FormaLayerFindTest, AnUnknownOrEmptyNameFindsNothing)
+{
+    Layer layer;
+    (void)layer.add(whole());
+    (void)layer.add(whole().with_name("x"));
+
+    EXPECT_FALSE(layer.find("missing"));
+    EXPECT_FALSE(layer.find(""));
+}
+
+TEST(FormaLayerFindTest, FindFollowsRemovalAndALaterRename)
+{
+    Layer layer;
+    const uint32_t gone = layer.add(whole().with_name("gone"));
+    ASSERT_TRUE(layer.remove(gone));
+    EXPECT_FALSE(layer.find("gone"));
+
+    const uint32_t late = layer.add(whole());
+    layer.get(late)->name = "late";
+    EXPECT_EQ(layer.find("late"), late);
+}
+
 }

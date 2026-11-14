@@ -1,6 +1,60 @@
 #pragma once
 
+#include <glm/vec2.hpp>
+
 #include "MayaFlux/Transitive/Reflect/RecordBinding.hpp"
+
+namespace MayaFlux::Test {
+
+/**
+ * @brief A described input with a float, a string and a bool.
+ */
+struct FormaManifestProbe {
+    float gain { 1.F };
+    std::string label;
+    bool on { false };
+};
+
+/**
+ * @brief A described placement with a position and a scale.
+ */
+struct FormaManifestSpot {
+    glm::vec2 at {};
+    float scale { 1.F };
+};
+
+}
+
+namespace MayaFlux::Reflect::Generated {
+
+template <>
+struct Description<::MayaFlux::Test::FormaManifestProbe> {
+    static constexpr std::string_view name = "MayaFlux::Test::FormaManifestProbe";
+
+    static constexpr auto members()
+    {
+        return std::tuple {
+            Member<&::MayaFlux::Test::FormaManifestProbe::gain> { "gain" },
+            Member<&::MayaFlux::Test::FormaManifestProbe::label> { "label" },
+            Member<&::MayaFlux::Test::FormaManifestProbe::on> { "on" },
+        };
+    }
+};
+
+template <>
+struct Description<::MayaFlux::Test::FormaManifestSpot> {
+    static constexpr std::string_view name = "MayaFlux::Test::FormaManifestSpot";
+
+    static constexpr auto members()
+    {
+        return std::tuple {
+            Member<&::MayaFlux::Test::FormaManifestSpot::at> { "at" },
+            Member<&::MayaFlux::Test::FormaManifestSpot::scale> { "scale" },
+        };
+    }
+};
+
+}
 
 namespace MayaFlux::Test {
 

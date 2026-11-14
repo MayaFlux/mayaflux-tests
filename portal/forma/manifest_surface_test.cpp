@@ -162,11 +162,15 @@ TEST_F(FormaManifestSurfaceTest, PlacesADocumentLoadedFromXmlOntoTheBoundSurface
     const auto count = Forma::instantiate_document(table, *root, surfaces, error);
 
     ASSERT_TRUE(count) << error;
-    EXPECT_EQ(*count, 2U);
+    EXPECT_EQ(count->size(), 2U);
     const auto& elements = surfaces.at("main").layer().elements();
     ASSERT_EQ(elements.size(), 2U);
     expect_bounds(elements[0], { -0.8F, -0.5F }, { -0.2F, 0.5F });
     expect_bounds(elements[1], { 0.2F, -0.5F }, { 0.8F, 0.5F });
+    EXPECT_EQ(elements[0].name, "left");
+    EXPECT_EQ(count->at("right").element, elements[1].id);
+    EXPECT_EQ(count->at("right").surface, "main");
+    EXPECT_EQ(surfaces.at("main").layer().find("right"), elements[1].id);
 }
 
 TEST_F(FormaManifestSurfaceTest, AnXmlErrorCarriesTheRowOfTheElement)
@@ -225,6 +229,34 @@ TEST_F(FormaManifestSurfaceTest, HitTestingFollowsTheDeclaredGeometryIncludingIt
     ASSERT_TRUE(ring);
     EXPECT_EQ(*ring, layer.elements()[0].id);
     EXPECT_FALSE(layer.hit_test(glm::vec2(1.5F, 0.F)));
+}
+
+TEST_F(FormaManifestSurfaceTest, TheDocumentsLayerAttributesApplyToRealPlacedElements)
+{
+    auto hidden = instance("a", "panel", "-0.9 -0.5 0.8 1");
+    hidden.attributes.emplace_back("mf:hidden", "true");
+    auto tied = instance("b", "panel", "0.1 -0.5 0.8 1");
+    tied.attributes.emplace_back("mf:relate", "a");
+    auto locked = instance("c", "panel", "-0.5 0.6 1 0.3");
+    locked.attributes.emplace_back("mf:interactive", "false");
+    const auto tree = document({ square_template("panel") }, { main_surface({ hidden, tied, locked }) });
+    TreeTable table;
+    register_shapes(table);
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-layer-attributes"));
+
+    std::string error;
+    const auto placed = Forma::instantiate_document(table, tree, surfaces, error);
+
+    ASSERT_TRUE(placed) << error;
+    const Forma::Layer& layer = surfaces.at("main").layer();
+    ASSERT_EQ(layer.size(), 3U);
+    EXPECT_EQ(layer.get(placed->at("a").element)->name, "a");
+    EXPECT_FALSE(layer.get(placed->at("a").element)->visible);
+    EXPECT_FALSE(layer.get(placed->at("b").element)->visible);
+    EXPECT_TRUE(layer.get(placed->at("c").element)->visible);
+    EXPECT_FALSE(layer.get(placed->at("c").element)->interactive);
+    EXPECT_EQ(layer.find("b"), placed->at("b").element);
 }
 
 TEST_F(FormaManifestSurfaceTest, TheInitialStateWrittenInTheDocumentReachesTheState)
@@ -307,7 +339,7 @@ TEST_F(FormaManifestSurfaceTest, EachBoundSurfaceReceivesOnlyItsOwnInstances)
     const auto count = Forma::instantiate_document(table, tree, surfaces, error);
 
     ASSERT_TRUE(count) << error;
-    EXPECT_EQ(*count, 3U);
+    EXPECT_EQ(count->size(), 3U);
     EXPECT_EQ(surfaces.at("main").layer().size(), 2U);
     EXPECT_EQ(surfaces.at("side").layer().size(), 1U);
 }
@@ -370,12 +402,14 @@ TEST_F(FormaManifestSurfaceTest, TypedRowsBecomeOneElementEachFromASingleTemplat
     const auto count = Forma::instantiate_rows(table, tree, "panel", rows, surface, error);
 
     ASSERT_TRUE(count) << error;
-    EXPECT_EQ(*count, 5U);
+    EXPECT_EQ(count->size(), 5U);
     const auto& elements = surface.layer().elements();
     ASSERT_EQ(elements.size(), 5U);
     for (size_t i = 0; i < elements.size(); ++i) {
         const float x = -0.9F + 0.3F * static_cast<float>(i);
         expect_bounds(elements[i], { x, 0.F }, { x + 0.2F, 0.5F });
+        EXPECT_EQ((*count)[i], elements[i].id);
+        EXPECT_TRUE(elements[i].name.empty());
     }
 }
 
@@ -392,6 +426,52 @@ TEST_F(FormaManifestSurfaceTest, RowsForATemplateThatDoesNotExistPlaceNothing)
 
     EXPECT_EQ(error, "document has no template ghost");
     EXPECT_TRUE(surface.layer().empty());
+}
+
+TEST_F(FormaManifestSurfaceTest, AMemberPointerSuppliesTheInitialStateOfThePlacedElement)
+{
+    std::vector<std::shared_ptr<Forma::MappedState<float>>> states;
+    const auto make_form = [](const FormaManifestProbe&, const FormaManifestSpot&,
+                               std::string&) -> std::optional<Forma::Geometry::Form<float>> {
+        return Forma::Geometry::Form<float> {
+            [](float, std::vector<uint8_t>& out, Forma::Element&) { out.assign(4, 0); },
+            Portal::Graphics::PrimitiveTopology::TRIANGLE_LIST,
+            64,
+        };
+    };
+    const auto hook = [&states](const FormaManifestProbe&, const FormaManifestSpot&,
+                          Forma::Tend<float>& tend) { states.push_back(tend.result->state); };
+
+    Reflect::RecordBinding<FormaManifestProbe, FormaManifestElement> input;
+    Reflect::RecordBinding<FormaManifestSpot, FormaManifestElement> placement;
+    TreeTable table;
+    table.expose_typed<float>("from_input", input, placement, make_form, &FormaManifestProbe::gain, hook);
+    table.expose_typed<float>("from_placement", input, placement, make_form, &FormaManifestSpot::scale, hook);
+
+    const auto tree = manifest_numbered(manifest_node("forma", { { "version", "1" } },
+        {
+            manifest_node("templates", {},
+                {
+                    manifest_node("template", { { "id", "t1" } },
+                        { manifest_node("from_input", { { "gain", "0.75" } }) }),
+                    manifest_node("template", { { "id", "t2" } },
+                        { manifest_node("from_placement") }),
+                }),
+            manifest_node("surface", { { "id", "main" } },
+                {
+                    manifest_node("instance", { { "id", "a" }, { "template", "t1" }, { "at", "0 0" } }),
+                    manifest_node("instance", { { "id", "b" }, { "template", "t2" }, { "at", "0 0" }, { "scale", "4" } }),
+                }),
+        }));
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-member-initial"));
+
+    std::string error;
+    ASSERT_TRUE(Forma::instantiate_document(table, tree, surfaces, error)) << error;
+
+    ASSERT_EQ(states.size(), 2U);
+    EXPECT_FLOAT_EQ(states[0]->value, 0.75F);
+    EXPECT_FLOAT_EQ(states[1]->value, 4.F);
 }
 
 }

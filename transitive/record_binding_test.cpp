@@ -361,6 +361,40 @@ namespace {
         EXPECT_NE(error.find("unsupported attribute other"), std::string::npos);
     }
 
+    TEST(RecordBindingTest, AnIgnoredPrefixSkipsEveryAttributeBeginningWithIt)
+    {
+        Reflect::RecordBinding<RecordBindingItem, Element> binding;
+        binding.ignore_prefix("mf:");
+        std::string error;
+
+        const auto item = binding.read(
+            make_element("item", 0, { { "mf:hidden", "true" }, { "mf:anything", "else" }, { "x", "2" } }), error);
+        ASSERT_TRUE(item) << error;
+        EXPECT_EQ(item->x, 2.F);
+
+        EXPECT_FALSE(binding.read(make_element("item", 0, { { "other", "1" } }), error));
+        EXPECT_NE(error.find("unsupported attribute other"), std::string::npos);
+
+        EXPECT_FALSE(binding.read(make_element("item", 0, { { "mfx", "1" } }), error));
+        EXPECT_NE(error.find("unsupported attribute mfx"), std::string::npos);
+    }
+
+    TEST(RecordBindingTest, NamesAndPrefixesCombineAndDescribedMembersStayStrict)
+    {
+        Reflect::RecordBinding<RecordBindingItem, Element> binding;
+        binding.ignore({ "id" }).ignore_prefix("mf:");
+        std::string error;
+
+        const auto item = binding.read(
+            make_element("item", 0, { { "id", "a" }, { "mf:front", "true" }, { "y", "3" } }), error);
+        ASSERT_TRUE(item) << error;
+        EXPECT_EQ(item->y, 3.F);
+
+        EXPECT_FALSE(binding.read(
+            make_element("item", 0, { { "mf:front", "true" }, { "x", "abc" } }), error));
+        EXPECT_NE(error.find("invalid x attribute"), std::string::npos);
+    }
+
     TEST(RecordBindingTest, RepeatedChildrenInheritSharedDefaults)
     {
         const auto binding = list_binding();
