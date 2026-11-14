@@ -11,6 +11,32 @@
 
 namespace MayaFlux::Test {
 
+struct FormaManifestNote {
+    std::string text;
+    int32_t times { 1 };
+};
+
+}
+
+namespace MayaFlux::Reflect::Generated {
+
+template <>
+struct Description<::MayaFlux::Test::FormaManifestNote> {
+    static constexpr std::string_view name = "MayaFlux::Test::FormaManifestNote";
+
+    static constexpr auto members()
+    {
+        return std::tuple {
+            Member<&::MayaFlux::Test::FormaManifestNote::text> { "text" },
+            Member<&::MayaFlux::Test::FormaManifestNote::times> { "times" },
+        };
+    }
+};
+
+}
+
+namespace MayaFlux::Test {
+
 namespace Forma = Portal::Forma;
 using Kinesis::AABB2D;
 using Portal::Graphics::PrimitiveTopology;
@@ -124,12 +150,14 @@ namespace {
             [log](const FormaManifestElement& factory, const FormaManifestElement& instance,
                 std::string& error) -> std::optional<StubTable::Placer> {
                 const std::string id = manifest_attribute(instance, "id");
+                const std::string extent = manifest_attribute(instance, "half");
+                const float half = extent.empty() ? 1.F : std::stof(extent);
                 ++log->decodes;
                 if (id == log->refuse_decode) {
                     error = StubTable::located(instance.row, "stub refused " + id);
                     return std::nullopt;
                 }
-                return StubTable::Placer([log, id, size = manifest_attribute(factory, "size")](
+                return StubTable::Placer([log, id, half, size = manifest_attribute(factory, "size")](
                                              Forma::Surface& surface, std::string& place_error) -> std::optional<uint32_t> {
                     if (id == log->refuse_place) {
                         place_error = "stub could not place " + id;
@@ -137,7 +165,7 @@ namespace {
                     }
                     log->placed.push_back(size + ":" + id);
                     log->surfaces.push_back(&surface);
-                    return surface.add(Forma::Element {}.with_rect({ -1.F, -1.F }, { 1.F, 1.F })).id();
+                    return surface.add(Forma::Element {}.with_rect({ -half, -half }, { half, half })).id();
                 });
             });
         return table;
@@ -188,6 +216,20 @@ TEST(FormaManifestTableTest, EveryPrefixedAttributeIsLeftToTheDriverOnAPlacement
 
     std::string error;
     EXPECT_TRUE(decode(table, pair, error)) << error;
+}
+
+TEST(FormaManifestTableTest, AnOnChildOfAnInstanceIsLeftToTheDriverButOtherChildrenAreRejected)
+{
+    const auto table = make_probe_table(std::make_shared<ProbeLog>());
+    auto pair = make_probe_pair({}, valid_instance());
+    pair.instance.children.push_back(manifest_node("on", { { "event", "Press" }, { "action", "log" } }));
+
+    std::string error;
+    EXPECT_TRUE(decode(table, pair, error)) << error;
+
+    pair.instance.children.push_back(manifest_node("legend"));
+    EXPECT_FALSE(decode(table, pair, error));
+    EXPECT_NE(error.find("<legend> is not allowed in <instance>"), std::string::npos) << error;
 }
 
 TEST(FormaManifestTableTest, AnUnknownPlacementAttributeIsRejectedAtTheInstanceRow)
@@ -428,10 +470,15 @@ protected:
         return Forma::instantiate_document(table, document, surfaces, error);
     }
 
-    void expect_rejected(const FormaManifestElement& document, std::string_view fragment,
-        std::optional<uint64_t> row = std::nullopt)
+    std::optional<Forma::PlacedInstances> run_with_actions(const FormaManifestElement& document)
     {
-        EXPECT_FALSE(run(document));
+        return Forma::instantiate_document(table, actions, document, surfaces, error);
+    }
+
+    void expect_rejected(const FormaManifestElement& document, std::string_view fragment,
+        std::optional<uint64_t> row = std::nullopt, bool with_actions = false)
+    {
+        EXPECT_FALSE(with_actions ? run_with_actions(document) : run(document));
         EXPECT_NE(error.find(fragment), std::string::npos) << error;
         if (row)
             EXPECT_TRUE(error.starts_with(row_prefix(*row))) << error;
@@ -443,6 +490,7 @@ protected:
     Forma::SurfaceMap surfaces;
     std::shared_ptr<StubLog> log;
     StubTable table;
+    Forma::ActionTable<FormaManifestElement> actions;
     std::string error;
 };
 
@@ -888,6 +936,208 @@ TEST_F(FormaManifestDriverTest, AnElementThePlacerReturnsThatTheSurfaceDoesNotHo
 
     EXPECT_NE(error.find("placed an element the surface does not hold"), std::string::npos) << error;
     EXPECT_TRUE(error.starts_with(row_prefix(manifest_instance(document, 0).row))) << error;
+}
+
+// =============================================================================
+// instantiate_document: actions attached by the document
+// =============================================================================
+
+namespace {
+
+    using ActionEntries = std::shared_ptr<std::vector<std::string>>;
+
+    void expose_log_action(Forma::ActionTable<FormaManifestElement>& actions, const ActionEntries& entries)
+    {
+        actions.expose("log", Forma::Action([entries](const Forma::ActionEvent& event) {
+            entries->push_back(std::string(Reflect::enum_to_string(event.event)) + ":" + std::string(event.instance));
+        }));
+    }
+
+    FormaManifestElement on_element(std::string event, Attributes extra = {})
+    {
+        Attributes attributes { { "event", std::move(event) }, { "action", "log" } };
+        attributes.insert(attributes.end(), extra.begin(), extra.end());
+        return manifest_node("on", std::move(attributes));
+    }
+
+    FormaManifestElement action_document(std::vector<FormaManifestElement> on_children, Attributes extra = {})
+    {
+        Attributes attributes { { "id", "a" }, { "template", "first" } };
+        attributes.insert(attributes.end(), extra.begin(), extra.end());
+        return manifest_numbered(manifest_node("forma", { { "version", "1" } },
+            {
+                manifest_node("templates", {},
+                    { manifest_node("template", { { "id", "first" } },
+                        { manifest_node("stub", { { "size", "3" } }) }) }),
+                manifest_node("surface", { { "id", "main" } },
+                    { manifest_node("instance", std::move(attributes), std::move(on_children)) }),
+            }));
+    }
+
+}
+
+TEST_F(FormaManifestDriverTest, EveryEventKindReachesItsActionWithTheInstanceId)
+{
+    const auto entries = std::make_shared<std::vector<std::string>>();
+    expose_log_action(actions, entries);
+    const auto document = action_document({ on_element("Enter"), on_element("Move"), on_element("Press"),
+                                              on_element("Drag"), on_element("Release"), on_element("Scroll"),
+                                              on_element("Leave") },
+        { { "half", "0.3" } });
+    ASSERT_TRUE(run_with_actions(document)) << error;
+
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    window->move_to_ndc({ 0.1F, 0.F });
+    window->release(IO::MouseButtons::Left);
+    window->scroll(1.F, 2.F);
+    window->move_to_ndc({ 0.8F, 0.F });
+
+    std::ranges::sort(*entries);
+    EXPECT_EQ(*entries, (std::vector<std::string> { "Drag:a", "Enter:a", "Leave:a", "Move:a", "Move:a",
+                            "Press:a", "Release:a", "Scroll:a" }));
+}
+
+TEST_F(FormaManifestDriverTest, AnActionIsToldTheElementTheInstanceAndThePointer)
+{
+    uint32_t seen_element = 0;
+    std::string seen_instance;
+    glm::vec2 seen_position {};
+    actions.expose("log", Forma::Action([&](const Forma::ActionEvent& event) {
+        seen_element = event.element;
+        seen_instance = std::string(event.instance);
+        seen_position = event.position;
+        EXPECT_EQ(&event.layer, &surfaces.at("main").layer());
+    }));
+    const auto placed = run_with_actions(action_document({ on_element("Press") }));
+    ASSERT_TRUE(placed) << error;
+
+    window->move_to_ndc({ 0.25F, -0.25F });
+    window->press(IO::MouseButtons::Left);
+
+    EXPECT_EQ(seen_element, placed->at("a").element);
+    EXPECT_EQ(seen_instance, "a");
+    EXPECT_NEAR(seen_position.x, 0.25F, 1e-4F);
+    EXPECT_NEAR(seen_position.y, -0.25F, 1e-4F);
+}
+
+TEST_F(FormaManifestDriverTest, AnActionRunsBesideTheElementsOwnCallbackAndNeverReplacesIt)
+{
+    const auto entries = std::make_shared<std::vector<std::string>>();
+    expose_log_action(actions, entries);
+    const auto placed = run_with_actions(action_document({ on_element("Press") }));
+    ASSERT_TRUE(placed) << error;
+
+    surfaces.at("main").ctx().on_press(placed->at("a").element, IO::MouseButtons::Left,
+        [entries](uint32_t, glm::vec2) { entries->emplace_back("own"); });
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(IO::MouseButtons::Left);
+
+    EXPECT_EQ(*entries, (std::vector<std::string> { "own", "Press:a" }));
+}
+
+TEST_F(FormaManifestDriverTest, AButtonSelectsWhichPressRunsTheAction)
+{
+    const auto entries = std::make_shared<std::vector<std::string>>();
+    expose_log_action(actions, entries);
+    ASSERT_TRUE(run_with_actions(action_document({ on_element("Press", { { "button", "Right" } }) }))) << error;
+
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    EXPECT_TRUE(entries->empty());
+
+    window->press(IO::MouseButtons::Right);
+    EXPECT_EQ(*entries, (std::vector<std::string> { "Press:a" }));
+}
+
+TEST_F(FormaManifestDriverTest, AnActionParameterIsDecodedThroughItsDescribedMembers)
+{
+    const auto notes = std::make_shared<std::vector<FormaManifestNote>>();
+    Reflect::RecordBinding<FormaManifestNote, FormaManifestElement> binding;
+    binding.required("text");
+    actions.expose_typed<FormaManifestNote>("note", std::move(binding),
+        [notes](const FormaManifestNote& note) {
+            notes->push_back(note);
+            return Forma::Action([](const Forma::ActionEvent&) { });
+        });
+    auto note = manifest_node("on", { { "event", "Press" }, { "action", "note" }, { "text", "hello" }, { "times", "3" } });
+
+    ASSERT_TRUE(run_with_actions(action_document({ note }))) << error;
+
+    ASSERT_EQ(notes->size(), 1U);
+    EXPECT_EQ(notes->front().text, "hello");
+    EXPECT_EQ(notes->front().times, 3);
+}
+
+TEST_F(FormaManifestDriverTest, OnElementsAreCheckedBeforeAnythingIsPlaced)
+{
+    const auto entries = std::make_shared<std::vector<std::string>>();
+    expose_log_action(actions, entries);
+
+    expect_rejected(action_document({ on_element("Press") }), "needs an action table, and none was given");
+
+    auto without_event = action_document({ manifest_node("on", { { "action", "log" } }) });
+    expect_rejected(without_event, "<on> needs an event attribute",
+        without_event.children[1].children[0].children[0].row, true);
+
+    expect_rejected(action_document({ on_element("press") }), "unsupported event press", std::nullopt, true);
+    expect_rejected(action_document({ on_element("Move", { { "button", "Left" } }) }),
+        "takes a button only for press, release and drag", std::nullopt, true);
+    expect_rejected(action_document({ on_element("Press", { { "button", "Unknown" } }) }),
+        "unsupported button Unknown", std::nullopt, true);
+    expect_rejected(action_document({ on_element("Press", { { "button", "Banana" } }) }),
+        "unsupported button Banana", std::nullopt, true);
+    expect_rejected(action_document({ manifest_node("on", { { "event", "Press" } }) }),
+        "<on> needs an action attribute", std::nullopt, true);
+    expect_rejected(action_document({ manifest_node("on", { { "event", "Press" }, { "action", "ghost" } }) }),
+        "no registered action ghost", std::nullopt, true);
+    expect_rejected(action_document({ manifest_node("legend") }),
+        "<legend> is not allowed in <instance>", std::nullopt, true);
+    EXPECT_EQ(log->decodes, 0);
+}
+
+TEST_F(FormaManifestDriverTest, AnActionParameterErrorIsReportedAtTheOnElementBeforePlacing)
+{
+    Reflect::RecordBinding<FormaManifestNote, FormaManifestElement> binding;
+    binding.required("text");
+    actions.expose_typed<FormaManifestNote>("note", std::move(binding),
+        [](const FormaManifestNote&) { return Forma::Action([](const Forma::ActionEvent&) { }); });
+
+    auto missing = action_document({ manifest_node("on", { { "event", "Press" }, { "action", "note" } }) });
+    expect_rejected(missing, "text", missing.children[1].children[0].children[0].row, true);
+
+    auto unknown = action_document({ manifest_node("on",
+        { { "event", "Press" }, { "action", "note" }, { "text", "x" }, { "bogus", "1" } }) });
+    expect_rejected(unknown, "unsupported attribute bogus", unknown.children[1].children[0].children[0].row, true);
+
+    auto invalid = action_document({ manifest_node("on",
+        { { "event", "Press" }, { "action", "note" }, { "text", "x" }, { "times", "many" } }) });
+    expect_rejected(invalid, "times", invalid.children[1].children[0].children[0].row, true);
+}
+
+TEST_F(FormaManifestDriverTest, TheRootMayDeclareNamespaces)
+{
+    auto declared = manifest_document();
+    declared.attributes.emplace_back("xmlns", "urn:other");
+    declared.attributes.emplace_back("xmlns:mf", "urn:mayaflux:forma");
+
+    const auto placed = run(manifest_numbered(declared));
+
+    ASSERT_TRUE(placed) << error;
+    EXPECT_EQ(placed->size(), 3U);
+}
+
+TEST_F(FormaManifestDriverTest, AnAttributeThatOnlyLooksLikeANamespaceDeclarationIsRejected)
+{
+    auto lookalike = manifest_document();
+    lookalike.attributes.emplace_back("xmlnsmf", "urn:mayaflux:forma");
+    expect_rejected(manifest_numbered(lookalike), "unsupported attribute xmlnsmf", 0);
+}
+
+TEST_F(FormaManifestDriverTest, AnActionTableMayServeADocumentWithoutAnyOnElements)
+{
+    ASSERT_TRUE(run_with_actions(manifest_document())) << error;
+    EXPECT_EQ(log->placed.size(), 3U);
 }
 
 // =============================================================================
@@ -1728,4 +1978,73 @@ TEST(FormaManifestTableTest, AMemberPointerOfTheInputOrThePlacementCanSupplyTheI
     }
 }
 
+// =============================================================================
+// ActionTable
+// =============================================================================
+
+TEST(FormaManifestActionTableTest, AnActionWithoutParametersRejectsAnyExtraAttribute)
+{
+    Forma::ActionTable<FormaManifestElement> actions;
+    actions.expose("quiet", Forma::Action([](const Forma::ActionEvent&) { }));
+    const auto* make = actions.find("quiet");
+    ASSERT_NE(make, nullptr);
+    auto on = manifest_node("on", { { "event", "Press" }, { "button", "Left" }, { "action", "quiet" } });
+    on.row = 5;
+
+    std::string error;
+    EXPECT_TRUE(std::invoke(*make, on, error)) << error;
+
+    on.attributes.emplace_back("message", "x");
+    EXPECT_FALSE(std::invoke(*make, on, error));
+    EXPECT_EQ(error, "row 5: <on> has an unsupported attribute message");
 }
+
+TEST(FormaManifestActionTableTest, ATypedActionDecodesItsParametersAndReportsErrorsAtTheOnRow)
+{
+    std::vector<FormaManifestNote> made;
+    Reflect::RecordBinding<FormaManifestNote, FormaManifestElement> binding;
+    binding.required("text");
+    Forma::ActionTable<FormaManifestElement> actions;
+    actions.expose_typed<FormaManifestNote>("note", binding, [&made](const FormaManifestNote& note) {
+        made.push_back(note);
+        return Forma::Action([](const Forma::ActionEvent&) { });
+    });
+    const auto* make = actions.find("note");
+    ASSERT_NE(make, nullptr);
+
+    auto on = manifest_node("on", { { "event", "Drag" }, { "action", "note" }, { "text", "hi" } });
+    on.row = 9;
+    std::string error;
+    ASSERT_TRUE(std::invoke(*make, on, error)) << error;
+    ASSERT_EQ(made.size(), 1U);
+    EXPECT_EQ(made[0].text, "hi");
+    EXPECT_EQ(made[0].times, 1);
+
+    on.attributes.pop_back();
+    EXPECT_FALSE(std::invoke(*make, on, error));
+    EXPECT_TRUE(error.starts_with(row_prefix(9))) << error;
+    EXPECT_NE(error.find("text"), std::string::npos) << error;
+    EXPECT_EQ(made.size(), 1U);
+}
+
+TEST(FormaManifestActionTableTest, NamesAreSortedAndTablesMergeUnderAPrefix)
+{
+    Forma::ActionTable<FormaManifestElement> first;
+    first.expose("b", Forma::Action([](const Forma::ActionEvent&) { }));
+    first.expose("a", Forma::Action([](const Forma::ActionEvent&) { }));
+    EXPECT_EQ(first.names(), (std::vector<std::string> { "a", "b" }));
+    EXPECT_TRUE(first.contains("a"));
+    EXPECT_FALSE(first.contains("c"));
+    EXPECT_EQ(first.find("c"), nullptr);
+
+    Forma::ActionTable<FormaManifestElement> second;
+    std::string error;
+    ASSERT_TRUE(second.merge(first, "ui.", error)) << error;
+    EXPECT_TRUE(second.contains("ui.a"));
+    EXPECT_FALSE(second.merge(first, "ui.", error));
+    EXPECT_NE(error.find("ui.a"), std::string::npos) << error;
+    EXPECT_TRUE(second.merge(first, "ui.", error, true)) << error;
+}
+
+}
+

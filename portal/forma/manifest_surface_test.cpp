@@ -302,6 +302,35 @@ TEST_F(FormaManifestSurfaceTest, ANamedInteractionInTheDocumentIsWiredToThePlace
     EXPECT_FALSE(states[0]->value);
 }
 
+TEST_F(FormaManifestSurfaceTest, AnAuthoredActionRunsBesideTheFormsOwnFlipWire)
+{
+    auto toggle = instance("only", "toggle", "-0.5 -0.5 1 1");
+    toggle.children.push_back(manifest_node("on", { { "event", "Press" }, { "action", "count" } }));
+    const auto tree = document({ square_template("toggle", { { "interaction", "flip" } }) },
+        { main_surface({ toggle }) });
+    PolygonStates states;
+    TreeTable table;
+    expose_capturing_polygon(table, flipping_polygon(), states);
+    int presses = 0;
+    Forma::ActionTable<FormaManifestElement> actions;
+    actions.expose("count", Forma::Action([&presses](const Forma::ActionEvent&) { ++presses; }));
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-action-and-wire"));
+
+    std::string error;
+    ASSERT_TRUE(Forma::instantiate_document(table, actions, tree, surfaces, error)) << error;
+    ASSERT_EQ(states.size(), 1U);
+
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    EXPECT_TRUE(states[0]->value);
+    EXPECT_EQ(presses, 1);
+
+    window->press(IO::MouseButtons::Left);
+    EXPECT_FALSE(states[0]->value);
+    EXPECT_EQ(presses, 2);
+}
+
 TEST_F(FormaManifestSurfaceTest, AnInteractionNameNobodyRegisteredFailsBeforeAnythingIsPlaced)
 {
     const auto tree = document(

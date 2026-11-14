@@ -805,4 +805,184 @@ TEST_F(FormaContextTest, DragStartedOverEmptySpaceAdoptsTheFirstElementEntered)
     expect_near(drags[1], k_right);
 }
 
+// =============================================================================
+// Additive subscriptions
+// =============================================================================
+
+TEST_F(FormaContextTest, ASubscriberRunsBesideTheElementsOwnPressCallback)
+{
+    const uint32_t id = left_half();
+    std::vector<std::string> log;
+    ctx->on_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("own"); });
+    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("subscriber"); });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+
+    EXPECT_EQ(log, (std::vector<std::string> { "own", "subscriber" }));
+}
+
+TEST_F(FormaContextTest, SubscribersRunInSubscriptionOrderAndSurviveReplacingTheOwnCallback)
+{
+    const uint32_t id = left_half();
+    std::vector<std::string> log;
+    ctx->on_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("first own"); });
+    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("a"); });
+    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("b"); });
+    ctx->on_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("second own"); });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+
+    EXPECT_EQ(log, (std::vector<std::string> { "second own", "a", "b" }));
+}
+
+TEST_F(FormaContextTest, ASubscriberFiresWithoutAnyOwnCallback)
+{
+    const uint32_t id = left_half();
+    std::vector<glm::vec2> pressed;
+    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t sid, glm::vec2 ndc) {
+        EXPECT_EQ(sid, id);
+        pressed.push_back(ndc);
+    });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+
+    ASSERT_EQ(pressed.size(), 1U);
+    expect_near(pressed[0], k_left);
+}
+
+TEST_F(FormaContextTest, ASubscriberIsForItsButtonOnly)
+{
+    const uint32_t id = left_half();
+    int rights = 0;
+    ctx->subscribe_press(id, MouseButtons::Right, [&](uint32_t, glm::vec2) { ++rights; });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+    EXPECT_EQ(rights, 0);
+
+    window->press(MouseButtons::Right);
+    EXPECT_EQ(rights, 1);
+}
+
+TEST_F(FormaContextTest, UnbindRemovesTheOwnCallbackAndEverySubscriber)
+{
+    const uint32_t id = left_half();
+    int calls = 0;
+    ctx->on_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++calls; });
+    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++calls; });
+    ctx->subscribe_enter(id, [&](uint32_t) { ++calls; });
+
+    ctx->unbind(id);
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+
+    EXPECT_EQ(calls, 0);
+}
+
+TEST_F(FormaContextTest, ReleaseSubscribersRunBesideOnRelease)
+{
+    const uint32_t id = left_half();
+    std::vector<std::string> log;
+    ctx->on_release(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("own"); });
+    ctx->subscribe_release(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("subscriber"); });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+    window->release(MouseButtons::Left);
+
+    EXPECT_EQ(log, (std::vector<std::string> { "own", "subscriber" }));
+}
+
+TEST_F(FormaContextTest, ADragSubscriberStartsCaptureOnItsOwnAndKeepsTrackingOutsideTheElement)
+{
+    const uint32_t id = left_half();
+    std::vector<glm::vec2> drags;
+    ctx->subscribe_drag(id, MouseButtons::Left, [&](uint32_t did, glm::vec2 ndc) {
+        EXPECT_EQ(did, id);
+        drags.push_back(ndc);
+    });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+    window->move_to_ndc(k_right);
+
+    ASSERT_EQ(drags.size(), 1U);
+    expect_near(drags[0], k_right);
+}
+
+TEST_F(FormaContextTest, ADragSubscriberRunsBesideOnDrag)
+{
+    const uint32_t id = left_half();
+    std::vector<std::string> log;
+    ctx->on_drag(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("own"); });
+    ctx->subscribe_drag(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("subscriber"); });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+    window->move_to_ndc(k_right);
+
+    EXPECT_EQ(log, (std::vector<std::string> { "own", "subscriber" }));
+}
+
+TEST_F(FormaContextTest, MoveEnterAndLeaveSubscribersRunBesideTheOwnCallbacks)
+{
+    const uint32_t id = left_half();
+    std::vector<std::string> log;
+    ctx->on_enter(id, [&](uint32_t) { log.emplace_back("own enter"); });
+    ctx->subscribe_enter(id, [&](uint32_t) { log.emplace_back("sub enter"); });
+    ctx->on_move(id, [&](uint32_t, glm::vec2) { log.emplace_back("own move"); });
+    ctx->subscribe_move(id, [&](uint32_t, glm::vec2) { log.emplace_back("sub move"); });
+    ctx->on_leave(id, [&](uint32_t) { log.emplace_back("own leave"); });
+    ctx->subscribe_leave(id, [&](uint32_t) { log.emplace_back("sub leave"); });
+
+    window->move_to_ndc(k_left);
+    window->move_to_ndc(k_right);
+
+    EXPECT_EQ(log, (std::vector<std::string> { "own enter", "sub enter", "own move", "sub move",
+                       "own leave", "sub leave" }));
+}
+
+TEST_F(FormaContextTest, ScrollSubscribersReceiveThePointerAndTheDelta)
+{
+    const uint32_t id = left_half();
+    glm::vec2 got_ndc {};
+    double got_dx = 0.0;
+    double got_dy = 0.0;
+    int own = 0;
+    ctx->on_scroll(id, [&](uint32_t, glm::vec2, double, double) { ++own; });
+    ctx->subscribe_scroll(id, [&](uint32_t, glm::vec2 ndc, double dx, double dy) {
+        got_ndc = ndc;
+        got_dx = dx;
+        got_dy = dy;
+    });
+
+    window->move_to_ndc(k_left);
+    window->scroll(1.5, -2.0);
+
+    EXPECT_EQ(own, 1);
+    expect_near(got_ndc, k_left);
+    EXPECT_DOUBLE_EQ(got_dx, 1.5);
+    EXPECT_DOUBLE_EQ(got_dy, -2.0);
+}
+
+TEST_F(FormaContextTest, ASubscriberMayUnbindItsElementWhileTheEventIsBeingDelivered)
+{
+    const uint32_t id = left_half();
+    std::vector<std::string> log;
+    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) {
+        log.emplace_back("first");
+        ctx->unbind(id);
+    });
+    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("second"); });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+    window->press(MouseButtons::Left);
+
+    EXPECT_EQ(log, (std::vector<std::string> { "first", "second" }));
+}
+
 }

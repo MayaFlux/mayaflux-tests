@@ -395,6 +395,21 @@ namespace {
         EXPECT_NE(error.find("invalid x attribute"), std::string::npos);
     }
 
+    TEST(RecordBindingTest, AnIgnoredChildElementIsLeftToAnotherReaderAndOthersAreRejected)
+    {
+        Reflect::RecordBinding<RecordBindingItem, Element> binding;
+        binding.ignore_child("on");
+        std::string error;
+
+        const auto item = binding.read(
+            make_element("item", 0, { { "x", "2" } }, { make_element("on", 1), make_element("on", 2) }), error);
+        ASSERT_TRUE(item) << error;
+        EXPECT_EQ(item->x, 2.F);
+
+        EXPECT_FALSE(binding.read(make_element("item", 0, {}, { make_element("legend", 3) }), error));
+        EXPECT_NE(error.find("<legend> is not allowed in <item>"), std::string::npos);
+    }
+
     TEST(RecordBindingTest, RepeatedChildrenInheritSharedDefaults)
     {
         const auto binding = list_binding();
