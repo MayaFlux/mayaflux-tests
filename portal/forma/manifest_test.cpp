@@ -7,6 +7,7 @@
 
 #include "MayaFlux/Portal/Forma/Manifest/CallTable.hpp"
 #include "MayaFlux/Portal/Forma/Manifest/DragGeometry.hpp"
+#include "MayaFlux/Portal/Forma/Manifest/ElementHit.hpp"
 #include "MayaFlux/Portal/Forma/Manifest/FactoryTable.hpp"
 #include "MayaFlux/Portal/Forma/Manifest/Instantiate.hpp"
 #include "MayaFlux/Portal/Forma/Manifest/StaticGeometry.hpp"
@@ -2398,7 +2399,7 @@ namespace {
             error = "no registered call " + name;
             return std::nullopt;
         }
-        return std::invoke(*make, form, element, error);
+        return std::invoke(*make, form, element, Forma::ElementHit {}, error);
     }
 
     const std::string k_fader_bounds = "-0.5 -0.1 0.5 0.1";
@@ -2637,7 +2638,7 @@ TEST_F(FormaManifestElementTest, AnElementNeedsANameAndOneForm)
 TEST_F(FormaManifestElementTest, AFormNamesARegisteredCall)
 {
     expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } }, { manifest_node("form") }) }),
-        "<form> needs a call attribute");
+        "<form> needs a call or a topology attribute");
     expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } }, { call_form("ghost") }) }),
         "no registered call ghost");
 }
@@ -2716,6 +2717,251 @@ TEST_F(FormaManifestElementTest, ASurfaceHoldsOnlyInstancesAndElements)
 {
     expect_element_rejected(element_document({ stub_instance("a"), manifest_node("legend") }),
         "<legend> is not allowed in <surface>");
+}
+
+// =============================================================================
+// Elements: spatial children and vertices written in the document
+// =============================================================================
+
+namespace {
+
+    FormaManifestElement circle_node(std::string center, std::string radius)
+    {
+        return manifest_node("circle", { { "center", std::move(center) }, { "radius", std::move(radius) } });
+    }
+
+    std::optional<Forma::ElementHit> read_hit(const std::vector<FormaManifestElement>& children, std::string& error)
+    {
+        Forma::ElementHit hit;
+        for (const FormaManifestElement& child : children) {
+            if (!Forma::read_hit_child<FormaManifestElement>(child, hit, error))
+                return std::nullopt;
+        }
+        return hit;
+    }
+
+    FormaManifestElement vertex_node(std::string position, CallAttributes extra = {})
+    {
+        CallAttributes attributes { { "position", std::move(position) } };
+        attributes.insert(attributes.end(), extra.begin(), extra.end());
+        return manifest_node("vertex", std::move(attributes));
+    }
+
+    FormaManifestElement triangle_form(std::string topology = "TRIANGLE_LIST")
+    {
+        return manifest_node("form", { { "topology", std::move(topology) } },
+            { vertex_node("-0.5 -0.5 0"), vertex_node("0.5 -0.5 0", { { "color", "1 0 0 1" } }), vertex_node("0 0.5 0") });
+    }
+
+}
+
+TEST(FormaManifestHitTest, ACircleBecomesTheContainmentOfThatCircle)
+{
+    std::string error;
+    const auto hit = read_hit({ circle_node("0 0", "0.5") }, error);
+
+    ASSERT_TRUE(hit) << error;
+    EXPECT_FALSE(hit->bounds.has_value());
+    ASSERT_TRUE(static_cast<bool>(hit->contains));
+    EXPECT_TRUE(hit->contains({ 0.3F, 0.F }));
+    EXPECT_FALSE(hit->contains({ 0.6F, 0.F }));
+}
+
+TEST(FormaManifestHitTest, APolygonAndAStrokeAreReadAsPointLists)
+{
+    std::string error;
+    const auto polygon = read_hit({ manifest_node("polygon", { { "points", "0 0 1 0 1 1 0 1" } }) }, error);
+    ASSERT_TRUE(polygon) << error;
+    EXPECT_TRUE(polygon->contains({ 0.5F, 0.5F }));
+    EXPECT_FALSE(polygon->contains({ 1.5F, 0.5F }));
+
+    const auto stroke = read_hit(
+        { manifest_node("stroke", { { "points", "0 0 1 0" }, { "half_thickness", "0.1" } }) }, error);
+    ASSERT_TRUE(stroke) << error;
+    EXPECT_TRUE(stroke->contains({ 0.5F, 0.05F }));
+    EXPECT_FALSE(stroke->contains({ 0.5F, 0.5F }));
+}
+
+TEST(FormaManifestHitTest, BoundsAreTheFastRejectBoxAndNeedAMaxAboveTheirMin)
+{
+    std::string error;
+    const auto hit = read_hit({ manifest_node("bounds", { { "min", "-1 -2" }, { "max", "3 4" } }) }, error);
+
+    ASSERT_TRUE(hit) << error;
+    ASSERT_TRUE(hit->bounds.has_value());
+    EXPECT_EQ(hit->bounds->min, glm::vec2(-1.F, -2.F));
+    EXPECT_EQ(hit->bounds->max, glm::vec2(3.F, 4.F));
+    EXPECT_FALSE(static_cast<bool>(hit->contains));
+
+    EXPECT_FALSE(read_hit({ manifest_node("bounds", { { "min", "1 1" }, { "max", "0 2" } }) }, error));
+    EXPECT_NE(error.find("needs a max above its min"), std::string::npos) << error;
+}
+
+TEST(FormaManifestHitTest, TwoRegionsCombineAsTheKinesisFunctionsOfTheSameName)
+{
+    std::string error;
+    const auto ring = read_hit({ manifest_node("subtract_bounds", {},
+                                  { circle_node("0 0", "0.5"), circle_node("0 0", "0.2") }) },
+        error);
+    ASSERT_TRUE(ring) << error;
+    EXPECT_TRUE(ring->contains({ 0.35F, 0.F }));
+    EXPECT_FALSE(ring->contains({ 0.F, 0.F }));
+    EXPECT_FALSE(ring->contains({ 0.9F, 0.F }));
+
+    const auto either = read_hit({ manifest_node("union_bounds", {},
+                                     { circle_node("-1 0", "0.3"), circle_node("1 0", "0.3") }) },
+        error);
+    ASSERT_TRUE(either) << error;
+    EXPECT_TRUE(either->contains({ -1.F, 0.F }));
+    EXPECT_TRUE(either->contains({ 1.F, 0.F }));
+    EXPECT_FALSE(either->contains({ 0.F, 0.F }));
+
+    const auto both = read_hit({ manifest_node("intersect_bounds", {},
+                                    { circle_node("-0.2 0", "0.5"), circle_node("0.2 0", "0.5") }) },
+        error);
+    ASSERT_TRUE(both) << error;
+    EXPECT_TRUE(both->contains({ 0.F, 0.F }));
+    EXPECT_FALSE(both->contains({ -0.6F, 0.F }));
+}
+
+TEST(FormaManifestHitTest, CombinationsNest)
+{
+    std::string error;
+    const auto hit = read_hit({ manifest_node("union_bounds", {},
+                                  { manifest_node("subtract_bounds", {}, { circle_node("0 0", "0.5"), circle_node("0 0", "0.2") }),
+                                      circle_node("2 0", "0.3") }) },
+        error);
+
+    ASSERT_TRUE(hit) << error;
+    EXPECT_TRUE(hit->contains({ 0.35F, 0.F }));
+    EXPECT_FALSE(hit->contains({ 0.F, 0.F }));
+    EXPECT_TRUE(hit->contains({ 2.F, 0.F }));
+}
+
+TEST(FormaManifestHitTest, ARegionThatIsNotValidIsRefusedWithItsRow)
+{
+    const auto refused = [](FormaManifestElement node, std::string_view fragment) {
+        node.row = 12;
+        std::string error;
+        EXPECT_FALSE(read_hit({ node }, error));
+        EXPECT_TRUE(error.starts_with(row_prefix(12))) << error;
+        EXPECT_NE(error.find(fragment), std::string::npos) << error;
+    };
+
+    refused(manifest_node("circle", { { "center", "0 0" } }), "needs a radius attribute");
+    refused(circle_node("0 0", "wide"), "invalid radius of wide");
+    refused(circle_node("0 0", "0"), "needs a positive radius");
+    refused(manifest_node("circle", { { "center", "0 0" }, { "radius", "1" }, { "bogus", "1" } }),
+        "unsupported attribute bogus");
+    refused(manifest_node("polygon", { { "points", "0 0 1 0" } }), "needs at least three x y pairs");
+    refused(manifest_node("stroke", { { "points", "0 0" }, { "half_thickness", "0.1" } }), "needs at least two x y pairs");
+    refused(manifest_node("stroke", { { "points", "0 0 1 0" }, { "half_thickness", "0" } }), "needs a positive half_thickness");
+    refused(manifest_node("union_bounds", {}, { circle_node("0 0", "1") }), "needs exactly two regions");
+    refused(manifest_node("union_bounds", {}, { circle_node("0 0", "1"), circle_node("0 0", "2"), circle_node("0 0", "3") }),
+        "needs exactly two regions");
+    auto not_a_region = manifest_node("bounds");
+    not_a_region.row = 12;
+    refused(manifest_node("subtract_bounds", {}, { circle_node("0 0", "1"), not_a_region }),
+        "is not a region");
+    refused(manifest_node("subtract_bounds", { { "x", "1" } }, { circle_node("0 0", "1"), circle_node("0 0", "2") }),
+        "unsupported attribute x");
+}
+
+TEST(FormaManifestHitTest, AnElementHasOneBoundsAndOneRegion)
+{
+    std::string error;
+    EXPECT_FALSE(read_hit({ circle_node("0 0", "1"), circle_node("0 0", "2") }, error));
+    EXPECT_NE(error.find("is a second region"), std::string::npos) << error;
+
+    const auto box = manifest_node("bounds", { { "min", "0 0" }, { "max", "1 1" } });
+    EXPECT_FALSE(read_hit({ box, box }, error));
+    EXPECT_NE(error.find("may appear only once"), std::string::npos) << error;
+
+    EXPECT_TRUE(read_hit({ box, circle_node("0 0", "1") }, error)) << error;
+}
+
+TEST(FormaManifestHitTest, TheDocumentsFieldsAreWrittenAfterTheFormsOwn)
+{
+    Forma::Geometry::Form<float> form;
+    form.geometry = [](float, std::vector<uint8_t>&, Forma::Element& element) {
+        element.bounds_hint = Kinesis::AABB2D { .min = { 0.F, 0.F }, .max = { 1.F, 1.F } };
+        element.contains = {};
+    };
+    Forma::Element untouched;
+    std::vector<uint8_t> bytes;
+
+    auto unchanged = form;
+    Forma::apply_hit(unchanged, Forma::ElementHit {});
+    unchanged.geometry(0.F, bytes, untouched);
+    EXPECT_EQ(untouched.bounds_hint->max, glm::vec2(1.F));
+    EXPECT_FALSE(static_cast<bool>(untouched.contains));
+
+    Forma::ElementHit hit;
+    hit.bounds = Kinesis::AABB2D { .min = { -2.F, -2.F }, .max = { 2.F, 2.F } };
+    hit.contains = Kinesis::circular_bounds({ 0.F, 0.F }, 1.F);
+    Forma::Element written;
+    Forma::apply_hit(form, hit);
+    form.geometry(0.F, bytes, written);
+
+    EXPECT_EQ(written.bounds_hint->max, glm::vec2(2.F));
+    ASSERT_TRUE(static_cast<bool>(written.contains));
+    EXPECT_TRUE(written.contains({ 0.5F, 0.F }));
+    EXPECT_FALSE(written.contains({ 1.5F, 0.F }));
+}
+
+TEST(FormaManifestGeometryTest, AVertexFormDrawsTheVerticesAsWrittenWithNothingMappingThem)
+{
+    const auto input = triangle_input();
+    const auto form = Forma::vertex_form(input);
+
+    EXPECT_EQ(form.topology, PrimitiveTopology::TRIANGLE_LIST);
+    EXPECT_EQ(form.capacity, 3 * sizeof(Kakshya::Vertex));
+
+    std::vector<uint8_t> bytes;
+    Forma::Element element;
+    form.geometry(std::monostate {}, bytes, element);
+    const auto vertices = read_vertices<Kakshya::Vertex>(bytes);
+
+    ASSERT_EQ(vertices.size(), 3U);
+    EXPECT_EQ(vertices[2].position, glm::vec3(0.5F, 1.F, 0.25F));
+    EXPECT_EQ(vertices[1].color, glm::vec4(0.F, 1.F, 0.F, 1.F));
+    expect_bounds(element, { 0.F, 0.F }, { 1.F, 1.F });
+    EXPECT_TRUE(element.hits({ 0.5F, 0.4F }));
+    EXPECT_FALSE(element.hits({ 0.05F, 0.9F }));
+}
+
+TEST_F(FormaManifestElementTest, AFormEitherCallsAFunctionOrGivesATopologyNotBothAndNotNeither)
+{
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } },
+                                { manifest_node("form", { { "call", "forma_call_flag" }, { "topology", "POINT_LIST" } }) }) }),
+        "may call a function or give a topology, not both");
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } },
+                                { manifest_node("form", { { "bogus", "1" } }) }) }),
+        "<form> needs a call or a topology attribute");
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } },
+                                { manifest_node("form", { { "call", "forma_call_flag" } }, { vertex_node("0 0 0") }) }) }),
+        "that calls a function takes no children");
+}
+
+TEST_F(FormaManifestElementTest, AFormOfVerticesIsDecodedStrictlyBeforeAnythingIsPlaced)
+{
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } }, { triangle_form("BANANA") }) }),
+        "unsupported topology BANANA");
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } },
+                                { manifest_node("form", { { "topology", "POINT_LIST" } }) }) }),
+        "needs at least 1 vertex children");
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" }, { "state", "1" } }, { triangle_form() }) }),
+        "a form of vertices has no state");
+}
+
+TEST_F(FormaManifestElementTest, SpatialChildrenAreCheckedBeforeAnythingIsPlaced)
+{
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } },
+                                { triangle_form(), circle_node("0 0", "0") }) }),
+        "needs a positive radius");
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } },
+                                { triangle_form(), circle_node("0 0", "1"), circle_node("0 0", "2") }) }),
+        "is a second region");
 }
 
 

@@ -707,6 +707,50 @@ TEST_F(FormaManifestSurfaceTest, AnElementThatFailsToDecodeLeavesTheSurfaceUntou
     EXPECT_TRUE(surfaces.at("main").layer().empty());
 }
 
+TEST_F(FormaManifestSurfaceTest, AnElementOfVerticesWithSpatialChildrenHitsWhereTheDocumentSays)
+{
+    const auto tree = surface_with({ manifest_node("element", { { "name", "ring" } },
+        { manifest_node("form", { { "topology", "TRIANGLE_LIST" } },
+              { manifest_node("vertex", { { "position", "-0.5 -0.5 0" } }), manifest_node("vertex", { { "position", "0.5 -0.5 0" } }),
+                  manifest_node("vertex", { { "position", "0.5 0.5 0" } }), manifest_node("vertex", { { "position", "-0.5 -0.5 0" } }),
+                  manifest_node("vertex", { { "position", "0.5 0.5 0" } }), manifest_node("vertex", { { "position", "-0.5 0.5 0" } }) }),
+            manifest_node("bounds", { { "min", "-0.5 -0.5" }, { "max", "0.5 0.5" } }),
+            manifest_node("subtract_bounds", {},
+                { manifest_node("circle", { { "center", "0 0" }, { "radius", "0.5" } }),
+                    manifest_node("circle", { { "center", "0 0" }, { "radius", "0.2" } }) }) }) });
+    const auto tables = element_tables();
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-vertices"));
+
+    std::string error;
+    const auto placed = Forma::instantiate_document(tables, tree, surfaces, error);
+
+    ASSERT_TRUE(placed) << error;
+    const Forma::Layer& layer = surfaces.at("main").layer();
+    EXPECT_EQ(layer.find("ring"), placed->at("ring").element);
+    EXPECT_EQ(layer.hit_test(glm::vec2(0.35F, 0.F)), placed->at("ring").element);
+    EXPECT_FALSE(layer.hit_test(glm::vec2(0.F, 0.F)));
+    EXPECT_FALSE(layer.hit_test(glm::vec2(0.9F, 0.F)));
+}
+
+TEST_F(FormaManifestSurfaceTest, ASpatialChildOfAnElementThatCallsAFunctionOverridesTheFunctionsHitRegion)
+{
+    const auto tree = surface_with({ manifest_node("element", { { "name", "f" } },
+        { fader_form(), manifest_node("bounds", { { "min", "-0.5 -0.1" }, { "max", "0.5 0.1" } }),
+            manifest_node("circle", { { "center", "-0.4 0" }, { "radius", "0.05" } }) }) });
+    const auto tables = element_tables();
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-hit-override"));
+
+    std::string error;
+    const auto placed = Forma::instantiate_document(tables, tree, surfaces, error);
+
+    ASSERT_TRUE(placed) << error;
+    const Forma::Layer& layer = surfaces.at("main").layer();
+    EXPECT_EQ(layer.hit_test(glm::vec2(-0.4F, 0.F)), placed->at("f").element);
+    EXPECT_FALSE(layer.hit_test(glm::vec2(0.F, 0.F)));
+}
+
 MAYAFLUX_TEST_WITH(TEST_F, FormaManifestSurfaceTest, AnXmlFileIsLoadedAndPlacedInOneCall, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 {
     ASSERT_TRUE(load_xml("elements", R"(<?xml version="1.0" encoding="UTF-8"?>
