@@ -1140,6 +1140,42 @@ namespace {
         EXPECT_FLOAT_EQ(net.as_operator<PhysicsOperator>()->get_gravity().y, 3.0F);
     }
 
+    TEST(ParticleNetworkMappingTest, CaseInsensitiveMappingSurvivesOperatorReplacement)
+    {
+        auto net = make_swarm();
+        net.initialize();
+        auto source = std::make_shared<Impulse>(0.5);
+        source->set_amplitude(3.0);
+        source->process_sample(0.0);
+        net.map_parameter("GrAvItY_Y", source);
+
+        net.process_batch(1);
+        ASSERT_NE(net.as_operator<PhysicsOperator>(), nullptr);
+        EXPECT_FLOAT_EQ(net.as_operator<PhysicsOperator>()->get_gravity().y, 3.0F);
+
+        net.set_operator(std::make_unique<PhysicsOperator>());
+        net.process_batch(1);
+        ASSERT_NE(net.as_operator<PhysicsOperator>(), nullptr);
+        EXPECT_FLOAT_EQ(net.as_operator<PhysicsOperator>()->get_gravity().y, 3.0F);
+    }
+
+    TEST(ParticleNetworkMappingTest, MismatchedOneToOneSourceDoesNotWriteForces)
+    {
+        auto net = make_swarm(3);
+        net.initialize();
+        auto* physics = net.as_operator<PhysicsOperator>();
+        physics->set_gravity(glm::vec3(0.0F));
+        physics->set_drag(0.0F);
+
+        static_cast<NodeNetwork&>(net).map_parameter("force_x", index_source(2));
+        net.process_batch(1);
+
+        const auto velocities = physics->extract_vertex_velocities();
+        for (const auto& velocity : velocities) {
+            EXPECT_NEAR(velocity.x, 0.0F, k_eps);
+        }
+    }
+
     TEST(ParticleNetworkMappingTest, UnmappingStopsTheSourceDrivingTheParameter)
     {
         auto net = make_swarm();

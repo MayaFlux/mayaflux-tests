@@ -521,6 +521,19 @@ TEST(ModalMappingTest, BroadcastFrequencyRetunesAllModes)
     EXPECT_DOUBLE_EQ(network.get_mode(2).current_frequency, 660.0);
 }
 
+TEST(ModalMappingTest, SimilarUnknownNameDoesNotRetuneModes)
+{
+    auto source = std::make_shared<Polynomial>([](double) { return 330.0; });
+    source->process_sample(0.0);
+
+    ModalNetwork network(2, 220.0);
+    network.map_parameter("frequency.extra", source);
+    render(network, 1);
+
+    EXPECT_DOUBLE_EQ(network.get_fundamental(), 220.0);
+    EXPECT_DOUBLE_EQ(network.get_mode(0).current_frequency, 220.0);
+}
+
 TEST(ModalMappingTest, BroadcastDecayChangesTheRingingEnvelope)
 {
     auto source = std::make_shared<Polynomial>([](double) { return 2.0; });

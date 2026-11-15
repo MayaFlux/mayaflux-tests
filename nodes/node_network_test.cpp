@@ -12,6 +12,9 @@ namespace {
 
     using Nodes::Generator::Sine;
     using Nodes::Network::MappingMode;
+    using Nodes::Network::ParameterKey;
+    using Nodes::Network::parameter_hash;
+    using Nodes::Network::parameter_key;
     using Nodes::Network::NodeNetwork;
     using Nodes::Network::OutputMode;
     using Nodes::Network::Topology;
@@ -51,6 +54,37 @@ namespace {
     private:
         size_t m_nodes;
     };
+
+    TEST(ParameterResolverTest, ArbitraryNamesRetainTheirIdentity)
+    {
+        const std::string name = "user_defined/response.level:17";
+        const auto key = parameter_key(name);
+
+        EXPECT_TRUE(key.matches(name));
+        EXPECT_FALSE(key.matches("user_defined/response.level:18"));
+        EXPECT_FALSE(key.matches("USER_DEFINED/RESPONSE.LEVEL:17"));
+        EXPECT_TRUE(parameter_key("").matches(""));
+    }
+
+    TEST(ParameterResolverTest, EqualHashesStillRequireEqualNames)
+    {
+        const ParameterKey forged { "custom.alpha", parameter_hash("custom.beta") };
+
+        EXPECT_FALSE(forged.matches("custom.beta"));
+        EXPECT_FALSE(forged.matches("custom.alpha"));
+    }
+
+    TEST(ParameterResolverTest, MappingOwnsTemporaryNamesAndCachesTheirHashes)
+    {
+        ProbeNetwork net;
+        const auto source = std::make_shared<Sine>();
+        net.map_parameter(std::string("dynamic.") + std::to_string(42), source);
+
+        ASSERT_EQ(net.mapping_count(), 1U);
+        const auto& mapping = net.mapping(0);
+        EXPECT_EQ(mapping.param_name, "dynamic.42");
+        EXPECT_EQ(mapping.param_hash, parameter_hash(mapping.param_name));
+    }
 
     TEST(NodeNetworkTest, StartsWithDocumentedDefaults)
     {

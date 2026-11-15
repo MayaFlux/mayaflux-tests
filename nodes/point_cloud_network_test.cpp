@@ -22,10 +22,35 @@ namespace {
     using Nodes::Network::MappingMode;
     using Nodes::Network::PathOperator;
     using Nodes::Network::PhysicsOperator;
+    using Nodes::Network::ParameterKey;
     using Nodes::Network::PointCloudNetwork;
     using Nodes::Network::TopologyOperator;
 
     constexpr float k_eps = 1e-5F;
+
+    class FlexiblePathOperator : public PathOperator {
+    public:
+        void set_parameter(std::string_view name, double value) override
+        {
+            if (name == "user.legacy") {
+                legacy_value = value;
+            } else {
+                PathOperator::set_parameter(name, value);
+            }
+        }
+
+        void set_mapped_parameter(ParameterKey key, double value) override
+        {
+            if (key.matches("user.fast")) {
+                fast_value = value;
+            } else {
+                Nodes::Network::NetworkOperator::set_mapped_parameter(key, value);
+            }
+        }
+
+        double legacy_value {};
+        double fast_value {};
+    };
 
     std::vector<LineVertex> points(uint32_t count, float offset = 0.0F)
     {
@@ -1008,6 +1033,44 @@ namespace {
         const auto bytes = path->get_vertex_data();
         ASSERT_GT(vertices_in(bytes), 0U);
         EXPECT_FLOAT_EQ(line_at(bytes, 0).thickness, 3.0F);
+    }
+
+    TEST(PointCloudNetworkMappingTest, SimilarUnknownNameDoesNotShadowAValidMapping)
+    {
+        InitializedCloud net(12);
+        net.create_operator<PathOperator>();
+        net.process_batch(1);
+        auto* path = dynamic_cast<PathOperator*>(net.get_operator());
+        ASSERT_NE(path, nullptr);
+        const float original = line_at(path->get_vertex_data(), 0).thickness;
+
+        auto source = std::make_shared<Impulse>(0.5);
+        source->set_amplitude(3.0);
+        source->process_sample(0.0);
+        net.map_parameter("thickness_extra", source);
+        net.process_batch(1);
+        EXPECT_FLOAT_EQ(line_at(path->get_vertex_data(), 0).thickness, original);
+
+        net.map_parameter("thickness", source);
+        net.process_batch(1);
+        EXPECT_FLOAT_EQ(line_at(path->get_vertex_data(), 0).thickness, 3.0F);
+    }
+
+    TEST(PointCloudNetworkMappingTest, CustomOperatorsAcceptDynamicNamesThroughBothMappingPaths)
+    {
+        InitializedCloud net(12);
+        auto* path = net.create_operator<FlexiblePathOperator>();
+        auto source = std::make_shared<Impulse>(0.5);
+        source->set_amplitude(3.0);
+        source->process_sample(0.0);
+
+        net.map_parameter("user.legacy", source);
+        net.map_parameter("user.fast", source);
+        net.map_parameter("user.fast.extra", source);
+        net.process_batch(1);
+
+        EXPECT_DOUBLE_EQ(path->legacy_value, 3.0);
+        EXPECT_DOUBLE_EQ(path->fast_value, 3.0);
     }
 
     TEST(PointCloudNetworkMappingTest, UnmappingStopsTheSourceDrivingTheParameter)

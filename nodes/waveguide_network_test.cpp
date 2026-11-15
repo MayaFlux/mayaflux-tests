@@ -753,6 +753,17 @@ TEST(WaveguideMappingTest, BroadcastFrequencyRecomputesTheDelay)
         static_cast<size_t>(48000.0 / 120.0 - k_pass_latency) + 2);
 }
 
+TEST(WaveguideMappingTest, OneToOneFrequencyDoesNotChangeTheGuide)
+{
+    WaveguideNetwork network(GuideType::STRING, 480.0);
+    auto source = std::make_shared<WaveguideNetwork>(GuideType::STRING, 120.0);
+    network.map_parameter("frequency", std::static_pointer_cast<Nodes::Network::NodeNetwork>(source));
+
+    render(network, 1);
+
+    EXPECT_DOUBLE_EQ(network.get_fundamental(), 480.0);
+}
+
 class WaveguideLossMappingTest : public ::testing::TestWithParam<const char*> { };
 
 TEST_P(WaveguideLossMappingTest, BroadcastMappingSetsTheLossFactor)

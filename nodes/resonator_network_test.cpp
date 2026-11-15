@@ -318,6 +318,23 @@ TEST(ResonatorMappingTest, MappedDecaySetsTheRingTime)
         1e-6);
 }
 
+TEST(ResonatorMappingTest, FrequencyAndDecayKeepMappingOrder)
+{
+    auto frequency = std::make_shared<Polynomial>([](double) { return 1400.0; });
+    auto decay = std::make_shared<Polynomial>([](double) { return 0.25; });
+    frequency->process_sample(0.0);
+    decay->process_sample(0.0);
+
+    auto net = make_single(1000.0, 30.0);
+    net->map_parameter("frequency", frequency);
+    net->map_parameter("decay", decay);
+    net->process_batch(1);
+
+    EXPECT_DOUBLE_EQ(net->get_resonators().at(0).frequency, 1400.0);
+    EXPECT_NEAR(net->get_resonators().at(0).q,
+        Kinesis::Discrete::q_from_decay(1400.0, 0.25, net->get_sample_rate()), 1e-6);
+}
+
 TEST(ResonatorBulkTest, ArraysWriteEveryResonatorAndKeepTheirRings)
 {
     ResonatorNetwork net(

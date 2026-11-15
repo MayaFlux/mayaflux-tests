@@ -428,6 +428,26 @@ TEST(RelationDeriveTest, ReplacedCoefficientsTakeEffectAndQueriesPastTheArrayFai
     EXPECT_FALSE(derive->query_state("gain").has_value());
 }
 
+TEST(RelationDeriveTest, MappedCoefficientSurvivesArrayResizeWithoutStalePointers)
+{
+    DeriveOperator derive(0, std::vector<size_t> {},
+        DeriveOperator::CoefFunction([](std::span<const double>, std::span<double>) { return 0.0; }),
+        std::vector<double> { 1.0 });
+    derive.map("c2", Source(9.0));
+    derive.map("c2x", Source(88.0));
+
+    derive.begin_block();
+    EXPECT_EQ(derive.get_coefficients(), (std::vector<double> { 1.0 }));
+
+    derive.set_coefficients({ 1.0, 2.0, 3.0 });
+    derive.begin_block();
+    EXPECT_EQ(derive.get_coefficients(), (std::vector<double> { 1.0, 2.0, 9.0 }));
+
+    derive.set_coefficients({ 4.0 });
+    derive.begin_block();
+    EXPECT_EQ(derive.get_coefficients(), (std::vector<double> { 4.0 }));
+}
+
 TEST(RelationDeriveTest, AGateRuleWritesZeroOrOneAndDrivesTheTargetActivity)
 {
     RelationNetwork network;
@@ -710,6 +730,28 @@ TEST(RelationMappingTest, AMappingIsEvaluatedOncePerBlock)
     network->process_batch(FRAMES);
     EXPECT_DOUBLE_EQ(step->parameter("x"), 2.0);
     EXPECT_EQ(*calls, 2);
+}
+
+TEST(RelationMappingTest, DynamicallyNamedSlotsRemainStableAsMappingsGrow)
+{
+    StepOperator step(StepOperator::Body {});
+    for (size_t i = 0; i < 128; ++i) {
+        step.map("custom/level." + std::to_string(i), Source(static_cast<double>(i)));
+    }
+
+    EXPECT_FALSE(step.query_state("custom/level.127").has_value());
+    step.begin_block();
+
+    for (size_t i = 0; i < 128; ++i) {
+        EXPECT_DOUBLE_EQ(step.parameter("custom/level." + std::to_string(i)), static_cast<double>(i));
+    }
+
+    step.map("custom/level.0", Source(200.0));
+    step.unmap("custom/level.127");
+    step.begin_block();
+
+    EXPECT_DOUBLE_EQ(step.parameter("custom/level.0"), 200.0);
+    EXPECT_DOUBLE_EQ(step.parameter("custom/level.127"), 127.0);
 }
 
 TEST(RelationMappingTest, MappingAgainReplacesTheSourceAndUnmapStopsUpdates)
