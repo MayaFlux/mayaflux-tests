@@ -416,6 +416,111 @@ TEST(DuctNetworkTest, AMouthVolumeIsInstalledOrRefused)
     }
 }
 
+TEST(DuctNetworkTest, ALengthThatSlidesKeepsTheNoteSoundingWhileAResetRestartsIt)
+{
+    const auto rms = [](std::span<const double> samples) {
+        double sum = 0.0;
+        for (const double sample : samples) {
+            sum += sample * sample;
+        }
+        return std::sqrt(sum / static_cast<double>(samples.size()));
+    };
+
+    const auto blown = [] {
+        auto duct = std::make_unique<DuctNetwork>(kLength, kRadius);
+        duct->set_output(DuctNetwork::Output::PICKUP);
+        duct->get_mouth()->set_parameter("pressure", 1800.0);
+        duct->get_mouth()->set_parameter("resonance", 2500.0);
+        return duct;
+    };
+
+    auto sliding = blown();
+    const auto settled = render(*sliding, 80);
+    const double before = rms(std::span<const double>(settled).last(size_t { 8 } * kBlock));
+
+    double length = kLength;
+    std::vector<double> slide;
+    for (size_t step = 0; step < 40; ++step) {
+        length -= 0.0005;
+        ASSERT_TRUE(sliding->set_length(length));
+        const auto block = render(*sliding, 1);
+        slide.insert(slide.end(), block.begin(), block.end());
+    }
+    const double during = rms(std::span<const double>(slide).last(size_t { 20 } * kBlock));
+
+    auto restarted = blown();
+    static_cast<void>(render(*restarted, 80));
+    double restart_length = kLength;
+    std::vector<double> restart_slide;
+    for (size_t step = 0; step < 40; ++step) {
+        restart_length -= 0.0005;
+        ASSERT_TRUE(restarted->set_length(restart_length));
+        restarted->reset();
+        const auto block = render(*restarted, 1);
+        restart_slide.insert(restart_slide.end(), block.begin(), block.end());
+    }
+    const double restart_during = rms(std::span<const double>(restart_slide).last(size_t { 20 } * kBlock));
+
+    ASSERT_GT(before, 0.0);
+    EXPECT_GT(during, 0.5 * before);
+    EXPECT_LT(restart_during, 0.25 * during);
+    for (const double sample : slide) {
+        ASSERT_TRUE(std::isfinite(sample));
+    }
+}
+
+TEST(DuctNetworkTest, ChangingTheProfileOrTheMouthVolumeKeepsTheSoundToo)
+{
+    DuctNetwork duct(kLength, kRadius);
+    duct.set_output(DuctNetwork::Output::PICKUP);
+    duct.get_mouth()->set_parameter("pressure", 1800.0);
+    duct.get_mouth()->set_parameter("resonance", 2500.0);
+    static_cast<void>(render(duct, 80));
+
+    ASSERT_TRUE(duct.set_radius(0.0076));
+    ASSERT_TRUE(duct.set_mouth_volume(1.0e-7));
+    const auto after = render(duct, 4);
+
+    EXPECT_GT(peak_to_peak(after), 50.0);
+}
+
+TEST(TerminationOperatorTest, RetargetingAReedKeepsItsStateWhilePreparingResetsIt)
+{
+    const Acoustics::DuctGrid duct = grid();
+
+    const auto run = [&](bool keep) {
+        ReedOperator reed;
+        reed.set_parameter("smoothing", 0.0);
+        reed.set_parameter("pressure", 1500.0);
+        reed.set_parameter("resonance", 2500.0);
+        reed.set_parameter("reed_damping", 8000.0);
+        reed.prepare(duct, spec(), DuctEnd::MOUTH);
+        for (size_t n = 0; n < 200; ++n) {
+            static_cast<void>(reed.couple(50.0, 1.0e-5));
+        }
+        if (keep) {
+            reed.retarget(duct, spec(), DuctEnd::MOUTH);
+        } else {
+            reed.prepare(duct, spec(), DuctEnd::MOUTH);
+        }
+        return reed.couple(50.0, 1.0e-5).second;
+    };
+
+    ReedOperator continuing;
+    continuing.set_parameter("smoothing", 0.0);
+    continuing.set_parameter("pressure", 1500.0);
+    continuing.set_parameter("resonance", 2500.0);
+    continuing.set_parameter("reed_damping", 8000.0);
+    continuing.prepare(duct, spec(), DuctEnd::MOUTH);
+    for (size_t n = 0; n < 200; ++n) {
+        static_cast<void>(continuing.couple(50.0, 1.0e-5));
+    }
+    const double expected = continuing.couple(50.0, 1.0e-5).second;
+
+    EXPECT_DOUBLE_EQ(run(true), expected);
+    EXPECT_NE(run(false), expected);
+}
+
 TEST(DuctNetworkTest, ADuctAtRestIsSilent)
 {
     DuctNetwork duct(kLength, kRadius);

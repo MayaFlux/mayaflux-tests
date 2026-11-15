@@ -310,4 +310,52 @@ TEST(StaggeredLineTest, AnEndCellMovesByItsGainTimesTheNetInflow)
     EXPECT_DOUBLE_EQ(Acoustics::end_cell_pressure(100.0, 2.0, -3.0), 94.0);
 }
 
+TEST(StaggeredLineTest, ResamplingKeepsALinearRampAndTheEndsOnBothKindsOfLine)
+{
+    std::vector<double> points(11);
+    std::vector<double> halves(10);
+    for (size_t i = 0; i < points.size(); ++i) {
+        points[i] = 2.0 * static_cast<double>(i) / 10.0 + 1.0;
+    }
+    for (size_t i = 0; i < halves.size(); ++i) {
+        halves[i] = 2.0 * (static_cast<double>(i) + 0.5) / 10.0 + 1.0;
+    }
+
+    std::vector<double> more_points(26);
+    std::vector<double> more_halves(25);
+    Acoustics::resample_line(points, more_points, 0.0);
+    Acoustics::resample_line(halves, more_halves, 0.5);
+
+    EXPECT_DOUBLE_EQ(more_points.front(), 1.0);
+    EXPECT_DOUBLE_EQ(more_points.back(), 3.0);
+    for (size_t i = 0; i < more_points.size(); ++i) {
+        EXPECT_NEAR(more_points[i], 2.0 * static_cast<double>(i) / 25.0 + 1.0, 1e-12);
+    }
+    EXPECT_DOUBLE_EQ(more_halves.front(), halves.front());
+    EXPECT_DOUBLE_EQ(more_halves.back(), halves.back());
+    for (size_t i = 3; i + 3 < more_halves.size(); ++i) {
+        EXPECT_NEAR(more_halves[i], 2.0 * (static_cast<double>(i) + 0.5) / 25.0 + 1.0, 1e-12);
+    }
+}
+
+TEST(StaggeredLineTest, ResamplingToTheSameSizeIsTheIdentityAndAnEmptySourceGivesZeros)
+{
+    const std::vector<double> source { 3.0, -1.0, 4.0, 1.0, -5.0, 9.0 };
+    std::vector<double> same(source.size());
+    Acoustics::resample_line(source, same, 0.0);
+    for (size_t i = 0; i < source.size(); ++i) {
+        EXPECT_NEAR(same[i], source[i], 1e-12);
+    }
+
+    std::vector<double> target(4, 7.0);
+    Acoustics::resample_line({}, target, 0.5);
+    for (const double value : target) {
+        EXPECT_DOUBLE_EQ(value, 0.0);
+    }
+
+    std::vector<double> single(1, 0.0);
+    Acoustics::resample_line(source, single, 0.0);
+    EXPECT_DOUBLE_EQ(single.front(), source.front());
+}
+
 } // namespace MayaFlux::Test
