@@ -1,9 +1,11 @@
 #include "gtest/gtest.h"
+#include "../../support/scripted_window.hpp"
 #include "../../support/test_metadata.hpp"
 
 #include "MayaFlux/Portal/Forma/Primitives/FormFactory.hpp"
 
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
+#include "MayaFlux/Vruta/EventManager.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
@@ -778,6 +780,158 @@ TEST(FormaScrollIndicatorTest, OutOfRangeInputsStayInsideTheTrack)
         EXPECT_NEAR(verts[0].position.x, track.min.x, k_eps);
         EXPECT_NEAR(verts[3].position.x, track.max.x, k_eps);
     }
+}
+
+// =============================================================================
+// Handle path
+// =============================================================================
+
+namespace {
+
+    using Points = std::vector<glm::vec2>;
+
+    const AABB2D k_area = AABB2D::from_origin_size({ -0.5F, -0.5F }, { 1.F, 1.F });
+
+    glm::vec2 xy(const LineVertex& vertex)
+    {
+        return { vertex.position.x, vertex.position.y };
+    }
+
+}
+
+TEST(FormaHandlePathTest, DrawsAConnectedStrokeAndABoxPerPoint)
+{
+    const auto form = Geo::handle_path(k_bounds, 3);
+    const Points value { { 0.F, 0.F }, { 0.5F, 1.F }, { 1.F, 0.F } };
+
+    const auto r = render(form, value);
+    const auto verts = decode<LineVertex>(r.bytes);
+
+    EXPECT_EQ(form.topology, PrimitiveTopology::LINE_LIST);
+    ASSERT_EQ(verts.size(), 4U + 3U * 8U);
+    expect_near(xy(verts[0]), k_bounds.point_at({ 0.F, 0.F }));
+    expect_near(xy(verts[1]), k_bounds.point_at({ 0.5F, 1.F }));
+    expect_near(xy(verts[2]), k_bounds.point_at({ 0.5F, 1.F }));
+    expect_near(xy(verts[3]), k_bounds.point_at({ 1.F, 0.F }));
+}
+
+TEST(FormaHandlePathTest, TheBufferIsSizedForTheHandleCountAndTheDrawingFitsIt)
+{
+    const auto form = Geo::handle_path(k_bounds, 4);
+    const Points value { { 0.F, 0.F }, { 0.3F, 1.F }, { 0.6F, 0.F }, { 1.F, 1.F } };
+
+    const auto r = render(form, value);
+
+    EXPECT_EQ(form.capacity, (3U * 2U + 4U * 8U) * sizeof(LineVertex));
+    EXPECT_EQ(r.bytes.size(), form.capacity);
+}
+
+TEST(FormaHandlePathTest, TheWholeAreaIsTheHitRegionAtAnyState)
+{
+    const auto form = Geo::handle_path(k_bounds, 2);
+
+    const auto r = render(form, Points { { 0.F, 0.F }, { 0.2F, 0.2F } });
+
+    ASSERT_TRUE(r.element.bounds_hint.has_value());
+    expect_near(*r.element.bounds_hint, k_bounds);
+    EXPECT_FALSE(static_cast<bool>(r.element.contains));
+}
+
+TEST(FormaHandlePathTest, LiveOffsetShiftsTheStrokeAndTheHitRegion)
+{
+    const glm::vec2 shift { 0.1F, -0.3F };
+    const auto form = Geo::handle_path(k_bounds, 2, glm::vec3(0.3F), glm::vec3(0.9F), 1.F, 0.03F, 0.1F,
+        [shift] { return shift; });
+
+    const auto r = render(form, Points { { 0.F, 0.F }, { 1.F, 1.F } });
+    const auto verts = decode<LineVertex>(r.bytes);
+
+    expect_near(xy(verts[0]), k_bounds.min + shift);
+    ASSERT_TRUE(r.element.bounds_hint.has_value());
+    expect_near(*r.element.bounds_hint, k_bounds.translated(shift));
+}
+
+TEST(FormaHandlePathTest, AnEmptyHandleCountDeclaresNoCapacity)
+{
+    EXPECT_EQ(Geo::handle_path(k_bounds, 0).capacity, 0U);
+}
+
+class FormaHandlePathWireTest : public ::testing::Test {
+protected:
+    void SetUp() override
+    {
+        const auto form = Geo::handle_path(k_area, 2);
+        id = layer->add(Forma::Element {}.with_bounds(k_area));
+        state->value = { { 0.F, 0.F }, { 1.F, 1.F } };
+        form.wire(*ctx, id, state);
+    }
+
+    void grab(glm::vec2 at)
+    {
+        window->move_to_ndc(at);
+        window->press(IO::MouseButtons::Left);
+    }
+
+    Vruta::EventManager manager;
+    std::shared_ptr<ScriptedWindow> window = std::make_shared<ScriptedWindow>(200U, 100U);
+    std::shared_ptr<Forma::Layer> layer = std::make_shared<Forma::Layer>();
+    std::unique_ptr<Forma::Context> ctx = std::make_unique<Forma::Context>(layer, window, manager, "handle-path");
+    std::shared_ptr<Forma::MappedState<Points>> state = std::make_shared<Forma::MappedState<Points>>();
+    uint32_t id {};
+};
+
+TEST_F(FormaHandlePathWireTest, ADragMovesTheGrabbedPointAndLeavesTheOthers)
+{
+    grab({ -0.45F, -0.45F });
+    window->move_to_ndc({ 0.F, 0.F });
+
+    ASSERT_EQ(state->value.size(), 2U);
+    expect_near(state->value[0], { 0.5F, 0.5F });
+    expect_near(state->value[1], { 1.F, 1.F });
+    EXPECT_GT(state->version, 0U);
+}
+
+TEST_F(FormaHandlePathWireTest, APressFarFromEveryPointGrabsNothing)
+{
+    grab({ 0.F, 0.F });
+    window->move_to_ndc({ 0.3F, 0.3F });
+
+    expect_near(state->value[0], { 0.F, 0.F });
+    expect_near(state->value[1], { 1.F, 1.F });
+    EXPECT_EQ(state->version, 0U);
+}
+
+TEST_F(FormaHandlePathWireTest, ThePointNearestThePressIsTheOneGrabbed)
+{
+    state->value = { { 0.5F, 0.5F }, { 0.55F, 0.5F } };
+
+    grab({ 0.04F, 0.F });
+    window->move_to_ndc({ 0.3F, 0.3F });
+
+    expect_near(state->value[0], { 0.5F, 0.5F });
+    expect_near(state->value[1], { 0.8F, 0.8F });
+}
+
+TEST_F(FormaHandlePathWireTest, ADragIsClampedToTheArea)
+{
+    grab({ 0.45F, 0.45F });
+    window->move_to_ndc({ 0.9F, 0.9F });
+    expect_near(state->value[1], { 1.F, 1.F });
+
+    window->move_to_ndc({ -0.9F, -0.9F });
+    expect_near(state->value[1], { 0.F, 0.F });
+}
+
+TEST_F(FormaHandlePathWireTest, AGrabEndsWithTheReleaseAndTheNextPressChoosesAgain)
+{
+    grab({ -0.45F, -0.45F });
+    window->release(IO::MouseButtons::Left);
+
+    grab({ 0.F, 0.F });
+    window->move_to_ndc({ 0.3F, 0.3F });
+
+    expect_near(state->value[0], { 0.F, 0.F });
+    expect_near(state->value[1], { 1.F, 1.F });
 }
 
 }

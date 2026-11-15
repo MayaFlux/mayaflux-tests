@@ -812,12 +812,41 @@ TEST_F(FormaContextTest, DragStartedOverEmptySpaceAdoptsTheFirstElementEntered)
 // Additive subscriptions
 // =============================================================================
 
+namespace {
+
+    using Core::WindowEventType;
+
+    Vruta::WindowEventFilter filter_for(WindowEventType type,
+        std::optional<MouseButtons> button = std::nullopt, std::optional<Keys> key = std::nullopt)
+    {
+        Vruta::WindowEventFilter filter;
+        filter.event_type = type;
+        filter.button = button;
+        filter.key_code = key;
+        return filter;
+    }
+
+    Forma::Context::SubscriberFn count_into(int& counter)
+    {
+        return [&counter](uint32_t, const Core::WindowEvent&, glm::vec2) { ++counter; };
+    }
+
+    Forma::Context::SubscriberFn log_into(std::vector<std::string>& log, std::string entry)
+    {
+        return [&log, entry = std::move(entry)](uint32_t, const Core::WindowEvent&, glm::vec2) {
+            log.push_back(entry);
+        };
+    }
+
+}
+
 TEST_F(FormaContextTest, ASubscriberRunsBesideTheElementsOwnPressCallback)
 {
     const uint32_t id = left_half();
     std::vector<std::string> log;
     ctx->on_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("own"); });
-    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("subscriber"); });
+    ASSERT_TRUE(ctx->subscribe(id, filter_for(WindowEventType::MOUSE_BUTTON_PRESSED, MouseButtons::Left),
+        log_into(log, "subscriber")));
 
     window->move_to_ndc(k_left);
     window->press(MouseButtons::Left);
@@ -829,9 +858,10 @@ TEST_F(FormaContextTest, SubscribersRunInSubscriptionOrderAndSurviveReplacingThe
 {
     const uint32_t id = left_half();
     std::vector<std::string> log;
+    const auto press = filter_for(WindowEventType::MOUSE_BUTTON_PRESSED, MouseButtons::Left);
     ctx->on_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("first own"); });
-    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("a"); });
-    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("b"); });
+    ctx->subscribe(id, press, log_into(log, "a"));
+    ctx->subscribe(id, press, log_into(log, "b"));
     ctx->on_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("second own"); });
 
     window->move_to_ndc(k_left);
@@ -840,34 +870,47 @@ TEST_F(FormaContextTest, SubscribersRunInSubscriptionOrderAndSurviveReplacingThe
     EXPECT_EQ(log, (std::vector<std::string> { "second own", "a", "b" }));
 }
 
-TEST_F(FormaContextTest, ASubscriberFiresWithoutAnyOwnCallback)
+TEST_F(FormaContextTest, ASubscriberReceivesTheWindowEventTheElementAndThePointer)
 {
     const uint32_t id = left_half();
-    std::vector<glm::vec2> pressed;
-    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t sid, glm::vec2 ndc) {
-        EXPECT_EQ(sid, id);
-        pressed.push_back(ndc);
-    });
+    uint32_t got_id = 0;
+    std::optional<Core::WindowEvent> got;
+    glm::vec2 got_ndc {};
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_BUTTON_PRESSED, MouseButtons::Left),
+        [&](uint32_t sid, const Core::WindowEvent& event, glm::vec2 ndc) {
+            got_id = sid;
+            got = event;
+            got_ndc = ndc;
+        });
 
     window->move_to_ndc(k_left);
     window->press(MouseButtons::Left);
 
-    ASSERT_EQ(pressed.size(), 1U);
-    expect_near(pressed[0], k_left);
+    ASSERT_TRUE(got.has_value());
+    EXPECT_EQ(got_id, id);
+    EXPECT_EQ(got->type, WindowEventType::MOUSE_BUTTON_PRESSED);
+    const auto* data = std::get_if<Core::WindowEvent::MouseButtonData>(&got->data);
+    ASSERT_NE(data, nullptr);
+    EXPECT_EQ(data->button, static_cast<int8_t>(MouseButtons::Left));
+    expect_near(got_ndc, k_left);
 }
 
-TEST_F(FormaContextTest, ASubscriberIsForItsButtonOnly)
+TEST_F(FormaContextTest, AButtonInTheFilterSelectsThatButtonAndNoButtonSelectsAny)
 {
     const uint32_t id = left_half();
     int rights = 0;
-    ctx->subscribe_press(id, MouseButtons::Right, [&](uint32_t, glm::vec2) { ++rights; });
+    int any = 0;
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_BUTTON_PRESSED, MouseButtons::Right), count_into(rights));
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_BUTTON_PRESSED), count_into(any));
 
     window->move_to_ndc(k_left);
     window->press(MouseButtons::Left);
     EXPECT_EQ(rights, 0);
+    EXPECT_EQ(any, 1);
 
     window->press(MouseButtons::Right);
     EXPECT_EQ(rights, 1);
+    EXPECT_EQ(any, 2);
 }
 
 TEST_F(FormaContextTest, UnbindRemovesTheOwnCallbackAndEverySubscriber)
@@ -875,8 +918,8 @@ TEST_F(FormaContextTest, UnbindRemovesTheOwnCallbackAndEverySubscriber)
     const uint32_t id = left_half();
     int calls = 0;
     ctx->on_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++calls; });
-    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++calls; });
-    ctx->subscribe_enter(id, [&](uint32_t) { ++calls; });
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_BUTTON_PRESSED, MouseButtons::Left), count_into(calls));
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_ENTERED), count_into(calls));
 
     ctx->unbind(id);
     window->move_to_ndc(k_left);
@@ -890,7 +933,8 @@ TEST_F(FormaContextTest, ReleaseSubscribersRunBesideOnRelease)
     const uint32_t id = left_half();
     std::vector<std::string> log;
     ctx->on_release(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("own"); });
-    ctx->subscribe_release(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("subscriber"); });
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_BUTTON_RELEASED, MouseButtons::Left),
+        log_into(log, "subscriber"));
 
     window->move_to_ndc(k_left);
     window->press(MouseButtons::Left);
@@ -899,14 +943,33 @@ TEST_F(FormaContextTest, ReleaseSubscribersRunBesideOnRelease)
     EXPECT_EQ(log, (std::vector<std::string> { "own", "subscriber" }));
 }
 
+TEST_F(FormaContextTest, MotionWithoutAButtonIsHoverAndMotionWithAButtonIsTheDrag)
+{
+    const uint32_t id = whole();
+    int hover = 0;
+    int drag = 0;
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_MOTION), count_into(hover));
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_MOTION, MouseButtons::Left), count_into(drag));
+
+    window->move_to_ndc(k_left);
+    EXPECT_EQ(hover, 1);
+    EXPECT_EQ(drag, 0);
+
+    window->press(MouseButtons::Left);
+    window->move_to_ndc(k_right);
+    EXPECT_EQ(hover, 2);
+    EXPECT_EQ(drag, 1);
+}
+
 TEST_F(FormaContextTest, ADragSubscriberStartsCaptureOnItsOwnAndKeepsTrackingOutsideTheElement)
 {
     const uint32_t id = left_half();
     std::vector<glm::vec2> drags;
-    ctx->subscribe_drag(id, MouseButtons::Left, [&](uint32_t did, glm::vec2 ndc) {
-        EXPECT_EQ(did, id);
-        drags.push_back(ndc);
-    });
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_MOTION, MouseButtons::Left),
+        [&](uint32_t did, const Core::WindowEvent&, glm::vec2 ndc) {
+            EXPECT_EQ(did, id);
+            drags.push_back(ndc);
+        });
 
     window->move_to_ndc(k_left);
     window->press(MouseButtons::Left);
@@ -921,7 +984,7 @@ TEST_F(FormaContextTest, ADragSubscriberRunsBesideOnDrag)
     const uint32_t id = left_half();
     std::vector<std::string> log;
     ctx->on_drag(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("own"); });
-    ctx->subscribe_drag(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("subscriber"); });
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_MOTION, MouseButtons::Left), log_into(log, "subscriber"));
 
     window->move_to_ndc(k_left);
     window->press(MouseButtons::Left);
@@ -930,16 +993,16 @@ TEST_F(FormaContextTest, ADragSubscriberRunsBesideOnDrag)
     EXPECT_EQ(log, (std::vector<std::string> { "own", "subscriber" }));
 }
 
-TEST_F(FormaContextTest, MoveEnterAndLeaveSubscribersRunBesideTheOwnCallbacks)
+TEST_F(FormaContextTest, EnterMotionAndExitSubscribersRunBesideTheOwnCallbacks)
 {
     const uint32_t id = left_half();
     std::vector<std::string> log;
     ctx->on_enter(id, [&](uint32_t) { log.emplace_back("own enter"); });
-    ctx->subscribe_enter(id, [&](uint32_t) { log.emplace_back("sub enter"); });
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_ENTERED), log_into(log, "sub enter"));
     ctx->on_move(id, [&](uint32_t, glm::vec2) { log.emplace_back("own move"); });
-    ctx->subscribe_move(id, [&](uint32_t, glm::vec2) { log.emplace_back("sub move"); });
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_MOTION), log_into(log, "sub move"));
     ctx->on_leave(id, [&](uint32_t) { log.emplace_back("own leave"); });
-    ctx->subscribe_leave(id, [&](uint32_t) { log.emplace_back("sub leave"); });
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_EXITED), log_into(log, "sub leave"));
 
     window->move_to_ndc(k_left);
     window->move_to_ndc(k_right);
@@ -952,40 +1015,156 @@ TEST_F(FormaContextTest, ScrollSubscribersReceiveThePointerAndTheDelta)
 {
     const uint32_t id = left_half();
     glm::vec2 got_ndc {};
-    double got_dx = 0.0;
-    double got_dy = 0.0;
+    std::optional<Core::WindowEvent::ScrollData> got;
     int own = 0;
     ctx->on_scroll(id, [&](uint32_t, glm::vec2, double, double) { ++own; });
-    ctx->subscribe_scroll(id, [&](uint32_t, glm::vec2 ndc, double dx, double dy) {
-        got_ndc = ndc;
-        got_dx = dx;
-        got_dy = dy;
-    });
+    ctx->subscribe(id, filter_for(WindowEventType::MOUSE_SCROLLED),
+        [&](uint32_t, const Core::WindowEvent& event, glm::vec2 ndc) {
+            got_ndc = ndc;
+            if (const auto* data = std::get_if<Core::WindowEvent::ScrollData>(&event.data))
+                got = *data;
+        });
 
     window->move_to_ndc(k_left);
     window->scroll(1.5, -2.0);
 
     EXPECT_EQ(own, 1);
     expect_near(got_ndc, k_left);
-    EXPECT_DOUBLE_EQ(got_dx, 1.5);
-    EXPECT_DOUBLE_EQ(got_dy, -2.0);
+    ASSERT_TRUE(got.has_value());
+    EXPECT_DOUBLE_EQ(got->x_offset, 1.5);
+    EXPECT_DOUBLE_EQ(got->y_offset, -2.0);
 }
 
 TEST_F(FormaContextTest, ASubscriberMayUnbindItsElementWhileTheEventIsBeingDelivered)
 {
     const uint32_t id = left_half();
     std::vector<std::string> log;
-    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) {
+    const auto press = filter_for(WindowEventType::MOUSE_BUTTON_PRESSED, MouseButtons::Left);
+    ctx->subscribe(id, press, [&](uint32_t, const Core::WindowEvent&, glm::vec2) {
         log.emplace_back("first");
         ctx->unbind(id);
     });
-    ctx->subscribe_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2) { log.emplace_back("second"); });
+    ctx->subscribe(id, press, log_into(log, "second"));
 
     window->move_to_ndc(k_left);
     window->press(MouseButtons::Left);
     window->press(MouseButtons::Left);
 
     EXPECT_EQ(log, (std::vector<std::string> { "first", "second" }));
+}
+
+TEST_F(FormaContextTest, KeySubscribersReceiveTheirKeyOnlyWhileTheElementHasFocus)
+{
+    const uint32_t id = left_half();
+    int presses = 0;
+    int releases = 0;
+    int repeats = 0;
+    int others = 0;
+    ctx->subscribe(id, filter_for(WindowEventType::KEY_PRESSED, std::nullopt, Keys::A), count_into(presses));
+    ctx->subscribe(id, filter_for(WindowEventType::KEY_RELEASED, std::nullopt, Keys::A), count_into(releases));
+    ctx->subscribe(id, filter_for(WindowEventType::KEY_REPEAT, std::nullopt, Keys::A), count_into(repeats));
+    ctx->subscribe(id, filter_for(WindowEventType::KEY_PRESSED, std::nullopt, Keys::B), count_into(others));
+
+    window->key_down(Keys::A);
+    EXPECT_EQ(presses, 0);
+
+    focus(id, k_left);
+    window->key_down(Keys::A);
+    window->key_repeat(Keys::A);
+    window->key_up(Keys::A);
+
+    EXPECT_EQ(presses, 1);
+    EXPECT_EQ(repeats, 1);
+    EXPECT_EQ(releases, 1);
+    EXPECT_EQ(others, 0);
+}
+
+TEST_F(FormaContextTest, AKeySubscriptionReceivesTheKeyInItsEvent)
+{
+    const uint32_t id = left_half();
+    std::optional<Core::WindowEvent::KeyData> got;
+    ctx->subscribe(id, filter_for(WindowEventType::KEY_PRESSED, std::nullopt, Keys::A),
+        [&](uint32_t, const Core::WindowEvent& event, glm::vec2) {
+            if (const auto* data = std::get_if<Core::WindowEvent::KeyData>(&event.data))
+                got = *data;
+        });
+
+    focus(id, k_left);
+    window->key_down(Keys::A);
+
+    ASSERT_TRUE(got.has_value());
+    EXPECT_EQ(got->key, static_cast<int16_t>(Keys::A));
+}
+
+TEST_F(FormaContextTest, ATextSubscriberReceivesTheCodepointWhileFocused)
+{
+    const uint32_t id = left_half();
+    std::vector<uint32_t> typed;
+    ctx->subscribe(id, filter_for(WindowEventType::TEXT_INPUT),
+        [&](uint32_t, const Core::WindowEvent& event, glm::vec2) {
+            if (const auto* data = std::get_if<Core::WindowEvent::TextData>(&event.data))
+                typed.push_back(data->codepoint);
+        });
+
+    window->type(0x41);
+    focus(id, k_left);
+    window->type(0x42);
+
+    EXPECT_EQ(typed, (std::vector<uint32_t> { 0x42 }));
+}
+
+TEST_F(FormaContextTest, FocusSubscribersRunBesideTheOwnFocusCallbacks)
+{
+    const uint32_t a = left_half();
+    const uint32_t b = right_half();
+    std::vector<std::string> log;
+    ctx->on_focus_gained(a, [&](uint32_t) { log.emplace_back("own gained"); });
+    ctx->subscribe(a, filter_for(WindowEventType::WINDOW_FOCUS_GAINED), log_into(log, "sub gained"));
+    ctx->on_focus_lost(a, [&](uint32_t) { log.emplace_back("own lost"); });
+    ctx->subscribe(a, filter_for(WindowEventType::WINDOW_FOCUS_LOST), log_into(log, "sub lost"));
+
+    focus(a, k_left);
+    focus(b, k_right);
+
+    EXPECT_EQ(log, (std::vector<std::string> { "own gained", "sub gained", "own lost", "sub lost" }));
+}
+
+TEST_F(FormaContextTest, AFilterWithNoEventTypeReceivesEveryEventItsOtherFieldsAllow)
+{
+    const uint32_t id = left_half();
+    int calls = 0;
+    ctx->subscribe(id, Vruta::WindowEventFilter {}, count_into(calls));
+
+    window->move_to_ndc(k_left);
+
+    EXPECT_GE(calls, 2);
+}
+
+TEST_F(FormaContextTest, ReceivesRefusesKeyEventsWithoutAKeyAndEventsAnElementNeverGets)
+{
+    using Forma::Context;
+
+    EXPECT_TRUE(Context::receives(filter_for(WindowEventType::MOUSE_BUTTON_PRESSED)));
+    EXPECT_TRUE(Context::receives(filter_for(WindowEventType::KEY_PRESSED, std::nullopt, Keys::A)));
+    EXPECT_TRUE(Context::receives(Vruta::WindowEventFilter {}));
+    EXPECT_FALSE(Context::receives(filter_for(WindowEventType::KEY_PRESSED)));
+    EXPECT_FALSE(Context::receives(filter_for(WindowEventType::KEY_RELEASED)));
+    EXPECT_FALSE(Context::receives(filter_for(WindowEventType::KEY_REPEAT)));
+    EXPECT_FALSE(Context::receives(filter_for(WindowEventType::WINDOW_RESIZED)));
+    EXPECT_FALSE(Context::receives(filter_for(WindowEventType::CUSTOM)));
+}
+
+TEST_F(FormaContextTest, SubscribeReturnsFalseAndSubscribesNothingForARefusedFilter)
+{
+    const uint32_t id = left_half();
+    int calls = 0;
+
+    EXPECT_FALSE(ctx->subscribe(id, filter_for(WindowEventType::KEY_PRESSED), count_into(calls)));
+    EXPECT_FALSE(ctx->subscribe(id, filter_for(WindowEventType::WINDOW_RESIZED), count_into(calls)));
+    EXPECT_FALSE(ctx->subscribe(id, filter_for(WindowEventType::MOUSE_ENTERED), nullptr));
+
+    window->move_to_ndc(k_left);
+    EXPECT_EQ(calls, 0);
 }
 
 }

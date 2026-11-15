@@ -1,9 +1,12 @@
 #include "gtest/gtest.h"
 #include "../../support/test_metadata.hpp"
 
+#include "../../support/forma_call_support.hpp"
 #include "../../support/forma_manifest_support.hpp"
 #include "../../support/scripted_window.hpp"
 
+#include "MayaFlux/Portal/Forma/Manifest/CallTable.hpp"
+#include "MayaFlux/Portal/Forma/Manifest/DragGeometry.hpp"
 #include "MayaFlux/Portal/Forma/Manifest/FactoryTable.hpp"
 #include "MayaFlux/Portal/Forma/Manifest/Instantiate.hpp"
 #include "MayaFlux/Portal/Forma/Manifest/StaticGeometry.hpp"
@@ -225,7 +228,7 @@ TEST(FormaManifestTableTest, AnOnChildOfAnInstanceIsLeftToTheDriverButOtherChild
 {
     const auto table = make_probe_table(std::make_shared<ProbeLog>());
     auto pair = make_probe_pair({}, valid_instance());
-    pair.instance.children.push_back(manifest_node("on", { { "event", "Press" }, { "action", "log" } }));
+    pair.instance.children.push_back(manifest_node("on", { { "event", "MOUSE_BUTTON_PRESSED" }, { "action", "log" } }));
 
     std::string error;
     EXPECT_TRUE(decode(table, pair, error)) << error;
@@ -714,12 +717,12 @@ TEST_F(FormaManifestDriverTest, ASurfaceNeedsAnIdAndTakesNoOtherAttribute)
     expect_rejected(manifest_numbered(extra), "unsupported attribute title");
 }
 
-TEST_F(FormaManifestDriverTest, ASurfaceHoldsOnlyInstances)
+TEST_F(FormaManifestDriverTest, ASurfaceRejectsAChildThatIsNeitherAnInstanceNorAnElement)
 {
     auto document = manifest_document();
-    document.children[1].children.push_back(manifest_node("element"));
+    document.children[1].children.push_back(manifest_node("legend"));
 
-    expect_rejected(manifest_numbered(document), "<element> is not allowed in <surface>");
+    expect_rejected(manifest_numbered(document), "<legend> is not allowed in <surface>");
 }
 
 TEST_F(FormaManifestDriverTest, AnInstanceNeedsAnIdAndAKnownTemplate)
@@ -952,7 +955,7 @@ namespace {
     void expose_log_action(Forma::ActionTable<FormaManifestElement>& actions, const ActionEntries& entries)
     {
         actions.expose("log", Forma::Action([entries](const Forma::ActionEvent& event) {
-            entries->push_back(std::string(Reflect::enum_to_string(event.event)) + ":" + std::string(event.instance));
+            entries->push_back(std::string(Reflect::enum_to_string(event.event.type)) + ":" + std::string(event.instance));
         }));
     }
 
@@ -979,13 +982,15 @@ namespace {
 
 }
 
-TEST_F(FormaManifestDriverTest, EveryEventKindReachesItsActionWithTheInstanceId)
+TEST_F(FormaManifestDriverTest, EveryPointerEventTypeReachesItsActionWithTheInstanceId)
 {
     const auto entries = std::make_shared<std::vector<std::string>>();
     expose_log_action(actions, entries);
-    const auto document = action_document({ on_element("Enter"), on_element("Move"), on_element("Press"),
-                                              on_element("Drag"), on_element("Release"), on_element("Scroll"),
-                                              on_element("Leave") },
+    const auto document = action_document({ on_element("MOUSE_ENTERED"), on_element("MOUSE_MOTION"),
+                                              on_element("MOUSE_BUTTON_PRESSED"),
+                                              on_element("MOUSE_MOTION", { { "button", "Left" } }),
+                                              on_element("MOUSE_BUTTON_RELEASED"), on_element("MOUSE_SCROLLED"),
+                                              on_element("MOUSE_EXITED") },
         { { "half", "0.3" } });
     ASSERT_TRUE(run_with_actions(document)) << error;
 
@@ -997,38 +1002,66 @@ TEST_F(FormaManifestDriverTest, EveryEventKindReachesItsActionWithTheInstanceId)
     window->move_to_ndc({ 0.8F, 0.F });
 
     std::ranges::sort(*entries);
-    EXPECT_EQ(*entries, (std::vector<std::string> { "Drag:a", "Enter:a", "Leave:a", "Move:a", "Move:a",
-                            "Press:a", "Release:a", "Scroll:a" }));
+    EXPECT_EQ(*entries, (std::vector<std::string> { "MOUSE_BUTTON_PRESSED:a", "MOUSE_BUTTON_RELEASED:a",
+                            "MOUSE_ENTERED:a", "MOUSE_EXITED:a", "MOUSE_MOTION:a", "MOUSE_MOTION:a",
+                            "MOUSE_MOTION:a", "MOUSE_SCROLLED:a" }));
 }
 
-TEST_F(FormaManifestDriverTest, AnActionIsToldTheElementTheInstanceAndThePointer)
+TEST_F(FormaManifestDriverTest, MotionWithoutAButtonIsHoverAndMotionWithAButtonIsTheDrag)
+{
+    const auto hover = std::make_shared<std::vector<std::string>>();
+    const auto drag = std::make_shared<std::vector<std::string>>();
+    expose_log_action(actions, hover);
+    actions.expose("drag", Forma::Action([drag](const Forma::ActionEvent& event) {
+        drag->push_back(std::string(event.instance));
+    }));
+    auto hovering = on_element("MOUSE_MOTION");
+    auto dragging = manifest_node("on", { { "event", "MOUSE_MOTION" }, { "button", "Left" }, { "action", "drag" } });
+    ASSERT_TRUE(run_with_actions(action_document({ hovering, dragging }, { { "half", "0.9" } }))) << error;
+
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    window->move_to_ndc({ 0.5F, 0.F });
+
+    EXPECT_EQ(hover->size(), 2U);
+    EXPECT_EQ(drag->size(), 1U);
+}
+
+TEST_F(FormaManifestDriverTest, AnActionIsToldTheWindowEventTheElementTheInstanceAndThePointer)
 {
     uint32_t seen_element = 0;
     std::string seen_instance;
     glm::vec2 seen_position {};
+    std::optional<Core::WindowEvent> seen_event;
     actions.expose("log", Forma::Action([&](const Forma::ActionEvent& event) {
         seen_element = event.element;
         seen_instance = std::string(event.instance);
         seen_position = event.position;
+        seen_event = event.event;
         EXPECT_EQ(&event.layer, &surfaces.at("main").layer());
     }));
-    const auto placed = run_with_actions(action_document({ on_element("Press") }));
+    const auto placed = run_with_actions(action_document({ on_element("MOUSE_BUTTON_PRESSED") }));
     ASSERT_TRUE(placed) << error;
 
     window->move_to_ndc({ 0.25F, -0.25F });
-    window->press(IO::MouseButtons::Left);
+    window->press(IO::MouseButtons::Right);
 
     EXPECT_EQ(seen_element, placed->at("a").element);
     EXPECT_EQ(seen_instance, "a");
     EXPECT_NEAR(seen_position.x, 0.25F, 1e-4F);
     EXPECT_NEAR(seen_position.y, -0.25F, 1e-4F);
+    ASSERT_TRUE(seen_event.has_value());
+    EXPECT_EQ(seen_event->type, Core::WindowEventType::MOUSE_BUTTON_PRESSED);
+    const auto* data = std::get_if<Core::WindowEvent::MouseButtonData>(&seen_event->data);
+    ASSERT_NE(data, nullptr);
+    EXPECT_EQ(data->button, static_cast<int8_t>(IO::MouseButtons::Right));
 }
 
 TEST_F(FormaManifestDriverTest, AnActionRunsBesideTheElementsOwnCallbackAndNeverReplacesIt)
 {
     const auto entries = std::make_shared<std::vector<std::string>>();
     expose_log_action(actions, entries);
-    const auto placed = run_with_actions(action_document({ on_element("Press") }));
+    const auto placed = run_with_actions(action_document({ on_element("MOUSE_BUTTON_PRESSED") }));
     ASSERT_TRUE(placed) << error;
 
     surfaces.at("main").ctx().on_press(placed->at("a").element, IO::MouseButtons::Left,
@@ -1036,21 +1069,84 @@ TEST_F(FormaManifestDriverTest, AnActionRunsBesideTheElementsOwnCallbackAndNever
     window->move_to_ndc({ 0.F, 0.F });
     window->press(IO::MouseButtons::Left);
 
-    EXPECT_EQ(*entries, (std::vector<std::string> { "own", "Press:a" }));
+    EXPECT_EQ(*entries, (std::vector<std::string> { "own", "MOUSE_BUTTON_PRESSED:a" }));
 }
 
-TEST_F(FormaManifestDriverTest, AButtonSelectsWhichPressRunsTheAction)
+TEST_F(FormaManifestDriverTest, AButtonSelectsWhichPressRunsTheActionAndNoButtonSelectsAny)
 {
     const auto entries = std::make_shared<std::vector<std::string>>();
     expose_log_action(actions, entries);
-    ASSERT_TRUE(run_with_actions(action_document({ on_element("Press", { { "button", "Right" } }) }))) << error;
+    ASSERT_TRUE(run_with_actions(action_document({ on_element("MOUSE_BUTTON_PRESSED", { { "button", "Right" } }) }))) << error;
 
     window->move_to_ndc({ 0.F, 0.F });
     window->press(IO::MouseButtons::Left);
     EXPECT_TRUE(entries->empty());
 
     window->press(IO::MouseButtons::Right);
-    EXPECT_EQ(*entries, (std::vector<std::string> { "Press:a" }));
+    EXPECT_EQ(*entries, (std::vector<std::string> { "MOUSE_BUTTON_PRESSED:a" }));
+}
+
+TEST_F(FormaManifestDriverTest, ANoButtonPressActionRunsForEveryButton)
+{
+    const auto entries = std::make_shared<std::vector<std::string>>();
+    expose_log_action(actions, entries);
+    ASSERT_TRUE(run_with_actions(action_document({ on_element("MOUSE_BUTTON_PRESSED") }))) << error;
+
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    window->press(IO::MouseButtons::Middle);
+
+    EXPECT_EQ(entries->size(), 2U);
+}
+
+TEST_F(FormaManifestDriverTest, AKeyActionRunsForItsKeyWhileTheInstanceHasFocus)
+{
+    const auto entries = std::make_shared<std::vector<std::string>>();
+    expose_log_action(actions, entries);
+    ASSERT_TRUE(run_with_actions(action_document({ on_element("KEY_PRESSED", { { "key", "a" } }),
+        on_element("KEY_RELEASED", { { "key", "a" } }) }))) << error;
+
+    window->key_down(IO::Keys::A);
+    EXPECT_TRUE(entries->empty());
+
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    window->key_down(IO::Keys::A);
+    window->key_down(IO::Keys::B);
+    window->key_up(IO::Keys::A);
+
+    EXPECT_EQ(*entries, (std::vector<std::string> { "KEY_PRESSED:a", "KEY_RELEASED:a" }));
+}
+
+TEST_F(FormaManifestDriverTest, ATextActionReceivesTheCodepointWhileTheInstanceHasFocus)
+{
+    std::vector<uint32_t> typed;
+    actions.expose("log", Forma::Action([&](const Forma::ActionEvent& event) {
+        if (const auto* data = std::get_if<Core::WindowEvent::TextData>(&event.event.data))
+            typed.push_back(data->codepoint);
+    }));
+    ASSERT_TRUE(run_with_actions(action_document({ on_element("TEXT_INPUT") }))) << error;
+
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    window->type(0x263A);
+
+    EXPECT_EQ(typed, (std::vector<uint32_t> { 0x263A }));
+}
+
+TEST_F(FormaManifestDriverTest, FocusActionsRunWhenTheInstanceGainsAndLosesFocus)
+{
+    const auto entries = std::make_shared<std::vector<std::string>>();
+    expose_log_action(actions, entries);
+    ASSERT_TRUE(run_with_actions(action_document({ on_element("WINDOW_FOCUS_GAINED"),
+        on_element("WINDOW_FOCUS_LOST") }, { { "half", "0.3" } }))) << error;
+
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    window->move_to_ndc({ 0.9F, 0.9F });
+    window->press(IO::MouseButtons::Left);
+
+    EXPECT_EQ(*entries, (std::vector<std::string> { "WINDOW_FOCUS_GAINED:a", "WINDOW_FOCUS_LOST:a" }));
 }
 
 TEST_F(FormaManifestDriverTest, AnActionParameterIsDecodedThroughItsDescribedMembers)
@@ -1063,7 +1159,7 @@ TEST_F(FormaManifestDriverTest, AnActionParameterIsDecodedThroughItsDescribedMem
             notes->push_back(note);
             return Forma::Action([](const Forma::ActionEvent&) { });
         });
-    auto note = manifest_node("on", { { "event", "Press" }, { "action", "note" }, { "text", "hello" }, { "times", "3" } });
+    auto note = manifest_node("on", { { "event", "MOUSE_BUTTON_PRESSED" }, { "action", "note" }, { "text", "hello" }, { "times", "3" } });
 
     ASSERT_TRUE(run_with_actions(action_document({ note }))) << error;
 
@@ -1077,22 +1173,30 @@ TEST_F(FormaManifestDriverTest, OnElementsAreCheckedBeforeAnythingIsPlaced)
     const auto entries = std::make_shared<std::vector<std::string>>();
     expose_log_action(actions, entries);
 
-    expect_rejected(action_document({ on_element("Press") }), "needs an action table, and none was given");
+    expect_rejected(action_document({ on_element("MOUSE_BUTTON_PRESSED") }), "needs an action table, and none was given");
 
     auto without_event = action_document({ manifest_node("on", { { "action", "log" } }) });
     expect_rejected(without_event, "<on> needs an event attribute",
         without_event.children[1].children[0].children[0].row, true);
 
     expect_rejected(action_document({ on_element("press") }), "unsupported event press", std::nullopt, true);
-    expect_rejected(action_document({ on_element("Move", { { "button", "Left" } }) }),
-        "takes a button only for press, release and drag", std::nullopt, true);
-    expect_rejected(action_document({ on_element("Press", { { "button", "Unknown" } }) }),
+    expect_rejected(action_document({ on_element("MOUSE_ENTERED", { { "button", "Left" } }) }),
+        "takes a button only for MOUSE_BUTTON_PRESSED, MOUSE_BUTTON_RELEASED and MOUSE_MOTION", std::nullopt, true);
+    expect_rejected(action_document({ on_element("MOUSE_BUTTON_PRESSED", { { "button", "Unknown" } }) }),
         "unsupported button Unknown", std::nullopt, true);
-    expect_rejected(action_document({ on_element("Press", { { "button", "Banana" } }) }),
+    expect_rejected(action_document({ on_element("MOUSE_BUTTON_PRESSED", { { "button", "Banana" } }) }),
         "unsupported button Banana", std::nullopt, true);
-    expect_rejected(action_document({ manifest_node("on", { { "event", "Press" } }) }),
+    expect_rejected(action_document({ on_element("MOUSE_BUTTON_PRESSED", { { "key", "a" } }) }),
+        "takes a key only for KEY_PRESSED, KEY_RELEASED and KEY_REPEAT", std::nullopt, true);
+    expect_rejected(action_document({ on_element("KEY_PRESSED", { { "key", "Banana" } }) }),
+        "unsupported key Banana", std::nullopt, true);
+    expect_rejected(action_document({ on_element("KEY_PRESSED") }),
+        "needs a key attribute", std::nullopt, true);
+    expect_rejected(action_document({ on_element("WINDOW_RESIZED") }),
+        "is not delivered to an element", std::nullopt, true);
+    expect_rejected(action_document({ manifest_node("on", { { "event", "MOUSE_BUTTON_PRESSED" } }) }),
         "<on> needs an action attribute", std::nullopt, true);
-    expect_rejected(action_document({ manifest_node("on", { { "event", "Press" }, { "action", "ghost" } }) }),
+    expect_rejected(action_document({ manifest_node("on", { { "event", "MOUSE_BUTTON_PRESSED" }, { "action", "ghost" } }) }),
         "no registered action ghost", std::nullopt, true);
     expect_rejected(action_document({ manifest_node("legend") }),
         "<legend> is not allowed in <instance>", std::nullopt, true);
@@ -1106,15 +1210,15 @@ TEST_F(FormaManifestDriverTest, AnActionParameterErrorIsReportedAtTheOnElementBe
     actions.expose_typed<FormaManifestNote>("note", std::move(binding),
         [](const FormaManifestNote&) { return Forma::Action([](const Forma::ActionEvent&) { }); });
 
-    auto missing = action_document({ manifest_node("on", { { "event", "Press" }, { "action", "note" } }) });
+    auto missing = action_document({ manifest_node("on", { { "event", "MOUSE_BUTTON_PRESSED" }, { "action", "note" } }) });
     expect_rejected(missing, "text", missing.children[1].children[0].children[0].row, true);
 
     auto unknown = action_document({ manifest_node("on",
-        { { "event", "Press" }, { "action", "note" }, { "text", "x" }, { "bogus", "1" } }) });
+        { { "event", "MOUSE_BUTTON_PRESSED" }, { "action", "note" }, { "text", "x" }, { "bogus", "1" } }) });
     expect_rejected(unknown, "unsupported attribute bogus", unknown.children[1].children[0].children[0].row, true);
 
     auto invalid = action_document({ manifest_node("on",
-        { { "event", "Press" }, { "action", "note" }, { "text", "x" }, { "times", "many" } }) });
+        { { "event", "MOUSE_BUTTON_PRESSED" }, { "action", "note" }, { "text", "x" }, { "times", "many" } }) });
     expect_rejected(invalid, "times", invalid.children[1].children[0].children[0].row, true);
 }
 
@@ -1185,24 +1289,6 @@ namespace {
 
 }
 
-TEST(FormaManifestGeometryTest, VertexCountsMustMatchTheTopology)
-{
-    using Forma::Detail::vertex_count_matches_topology;
-
-    EXPECT_FALSE(vertex_count_matches_topology(PrimitiveTopology::POINT_LIST, 0));
-    EXPECT_TRUE(vertex_count_matches_topology(PrimitiveTopology::POINT_LIST, 1));
-    EXPECT_FALSE(vertex_count_matches_topology(PrimitiveTopology::LINE_LIST, 3));
-    EXPECT_TRUE(vertex_count_matches_topology(PrimitiveTopology::LINE_LIST, 4));
-    EXPECT_FALSE(vertex_count_matches_topology(PrimitiveTopology::LINE_STRIP, 1));
-    EXPECT_TRUE(vertex_count_matches_topology(PrimitiveTopology::LINE_STRIP, 2));
-    EXPECT_FALSE(vertex_count_matches_topology(PrimitiveTopology::TRIANGLE_LIST, 4));
-    EXPECT_TRUE(vertex_count_matches_topology(PrimitiveTopology::TRIANGLE_LIST, 6));
-    EXPECT_FALSE(vertex_count_matches_topology(PrimitiveTopology::TRIANGLE_STRIP, 2));
-    EXPECT_TRUE(vertex_count_matches_topology(PrimitiveTopology::TRIANGLE_STRIP, 5));
-    EXPECT_FALSE(vertex_count_matches_topology(PrimitiveTopology::TRIANGLE_FAN, 2));
-    EXPECT_TRUE(vertex_count_matches_topology(PrimitiveTopology::TRIANGLE_FAN, 3));
-}
-
 TEST(FormaManifestGeometryTest, VerticesAreMappedThroughTheRectAndKeepTheirOtherFields)
 {
     std::string error;
@@ -1261,16 +1347,6 @@ TEST(FormaManifestGeometryTest, LineVerticesGetTheBoundingBoxAsTheirOnlyHitRegio
 
     expect_bounds(element, { 0.F, 0.F }, { 2.F, 2.F });
     EXPECT_FALSE(element.contains);
-}
-
-TEST(FormaManifestGeometryTest, AVertexCountThatDoesNotMatchTheTopologyIsRefused)
-{
-    auto input = triangle_input();
-    input.vertices.push_back(input.vertices.front());
-
-    std::string error;
-    EXPECT_FALSE(Forma::vertex_geometry_form(input, rect_placement(0.F, 0.F, 1.F, 1.F), error));
-    EXPECT_NE(error.find("vertex count"), std::string::npos) << error;
 }
 
 TEST(FormaManifestGeometryTest, ARectWithoutAreaIsRefused)
@@ -1553,6 +1629,245 @@ TEST(FormaManifestGeometryTest, ARegisteredInteractionBecomesTheFormsWire)
     const auto plain = make_polygon(square_input(), rect_placement(0.F, 0.F, 1.F, 1.F), error, factory);
     ASSERT_TRUE(plain) << error;
     EXPECT_FALSE(static_cast<bool>(plain->wire));
+}
+
+// =============================================================================
+// Drag geometry: scale and handle path
+// =============================================================================
+
+namespace {
+
+    Forma::ScaleInputs bar_input(bool horizontal = true)
+    {
+        Forma::ScaleInputs input;
+        input.points = { { 0.F, 0.F }, { 1.F, 0.F }, { 1.F, 1.F }, { 0.F, 1.F } };
+        input.horizontal = horizontal;
+        return input;
+    }
+
+    Forma::HandlePathInputs curve_input()
+    {
+        Forma::HandlePathInputs input;
+        input.points = { { 0.F, 0.F }, { 0.5F, 1.F }, { 1.F, 0.F } };
+        return input;
+    }
+
+    std::pair<float, float> extent_along(const std::vector<Kakshya::MeshVertex>& vertices, bool x_axis)
+    {
+        float low = std::numeric_limits<float>::max();
+        float high = std::numeric_limits<float>::lowest();
+        for (const auto& vertex : vertices) {
+            const float value = x_axis ? vertex.position.x : vertex.position.y;
+            low = std::min(low, value);
+            high = std::max(high, value);
+        }
+        return { low, high };
+    }
+
+}
+
+TEST(FormaManifestDragGeometryTest, AScaleFormFillsTheOutlineWithTheCapacityOfItsTriangles)
+{
+    std::string error;
+    const auto form = Forma::scale_form(bar_input(), rect_placement(-0.5F, -0.25F, 1.F, 0.5F), error);
+    ASSERT_TRUE(form) << error;
+
+    EXPECT_EQ(form->topology, PrimitiveTopology::TRIANGLE_LIST);
+    EXPECT_EQ(form->capacity, 6 * sizeof(Kakshya::MeshVertex));
+    EXPECT_TRUE(static_cast<bool>(form->wire));
+
+    std::vector<uint8_t> bytes;
+    Forma::Element element;
+    form->geometry(1.F, bytes, element);
+    EXPECT_EQ(read_vertices<Kakshya::MeshVertex>(bytes).size(), 6U);
+}
+
+TEST(FormaManifestDragGeometryTest, AHorizontalScaleGrowsFromTheLeftEdgeWithTheClampedState)
+{
+    std::string error;
+    const auto form = Forma::scale_form(bar_input(true), rect_placement(-0.5F, -0.25F, 1.F, 0.5F), error);
+    ASSERT_TRUE(form) << error;
+
+    const auto extent = [&](float state, bool x_axis) {
+        std::vector<uint8_t> bytes;
+        Forma::Element element;
+        form->geometry(state, bytes, element);
+        return extent_along(read_vertices<Kakshya::MeshVertex>(bytes), x_axis);
+    };
+
+    const auto half = extent(0.5F, true);
+    EXPECT_NEAR(half.first, -0.5F, 1e-5F);
+    EXPECT_NEAR(half.second, 0.F, 1e-5F);
+    EXPECT_NEAR(extent(2.F, true).second, 0.5F, 1e-5F);
+    EXPECT_NEAR(extent(-1.F, true).second, -0.5F, 1e-5F);
+
+    const auto height = extent(0.5F, false);
+    EXPECT_NEAR(height.first, -0.25F, 1e-5F);
+    EXPECT_NEAR(height.second, 0.25F, 1e-5F);
+}
+
+TEST(FormaManifestDragGeometryTest, AVerticalScaleGrowsFromTheBottomEdge)
+{
+    std::string error;
+    const auto form = Forma::scale_form(bar_input(false), rect_placement(-0.5F, -0.25F, 1.F, 0.5F), error);
+    ASSERT_TRUE(form) << error;
+
+    std::vector<uint8_t> bytes;
+    Forma::Element element;
+    form->geometry(0.5F, bytes, element);
+    const auto vertices = read_vertices<Kakshya::MeshVertex>(bytes);
+
+    const auto vertical = extent_along(vertices, false);
+    EXPECT_NEAR(vertical.first, -0.25F, 1e-5F);
+    EXPECT_NEAR(vertical.second, 0.F, 1e-5F);
+    const auto horizontal = extent_along(vertices, true);
+    EXPECT_NEAR(horizontal.first, -0.5F, 1e-5F);
+    EXPECT_NEAR(horizontal.second, 0.5F, 1e-5F);
+}
+
+TEST(FormaManifestDragGeometryTest, TheScaleHitRegionStaysThePlacementRectAtZero)
+{
+    std::string error;
+    const auto form = Forma::scale_form(bar_input(), rect_placement(-0.5F, -0.25F, 1.F, 0.5F), error);
+    ASSERT_TRUE(form) << error;
+
+    std::vector<uint8_t> bytes;
+    Forma::Element element;
+    form->geometry(0.F, bytes, element);
+
+    expect_bounds(element, { -0.5F, -0.25F }, { 0.5F, 0.25F });
+    EXPECT_FALSE(static_cast<bool>(element.contains));
+    EXPECT_TRUE(element.hits({ 0.4F, 0.1F }));
+}
+
+TEST(FormaManifestDragGeometryTest, ScaleOutlinesThatAreNotValidAreRefusedWithAReason)
+{
+    const auto placement = rect_placement(0.F, 0.F, 1.F, 1.F);
+    std::string error;
+
+    auto few = bar_input();
+    few.points.resize(2);
+    EXPECT_FALSE(Forma::scale_form(few, placement, error));
+    EXPECT_NE(error.find("three"), std::string::npos) << error;
+
+    auto bowtie = bar_input();
+    bowtie.points = { { 0.F, 0.F }, { 1.F, 1.F }, { 1.F, 0.F }, { 0.F, 1.F } };
+    EXPECT_FALSE(Forma::scale_form(bowtie, placement, error));
+    EXPECT_NE(error.find("valid region"), std::string::npos) << error;
+
+    EXPECT_FALSE(Forma::scale_form(bar_input(), rect_placement(0.F, 0.F, 0.F, 1.F), error));
+    EXPECT_NE(error.find("rect"), std::string::npos) << error;
+}
+
+TEST(FormaManifestDragGeometryTest, AHandlePathFormCarriesItsCapacityAndWire)
+{
+    std::string error;
+    const auto form = Forma::handle_path_form(curve_input(), rect_placement(-0.5F, -0.5F, 1.F, 1.F), error);
+    ASSERT_TRUE(form) << error;
+
+    EXPECT_EQ(form->topology, PrimitiveTopology::LINE_LIST);
+    EXPECT_EQ(form->capacity, (2U * 2U + 3U * 8U) * sizeof(Kakshya::LineVertex));
+    EXPECT_TRUE(static_cast<bool>(form->wire));
+}
+
+TEST(FormaManifestDragGeometryTest, AHandlePathHitRegionIsThePlacementRect)
+{
+    std::string error;
+    const auto form = Forma::handle_path_form(curve_input(), rect_placement(-0.5F, -0.5F, 1.F, 1.F), error);
+    ASSERT_TRUE(form) << error;
+
+    std::vector<uint8_t> bytes;
+    Forma::Element element;
+    form->geometry(curve_input().points, bytes, element);
+
+    expect_bounds(element, { -0.5F, -0.5F }, { 0.5F, 0.5F });
+    EXPECT_FALSE(static_cast<bool>(element.contains));
+}
+
+TEST(FormaManifestDragGeometryTest, HandlePathsThatAreNotValidAreRefusedWithAReason)
+{
+    const auto placement = rect_placement(0.F, 0.F, 1.F, 1.F);
+    std::string error;
+
+    auto few = curve_input();
+    few.points.resize(1);
+    EXPECT_FALSE(Forma::handle_path_form(few, placement, error));
+    EXPECT_NE(error.find("two"), std::string::npos) << error;
+
+    auto outside = curve_input();
+    outside.points[1] = { 0.5F, 1.5F };
+    EXPECT_FALSE(Forma::handle_path_form(outside, placement, error));
+    EXPECT_NE(error.find("unit square"), std::string::npos) << error;
+
+    auto negative = curve_input();
+    negative.thickness = -1.F;
+    EXPECT_FALSE(Forma::handle_path_form(negative, placement, error));
+    EXPECT_NE(error.find("thickness"), std::string::npos) << error;
+
+    auto no_reach = curve_input();
+    no_reach.grab_radius = 0.F;
+    EXPECT_FALSE(Forma::handle_path_form(no_reach, placement, error));
+    EXPECT_NE(error.find("grab_radius"), std::string::npos) << error;
+
+    EXPECT_FALSE(Forma::handle_path_form(curve_input(), rect_placement(0.F, 0.F, 1.F, 0.F), error));
+    EXPECT_NE(error.find("rect"), std::string::npos) << error;
+}
+
+class FormaManifestScaleWireTest : public ::testing::Test {
+protected:
+    void SetUp() override
+    {
+        std::string error;
+        const auto form = Forma::scale_form(bar_input(), rect_placement(-0.5F, -0.25F, 1.F, 0.5F), error);
+        ASSERT_TRUE(form) << error;
+        id = layer->add(Forma::Element {}.with_rect({ -0.5F, -0.25F }, { 0.5F, 0.25F }));
+        form->wire(*ctx, id, state);
+    }
+
+    Vruta::EventManager manager;
+    std::shared_ptr<ScriptedWindow> window = std::make_shared<ScriptedWindow>(200U, 100U);
+    std::shared_ptr<Forma::Layer> layer = std::make_shared<Forma::Layer>();
+    std::unique_ptr<Forma::Context> ctx = std::make_unique<Forma::Context>(layer, window, manager, "scale-wire");
+    std::shared_ptr<Forma::MappedState<float>> state = std::make_shared<Forma::MappedState<float>>();
+    uint32_t id {};
+};
+
+TEST_F(FormaManifestScaleWireTest, ADragWritesTheFractionOfTheRectUnderThePointer)
+{
+    window->move_to_ndc({ -0.4F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    window->move_to_ndc({ 0.25F, 0.F });
+
+    EXPECT_NEAR(state->value, 0.75F, 1e-3F);
+}
+
+TEST_F(FormaManifestScaleWireTest, ADragPastTheEndsStaysInTheUnitRange)
+{
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(IO::MouseButtons::Left);
+
+    window->move_to_ndc({ 0.9F, 0.F });
+    EXPECT_NEAR(state->value, 1.F, 1e-5F);
+
+    window->move_to_ndc({ -0.9F, 0.F });
+    EXPECT_NEAR(state->value, 0.F, 1e-5F);
+}
+
+TEST_F(FormaManifestDriverTest, AHandlePathPointOutsideTheUnitSquareFailsBeforeAnythingIsPlaced)
+{
+    Forma::expose_handle_path(table, "path");
+    const auto document = manifest_numbered(manifest_node("forma", { { "version", "1" } },
+        {
+            manifest_node("templates", {},
+                { manifest_node("template", { { "id", "curve" } },
+                    { manifest_node("path", { { "points", "0 0 2 1" } }) }) }),
+            manifest_node("surface", { { "id", "main" } },
+                { manifest_node("instance", { { "id", "line" }, { "template", "curve" }, { "rect", "-0.5 0 1 0.5" } }) }),
+        }));
+
+    EXPECT_FALSE(run(document));
+    EXPECT_NE(error.find("unit square"), std::string::npos) << error;
+    EXPECT_FALSE(surfaces.at("main").layer().find("line").has_value());
 }
 
 // =============================================================================
@@ -1991,7 +2306,7 @@ TEST(FormaManifestActionTableTest, AnActionWithoutParametersRejectsAnyExtraAttri
     actions.expose("quiet", Forma::Action([](const Forma::ActionEvent&) { }));
     const auto* make = actions.find("quiet");
     ASSERT_NE(make, nullptr);
-    auto on = manifest_node("on", { { "event", "Press" }, { "button", "Left" }, { "action", "quiet" } });
+    auto on = manifest_node("on", { { "event", "MOUSE_BUTTON_PRESSED" }, { "button", "Left" }, { "action", "quiet" } });
     on.row = 5;
 
     std::string error;
@@ -2015,7 +2330,7 @@ TEST(FormaManifestActionTableTest, ATypedActionDecodesItsParametersAndReportsErr
     const auto* make = actions.find("note");
     ASSERT_NE(make, nullptr);
 
-    auto on = manifest_node("on", { { "event", "Drag" }, { "action", "note" }, { "text", "hi" } });
+    auto on = manifest_node("on", { { "event", "MOUSE_MOTION" }, { "button", "Left" }, { "action", "note" }, { "text", "hi" } });
     on.row = 9;
     std::string error;
     ASSERT_TRUE(std::invoke(*make, on, error)) << error;
@@ -2049,5 +2364,359 @@ TEST(FormaManifestActionTableTest, NamesAreSortedAndTablesMergeUnderAPrefix)
     EXPECT_TRUE(second.merge(first, "ui.", error, true)) << error;
 }
 
+// =============================================================================
+// CallTable: described functions called by name
+// =============================================================================
+
+namespace {
+
+    using CallAttributes = std::vector<std::pair<std::string, std::string>>;
+    using TestCallTable = Forma::CallTable<FormaManifestElement>;
+
+    TestCallTable make_call_table()
+    {
+        TestCallTable calls;
+        calls.expose_form<&forma_call_fader>();
+        calls.expose_form<&forma_call_triple>();
+        calls.expose_form<&forma_call_samples>();
+        calls.expose_form<&forma_call_flag>();
+        return calls;
+    }
+
+    FormaManifestElement call_form(std::string call, CallAttributes extra = {})
+    {
+        CallAttributes attributes { { "call", std::move(call) } };
+        attributes.insert(attributes.end(), extra.begin(), extra.end());
+        return manifest_node("form", std::move(attributes));
+    }
+
+    std::optional<TestCallTable::Placer> make_placer(const TestCallTable& calls, const std::string& name,
+        const FormaManifestElement& form, const FormaManifestElement& element, std::string& error)
+    {
+        const TestCallTable::Maker* make = calls.find(name);
+        if (make == nullptr) {
+            error = "no registered call " + name;
+            return std::nullopt;
+        }
+        return std::invoke(*make, form, element, error);
+    }
+
+    const std::string k_fader_bounds = "-0.5 -0.1 0.5 0.1";
+
 }
 
+TEST(FormaManifestCallTableTest, AFunctionRegistersUnderItsOwnNameOrOneGiven)
+{
+    TestCallTable calls;
+    calls.expose_form<&forma_call_fader>();
+    calls.expose_form<&forma_call_flag>("lamp");
+
+    EXPECT_TRUE(calls.contains("forma_call_fader"));
+    EXPECT_TRUE(calls.contains("lamp"));
+    EXPECT_FALSE(calls.contains("forma_call_flag"));
+    EXPECT_EQ(calls.names(), (std::vector<std::string> { "forma_call_fader", "lamp" }));
+}
+
+TEST(FormaManifestCallTableTest, AttributesAreDecodedByParameterNameAndTheFunctionsDefaultsApply)
+{
+    const auto calls = make_call_table();
+    forma_call_log().clear();
+
+    std::string error;
+    const auto placer = make_placer(calls, "forma_call_fader",
+        call_form("forma_call_fader", { { "bounds", k_fader_bounds }, { "handle_w", "0.04" } }),
+        manifest_node("element", { { "name", "f" } }), error);
+
+    ASSERT_TRUE(placer) << error;
+    ASSERT_EQ(forma_call_log().size(), 1U);
+    EXPECT_EQ(forma_call_log()[0], "fader -0.500000 0.100000 0.040000 0.300000 plain");
+}
+
+TEST(FormaManifestCallTableTest, AnArgumentGivenAfterTheRequiredOnesReplacesItsDefault)
+{
+    const auto calls = make_call_table();
+    forma_call_log().clear();
+
+    std::string error;
+    ASSERT_TRUE(make_placer(calls, "forma_call_fader",
+        call_form("forma_call_fader", { { "bounds", k_fader_bounds }, { "handle_w", "0.04" }, { "track", "0.7 0 0" } }),
+        manifest_node("element", { { "name", "f" } }), error))
+        << error;
+
+    EXPECT_EQ(forma_call_log().back(), "fader -0.500000 0.100000 0.040000 0.700000 plain");
+}
+
+TEST(FormaManifestCallTableTest, ALaterParameterCannotBeGivenWhileAnEarlierOneIsSkipped)
+{
+    const auto calls = make_call_table();
+    forma_call_log().clear();
+
+    std::string error;
+    auto form = call_form("forma_call_triple", { { "a", "1" }, { "c", "3" } });
+    form.row = 6;
+    EXPECT_FALSE(make_placer(calls, "forma_call_triple", form, manifest_node("element"), error));
+    EXPECT_TRUE(error.starts_with(row_prefix(6))) << error;
+    EXPECT_NE(error.find("c is given without b"), std::string::npos) << error;
+    EXPECT_TRUE(forma_call_log().empty());
+
+    error.clear();
+    EXPECT_TRUE(make_placer(calls, "forma_call_triple", call_form("forma_call_triple", { { "a", "1" }, { "b", "5" } }),
+        manifest_node("element"), error))
+        << error;
+    EXPECT_EQ(forma_call_log().back(), "triple 1.000000 5.000000 2.000000");
+}
+
+TEST(FormaManifestCallTableTest, ARequiredParameterThatIsMissingIsNamed)
+{
+    const auto calls = make_call_table();
+
+    std::string error;
+    EXPECT_FALSE(make_placer(calls, "forma_call_fader",
+        call_form("forma_call_fader", { { "bounds", k_fader_bounds } }), manifest_node("element"), error));
+    EXPECT_NE(error.find("forma_call_fader needs handle_w"), std::string::npos) << error;
+
+    error.clear();
+    EXPECT_FALSE(make_placer(calls, "forma_call_samples", call_form("forma_call_samples"), manifest_node("element"), error));
+    EXPECT_NE(error.find("needs count"), std::string::npos) << error;
+}
+
+TEST(FormaManifestCallTableTest, AnAttributeThatIsNoParameterIsRejectedWithItsRow)
+{
+    const auto calls = make_call_table();
+
+    std::string error;
+    auto form = call_form("forma_call_flag", { { "bogus", "1" } });
+    form.row = 9;
+    EXPECT_FALSE(make_placer(calls, "forma_call_flag", form, manifest_node("element"), error));
+    EXPECT_TRUE(error.starts_with(row_prefix(9))) << error;
+    EXPECT_NE(error.find("unsupported attribute bogus"), std::string::npos) << error;
+}
+
+TEST(FormaManifestCallTableTest, AValueThatDoesNotDecodeNamesTheParameterAndItsRow)
+{
+    const auto calls = make_call_table();
+
+    std::string error;
+    auto form = call_form("forma_call_fader", { { "bounds", k_fader_bounds }, { "handle_w", "wide" } });
+    form.row = 4;
+    EXPECT_FALSE(make_placer(calls, "forma_call_fader", form, manifest_node("element"), error));
+    EXPECT_TRUE(error.starts_with(row_prefix(4))) << error;
+    EXPECT_NE(error.find("invalid handle_w of wide"), std::string::npos) << error;
+
+    error.clear();
+    EXPECT_FALSE(make_placer(calls, "forma_call_fader",
+        call_form("forma_call_fader", { { "bounds", "0 0 1" }, { "handle_w", "0.04" } }), manifest_node("element"), error));
+    EXPECT_NE(error.find("invalid bounds"), std::string::npos) << error;
+}
+
+TEST(FormaManifestCallTableTest, AParameterThatHasNoTextFormCannotBeWrittenInADocument)
+{
+    const auto calls = make_call_table();
+
+    std::string error;
+    EXPECT_FALSE(make_placer(calls, "forma_call_fader",
+        call_form("forma_call_fader",
+            { { "bounds", k_fader_bounds }, { "handle_w", "0.04" }, { "track", "0.7 0 0" }, { "live_offset", "1" } }),
+        manifest_node("element"), error));
+    EXPECT_NE(error.find("forma_call_fader cannot be written in a document"), std::string::npos) << error;
+}
+
+TEST(FormaManifestCallTableTest, AFunctionWithNoParametersTakesNone)
+{
+    const auto calls = make_call_table();
+    forma_call_log().clear();
+
+    std::string error;
+    EXPECT_TRUE(make_placer(calls, "forma_call_flag", call_form("forma_call_flag"), manifest_node("element"), error)) << error;
+    EXPECT_EQ(forma_call_log(), (std::vector<std::string> { "flag" }));
+}
+
+TEST(FormaManifestCallTableTest, TheStateIsDecodedAsTheTypeTheFormReturns)
+{
+    const auto calls = make_call_table();
+
+    std::string error;
+    EXPECT_TRUE(make_placer(calls, "forma_call_samples", call_form("forma_call_samples", { { "count", "3" } }),
+        manifest_node("element", { { "name", "s" }, { "state", "0.1 0.2 0.3" } }), error))
+        << error;
+
+    EXPECT_FALSE(make_placer(calls, "forma_call_samples", call_form("forma_call_samples", { { "count", "3" } }),
+        manifest_node("element", { { "name", "s" }, { "state", "0.1 many" } }), error));
+    EXPECT_NE(error.find("invalid state of 0.1 many"), std::string::npos) << error;
+
+    error.clear();
+    EXPECT_FALSE(make_placer(calls, "forma_call_flag", call_form("forma_call_flag"),
+        manifest_node("element", { { "name", "l" }, { "state", "perhaps" } }), error));
+    EXPECT_NE(error.find("invalid state of perhaps"), std::string::npos) << error;
+}
+
+TEST(FormaManifestCallTableTest, TablesMergeUnderAPrefixAndRefuseCollisions)
+{
+    TestCallTable first;
+    first.expose_form<&forma_call_flag>();
+    TestCallTable second;
+    second.expose_form<&forma_call_flag>();
+
+    std::string error;
+    EXPECT_FALSE(second.merge(first, "", error));
+    EXPECT_NE(error.find("forma_call_flag"), std::string::npos) << error;
+
+    EXPECT_TRUE(second.merge(first, "ui.", error)) << error;
+    EXPECT_TRUE(second.contains("ui.forma_call_flag"));
+}
+
+// =============================================================================
+// instantiate_document: elements
+// =============================================================================
+
+namespace {
+
+    FormaManifestElement element_document(std::vector<FormaManifestElement> children)
+    {
+        return manifest_numbered(manifest_node("forma", { { "version", "1" } },
+            {
+                manifest_node("templates", {},
+                    { manifest_node("template", { { "id", "first" } },
+                        { manifest_node("stub", { { "size", "3" } }) }) }),
+                manifest_node("surface", { { "id", "main" } }, std::move(children)),
+            }));
+    }
+
+    FormaManifestElement fader_element(std::string name, CallAttributes extra = {})
+    {
+        CallAttributes attributes { { "name", std::move(name) } };
+        attributes.insert(attributes.end(), extra.begin(), extra.end());
+        return manifest_node("element", std::move(attributes),
+            { call_form("forma_call_fader", { { "bounds", k_fader_bounds }, { "handle_w", "0.04" } }) });
+    }
+
+    FormaManifestElement stub_instance(std::string id)
+    {
+        return manifest_node("instance", { { "id", std::move(id) }, { "template", "first" } });
+    }
+
+}
+
+class FormaManifestElementTest : public FormaManifestDriverTest {
+protected:
+    std::optional<Forma::PlacedInstances> run_elements(const FormaManifestElement& document)
+    {
+        Forma::ManifestTables<FormaManifestElement> tables;
+        tables.factories = table;
+        tables.calls = make_call_table();
+        tables.actions = actions;
+        return Forma::instantiate_document(tables, document, surfaces, error);
+    }
+
+    void expect_element_rejected(const FormaManifestElement& document, std::string_view fragment)
+    {
+        EXPECT_FALSE(run_elements(document));
+        EXPECT_NE(error.find(fragment), std::string::npos) << error;
+        EXPECT_TRUE(log->placed.empty());
+        EXPECT_TRUE(surfaces.at("main").layer().empty());
+    }
+};
+
+TEST_F(FormaManifestElementTest, AnElementNeedsANameAndOneForm)
+{
+    expect_element_rejected(element_document({ manifest_node("element", {},
+                                {}) }),
+        "needs a non-empty name");
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "" } }) }),
+        "needs a non-empty name");
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } }) }),
+        "<element> needs a <form>");
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } },
+                                { call_form("forma_call_flag"), call_form("forma_call_flag") }) }),
+        "may hold only one <form>");
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } },
+                                { call_form("forma_call_flag"), manifest_node("legend") }) }),
+        "<legend> is not allowed in <element>");
+}
+
+TEST_F(FormaManifestElementTest, AFormNamesARegisteredCall)
+{
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } }, { manifest_node("form") }) }),
+        "<form> needs a call attribute");
+    expect_element_rejected(element_document({ manifest_node("element", { { "name", "a" } }, { call_form("ghost") }) }),
+        "no registered call ghost");
+}
+
+TEST_F(FormaManifestElementTest, ANameSharesTheNamespaceOfIds)
+{
+    expect_element_rejected(element_document({ fader_element("a"), fader_element("a") }), "name a is already used");
+
+    auto instance_first = element_document({ stub_instance("a"), fader_element("a") });
+    expect_element_rejected(instance_first, "is already used as an id");
+
+    auto element_first = element_document({ fader_element("a"), stub_instance("a") });
+    expect_element_rejected(element_first, "is already used by an element");
+}
+
+TEST_F(FormaManifestElementTest, TheLayerAttributesAreCheckedBeforeAnythingIsPlaced)
+{
+    expect_element_rejected(element_document({ fader_element("a", { { "bogus", "1" } }) }),
+        "<element> has an unsupported attribute bogus");
+    expect_element_rejected(element_document({ fader_element("a", { { "visible", "maybe" } }) }),
+        "<element> has an invalid visible attribute");
+    expect_element_rejected(element_document({ fader_element("a", { { "front", "true" }, { "back", "true" } }) }),
+        "front and back cannot both be set");
+    expect_element_rejected(element_document({ fader_element("a", { { "clip", "0 0 1" } }) }),
+        "needs four numbers in clip");
+    expect_element_rejected(element_document({ fader_element("a", { { "clip", "0 0 0 1" } }) }),
+        "clip needs a positive width and height");
+    expect_element_rejected(element_document({ fader_element("a", { { "relate", "" } }) }),
+        "needs an element name in relate");
+}
+
+TEST_F(FormaManifestElementTest, RelateNamesAnotherElementOrInstanceOfTheSameSurface)
+{
+    expect_element_rejected(element_document({ fader_element("a", { { "relate", "a" } }) }),
+        "relate may not name the element itself");
+    expect_element_rejected(element_document({ fader_element("a", { { "relate", "ghost" } }) }),
+        "relate refers to ghost, which is not an element or instance of surface main");
+}
+
+TEST_F(FormaManifestElementTest, ADecodeFailureInAnElementStopsBeforeAnInstanceIsPlaced)
+{
+    auto bad = manifest_node("element", { { "name", "b" } },
+        { call_form("forma_call_fader", { { "bounds", k_fader_bounds }, { "handle_w", "wide" } }) });
+    expect_element_rejected(element_document({ stub_instance("a"), bad }), "invalid handle_w of wide");
+}
+
+TEST_F(FormaManifestElementTest, AnOnChildOfAnElementNeedsAnActionTheSameWayAnInstancesDoes)
+{
+    auto element = fader_element("a");
+    element.children.push_back(manifest_node("on", { { "event", "MOUSE_BUTTON_PRESSED" }, { "action", "ghost" } }));
+    expect_element_rejected(element_document({ element }), "no registered action ghost");
+}
+
+TEST_F(FormaManifestElementTest, RowsAreCheckedAgainstADocumentThatHoldsElementsAndOnChildren)
+{
+    Forma::ManifestTables<FormaManifestElement> tables;
+    tables.factories = table;
+    tables.calls = make_call_table();
+    tables.actions = actions;
+    actions.expose("log", Forma::Action([](const Forma::ActionEvent&) { }));
+    tables.actions = actions;
+
+    auto element = fader_element("f");
+    element.children.push_back(manifest_node("on", { { "event", "MOUSE_BUTTON_PRESSED" }, { "action", "log" } }));
+    const auto document = element_document({ element });
+    Kakshya::CompositeArray rows(Kakshya::described_composite_layout<Forma::RectPlacementInputs>());
+
+    EXPECT_FALSE(Forma::instantiate_rows(tables, document, "first", rows, surfaces.at("main"), error));
+
+    EXPECT_NE(error.find("has no bulk placement"), std::string::npos) << error;
+    EXPECT_EQ(error.find("needs a call table"), std::string::npos) << error;
+    EXPECT_EQ(error.find("needs an action table"), std::string::npos) << error;
+}
+
+TEST_F(FormaManifestElementTest, ASurfaceHoldsOnlyInstancesAndElements)
+{
+    expect_element_rejected(element_document({ stub_instance("a"), manifest_node("legend") }),
+        "<legend> is not allowed in <surface>");
+}
+
+
+}

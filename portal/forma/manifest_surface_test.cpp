@@ -1,3 +1,4 @@
+#include "../../support/forma_call_support.hpp"
 #include "../../support/forma_manifest_support.hpp"
 #include "../../support/test_metadata.hpp"
 #include "../../support/forma_rig.hpp"
@@ -6,8 +7,11 @@
 
 #include "MayaFlux/IO/Composite/XmlDocument.hpp"
 #include "MayaFlux/IO/Composite/XmlRecordAccess.hpp"
+#include "MayaFlux/Portal/Forma/Manifest/CallTable.hpp"
+#include "MayaFlux/Portal/Forma/Manifest/DragGeometry.hpp"
 #include "MayaFlux/Portal/Forma/Manifest/Instantiate.hpp"
 #include "MayaFlux/Portal/Forma/Manifest/StaticGeometry.hpp"
+#include "MayaFlux/Portal/Forma/XmlManifest.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
@@ -79,6 +83,31 @@ namespace {
     }
 
     using PolygonStates = std::vector<std::shared_ptr<Forma::MappedState<bool>>>;
+    using ScaleStates = std::vector<std::shared_ptr<Forma::MappedState<float>>>;
+    using PathStates = std::vector<std::shared_ptr<Forma::MappedState<std::vector<glm::vec2>>>>;
+
+    void expose_capturing_scale(TreeTable& table, ScaleStates& states)
+    {
+        Reflect::RecordBinding<Forma::ScaleInputs, FormaManifestElement> input;
+        input.required("points");
+
+        table.expose_typed<float>("scale", std::move(input), Forma::rect_placement_binding<FormaManifestElement>(),
+            Forma::scale_form, &Forma::ScaleInputs::value,
+            [&states](const Forma::ScaleInputs&, const Forma::RectPlacementInputs&,
+                Forma::Tend<float>& tend) { states.push_back(tend.result->state); });
+    }
+
+    void expose_capturing_path(TreeTable& table, PathStates& states)
+    {
+        Reflect::RecordBinding<Forma::HandlePathInputs, FormaManifestElement> input;
+        input.required("points");
+
+        table.expose_typed<std::vector<glm::vec2>>("path", std::move(input),
+            Forma::rect_placement_binding<FormaManifestElement>(),
+            Forma::handle_path_form, &Forma::HandlePathInputs::points,
+            [&states](const Forma::HandlePathInputs&, const Forma::RectPlacementInputs&,
+                Forma::Tend<std::vector<glm::vec2>>& tend) { states.push_back(tend.result->state); });
+    }
 
     void expose_capturing_polygon(TreeTable& table, Forma::PolygonFactory factory, PolygonStates& states)
     {
@@ -308,7 +337,7 @@ TEST_F(FormaManifestSurfaceTest, ANamedInteractionInTheDocumentIsWiredToThePlace
 TEST_F(FormaManifestSurfaceTest, AnAuthoredActionRunsBesideTheFormsOwnFlipWire)
 {
     auto toggle = instance("only", "toggle", "-0.5 -0.5 1 1");
-    toggle.children.push_back(manifest_node("on", { { "event", "Press" }, { "action", "count" } }));
+    toggle.children.push_back(manifest_node("on", { { "event", "MOUSE_BUTTON_PRESSED" }, { "button", "Left" }, { "action", "count" } }));
     const auto tree = document({ square_template("toggle", { { "interaction", "flip" } }) },
         { main_surface({ toggle }) });
     PolygonStates states;
@@ -505,5 +534,228 @@ TEST_F(FormaManifestSurfaceTest, AMemberPointerSuppliesTheInitialStateOfThePlace
     EXPECT_FLOAT_EQ(states[0]->value, 0.75F);
     EXPECT_FLOAT_EQ(states[1]->value, 4.F);
 }
+
+TEST_F(FormaManifestSurfaceTest, AScaleInTheDocumentStartsAtItsValueAndFollowsADrag)
+{
+    const auto tree = document(
+        { manifest_node("template", { { "id", "bar" } },
+            { manifest_node("scale", { { "points", "0 0 1 0 1 1 0 1" }, { "value", "0.5" } }) }) },
+        { main_surface({ instance("level", "bar", "-0.5 -0.5 1 1") }) });
+    ScaleStates states;
+    TreeTable table;
+    expose_capturing_scale(table, states);
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-scale"));
+
+    std::string error;
+    const auto placed = Forma::instantiate_document(table, tree, surfaces, error);
+    ASSERT_TRUE(placed) << error;
+    ASSERT_EQ(states.size(), 1U);
+    EXPECT_FLOAT_EQ(states[0]->value, 0.5F);
+    EXPECT_EQ(surfaces.at("main").layer().find("level"), placed->at("level").element);
+
+    window->move_to_ndc({ -0.4F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    window->move_to_ndc({ 0.25F, 0.F });
+
+    EXPECT_NEAR(states[0]->value, 0.75F, 1e-3F);
+}
+
+TEST_F(FormaManifestSurfaceTest, AHandlePathInTheDocumentStartsAtItsPointsAndAPressGrabsTheNearestOne)
+{
+    const auto tree = document(
+        { manifest_node("template", { { "id", "curve" } },
+            { manifest_node("path", { { "points", "0 0 1 1" } }) }) },
+        { main_surface({ instance("line", "curve", "-0.5 -0.5 1 1") }) });
+    PathStates states;
+    TreeTable table;
+    expose_capturing_path(table, states);
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-path"));
+
+    std::string error;
+    ASSERT_TRUE(Forma::instantiate_document(table, tree, surfaces, error)) << error;
+    ASSERT_EQ(states.size(), 1U);
+    ASSERT_EQ(states[0]->value.size(), 2U);
+    EXPECT_EQ(states[0]->value[1], glm::vec2(1.F, 1.F));
+
+    window->move_to_ndc({ -0.45F, -0.45F });
+    window->press(IO::MouseButtons::Left);
+    window->move_to_ndc({ 0.F, 0.F });
+
+    EXPECT_NEAR(states[0]->value[0].x, 0.5F, 1e-3F);
+    EXPECT_NEAR(states[0]->value[0].y, 0.5F, 1e-3F);
+    EXPECT_EQ(states[0]->value[1], glm::vec2(1.F, 1.F));
+}
+
+// =============================================================================
+// Elements: a form that calls a described function
+// =============================================================================
+
+namespace {
+
+    using ElementTables = Forma::ManifestTables<FormaManifestElement>;
+
+    ElementTables element_tables()
+    {
+        ElementTables tables;
+        tables.calls.expose_form<&forma_call_fader>();
+        tables.calls.expose_form<&forma_call_samples>();
+        tables.calls.expose_form<&forma_call_flag>();
+        register_shapes(tables.factories);
+        return tables;
+    }
+
+    FormaManifestElement fader_form(std::string handle_w = "0.04")
+    {
+        return manifest_node("form",
+            { { "call", "forma_call_fader" }, { "bounds", "-0.5 -0.1 0.5 0.1" }, { "handle_w", std::move(handle_w) } });
+    }
+
+    FormaManifestElement surface_with(std::vector<FormaManifestElement> children)
+    {
+        return manifest_numbered(manifest_node("forma", { { "version", "1" } },
+            { manifest_node("surface", { { "id", "main" } }, std::move(children)) }));
+    }
+
+}
+
+TEST_F(FormaManifestSurfaceTest, AnElementPlacesTheFunctionsFormWithTheStateTheDocumentWrote)
+{
+    const auto tree = surface_with({ manifest_node("element", { { "name", "f" }, { "state", "0.5" } }, { fader_form() }) });
+    const auto tables = element_tables();
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-element"));
+    forma_call_log().clear();
+
+    std::string error;
+    const auto placed = Forma::instantiate_document(tables, tree, surfaces, error);
+
+    ASSERT_TRUE(placed) << error;
+    const Forma::Layer& layer = surfaces.at("main").layer();
+    EXPECT_EQ(layer.find("f"), placed->at("f").element);
+    EXPECT_EQ(forma_call_log().back(), "fader -0.500000 0.100000 0.040000 0.300000 plain");
+
+    const Forma::Element* fader = layer.get(placed->at("f").element);
+    ASSERT_NE(fader, nullptr);
+    expect_bounds(*fader, { -0.02F, -0.1F }, { 0.02F, 0.1F });
+}
+
+TEST_F(FormaManifestSurfaceTest, AnElementsLayerAttributesApplyThroughTheLayer)
+{
+    const auto tree = surface_with({
+        manifest_node("element", { { "name", "f" } }, { fader_form() }),
+        manifest_node("element", { { "name", "g" }, { "visible", "false" }, { "interactive", "false" } }, { fader_form() }),
+        manifest_node("element", { { "name", "h" }, { "relate", "f" }, { "clip", "-0.4 -0.4 0.4 0.4" } }, { fader_form() }),
+    });
+    const auto tables = element_tables();
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-element-layer"));
+
+    std::string error;
+    const auto placed = Forma::instantiate_document(tables, tree, surfaces, error);
+
+    ASSERT_TRUE(placed) << error;
+    Forma::Layer& layer = surfaces.at("main").layer();
+    const Forma::Element* g = layer.get(placed->at("g").element);
+    EXPECT_FALSE(g->visible);
+    EXPECT_FALSE(g->interactive);
+    const Forma::Element* h = layer.get(placed->at("h").element);
+    ASSERT_TRUE(h->clip);
+    EXPECT_EQ(h->clip->min, glm::vec2(-0.4F, -0.4F));
+    EXPECT_EQ(h->clip->max, glm::vec2(0.4F, 0.4F));
+
+    layer.set_visible(placed->at("f").element, false);
+    EXPECT_FALSE(layer.get(placed->at("h").element)->visible);
+}
+
+TEST_F(FormaManifestSurfaceTest, ElementsAndInstancesShareASurface)
+{
+    const auto tree = document({ square_template("panel") },
+        { main_surface({ instance("box", "panel", "-0.9 -0.9 0.5 0.5"),
+            manifest_node("element", { { "name", "f" } }, { fader_form() }),
+            manifest_node("element", { { "name", "lamp" }, { "state", "true" } },
+                { manifest_node("form", { { "call", "forma_call_flag" } }) }) }) });
+    const auto tables = element_tables();
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-mixed"));
+
+    std::string error;
+    const auto placed = Forma::instantiate_document(tables, tree, surfaces, error);
+
+    ASSERT_TRUE(placed) << error;
+    EXPECT_EQ(placed->size(), 3U);
+    EXPECT_EQ(surfaces.at("main").layer().size(), 3U);
+    EXPECT_TRUE(surfaces.at("main").layer().find("lamp").has_value());
+    EXPECT_TRUE(surfaces.at("main").layer().find("box").has_value());
+}
+
+TEST_F(FormaManifestSurfaceTest, AnElementThatFailsToDecodeLeavesTheSurfaceUntouched)
+{
+    const auto tree = surface_with({
+        manifest_node("element", { { "name", "ok" } }, { fader_form() }),
+        manifest_node("element", { { "name", "bad" } }, { fader_form("wide") }),
+    });
+    const auto tables = element_tables();
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-element-bad"));
+
+    std::string error;
+    EXPECT_FALSE(Forma::instantiate_document(tables, tree, surfaces, error));
+
+    EXPECT_NE(error.find("invalid handle_w of wide"), std::string::npos) << error;
+    EXPECT_TRUE(surfaces.at("main").layer().empty());
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, FormaManifestSurfaceTest, AnXmlFileIsLoadedAndPlacedInOneCall, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+{
+    ASSERT_TRUE(load_xml("elements", R"(<?xml version="1.0" encoding="UTF-8"?>
+<forma version="1">
+  <templates>
+    <template id="panel">
+      <polygon points="0 0 1 0 1 1 0 1"/>
+    </template>
+  </templates>
+  <surface id="main">
+    <instance id="box" template="panel" rect="-0.9 -0.9 0.5 0.5"/>
+    <element name="curve" state="0.1 0.5 0.9">
+      <form call="forma_call_samples" count="3"/>
+    </element>
+    <element name="lamp" state="true">
+      <form call="forma_call_flag"/>
+    </element>
+  </surface>
+</forma>
+)"));
+
+    Forma::XmlTables tables;
+    tables.calls.expose_form<&forma_call_samples>();
+    tables.calls.expose_form<&forma_call_flag>();
+    register_shapes(tables.factories);
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-xml-elements"));
+
+    std::string error;
+    const auto placed = Forma::instantiate_xml(written.back(), tables, surfaces, error);
+
+    ASSERT_TRUE(placed) << error;
+    EXPECT_EQ(placed->size(), 3U);
+    EXPECT_EQ(surfaces.at("main").layer().find("curve"), placed->at("curve").element);
+    EXPECT_EQ(surfaces.at("main").layer().find("lamp"), placed->at("lamp").element);
+}
+
+TEST_F(FormaManifestSurfaceTest, AnXmlFileThatCannotBeLoadedIsReportedAndNothingIsPlaced)
+{
+    Forma::XmlTables tables;
+    Forma::SurfaceMap surfaces;
+    surfaces.emplace("main", make_surface("manifest-xml-missing"));
+
+    std::string error;
+    EXPECT_FALSE(Forma::instantiate_xml("/nonexistent/forma_missing.xml", tables, surfaces, error));
+
+    EXPECT_FALSE(error.empty());
+    EXPECT_TRUE(surfaces.at("main").layer().empty());
+}
+
 
 }

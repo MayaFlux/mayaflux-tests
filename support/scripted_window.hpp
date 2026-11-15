@@ -66,6 +66,12 @@ public:
             Core::WindowEvent::KeyData { static_cast<int16_t>(key), 0, 0 });
     }
 
+    void key_repeat(IO::Keys key)
+    {
+        signal(Core::WindowEventType::KEY_REPEAT,
+            Core::WindowEvent::KeyData { static_cast<int16_t>(key), 0, 0 });
+    }
+
     void type(uint32_t codepoint)
     {
         signal(Core::WindowEventType::TEXT_INPUT, Core::WindowEvent::TextData { codepoint });

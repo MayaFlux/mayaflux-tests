@@ -131,6 +131,71 @@ TEST(FormaElementTest, TextureAndTextHelpersAreNoOpsWithoutABuffer)
     EXPECT_EQ(el.texture, nullptr);
 }
 
+TEST(FormaElementTest, WithContainmentSetsBoundsAndContainsAsOneRegion)
+{
+    const Kinesis::HitRegion2D region {
+        .bounds = AABB2D::from_ndc({ 0.F, 0.F }, { 0.5F, 0.5F }),
+        .contains = Kinesis::circular_bounds({ 0.F, 0.F }, 0.5F),
+    };
+
+    const auto el = Forma::Element {}.with_containment(region);
+
+    ASSERT_TRUE(el.bounds_hint.has_value());
+    EXPECT_EQ(el.bounds_hint->min, glm::vec2(-0.5F));
+    EXPECT_EQ(el.bounds_hint->max, glm::vec2(0.5F));
+    ASSERT_TRUE(static_cast<bool>(el.contains));
+    EXPECT_TRUE(el.contains({ 0.1F, 0.1F }));
+    EXPECT_FALSE(el.contains({ 0.45F, 0.45F }));
+    EXPECT_FALSE(el.clip.has_value());
+}
+
+TEST(FormaElementTest, WithContainmentClearsAStalePredicateWhenTheRegionHasNone)
+{
+    auto el = Forma::Element {}.with_contains([](glm::vec2) { return false; });
+
+    el.with_containment(Kinesis::HitRegion2D { .bounds = AABB2D::from_ndc({ 0.F, 0.F }, { 1.F, 1.F }) });
+
+    EXPECT_FALSE(static_cast<bool>(el.contains));
+    EXPECT_TRUE(el.hits({ 0.5F, 0.5F }));
+}
+
+TEST(FormaElementTest, WithContainmentKeepsAnExistingClipUnlessTheRegionCarriesOne)
+{
+    const AABB2D container_clip = AABB2D::from_origin_size({ 0.F, 0.F }, { 1.F, 1.F });
+    auto el = Forma::Element {};
+    el.clip = container_clip;
+
+    el.with_containment(Kinesis::HitRegion2D { .bounds = AABB2D::from_ndc({ 0.F, 0.F }, { 2.F, 2.F }) });
+    ASSERT_TRUE(el.clip.has_value());
+    EXPECT_EQ(el.clip->max, container_clip.max);
+
+    const AABB2D own_clip = AABB2D::from_origin_size({ 0.F, 0.F }, { 3.F, 3.F });
+    el.with_containment(Kinesis::HitRegion2D { .clip = own_clip });
+    ASSERT_TRUE(el.clip.has_value());
+    EXPECT_EQ(el.clip->max, own_clip.max);
+}
+
+TEST(FormaElementTest, HitsAppliesClipBoundsAndContainsInOrder)
+{
+    auto el = Forma::Element {}
+                  .with_bounds(AABB2D::from_origin_size({ 0.F, 0.F }, { 4.F, 4.F }))
+                  .with_contains([](glm::vec2 p) { return p.y < 2.F; });
+    el.clip = AABB2D::from_origin_size({ 0.F, 0.F }, { 3.F, 3.F });
+
+    EXPECT_TRUE(el.hits({ 1.F, 1.F }));
+    EXPECT_FALSE(el.hits({ 1.F, 2.5F }));
+    EXPECT_FALSE(el.hits({ 3.5F, 1.F }));
+    EXPECT_FALSE(el.hits({ -1.F, 1.F }));
+}
+
+TEST(FormaElementTest, HitsLeavesTheInteractiveAndVisibleFlagsToTheLayer)
+{
+    const auto el = Forma::Element {}.with_rect({ 0.F, 0.F }, { 1.F, 1.F }).non_interactive().hidden();
+
+    EXPECT_TRUE(el.hits({ 0.5F, 0.5F }));
+    EXPECT_FALSE(Forma::Element {}.hits({ 0.5F, 0.5F }));
+}
+
 TEST(FormaElementTest, CopiesCarryEveryField)
 {
     Forma::Element el = Forma::Element {}.with_rect({ 0.F, 0.F }, { 1.F, 1.F }).with_name("a").non_interactive();

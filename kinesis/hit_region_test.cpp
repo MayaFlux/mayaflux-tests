@@ -110,5 +110,32 @@ namespace {
         EXPECT_FALSE(region.hits({ 2.0F, 0.0F, 0.0F }));
     }
 
+    TEST(HitRegion2DTest, TheStaticTestAppliesTheSameOrderToPartsHeldElsewhere)
+    {
+        const std::optional<AABB2D> clip = AABB2D::from_origin_size({ 0.0F, 0.0F }, { 1.0F, 1.0F });
+        const std::optional<AABB2D> bounds = AABB2D::from_origin_size({ 0.0F, 0.0F }, { 4.0F, 4.0F });
+        const std::function<bool(glm::vec2)> left_half = [](glm::vec2 p) { return p.x < 0.5F; };
+
+        EXPECT_TRUE(HitRegion2D::test(clip, bounds, left_half, { 0.25F, 0.5F }));
+        EXPECT_FALSE(HitRegion2D::test(clip, bounds, left_half, { 0.75F, 0.5F }));
+        EXPECT_FALSE(HitRegion2D::test(clip, bounds, {}, { 2.0F, 2.0F }));
+        EXPECT_TRUE(HitRegion2D::test({}, bounds, {}, { 3.0F, 3.0F }));
+        EXPECT_FALSE(HitRegion2D::test({}, bounds, {}, { 5.0F, 3.0F }));
+        EXPECT_FALSE(HitRegion2D::test({}, {}, {}, { 0.0F, 0.0F }));
+        EXPECT_TRUE(HitRegion2D::test({}, {}, left_half, { 0.0F, 0.0F }));
+    }
+
+    TEST(HitRegion2DTest, TheMemberAndTheStaticTestAgreeOnEveryPoint)
+    {
+        const HitRegion2D region {
+            .bounds = AABB2D::from_origin_size({ 0.0F, 0.0F }, { 4.0F, 4.0F }),
+            .contains = [](glm::vec2 p) { return p.y < 2.0F; },
+            .clip = AABB2D::from_origin_size({ 0.0F, 0.0F }, { 3.0F, 3.0F }),
+        };
+        for (const glm::vec2 p : { glm::vec2 { 1.0F, 1.0F }, { 1.0F, 2.5F }, { 3.5F, 1.0F }, { -1.0F, 1.0F } }) {
+            EXPECT_EQ(region.hits(p), HitRegion2D::test(region.clip, region.bounds, region.contains, p));
+        }
+    }
+
 }
 }

@@ -81,6 +81,28 @@ namespace {
         EXPECT_EQ(position, glm::vec3(7.F));
     }
 
+    MAYAFLUX_TEST_WITH(TEST, GlmTextCodecTest, ABoundsBoxDecodesInTheAggregatesMemberOrder, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        Reflect::TextError error = Reflect::TextError::Unsupported;
+        Kinesis::AABB2D box {};
+        EXPECT_TRUE(Reflect::TextCodec<Kinesis::AABB2D>::decode("-0.5 -0.25 0.5 0.75", box, error));
+        EXPECT_EQ(box.min, glm::vec2(-0.5F, -0.25F));
+        EXPECT_EQ(box.max, glm::vec2(0.5F, 0.75F));
+        EXPECT_EQ(Reflect::TextCodec<Kinesis::AABB2D>::extent, 4U);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, GlmTextCodecTest, ABoundsBoxRejectsWrongCountAndBadTokensAndKeepsItsValue, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        Reflect::TextError error = Reflect::TextError::Unsupported;
+        Kinesis::AABB2D box { .min = glm::vec2(7.F), .max = glm::vec2(8.F) };
+        EXPECT_FALSE(Reflect::TextCodec<Kinesis::AABB2D>::decode("0 0 1", box, error));
+        EXPECT_EQ(error, Reflect::TextError::Cardinality);
+        EXPECT_FALSE(Reflect::TextCodec<Kinesis::AABB2D>::decode("0 0 1 wide", box, error));
+        EXPECT_EQ(error, Reflect::TextError::Invalid);
+        EXPECT_EQ(box.min, glm::vec2(7.F));
+        EXPECT_EQ(box.max, glm::vec2(8.F));
+    }
+
     MAYAFLUX_TEST_WITH(TEST, GlmTextCodecTest, SequencesGroupNumbersByComponentCount, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         Reflect::TextError error = Reflect::TextError::Unsupported;
