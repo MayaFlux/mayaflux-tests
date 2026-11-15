@@ -18,6 +18,7 @@ using Nodes::Network::DeriveOperator;
 using Nodes::Network::RelationNetwork;
 using Nodes::Network::RelationOperator;
 using Nodes::Network::RelationSlot;
+using Nodes::Network::RewriteOperator;
 using Nodes::Network::Source;
 using Nodes::Network::StepOperator;
 
@@ -788,6 +789,390 @@ TEST(RelationMappingTest, ASlotLevelCanDriveAnotherOperatorsParameter)
     EXPECT_TRUE(all_equal(*network->get_node_audio_buffer(1), 0.25));
 }
 
+TEST(RelationRewriteTest, SymbolsRetainTheirTypeAndBoundedParameters)
+{
+    const RewriteOperator::Symbol symbol { 7, 1.5, -2.0 };
+
+    EXPECT_EQ(symbol.id, 7U);
+    EXPECT_EQ(symbol.arity, 2U);
+    EXPECT_DOUBLE_EQ(symbol.parameter(0).value(), 1.5);
+    EXPECT_DOUBLE_EQ(symbol.parameter(1).value(), -2.0);
+    EXPECT_FALSE(symbol.parameter(2).has_value());
+
+    const RewriteOperator::Symbol oversized { 7, { 1, 2, 3, 4, 5, 6, 7, 8, 9 } };
+    EXPECT_EQ(oversized.arity, 9U);
+    EXPECT_FALSE(oversized.parameter(0).has_value());
+}
+
+TEST(RelationRewriteTest, InvalidAxiomsCannotRewriteOrPublish)
+{
+    const std::array configs {
+        RewriteOperator::Config { .axiom = { RewriteOperator::Symbol { 1 }, RewriteOperator::Symbol { 2 } }, .max_word_length = 1, .max_generations = 2 },
+        RewriteOperator::Config { .axiom = { RewriteOperator::Symbol { 1, { 1, 2, 3, 4, 5, 6, 7, 8, 9 } } }, .max_word_length = 2, .max_generations = 2 }
+    };
+
+    for (const auto& config : configs) {
+        RewriteOperator rewrite(config);
+
+        EXPECT_FALSE(rewrite.valid());
+        EXPECT_FALSE(rewrite.replace(1, [](const auto&, auto, const auto&) { }));
+        EXPECT_EQ(rewrite.rewrite(), RewriteOperator::RewriteResult::INVALID_CONFIG);
+        EXPECT_EQ(rewrite.submit(), RewriteOperator::SubmitResult::INVALID_CONFIG);
+        EXPECT_FALSE(rewrite.restore_axiom());
+        EXPECT_TRUE(rewrite.active_symbols().empty());
+    }
+}
+
+TEST(RelationRewriteTest, TheFirstMatchingReplacementWinsAndOtherSymbolsPassThrough)
+{
+    constexpr RewriteOperator::SymbolId seed = 1;
+    constexpr RewriteOperator::SymbolId positive = 2;
+    constexpr RewriteOperator::SymbolId fallback = 3;
+    constexpr RewriteOperator::SymbolId untouched = 4;
+
+    RelationNetwork network;
+    auto rewrite = network.add<RewriteOperator>(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { seed }, RewriteOperator::Symbol { untouched } },
+        .max_word_length = 4,
+        .max_generations = 1 });
+    rewrite->replace(RewriteOperator::Replacement {
+        .predecessor = seed,
+        .predicate = [](const auto&, RewriteOperator::Environment environment) { return environment.inputs[0] > 0.0; },
+        .successor = [](const auto&, auto, const auto& emit) { emit(RewriteOperator::Symbol { positive }); } });
+    rewrite->replace(seed, [](const auto&, auto, const auto& emit) { emit(RewriteOperator::Symbol { fallback }); });
+
+    const std::array positive_input { 1.0 };
+    ASSERT_EQ(rewrite->rewrite(1, positive_input), RewriteOperator::RewriteResult::REWRITTEN);
+    ASSERT_EQ(rewrite->submit(), RewriteOperator::SubmitResult::SUBMITTED);
+    EXPECT_EQ(rewrite->active_symbols()[0].id, seed);
+
+    network.process_batch(FRAMES);
+    ASSERT_EQ(rewrite->active_symbols().size(), 2U);
+    EXPECT_EQ(rewrite->active_symbols()[0].id, positive);
+    EXPECT_EQ(rewrite->active_symbols()[1].id, untouched);
+
+    ASSERT_TRUE(rewrite->restore_axiom());
+    const std::array negative_input { -1.0 };
+    ASSERT_EQ(rewrite->rewrite(1, negative_input), RewriteOperator::RewriteResult::REWRITTEN);
+    ASSERT_EQ(rewrite->submit(), RewriteOperator::SubmitResult::SUBMITTED);
+    network.process_batch(FRAMES);
+
+    EXPECT_EQ(rewrite->active_symbols()[0].id, fallback);
+    EXPECT_EQ(rewrite->active_symbols()[1].id, untouched);
+}
+
+TEST(RelationRewriteTest, MappedCoefficientsAndInputsReachTheReplacement)
+{
+    RelationNetwork network;
+    auto rewrite = network.add<RewriteOperator>(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1, 1.0 } },
+        .max_word_length = 1,
+        .max_generations = 1,
+        .coefficient_count = 1 });
+    rewrite->replace(1, [](const auto& symbol, RewriteOperator::Environment environment, const auto& emit) {
+        emit(RewriteOperator::Symbol { 1, symbol.parameters[0] * environment.coefficients[0] + environment.inputs[0] });
+    });
+    rewrite->map("c0", Source(2.0));
+    network.process_batch(FRAMES);
+
+    EXPECT_DOUBLE_EQ(rewrite->coefficient(0).value(), 2.0);
+    EXPECT_DOUBLE_EQ(rewrite->query_state("c0").value(), 2.0);
+    EXPECT_FALSE(rewrite->query_state("other").has_value());
+    EXPECT_FALSE(rewrite->set_coefficient(1, 8.0));
+
+    const std::array input { 3.0 };
+    ASSERT_EQ(rewrite->rewrite(1, input), RewriteOperator::RewriteResult::REWRITTEN);
+    ASSERT_EQ(rewrite->submit(), RewriteOperator::SubmitResult::SUBMITTED);
+    network.process_batch(FRAMES);
+
+    ASSERT_EQ(rewrite->active_symbols().size(), 1U);
+    EXPECT_DOUBLE_EQ(rewrite->active_symbols()[0].parameter(0).value(), 5.0);
+}
+
+TEST(RelationRewriteTest, WordAndGenerationLimitsLeaveTheDraftUnchanged)
+{
+    RewriteOperator rewrite(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 } },
+        .max_word_length = 2,
+        .max_generations = 2 });
+    rewrite.replace(1, [](const auto&, auto, const auto& emit) {
+        emit(RewriteOperator::Symbol { 1 });
+        emit(RewriteOperator::Symbol { 2 });
+    });
+
+    EXPECT_EQ(rewrite.rewrite(2), RewriteOperator::RewriteResult::WORD_LIMIT);
+    EXPECT_EQ(rewrite.draft_generation(), 0U);
+    EXPECT_EQ(rewrite.active_generation(), 0U);
+    EXPECT_EQ(rewrite.active_word()->symbols.size(), 1U);
+
+    rewrite.clear_replacements();
+    EXPECT_EQ(rewrite.rewrite(0), RewriteOperator::RewriteResult::REWRITTEN);
+    EXPECT_EQ(rewrite.rewrite(1), RewriteOperator::RewriteResult::REWRITTEN);
+    EXPECT_EQ(rewrite.rewrite(2), RewriteOperator::RewriteResult::GENERATION_LIMIT);
+    EXPECT_EQ(rewrite.draft_generation(), 1U);
+}
+
+TEST(RelationRewriteTest, InvalidEmittedArityAndFailedCallbacksDoNotReplaceTheWord)
+{
+    RewriteOperator rewrite(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 } },
+        .max_word_length = 4,
+        .max_generations = 1 });
+    EXPECT_FALSE(rewrite.replace(1, RewriteOperator::Successor {}));
+    rewrite.replace(1, [](const auto&, auto, const auto& emit) {
+        emit(RewriteOperator::Symbol { 2, { 1, 2, 3, 4, 5, 6, 7, 8, 9 } });
+    });
+
+    EXPECT_EQ(rewrite.rewrite(), RewriteOperator::RewriteResult::WORD_LIMIT);
+    EXPECT_EQ(rewrite.draft_generation(), 0U);
+
+    rewrite.clear_replacements();
+    rewrite.replace(1, [](const auto&, auto, const auto&) { throw std::runtime_error("replacement failed"); });
+
+    EXPECT_EQ(rewrite.rewrite(), RewriteOperator::RewriteResult::REPLACEMENT_FAILED);
+    EXPECT_EQ(rewrite.draft_generation(), 0U);
+    EXPECT_EQ(rewrite.active_word()->symbols[0].id, 1U);
+}
+
+TEST(RelationRewriteTest, SubmissionBecomesActiveAtTheBlockBoundaryAndRetainsOldWords)
+{
+    RelationNetwork network;
+    auto rewrite = network.add<RewriteOperator>(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 } },
+        .max_word_length = 4,
+        .max_generations = 2 });
+    rewrite->replace(1, [](const auto&, auto, const auto& emit) {
+        emit(RewriteOperator::Symbol { 1 });
+        emit(RewriteOperator::Symbol { 2 });
+    });
+
+    ASSERT_EQ(rewrite->rewrite(), RewriteOperator::RewriteResult::REWRITTEN);
+    ASSERT_EQ(rewrite->submit(), RewriteOperator::SubmitResult::SUBMITTED);
+    EXPECT_EQ(rewrite->submit(), RewriteOperator::SubmitResult::BUSY);
+    ASSERT_EQ(rewrite->rewrite(), RewriteOperator::RewriteResult::REWRITTEN);
+    EXPECT_EQ(rewrite->submit(), RewriteOperator::SubmitResult::BUSY);
+    EXPECT_EQ(rewrite->active_generation(), 0U);
+    EXPECT_EQ(rewrite->active_symbols().size(), 1U);
+
+    network.process_batch(FRAMES);
+    const auto previous = rewrite->active_word();
+    ASSERT_EQ(previous->symbols.size(), 2U);
+    EXPECT_EQ(rewrite->active_generation(), 1U);
+    EXPECT_EQ(rewrite->active_symbols().size(), 2U);
+
+    ASSERT_EQ(rewrite->submit(), RewriteOperator::SubmitResult::SUBMITTED);
+    EXPECT_EQ(rewrite->active_symbols().size(), 2U);
+    network.process_batch(FRAMES);
+
+    EXPECT_EQ(rewrite->active_generation(), 2U);
+    EXPECT_EQ(rewrite->active_symbols().size(), 3U);
+    EXPECT_EQ(previous->symbols.size(), 2U);
+    EXPECT_EQ(previous->generation, 1U);
+}
+
+TEST(RelationRewriteTest, RestoringTheAxiomNeedsSubmissionAndLaterOperatorsSeeTheNewWord)
+{
+    RelationNetwork network;
+    auto rewrite = network.add<RewriteOperator>(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 } },
+        .max_word_length = 4,
+        .max_generations = 1 });
+    rewrite->replace(1, [](const auto&, auto, const auto& emit) {
+        emit(RewriteOperator::Symbol { 1 });
+        emit(RewriteOperator::Symbol { 2 });
+    });
+    size_t seen = 0;
+    network.add<StepOperator>([&](const auto&, std::span<RelationSlot>, uint32_t) {
+        seen = rewrite->active_symbols().size();
+    });
+
+    ASSERT_EQ(rewrite->rewrite(), RewriteOperator::RewriteResult::REWRITTEN);
+    ASSERT_EQ(rewrite->submit(), RewriteOperator::SubmitResult::SUBMITTED);
+    network.process_batch(FRAMES);
+    EXPECT_EQ(seen, 2U);
+
+    ASSERT_TRUE(rewrite->restore_axiom());
+    EXPECT_EQ(rewrite->draft_generation(), 0U);
+    EXPECT_EQ(rewrite->active_generation(), 1U);
+    network.process_batch(FRAMES);
+    EXPECT_EQ(seen, 2U);
+
+    ASSERT_EQ(rewrite->submit(), RewriteOperator::SubmitResult::SUBMITTED);
+    network.process_batch(FRAMES);
+    EXPECT_EQ(seen, 1U);
+    EXPECT_EQ(rewrite->active_generation(), 0U);
+}
+
+namespace {
+
+std::string rewrite_text(const RewriteOperator& rewrite)
+{
+    std::string text;
+    for (const auto& symbol : rewrite.active_symbols()) {
+        text.push_back(static_cast<char>(symbol.id));
+    }
+    return text;
+}
+
+void rewrite_and_activate(RewriteOperator& rewrite, uint64_t steps = 1)
+{
+    ASSERT_EQ(rewrite.rewrite(steps), RewriteOperator::RewriteResult::REWRITTEN);
+    ASSERT_EQ(rewrite.submit(), RewriteOperator::SubmitResult::SUBMITTED);
+    rewrite.process(0.0F);
+}
+
+}
+
+TEST(RelationRewriteTest, CharactersAreSymbolsAndTextSuccessorsReadLikeAGrammar)
+{
+    RewriteOperator rewrite(RewriteOperator::Config {
+        .axiom = RewriteOperator::symbols_from_text("A"),
+        .max_word_length = 64,
+        .max_generations = 8 });
+    ASSERT_TRUE(rewrite.replace('A', "AB"));
+    ASSERT_TRUE(rewrite.replace('B', "A"));
+
+    EXPECT_EQ(rewrite_text(rewrite), "A");
+    rewrite_and_activate(rewrite, 4);
+    EXPECT_EQ(rewrite_text(rewrite), "ABAABABA");
+    EXPECT_EQ(rewrite.active_generation(), 4U);
+    EXPECT_EQ(rewrite.active_symbols()[0].arity, 0U);
+}
+
+TEST(RelationRewriteTest, TextSuccessorsAndPredicatesCombineThroughAReplacement)
+{
+    RewriteOperator rewrite(RewriteOperator::Config {
+        .axiom = RewriteOperator::symbols_from_text("FF"),
+        .max_word_length = 16,
+        .max_generations = 1 });
+    ASSERT_TRUE(rewrite.replace(RewriteOperator::Replacement {
+        .predecessor = 'F',
+        .predicate = [](const auto&, RewriteOperator::Environment environment) { return environment.position == 0; },
+        .successor = RewriteOperator::text_successor("F+F") }));
+
+    rewrite_and_activate(rewrite);
+    EXPECT_EQ(rewrite_text(rewrite), "F+FF");
+}
+
+TEST(RelationRewriteTest, ContextMatchesNeighboursInWordOrderAndSkipsIgnoredSymbols)
+{
+    const auto make = [](std::vector<RewriteOperator::SymbolId> ignore) {
+        auto rewrite = std::make_unique<RewriteOperator>(RewriteOperator::Config {
+            .axiom = RewriteOperator::symbols_from_text("a+bb"),
+            .max_word_length = 16,
+            .max_generations = 1,
+            .ignore = std::move(ignore) });
+        EXPECT_TRUE(rewrite->replace(RewriteOperator::Replacement {
+            .predecessor = 'a',
+            .right = { 'b' },
+            .successor = RewriteOperator::text_successor("Y") }));
+        EXPECT_TRUE(rewrite->replace(RewriteOperator::Replacement {
+            .predecessor = 'b',
+            .left = { 'a' },
+            .successor = RewriteOperator::text_successor("X") }));
+        return rewrite;
+    };
+
+    const auto skipping = make({ '+' });
+    rewrite_and_activate(*skipping);
+    EXPECT_EQ(rewrite_text(*skipping), "Y+Xb");
+
+    const auto strict = make({});
+    rewrite_and_activate(*strict);
+    EXPECT_EQ(rewrite_text(*strict), "a+bb");
+}
+
+TEST(RelationRewriteTest, ContextOfSeveralSymbolsAndWordEdgesMustFullyMatch)
+{
+    RewriteOperator rewrite(RewriteOperator::Config {
+        .axiom = RewriteOperator::symbols_from_text("bcabcab"),
+        .max_word_length = 16,
+        .max_generations = 1 });
+    ASSERT_TRUE(rewrite.replace(RewriteOperator::Replacement {
+        .predecessor = 'c',
+        .left = { 'a', 'b' },
+        .right = { 'a' },
+        .successor = RewriteOperator::text_successor("Z") }));
+
+    rewrite_and_activate(rewrite);
+    EXPECT_EQ(rewrite_text(rewrite), "bcabZab");
+}
+
+TEST(RelationRewriteTest, ReplacementsSeeTheWordAndTheirPosition)
+{
+    RewriteOperator rewrite(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 'A', 1.0 }, RewriteOperator::Symbol { 'B', 5.0 } },
+        .max_word_length = 4,
+        .max_generations = 1 });
+    rewrite.replace('A', [](const auto& symbol, RewriteOperator::Environment environment, const auto& emit) {
+        emit(RewriteOperator::Symbol { symbol.id, environment.word[environment.position + 1].parameters[0] });
+    });
+
+    rewrite_and_activate(rewrite);
+    EXPECT_DOUBLE_EQ(rewrite.active_symbols()[0].parameters[0], 5.0);
+    EXPECT_DOUBLE_EQ(rewrite.active_symbols()[1].parameters[0], 5.0);
+}
+
+TEST(RelationRewriteTest, WeightedReplacementsDrawInProportionAndRepeatForASeed)
+{
+    constexpr size_t count = 4000;
+    constexpr uint64_t seed = 0x9E3779B97F4A7C15ULL;
+
+    const auto run = [&] {
+        auto rewrite = std::make_unique<RewriteOperator>(RewriteOperator::Config {
+            .axiom = std::vector<RewriteOperator::Symbol>(count, RewriteOperator::Symbol { 'S' }),
+            .max_word_length = count,
+            .max_generations = 1 });
+        EXPECT_TRUE(rewrite->replace('S', "L", 1.0));
+        EXPECT_TRUE(rewrite->replace('S', "R", 3.0));
+        rewrite->generator().seed(seed);
+        rewrite_and_activate(*rewrite);
+        return rewrite_text(*rewrite);
+    };
+
+    const auto first = run();
+    EXPECT_EQ(first, run());
+
+    const auto right = static_cast<double>(std::ranges::count(first, 'R')) / static_cast<double>(count);
+    EXPECT_EQ(std::ranges::count(first, 'L') + std::ranges::count(first, 'R'), static_cast<std::ptrdiff_t>(count));
+    EXPECT_GT(right, 0.70);
+    EXPECT_LT(right, 0.80);
+}
+
+TEST(RelationRewriteTest, UnweightedFirstMatchOutranksLaterWeightedReplacements)
+{
+    RewriteOperator rewrite(RewriteOperator::Config {
+        .axiom = std::vector<RewriteOperator::Symbol>(64, RewriteOperator::Symbol { 'S' }),
+        .max_word_length = 64,
+        .max_generations = 1 });
+    ASSERT_TRUE(rewrite.replace('S', "U"));
+    ASSERT_TRUE(rewrite.replace('S', "W", 5.0));
+
+    rewrite_and_activate(rewrite);
+    EXPECT_EQ(rewrite_text(rewrite), std::string(64, 'U'));
+}
+
+TEST(RelationRewriteTest, WeightedChoiceIsAmongReplacementsWhosePredicateAndContextMatch)
+{
+    RewriteOperator rewrite(RewriteOperator::Config {
+        .axiom = RewriteOperator::symbols_from_text("aSbS"),
+        .max_word_length = 16,
+        .max_generations = 1 });
+    ASSERT_TRUE(rewrite.replace(RewriteOperator::Replacement {
+        .predecessor = 'S',
+        .left = { 'a' },
+        .weight = 1.0,
+        .successor = RewriteOperator::text_successor("L") }));
+    ASSERT_TRUE(rewrite.replace(RewriteOperator::Replacement {
+        .predecessor = 'S',
+        .predicate = [](const auto&, RewriteOperator::Environment environment) { return environment.position == 3; },
+        .weight = 1.0,
+        .successor = RewriteOperator::text_successor("P") }));
+
+    rewrite_and_activate(rewrite);
+    EXPECT_EQ(rewrite_text(rewrite), "aLbP");
+}
+
 class RelationOperatorTypeTest : public ::testing::TestWithParam<OperatorCase> { };
 
 TEST_P(RelationOperatorTypeTest, EachOperatorNamesItselfAndOnlyCombinePublishes)
@@ -809,6 +1194,7 @@ INSTANTIATE_TEST_SUITE_P(
         OperatorCase { "Step", [] { return std::make_shared<StepOperator>(StepOperator::Body {}); }, "Step", false },
         OperatorCase { "Advance", [] { return std::make_shared<AdvanceOperator>(); }, "Advance", false },
         OperatorCase { "Derive", [] { return std::make_shared<DeriveOperator>(0, std::vector<size_t> {}, DeriveOperator::Function {}); }, "Derive", false },
+        OperatorCase { "Rewrite", [] { return std::make_shared<RewriteOperator>(RewriteOperator::Config { .max_word_length = 1 }); }, "Rewrite", false },
         OperatorCase { "Combine", [] { return std::make_shared<CombineOperator>(1); }, "Combine", true }),
     [](const ::testing::TestParamInfo<OperatorCase>& info) { return std::string(info.param.name); });
 
