@@ -1,7 +1,7 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
-#include "MayaFlux/Kinesis/Acoustics/BoreGrid.hpp"
+#include "MayaFlux/Kinesis/Acoustics/DuctGrid.hpp"
 #include "MayaFlux/Kinesis/Acoustics/Radiation.hpp"
 #include "MayaFlux/Kinesis/Acoustics/StaggeredLine.hpp"
 
@@ -162,8 +162,8 @@ TEST(RadiationLoadTest, SteadyStateAdmittanceIsTheTrapezoidalImageOfTheNetwork)
 
 TEST(RadiationLoadTest, ABoreWithAnOpenEndOnlyEverLosesEnergy)
 {
-    Acoustics::BoreSpec bore { .length = 0.6, .sample_rate = kRate };
-    const auto grid = Acoustics::make_bore_grid(bore, [](double) { return kRadius; });
+    Acoustics::DuctSpec bore { .length = 0.6, .sample_rate = kRate };
+    const auto grid = Acoustics::make_duct_grid(bore, [](double) { return kRadius; });
     ASSERT_TRUE(grid.has_value());
 
     const double area = std::numbers::pi * kRadius * kRadius;

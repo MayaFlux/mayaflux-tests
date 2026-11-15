@@ -1,7 +1,7 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
-#include "MayaFlux/Kinesis/Acoustics/BoreGrid.hpp"
+#include "MayaFlux/Kinesis/Acoustics/DuctGrid.hpp"
 #include "MayaFlux/Kinesis/Acoustics/StaggeredLine.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
@@ -9,22 +9,22 @@ MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta:
 namespace MayaFlux::Test {
 
 namespace Acoustics = Kinesis::Acoustics;
-using Acoustics::BoreError;
-using Acoustics::BoreGrid;
-using Acoustics::BoreSpec;
+using Acoustics::DuctError;
+using Acoustics::DuctGrid;
+using Acoustics::DuctSpec;
 
 namespace {
 
     constexpr double kRadius = 0.0075;
 
-    BoreSpec flute_spec()
+    DuctSpec flute_spec()
     {
         return { .length = 0.6, .sample_rate = 48000.0 };
     }
 
-    BoreGrid cylinder(const BoreSpec& spec, double radius = kRadius)
+    DuctGrid cylinder(const DuctSpec& spec, double radius = kRadius)
     {
-        const auto grid = Acoustics::make_bore_grid(spec, [radius](double) { return radius; });
+        const auto grid = Acoustics::make_duct_grid(spec, [radius](double) { return radius; });
         return grid.value();
     }
 
@@ -39,11 +39,11 @@ namespace {
     }
 
     struct Line {
-        BoreGrid grid;
+        DuctGrid grid;
         std::vector<double> pressure;
         std::vector<double> velocity;
 
-        explicit Line(BoreGrid prepared)
+        explicit Line(DuctGrid prepared)
             : grid(std::move(prepared))
             , pressure(uneven_pressure(grid.intervals + 1))
             , velocity(grid.intervals, 0.0)
@@ -73,12 +73,12 @@ namespace {
 
 }
 
-TEST(BoreGridTest, ACylinderGetsTheLargestGridThatKeepsTheCourantNumberUnderOne)
+TEST(DuctGridTest, ACylinderGetsTheLargestGridThatKeepsTheCourantNumberUnderOne)
 {
-    const BoreSpec spec = flute_spec();
-    const BoreGrid grid = cylinder(spec);
+    const DuctSpec spec = flute_spec();
+    const DuctGrid grid = cylinder(spec);
 
-    EXPECT_EQ(Acoustics::bore_intervals(spec), 83U);
+    EXPECT_EQ(Acoustics::duct_intervals(spec), 83U);
     EXPECT_EQ(grid.intervals, 83U);
     EXPECT_NEAR(grid.spacing, 0.6 / 83.0, 1e-15);
     EXPECT_NEAR(grid.courant, 343.0 / 48000.0 / (0.6 / 83.0), 1e-12);
@@ -89,10 +89,10 @@ TEST(BoreGridTest, ACylinderGetsTheLargestGridThatKeepsTheCourantNumberUnderOne)
     EXPECT_DOUBLE_EQ(grid.end_radius, kRadius);
 }
 
-TEST(BoreGridTest, GainsFollowCellVolumesAndEndCellsAreHalfCells)
+TEST(DuctGridTest, GainsFollowCellVolumesAndEndCellsAreHalfCells)
 {
-    const BoreSpec spec = flute_spec();
-    const BoreGrid grid = cylinder(spec);
+    const DuctSpec spec = flute_spec();
+    const DuctGrid grid = cylinder(spec);
 
     const double area = std::numbers::pi * kRadius * kRadius;
     const double velocity_gain = grid.time_step * area / (spec.air_density * grid.spacing);
@@ -111,12 +111,12 @@ TEST(BoreGridTest, GainsFollowCellVolumesAndEndCellsAreHalfCells)
     EXPECT_NEAR(grid.pressure_gain.back(), 2.0 * interior, 1e-12 * interior);
 }
 
-TEST(BoreGridTest, ACallableAndASampledProfileOfACone)
+TEST(DuctGridTest, ACallableAndASampledProfileOfACone)
 {
-    const BoreSpec spec = flute_spec();
-    const auto from_function = Acoustics::make_bore_grid(spec, [](double x) { return 0.005 + 0.01 * x; });
+    const DuctSpec spec = flute_spec();
+    const auto from_function = Acoustics::make_duct_grid(spec, [](double x) { return 0.005 + 0.01 * x; });
     const std::array<double, 2> ends { 0.005, 0.011 };
-    const auto from_samples = Acoustics::make_bore_grid(spec, ends);
+    const auto from_samples = Acoustics::make_duct_grid(spec, ends);
 
     ASSERT_TRUE(from_function.has_value());
     ASSERT_TRUE(from_samples.has_value());
@@ -129,47 +129,47 @@ TEST(BoreGridTest, ACallableAndASampledProfileOfACone)
     EXPECT_GT(from_function->pressure_gain.front(), from_function->pressure_gain.back());
 }
 
-TEST(BoreGridTest, SpecsAndProfilesThatCannotBuildAGridSayWhy)
+TEST(DuctGridTest, SpecsAndProfilesThatCannotBuildAGridSayWhy)
 {
     const auto unit = [](double) { return kRadius; };
 
-    BoreSpec spec = flute_spec();
+    DuctSpec spec = flute_spec();
     spec.length = 0.0;
-    EXPECT_EQ(Acoustics::make_bore_grid(spec, unit).error(), BoreError::INVALID_SPEC);
+    EXPECT_EQ(Acoustics::make_duct_grid(spec, unit).error(), DuctError::INVALID_SPEC);
 
     spec = flute_spec();
     spec.sound_speed = -343.0;
-    EXPECT_EQ(Acoustics::make_bore_grid(spec, unit).error(), BoreError::INVALID_SPEC);
+    EXPECT_EQ(Acoustics::make_duct_grid(spec, unit).error(), DuctError::INVALID_SPEC);
 
     spec = flute_spec();
     spec.sample_rate = std::numeric_limits<double>::quiet_NaN();
-    EXPECT_EQ(Acoustics::make_bore_grid(spec, unit).error(), BoreError::INVALID_SPEC);
-    EXPECT_EQ(Acoustics::bore_intervals(spec), 0U);
+    EXPECT_EQ(Acoustics::make_duct_grid(spec, unit).error(), DuctError::INVALID_SPEC);
+    EXPECT_EQ(Acoustics::duct_intervals(spec), 0U);
 
     spec = flute_spec();
     spec.length = 0.01;
-    EXPECT_EQ(Acoustics::make_bore_grid(spec, unit).error(), BoreError::TOO_SHORT);
+    EXPECT_EQ(Acoustics::make_duct_grid(spec, unit).error(), DuctError::TOO_SHORT);
 
     spec = flute_spec();
     spec.length = 0.001;
-    EXPECT_EQ(Acoustics::make_bore_grid(spec, unit).error(), BoreError::TOO_SHORT);
+    EXPECT_EQ(Acoustics::make_duct_grid(spec, unit).error(), DuctError::TOO_SHORT);
 
-    EXPECT_EQ(Acoustics::make_bore_grid(flute_spec(), [](double) { return 0.0; }).error(), BoreError::INVALID_PROFILE);
-    EXPECT_EQ(Acoustics::make_bore_grid(flute_spec(), [](double) { return std::numeric_limits<double>::quiet_NaN(); }).error(),
-        BoreError::INVALID_PROFILE);
+    EXPECT_EQ(Acoustics::make_duct_grid(flute_spec(), [](double) { return 0.0; }).error(), DuctError::INVALID_PROFILE);
+    EXPECT_EQ(Acoustics::make_duct_grid(flute_spec(), [](double) { return std::numeric_limits<double>::quiet_NaN(); }).error(),
+        DuctError::INVALID_PROFILE);
 
     const std::array<double, 1> one { 0.01 };
     const std::array<double, 2> flat { 0.01, -0.01 };
-    EXPECT_EQ(Acoustics::make_bore_grid(flute_spec(), one).error(), BoreError::INVALID_PROFILE);
-    EXPECT_EQ(Acoustics::make_bore_grid(flute_spec(), flat).error(), BoreError::INVALID_PROFILE);
+    EXPECT_EQ(Acoustics::make_duct_grid(flute_spec(), one).error(), DuctError::INVALID_PROFILE);
+    EXPECT_EQ(Acoustics::make_duct_grid(flute_spec(), flat).error(), DuctError::INVALID_PROFILE);
 }
 
-TEST(BoreGridTest, TheCourantNumberStaysInTheTopOfItsRangeAcrossLengthsAndRates)
+TEST(DuctGridTest, TheCourantNumberStaysInTheTopOfItsRangeAcrossLengthsAndRates)
 {
     for (const double rate : { 44100.0, 48000.0, 96000.0 }) {
         for (double length = 0.1; length < 2.0; length += 0.0731) {
-            const BoreSpec spec { .length = length, .sample_rate = rate };
-            const auto grid = Acoustics::make_bore_grid(spec, [](double) { return kRadius; });
+            const DuctSpec spec { .length = length, .sample_rate = rate };
+            const auto grid = Acoustics::make_duct_grid(spec, [](double) { return kRadius; });
             ASSERT_TRUE(grid.has_value());
 
             const auto n = static_cast<double>(grid->intervals);
@@ -177,6 +177,37 @@ TEST(BoreGridTest, TheCourantNumberStaysInTheTopOfItsRangeAcrossLengthsAndRates)
             EXPECT_GE(grid->courant, n / (n + 1.0) - 1e-12);
         }
     }
+}
+
+TEST(DuctGridTest, AMouthVolumeAddsComplianceToTheFirstCellOnly)
+{
+    const DuctSpec plain = flute_spec();
+    DuctSpec with_volume = flute_spec();
+    with_volume.mouth_volume = 2.0e-6;
+
+    const DuctGrid a = Acoustics::make_duct_grid(plain, [](double) { return kRadius; }).value();
+    const DuctGrid b = Acoustics::make_duct_grid(with_volume, [](double) { return kRadius; }).value();
+
+    const double area = std::numbers::pi * kRadius * kRadius;
+    const double stiffness = plain.air_density * plain.sound_speed * plain.sound_speed * a.time_step;
+
+    EXPECT_NEAR(b.pressure_gain.front(), stiffness / (0.5 * a.spacing * area + 2.0e-6), 1e-12 * b.pressure_gain.front());
+    EXPECT_LT(b.pressure_gain.front(), a.pressure_gain.front());
+    for (size_t l = 1; l <= a.intervals; ++l) {
+        EXPECT_DOUBLE_EQ(b.pressure_gain[l], a.pressure_gain[l]);
+    }
+    EXPECT_EQ(b.velocity_gain, a.velocity_gain);
+}
+
+TEST(DuctGridTest, ANegativeOrNonFiniteMouthVolumeIsAnInvalidSpec)
+{
+    DuctSpec spec = flute_spec();
+
+    spec.mouth_volume = -1.0e-6;
+    EXPECT_EQ(Acoustics::make_duct_grid(spec, [](double) { return kRadius; }).error(), DuctError::INVALID_SPEC);
+
+    spec.mouth_volume = std::numeric_limits<double>::infinity();
+    EXPECT_EQ(Acoustics::make_duct_grid(spec, [](double) { return kRadius; }).error(), DuctError::INVALID_SPEC);
 }
 
 TEST(StaggeredLineTest, ASealedCylinderConservesItsDiscreteEnergy)
@@ -196,7 +227,7 @@ TEST(StaggeredLineTest, ASealedCylinderConservesItsDiscreteEnergy)
 
 TEST(StaggeredLineTest, ASealedConeConservesItsDiscreteEnergy)
 {
-    const auto cone = Acoustics::make_bore_grid(flute_spec(), [](double x) { return 0.01 + 0.04 * x; });
+    const auto cone = Acoustics::make_duct_grid(flute_spec(), [](double x) { return 0.01 + 0.04 * x; });
     ASSERT_TRUE(cone.has_value());
     Line line(*cone);
 
@@ -213,7 +244,7 @@ TEST(StaggeredLineTest, ASealedConeConservesItsDiscreteEnergy)
 
 TEST(StaggeredLineTest, WithACourantNumberOfOneASealedCylinderRepeatsExactly)
 {
-    const BoreSpec spec { .length = 3.0, .sample_rate = 1000.0, .sound_speed = 300.0 };
+    const DuctSpec spec { .length = 3.0, .sample_rate = 1000.0, .sound_speed = 300.0 };
     Line line(cylinder(spec, 0.01));
     ASSERT_EQ(line.grid.intervals, 10U);
     ASSERT_NEAR(line.grid.courant, 1.0, 1e-12);

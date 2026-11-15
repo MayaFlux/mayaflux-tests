@@ -1,7 +1,7 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
-#include "MayaFlux/Kinesis/Acoustics/BoreGrid.hpp"
+#include "MayaFlux/Kinesis/Acoustics/DuctGrid.hpp"
 #include "MayaFlux/Kinesis/Acoustics/PressureFlowSolve.hpp"
 #include "MayaFlux/Kinesis/Acoustics/Radiation.hpp"
 #include "MayaFlux/Kinesis/Acoustics/Reed.hpp"
@@ -101,8 +101,8 @@ namespace {
 
     Blow blow(double mouth_pressure, double seconds, double settle_seconds)
     {
-        const Acoustics::BoreSpec spec { .length = kLength, .sample_rate = kRate };
-        const auto grid = Acoustics::make_bore_grid(spec, [](double) { return kRadius; });
+        const Acoustics::DuctSpec spec { .length = kLength, .sample_rate = kRate };
+        const auto grid = Acoustics::make_duct_grid(spec, [](double) { return kRadius; });
         const double area = std::numbers::pi * kRadius * kRadius;
         const auto radiation = Acoustics::make_radiation_coefficients(
             { .model = Acoustics::unflanged_radiation, .radius = kRadius, .time_step = 1.0 / kRate },
@@ -286,6 +286,122 @@ TEST(ReedCouplingTest, AChannelWithAFieldThatIsNotPositiveActsAsAWall)
         reed, warm_start, 4.0e6, 1000.0, 0.0, 0.0);
 
     EXPECT_EQ(status, RootStatus::NOT_FINITE);
+    EXPECT_DOUBLE_EQ(flow, 0.0);
+    EXPECT_DOUBLE_EQ(difference, 1000.0);
+}
+
+TEST(ReedCouplingTest, ADynamicReedSettlesToTheQuasiStaticSolution)
+{
+    const ReedChannel reed = clarinet_reed();
+    const double end_gain = 2.0 * coupling_gain();
+
+    double warm_start = 0.0;
+    const auto [expected_pressure, expected_flow, expected_difference, status] = Acoustics::reed_mouth_step(
+        reed, warm_start, end_gain, 1000.0, 0.0, 0.0);
+    ASSERT_EQ(status, RootStatus::CONVERGED);
+
+    std::array<double, 2> motion {};
+    double difference = 0.0;
+    double flow = 0.0;
+    for (size_t n = 0; n < 3000; ++n) {
+        const auto step = Acoustics::dynamic_reed_mouth_step(reed, 20000.0, 20000.0, 0.0, 1.0 / kRate, motion, end_gain, 1000.0, 0.0, 0.0);
+        flow = std::get<1>(step);
+        difference = std::get<2>(step);
+    }
+
+    EXPECT_NEAR(difference, expected_difference, 1e-6 * expected_difference);
+    EXPECT_NEAR(flow, expected_flow, 1e-6 * expected_flow);
+    EXPECT_NEAR(motion[0], -reed.rest_opening * expected_difference / reed.closing_pressure, 1e-9);
+}
+
+TEST(ReedCouplingTest, ADynamicReedResonatesWhereTheQuasiStaticOneCannot)
+{
+    const ReedChannel reed = clarinet_reed();
+
+    const auto swing = [&](double frequency) {
+        std::array<double, 2> motion {};
+        double largest = 0.0;
+        for (size_t n = 0; n < 24000; ++n) {
+            const double mouth = 100.0 * std::sin(2.0 * std::numbers::pi * frequency * static_cast<double>(n) / kRate);
+            (void)Acoustics::dynamic_reed_mouth_step(reed, 2500.0, 3000.0, 0.0, 1.0 / kRate, motion, 1.0, mouth, 0.0, 0.0);
+            if (n >= 19200) {
+                largest = std::max(largest, std::abs(motion[0]));
+            }
+        }
+        return largest;
+    };
+
+    const double low = swing(300.0);
+    const double at_resonance = swing(2500.0);
+    const double above = swing(9000.0);
+
+    EXPECT_GT(low, 0.0);
+    EXPECT_GT(at_resonance, 2.5 * low);
+    EXPECT_LT(above, low);
+}
+
+TEST(ReedCouplingTest, ADynamicReedPressedToTheLayStaysThereAndPassesNoFlow)
+{
+    const ReedChannel reed = clarinet_reed();
+    std::array<double, 2> motion {};
+
+    double flow = 1.0;
+    for (size_t n = 0; n < 200; ++n) {
+        const auto step = Acoustics::dynamic_reed_mouth_step(reed, 2500.0, 3000.0, 0.0, 1.0 / kRate, motion, 4.0e6, 5000.0, 0.0, 0.0);
+        flow = std::get<1>(step);
+        EXPECT_GE(motion[0], -reed.rest_opening);
+    }
+
+    EXPECT_DOUBLE_EQ(flow, 0.0);
+    EXPECT_DOUBLE_EQ(motion[0], -reed.rest_opening);
+}
+
+TEST(ReedCouplingTest, ADynamicReedWithAnInvalidResonanceActsAsAWall)
+{
+    const ReedChannel reed = clarinet_reed();
+    std::array<double, 2> motion { 1.0e-5, 2.0e-5 };
+
+    const auto [pressure, flow, difference] = Acoustics::dynamic_reed_mouth_step(
+        reed, 0.0, 3000.0, 0.0, 1.0 / kRate, motion, 4.0e6, 1000.0, 0.0, 0.0);
+
+    EXPECT_DOUBLE_EQ(flow, 0.0);
+    EXPECT_DOUBLE_EQ(difference, 1000.0);
+    EXPECT_DOUBLE_EQ(motion[0], 0.0);
+    EXPECT_DOUBLE_EQ(motion[1], 0.0);
+}
+
+TEST(ReedCouplingTest, AMovingReedAddsItsOwnFlowAndTheCellStaysConsistent)
+{
+    const ReedChannel reed = clarinet_reed();
+    const double end_gain = 2.0 * coupling_gain();
+    constexpr double area = 1.46e-4;
+    constexpr double downstream = 2.0e-5;
+
+    std::array<double, 2> still {};
+    std::array<double, 2> pushing {};
+    double flow_still = 0.0;
+    double flow_pushing = 0.0;
+    double pressure_pushing = 0.0;
+    for (size_t n = 0; n < 40; ++n) {
+        const double mouth = 1500.0 + 300.0 * std::sin(2.0 * std::numbers::pi * 2000.0 * static_cast<double>(n) / kRate);
+        flow_still = std::get<1>(Acoustics::dynamic_reed_mouth_step(reed, 2500.0, 8000.0, 0.0, 1.0 / kRate, still, end_gain, mouth, 100.0, downstream));
+        const auto step = Acoustics::dynamic_reed_mouth_step(reed, 2500.0, 8000.0, area, 1.0 / kRate, pushing, end_gain, mouth, 100.0, downstream);
+        pressure_pushing = std::get<0>(step);
+        flow_pushing = std::get<1>(step);
+    }
+
+    EXPECT_NE(flow_pushing, flow_still);
+    EXPECT_NEAR(pressure_pushing, 100.0 + end_gain * (flow_pushing - downstream), 1e-6 * std::abs(pressure_pushing));
+}
+
+TEST(ReedCouplingTest, ANegativeReedAreaMakesTheReedAWall)
+{
+    const ReedChannel reed = clarinet_reed();
+    std::array<double, 2> motion {};
+
+    const auto [pressure, flow, difference] = Acoustics::dynamic_reed_mouth_step(
+        reed, 2500.0, 8000.0, -1.0, 1.0 / kRate, motion, 4.0e6, 1000.0, 0.0, 0.0);
+
     EXPECT_DOUBLE_EQ(flow, 0.0);
     EXPECT_DOUBLE_EQ(difference, 1000.0);
 }
