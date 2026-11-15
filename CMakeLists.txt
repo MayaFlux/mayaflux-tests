@@ -1,106 +1,23 @@
-file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
+file(GLOB_RECURSE MAYAFLUX_TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
 )
 
 if(APPLE)
-    file(GLOB_RECURSE TEST_OBJCXX_SOURCES CONFIGURE_DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/*.mm
+    set(MAYAFLUX_COCOA_EVENT_SOURCE
+        "${CMAKE_CURRENT_SOURCE_DIR}/support/cocoa_event_injector.mm"
     )
-    list(APPEND TEST_SOURCES ${TEST_OBJCXX_SOURCES})
-    set_source_files_properties(${TEST_OBJCXX_SOURCES}
+    set(MAYAFLUX_COCOA_PANEL_SOURCE
+        "${CMAKE_CURRENT_SOURCE_DIR}/support/cocoa_panel_driver.mm"
+    )
+    set_source_files_properties(
+        "${MAYAFLUX_COCOA_EVENT_SOURCE}" "${MAYAFLUX_COCOA_PANEL_SOURCE}"
         PROPERTIES SKIP_PRECOMPILE_HEADERS ON
         COMPILE_OPTIONS "-include;${CMAKE_SOURCE_DIR}/cmake/pch.h;-fobjc-arc"
     )
 endif()
 
-add_executable(MayaFluxTests ${TEST_SOURCES})
-
-if(WIN32)
-    target_sources(MayaFluxTests PRIVATE
-        "${CMAKE_SOURCE_DIR}/src/MayaFlux/IO/Image/TinyExrImpl.cpp"
-    )
-endif()
-
-set_target_properties(MayaFluxTests PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-)
-
 find_package(GTest REQUIRED)
-
-target_precompile_headers(MayaFluxTests PUBLIC ${CMAKE_SOURCE_DIR}/cmake/pch.h)
-
-if(MSVC)
-    set_property(TARGET MayaFluxTests PROPERTY
-        MSVC_RUNTIME_LIBRARY MultiThreadedDLL
-    )
-endif()
-
-target_link_libraries(MayaFluxTests PRIVATE
-    MayaFluxLib
-    GTest::gtest
-)
-
-if(UNIX AND NOT APPLE AND MAYAFLUX_AUDIO_BACKEND STREQUAL "PIPEWIRE_BACKEND")
-    target_link_libraries(MayaFluxTests PRIVATE PkgConfig::PIPEWIRE)
-endif()
-
-if(UNIX AND NOT APPLE AND MAYAFLUX_WINDOWING_BACKEND STREQUAL "WAYLAND_BACKEND")
-    target_include_directories(MayaFluxTests PRIVATE
-        "${CMAKE_BINARY_DIR}/src/MayaFlux/wayland_generated"
-    )
-endif()
-
-if(UNIX AND NOT APPLE)
-    target_include_directories(MayaFluxTests PRIVATE ${DBUS_INCLUDE_DIRS})
-    target_link_libraries(MayaFluxTests PRIVATE ${DBUS_LIBRARIES})
-endif()
-
-if(APPLE AND MAYAFLUX_AUDIO_BACKEND STREQUAL "COREAUDIO_BACKEND")
-    target_link_libraries(MayaFluxTests PRIVATE
-        "-framework CoreAudio"
-        "-framework AudioUnit"
-        "-framework AudioToolbox"
-    )
-endif()
-
-if(APPLE AND MAYAFLUX_MIDI_BACKEND STREQUAL "COREMIDI_BACKEND")
-    target_link_libraries(MayaFluxTests PRIVATE
-        "-framework CoreMIDI"
-        "-framework CoreFoundation"
-    )
-endif()
-
-if(APPLE AND MAYAFLUX_WINDOWING_BACKEND STREQUAL "COCOA_BACKEND")
-    target_link_libraries(MayaFluxTests PRIVATE
-        "-framework AppKit"
-        "-framework QuartzCore"
-        "-framework CoreFoundation"
-        "-framework CoreGraphics"
-        "-framework UniformTypeIdentifiers"
-    )
-endif()
-
 include(GoogleTest)
-gtest_discover_tests(MayaFluxTests
-    NO_PRETTY_TYPES
-    NO_PRETTY_VALUES
-    TEST_LIST MayaFluxDiscoveredTests
-    DISCOVERY_MODE POST_BUILD
-)
-
-set(MAYAFLUX_TEST_METADATA_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/MayaFluxTests_metadata_$<CONFIG>.cmake"
-)
-
-add_custom_command(TARGET MayaFluxTests POST_BUILD
-    COMMAND $<TARGET_FILE:MayaFluxTests>
-        --mayaflux-emit-ctest "${MAYAFLUX_TEST_METADATA_FILE}"
-    VERBATIM
-)
-
-set(MAYAFLUX_TEST_METADATA_INCLUDE
-    "${CMAKE_CURRENT_BINARY_DIR}/MayaFluxTests_metadata_include.cmake"
-)
 
 get_property(MAYAFLUX_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(MAYAFLUX_MULTI_CONFIG)
@@ -109,10 +26,106 @@ else()
     set(MAYAFLUX_CTEST_CONFIG "${CMAKE_BUILD_TYPE}")
 endif()
 
-file(WRITE "${MAYAFLUX_TEST_METADATA_INCLUDE}"
-    "if(DEFINED MayaFluxDiscoveredTests)\n  set(_mayaflux_metadata_file \"${CMAKE_CURRENT_BINARY_DIR}/MayaFluxTests_metadata_${MAYAFLUX_CTEST_CONFIG}.cmake\")\n  if(NOT EXISTS \"\${_mayaflux_metadata_file}\")\n    message(FATAL_ERROR \"MayaFluxTests metadata was not generated\")\n  endif()\n  include(\"\${_mayaflux_metadata_file}\")\nendif()\n"
-)
+list(REMOVE_ITEM MAYAFLUX_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/test_main.cpp")
+foreach(test_source IN LISTS MAYAFLUX_TEST_SOURCES)
+    file(RELATIVE_PATH test_relative "${CMAKE_CURRENT_SOURCE_DIR}" "${test_source}")
+    if(NOT test_relative MATCHES "^([^/]+)/.+\\.cpp$")
+        message(FATAL_ERROR "Test source has no parent folder: ${test_relative}")
+    endif()
+    set(test_group "${CMAKE_MATCH_1}")
+    list(APPEND MAYAFLUX_TEST_GROUPS "${test_group}")
+    list(APPEND MAYAFLUX_TEST_SOURCES_${test_group} "${test_source}")
+endforeach()
+list(REMOVE_DUPLICATES MAYAFLUX_TEST_GROUPS)
+list(SORT MAYAFLUX_TEST_GROUPS)
 
-set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
-    "${MAYAFLUX_TEST_METADATA_INCLUDE}"
-)
+foreach(test_group IN LISTS MAYAFLUX_TEST_GROUPS)
+    set(test_target "MayaFluxTests_${test_group}")
+    set(test_list "MayaFluxDiscovered_${test_group}")
+    add_executable(${test_target}
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_main.cpp"
+        ${MAYAFLUX_TEST_SOURCES_${test_group}}
+    )
+
+    if(APPLE AND test_group MATCHES "^(buffers|core|portal|vulkan)$")
+        target_sources(${test_target} PRIVATE "${MAYAFLUX_COCOA_EVENT_SOURCE}")
+    endif()
+    if(APPLE AND test_group STREQUAL "core")
+        target_sources(${test_target} PRIVATE "${MAYAFLUX_COCOA_PANEL_SOURCE}")
+    endif()
+    if(WIN32 AND test_group STREQUAL "io")
+        target_sources(${test_target} PRIVATE
+            "${CMAKE_SOURCE_DIR}/src/MayaFlux/IO/Image/TinyExrImpl.cpp"
+        )
+    endif()
+
+    set_target_properties(${test_target} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    target_precompile_headers(${test_target} PUBLIC "${CMAKE_SOURCE_DIR}/cmake/pch.h")
+
+    if(MSVC)
+        set_property(TARGET ${test_target} PROPERTY
+            MSVC_RUNTIME_LIBRARY MultiThreadedDLL
+        )
+    endif()
+
+    target_link_libraries(${test_target} PRIVATE MayaFluxLib GTest::gtest)
+
+    if(UNIX AND NOT APPLE AND MAYAFLUX_AUDIO_BACKEND STREQUAL "PIPEWIRE_BACKEND")
+        target_link_libraries(${test_target} PRIVATE PkgConfig::PIPEWIRE)
+    endif()
+    if(UNIX AND NOT APPLE AND MAYAFLUX_WINDOWING_BACKEND STREQUAL "WAYLAND_BACKEND")
+        target_include_directories(${test_target} PRIVATE
+            "${CMAKE_BINARY_DIR}/src/MayaFlux/wayland_generated"
+        )
+    endif()
+    if(UNIX AND NOT APPLE)
+        target_include_directories(${test_target} PRIVATE ${DBUS_INCLUDE_DIRS})
+        target_link_libraries(${test_target} PRIVATE ${DBUS_LIBRARIES})
+    endif()
+
+    if(APPLE AND MAYAFLUX_AUDIO_BACKEND STREQUAL "COREAUDIO_BACKEND")
+        target_link_libraries(${test_target} PRIVATE
+            "-framework CoreAudio" "-framework AudioUnit" "-framework AudioToolbox"
+        )
+    endif()
+    if(APPLE AND MAYAFLUX_MIDI_BACKEND STREQUAL "COREMIDI_BACKEND")
+        target_link_libraries(${test_target} PRIVATE
+            "-framework CoreMIDI" "-framework CoreFoundation"
+        )
+    endif()
+    if(APPLE AND MAYAFLUX_WINDOWING_BACKEND STREQUAL "COCOA_BACKEND")
+        target_link_libraries(${test_target} PRIVATE
+            "-framework AppKit" "-framework QuartzCore" "-framework CoreFoundation"
+            "-framework CoreGraphics" "-framework UniformTypeIdentifiers"
+        )
+    endif()
+
+    gtest_discover_tests(${test_target}
+        NO_PRETTY_TYPES
+        NO_PRETTY_VALUES
+        TEST_PREFIX "${test_group}/"
+        TEST_LIST ${test_list}
+        DISCOVERY_MODE POST_BUILD
+    )
+
+    set(test_metadata_file
+        "${CMAKE_CURRENT_BINARY_DIR}/${test_target}_metadata_$<CONFIG>.cmake"
+    )
+    add_custom_command(TARGET ${test_target} POST_BUILD
+        COMMAND $<TARGET_FILE:${test_target}>
+            --mayaflux-emit-ctest "${test_metadata_file}" "${test_group}"
+        VERBATIM
+    )
+
+    set(test_metadata_include
+        "${CMAKE_CURRENT_BINARY_DIR}/${test_target}_metadata_include.cmake"
+    )
+    file(WRITE "${test_metadata_include}"
+        "if(DEFINED ${test_list})\n  set(_mayaflux_metadata_file \"${CMAKE_CURRENT_BINARY_DIR}/${test_target}_metadata_${MAYAFLUX_CTEST_CONFIG}.cmake\")\n  if(NOT EXISTS \"\${_mayaflux_metadata_file}\")\n    message(FATAL_ERROR \"${test_target} metadata was not generated\")\n  endif()\n  include(\"\${_mayaflux_metadata_file}\")\nendif()\n"
+    )
+    set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
+        "${test_metadata_include}"
+    )
+endforeach()

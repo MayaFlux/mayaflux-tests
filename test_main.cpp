@@ -156,7 +156,7 @@ bool collect_cases(std::vector<CaseMetadata>& cases, std::string& error)
     return true;
 }
 
-bool emit_ctest(const std::filesystem::path& output, std::string& error)
+bool emit_ctest(const std::filesystem::path& output, std::string_view group, std::string& error)
 {
     std::error_code ignored;
     std::filesystem::remove(output, ignored);
@@ -169,22 +169,24 @@ bool emit_ctest(const std::filesystem::path& output, std::string& error)
         error = "cannot write CTest metadata: " + output.string();
         return false;
     }
-    file << "if(NOT DEFINED MayaFluxDiscoveredTests)\n"
-            "  message(FATAL_ERROR \"Google Test discovery did not provide MayaFluxDiscoveredTests\")\n"
+    const std::string test_list = "MayaFluxDiscovered_" + std::string(group);
+    const std::string test_prefix = std::string(group) + "/";
+    file << "if(NOT DEFINED " << test_list << ")\n"
+            "  message(FATAL_ERROR \"Google Test discovery did not provide " << test_list << "\")\n"
             "endif()\n"
-            "list(LENGTH MayaFluxDiscoveredTests _mayaflux_discovered_count)\n"
+            "list(LENGTH " << test_list << " _mayaflux_discovered_count)\n"
             "if(NOT _mayaflux_discovered_count EQUAL " << cases.size() << ")\n"
             "  message(FATAL_ERROR \"Google Test and metadata case counts differ: ${_mayaflux_discovered_count} versus "
          << cases.size() << "\")\n"
             "endif()\n";
     for (std::size_t index = 0; index < cases.size(); ++index) {
-        file << "list(GET MayaFluxDiscoveredTests " << index << " _mayaflux_discovered_name)\n"
-                "if(NOT _mayaflux_discovered_name STREQUAL " << cmake_quote(cases[index].name) << ")\n"
+        file << "list(GET " << test_list << " " << index << " _mayaflux_discovered_name)\n"
+                "if(NOT _mayaflux_discovered_name STREQUAL " << cmake_quote(test_prefix + cases[index].name) << ")\n"
                 "  message(FATAL_ERROR \"Google Test and metadata names differ at index " << index << "\")\n"
                 "endif()\n";
     }
     for (const auto& test : cases) {
-        file << "set_tests_properties(" << cmake_quote(test.name) << " PROPERTIES LABELS "
+        file << "set_tests_properties(" << cmake_quote(test_prefix + test.name) << " PROPERTIES LABELS "
              << cmake_quote(labels_for(test.annotation));
         const auto locks = locks_for(test.annotation);
         if (!locks.empty())
@@ -207,9 +209,9 @@ bool emit_ctest(const std::filesystem::path& output, std::string& error)
 int main(int argc, char** argv)
 {
     testing::InitGoogleTest(&argc, argv);
-    if (argc == 3 && std::string_view(argv[1]) == "--mayaflux-emit-ctest") {
+    if (argc == 4 && std::string_view(argv[1]) == "--mayaflux-emit-ctest") {
         std::string error;
-        if (!emit_ctest(argv[2], error)) {
+        if (!emit_ctest(argv[2], argv[3], error)) {
             std::cerr << error << '\n';
             return 1;
         }
