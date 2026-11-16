@@ -129,3 +129,43 @@ foreach(test_group IN LISTS MAYAFLUX_TEST_GROUPS)
         "${test_metadata_include}"
     )
 endforeach()
+
+set(MAYAFLUX_COVERAGE_GROUP "io" CACHE STRING "Test group whose binary the coverage target runs")
+set(MAYAFLUX_COVERAGE_FILTER "src/MayaFlux/IO/(CodecContext|Audio|Video|Camera)/" CACHE STRING "gcovr source filter for the coverage target")
+
+if(MAYAFLUX_COVERAGE)
+    if(NOT TARGET MayaFluxTests_${MAYAFLUX_COVERAGE_GROUP})
+        message(FATAL_ERROR "MAYAFLUX_COVERAGE_GROUP '${MAYAFLUX_COVERAGE_GROUP}' is not a test group")
+    endif()
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        message(FATAL_ERROR "MAYAFLUX_COVERAGE needs GCC or Clang, found ${CMAKE_CXX_COMPILER_ID}")
+    endif()
+
+    target_compile_options(MayaFluxLib PRIVATE --coverage)
+    target_link_options(MayaFluxLib PUBLIC --coverage)
+
+    find_program(MAYAFLUX_GCOVR gcovr)
+    if(MAYAFLUX_GCOVR)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            set(MAYAFLUX_GCOV_EXECUTABLE "llvm-cov gcov")
+        else()
+            set(MAYAFLUX_GCOV_EXECUTABLE "gcov")
+        endif()
+
+        add_custom_target(coverage
+            COMMAND ${CMAKE_COMMAND}
+                -DTEST_EXECUTABLE=$<TARGET_FILE:MayaFluxTests_${MAYAFLUX_COVERAGE_GROUP}>
+                -DGCOVR=${MAYAFLUX_GCOVR}
+                -DGCOV_EXECUTABLE=${MAYAFLUX_GCOV_EXECUTABLE}
+                -DSOURCE_ROOT=${CMAKE_SOURCE_DIR}
+                -DBUILD_ROOT=${CMAKE_BINARY_DIR}
+                -DREPORT_DIR=${CMAKE_BINARY_DIR}/coverage
+                -DFILTER=${MAYAFLUX_COVERAGE_FILTER}
+                -P ${CMAKE_SOURCE_DIR}/cmake/coverage.cmake
+            DEPENDS MayaFluxTests_${MAYAFLUX_COVERAGE_GROUP}
+            VERBATIM
+        )
+    else()
+        message(WARNING "MAYAFLUX_COVERAGE is on but gcovr was not found; coverage target not created")
+    endif()
+endif()
