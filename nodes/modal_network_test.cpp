@@ -117,7 +117,8 @@ TEST(ModalSpectrumExtraTest, CustomRatiosTrackFundamentalChanges)
 {
     ModalNetwork network(std::vector<double> { 1.0, 1.5, 2.25 }, 200.0);
 
-    network.set_fundamental(300.0);
+    network.set({ .frequency = 300.0 });
+    render(network, 1);
 
     EXPECT_DOUBLE_EQ(network.get_mode(0).base_frequency, 300.0);
     EXPECT_DOUBLE_EQ(network.get_mode(1).base_frequency, 450.0);
@@ -273,7 +274,7 @@ TEST_P(ModalCouplingTest, CouplingTransfersTheSpecifiedFractionOfAmplitude)
     ModalNetwork network(2, 440.0);
     network.excite_mode(0);
     network.set_mode_coupling(config.first, config.second, config.strength);
-    network.set_coupling_enabled(true);
+    network.set({ .coupling_enabled = true });
 
     render(network, 1);
 
@@ -305,7 +306,7 @@ TEST(ModalCouplingExtraTest, AConfiguredCouplingDoesNotTransferWhileDisabled)
     render(network, 1);
     EXPECT_DOUBLE_EQ(network.get_mode(1).amplitude, 0.0);
 
-    network.set_coupling_enabled(true);
+    network.set({ .coupling_enabled = true });
     render(network, 1);
     EXPECT_GT(network.get_mode(1).amplitude, 0.0);
 }
@@ -313,7 +314,7 @@ TEST(ModalCouplingExtraTest, AConfiguredCouplingDoesNotTransferWhileDisabled)
 TEST(ModalCouplingExtraTest, RemovingOrClearingCouplingsStopsTransfer)
 {
     ModalNetwork network(2, 440.0);
-    network.set_coupling_enabled(true);
+    network.set({ .coupling_enabled = true });
     network.set_mode_coupling(0, 1, 0.8);
     network.remove_mode_coupling(1, 0);
     network.excite_mode(0);
@@ -334,7 +335,7 @@ TEST_P(ModalCouplingBoundaryTest, StrengthIsClampedBeforeTransfer)
     const auto [requested, effective] = GetParam();
     ModalNetwork network(2, 440.0);
     network.set_mode_coupling(0, 1, requested);
-    network.set_coupling_enabled(true);
+    network.set({ .coupling_enabled = true });
     network.excite_mode(0);
 
     render(network, 1);
@@ -399,7 +400,8 @@ TEST_P(ModalNoiseExciterTest, BurstExcitesAResetMode)
 {
     ModalNetwork network(1, 440.0);
     network.set_exciter_type(GetParam().type);
-    network.set_exciter_duration(128.0 / static_cast<double>(network.get_sample_rate()));
+    network.set({ .exciter_duration = 128.0 / static_cast<double>(network.get_sample_rate()) });
+    render(network, 1);
     if (GetParam().type == ModalNetwork::ExciterType::FILTERED_NOISE) {
         network.set_exciter_filter(std::make_shared<Nodes::Filters::FIR>(std::vector<double> { 1.0 }));
     }
@@ -477,7 +479,7 @@ TEST_P(ModalDecayTest, MultiplierChangesTheAmplitudeAfterOneDecayTime)
 {
     ModalNetwork network(1, 440.0, ModalNetwork::Spectrum::HARMONIC, 0.01);
     network.excite_mode(0);
-    network.set_decay_multiplier(GetParam());
+    network.set({ .decay = GetParam() });
 
     render(network, 480);
 
@@ -516,7 +518,7 @@ TEST(ModalMappingTest, BroadcastFrequencyRetunesAllModes)
     network.map_parameter("frequency", source);
     render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_fundamental(), 330.0);
+    EXPECT_DOUBLE_EQ(network.get().frequency.value(), 330.0);
     EXPECT_DOUBLE_EQ(network.get_mode(0).current_frequency, 330.0);
     EXPECT_DOUBLE_EQ(network.get_mode(1).current_frequency, 495.0);
     EXPECT_DOUBLE_EQ(network.get_mode(2).current_frequency, 660.0);
@@ -531,7 +533,7 @@ TEST(ModalMappingTest, SimilarUnknownNameDoesNotRetuneModes)
     network.map_parameter("frequency.extra", source);
     render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_fundamental(), 220.0);
+    EXPECT_DOUBLE_EQ(network.get().frequency.value(), 220.0);
     EXPECT_DOUBLE_EQ(network.get_mode(0).current_frequency, 220.0);
 }
 
@@ -592,7 +594,7 @@ TEST(ModalMappingTest, UnmappingStopsBroadcastUpdates)
     network.unmap_parameter("frequency");
     render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_fundamental(), 220.0);
+    EXPECT_DOUBLE_EQ(network.get().frequency.value(), 220.0);
 }
 
 TEST(ModalMappingTest, OneToOneAmplitudeScalesMatchingModesIndependently)
@@ -754,7 +756,8 @@ TEST(ModalMetadataTest, MetadataReportsCouplingState)
     EXPECT_EQ(network.get_metadata().at("coupling_enabled"), "false");
     EXPECT_EQ(network.get_metadata().at("coupling_count"), "2");
 
-    network.set_coupling_enabled(true);
+    network.set({ .coupling_enabled = true });
+    render(network, 1);
     EXPECT_EQ(network.get_metadata().at("coupling_enabled"), "true");
 }
 
@@ -788,10 +791,12 @@ class ModalDecayClampTest : public ::testing::TestWithParam<double> { };
 TEST_P(ModalDecayClampTest, MultiplierIsFlooredAtOneHundredth)
 {
     ModalNetwork floored(1, 440.0, ModalNetwork::Spectrum::HARMONIC, 0.01);
-    floored.set_decay_multiplier(0.01);
+    floored.set({ .decay = 0.01 });
+    render(floored, 1);
 
     ModalNetwork network(1, 440.0, ModalNetwork::Spectrum::HARMONIC, 0.01);
-    network.set_decay_multiplier(GetParam());
+    network.set({ .decay = GetParam() });
+    render(network, 1);
 
     EXPECT_DOUBLE_EQ(network.get_mode(0).decay_coefficient,
         floored.get_mode(0).decay_coefficient);
@@ -909,7 +914,7 @@ TEST(ModalConfigurationTest, ANewNetworkStartsWithAnImpulseExciter)
     ModalNetwork network(4, 220.0);
 
     EXPECT_EQ(network.get_exciter_type(), ModalNetwork::ExciterType::IMPULSE);
-    EXPECT_FALSE(network.is_coupling_enabled());
+    EXPECT_FALSE(network.get().coupling_enabled.value<bool>());
 }
 
 TEST(ModalConfigurationTest, SpatialDistributionRoundTripsAndRejectsTheWrongSize)
@@ -931,8 +936,9 @@ TEST(ModalCouplingExtraTest, CouplingsAreCountedRemovedAndCleared)
     network.set_mode_coupling(2, 5, 0.1);
     ASSERT_EQ(network.get_couplings().size(), 3U);
 
-    network.set_coupling_enabled(true);
-    EXPECT_TRUE(network.is_coupling_enabled());
+    network.set({ .coupling_enabled = true });
+    render(network, 1);
+    EXPECT_TRUE(network.get().coupling_enabled.value<bool>());
 
     network.remove_mode_coupling(1, 4);
     EXPECT_EQ(network.get_couplings().size(), 2U);
@@ -962,7 +968,7 @@ TEST(ModalDampingTest, ANetworkWithoutTheOperatorKeepsItsOriginalDecay)
     EXPECT_DOUBLE_EQ(network.get_mode(1).decay_coefficient, std::exp(-1.0 / (2.0 * sample_rate)));
     EXPECT_EQ(network.get_mode_decay_time(1), 2.0);
 
-    network.set_decay_multiplier(0.5);
+    network.set({ .decay = 0.5 });
     render(network, 64);
 
     EXPECT_DOUBLE_EQ(network.get_mode(0).decay_coefficient, std::exp(-1.0 / sample_rate));
@@ -984,7 +990,8 @@ TEST(ModalDampingTest, APerModeDecayChangePreservesTheRingAndOtherModes)
     EXPECT_EQ(network.get_mode_decay_time(1), 2.0);
     EXPECT_DOUBLE_EQ(network.get_mode(1).decay_coefficient, other_coefficient);
 
-    network.set_decay_multiplier(2.0);
+    network.set({ .decay = 2.0 });
+    render(network, 1);
     EXPECT_DOUBLE_EQ(network.get_mode(0).decay_coefficient,
         std::exp(-1.0 / (0.5 * network.get_sample_rate())));
     EXPECT_DOUBLE_EQ(network.get_mode(1).decay_coefficient,

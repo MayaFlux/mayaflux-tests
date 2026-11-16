@@ -148,7 +148,7 @@ TEST_F(PhysicsControlsTest, AMemberLeftOutLeavesTheOthersAlone)
 TEST_F(PhysicsControlsTest, TheSameNameThroughTheStringPathGivesTheSameResult)
 {
     PhysicsOperator by_string;
-    by_string.set_bounds_mode(BoundsMode::NONE);
+    by_string.set({ .bounds_mode = BoundsMode::NONE });
     by_string.initialize(particles(2));
     by_string.set_parameter("gravity_y", -4.0);
     by_string.set_parameter("gravity_x", 2.0);

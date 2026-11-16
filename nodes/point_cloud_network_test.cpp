@@ -449,7 +449,7 @@ namespace {
         op.process(0.0F);
         const auto none = connections_per_topology(op);
 
-        op.set_connection_radius(50.0F);
+        op.set({ .connection_radius = 50.0F });
         op.process(0.0F);
         const auto many = connections_per_topology(op);
 
@@ -465,7 +465,7 @@ namespace {
         op.initialize_topologies({ points(8), points(8, 20.0F) }, ProximityMode::K_NEAREST);
 
         op.set_parameter("line_thickness", 6.0);
-        op.set_global_line_color({ 0.2F, 0.4F, 0.6F, 1.0F });
+        op.set({ .line_color = glm::vec4(0.2F, 0.4F, 0.6F, 1.0F) });
         op.process(0.0F);
 
         for (uint32_t g = 0; g < 2; ++g) {
@@ -830,11 +830,11 @@ namespace {
         auto* topo = dynamic_cast<TopologyOperator*>(net.get_operator());
         ASSERT_NE(topo, nullptr);
 
-        net.set_k_neighbors(1);
+        net.set({ .k_neighbors = 1.0 });
         net.process_batch(1);
         const auto sparse = topo->get_topology(0)->get_connection_count();
 
-        net.set_k_neighbors(6);
+        net.set({ .k_neighbors = 6.0 });
         net.process_batch(1);
         const auto dense = topo->get_topology(0)->get_connection_count();
 
@@ -846,8 +846,7 @@ namespace {
         InitializedCloud net(12);
         net.create_operator<PathOperator>();
 
-        net.set_line_thickness(6.0F);
-        net.set_line_color({ 0.2F, 0.4F, 0.6F, 1.0F });
+        net.set({ .line_color = glm::vec4(0.2F, 0.4F, 0.6F, 1.0F), .line_thickness = 6.0F });
         net.process_batch(1);
 
         auto* path = dynamic_cast<PathOperator*>(net.get_operator());
@@ -863,8 +862,7 @@ namespace {
     {
         InitializedCloud net(12);
 
-        net.set_line_thickness(6.0F);
-        net.set_line_color({ 0.2F, 0.4F, 0.6F, 1.0F });
+        net.set({ .line_color = glm::vec4(0.2F, 0.4F, 0.6F, 1.0F), .line_thickness = 6.0F });
         net.process_batch(1);
 
         auto* topo = dynamic_cast<TopologyOperator*>(net.get_operator());
@@ -882,27 +880,28 @@ namespace {
         const auto dense = path->get_vertex_count();
         const auto shape = copy_of(path->get_vertex_data());
 
-        net.set_samples_per_segment(4);
+        net.set({ .samples_per_segment = 4.0 });
         net.process_batch(1);
         EXPECT_LT(path->get_vertex_count(), dense);
 
-        net.set_samples_per_segment(32);
-        net.set_tension(0.0);
+        net.set({ .samples_per_segment = 32.0, .tension = 0.0 });
         net.process_batch(1);
         EXPECT_NE(copy_of(path->get_vertex_data()), shape);
     }
 
-    TEST(PointCloudNetworkForwardingTest, SettersForAnotherOperatorAreHarmless)
+    TEST(PointCloudNetworkForwardingTest, ControlsForAnotherOperatorAreHarmless)
     {
         InitializedCloud net(12);
         net.create_operator<FieldOperator>();
 
-        EXPECT_NO_THROW(net.set_connection_radius(1.0F));
-        EXPECT_NO_THROW(net.set_k_neighbors(3));
-        EXPECT_NO_THROW(net.set_line_thickness(4.0F));
-        EXPECT_NO_THROW(net.set_line_color({ 1.0F, 0.0F, 0.0F, 1.0F }));
-        EXPECT_NO_THROW(net.set_samples_per_segment(8));
-        EXPECT_NO_THROW(net.set_tension(0.2));
+        net.set({ .line_color = glm::vec4(1.0F, 0.0F, 0.0F, 1.0F),
+            .connection_radius = 1.0,
+            .k_neighbors = 3.0,
+            .line_thickness = 4.0F,
+            .samples_per_segment = 8.0,
+            .tension = 0.2 });
+
+        EXPECT_NO_THROW(net.process_batch(1));
         EXPECT_EQ(net.get_node_count(), 12U);
     }
 
@@ -1084,7 +1083,7 @@ namespace {
         net.process_batch(1);
 
         net.unmap_parameter("thickness");
-        net.set_line_thickness(2.0F);
+        net.set({ .line_thickness = 2.0F });
         net.process_batch(1);
 
         auto* path = dynamic_cast<PathOperator*>(net.get_operator());

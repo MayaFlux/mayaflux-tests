@@ -520,7 +520,7 @@ TEST(ModalControlsTest, ANumberFrequencyRetunesEveryMode)
     network.set({ .frequency = 330.0 });
     render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_fundamental(), 330.0);
+    EXPECT_DOUBLE_EQ(network.get().frequency.value(), 330.0);
     EXPECT_DOUBLE_EQ(network.get_mode(0).current_frequency, 330.0);
     EXPECT_DOUBLE_EQ(network.get_mode(1).current_frequency, 495.0);
     EXPECT_DOUBLE_EQ(network.get_mode(2).current_frequency, 660.0);
@@ -544,7 +544,7 @@ TEST(ModalControlsTest, AnUnsetFrequencyLeavesTheTuningAlone)
     network.set({ .decay = 2.0 });
     render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_fundamental(), 220.0);
+    EXPECT_DOUBLE_EQ(network.get().frequency.value(), 220.0);
 }
 
 TEST(ModalControlsTest, ANodeDecayChangesTheRingingEnvelope)
@@ -713,6 +713,141 @@ TEST(ModalControlsTest, GetReportsValuesChangedThroughTheNetworkItself)
     EXPECT_DOUBLE_EQ(controls.frequency.value(), 330.0);
     EXPECT_DOUBLE_EQ(controls.decay.value(), 2.0);
     EXPECT_DOUBLE_EQ(controls.scale.value(), 0.4);
+}
+
+TEST(ModalControlsTest, CouplingIsEnabledAndDisabledByAControl)
+{
+    ModalNetwork network(4, 220.0);
+    network.set_mode_coupling(0, 1, 0.5);
+
+    network.set({ .coupling_enabled = true });
+    render(network, 1);
+    EXPECT_TRUE(network.get().coupling_enabled.value<bool>());
+
+    network.set({ .coupling_enabled = false });
+    render(network, 1);
+    EXPECT_FALSE(network.get().coupling_enabled.value<bool>());
+}
+
+TEST(ModalControlsTest, EnabledCouplingChangesTheRingAndDisabledCouplingDoesNot)
+{
+    ModalNetwork coupled(4, 220.0);
+    ModalNetwork plain(4, 220.0);
+    ModalNetwork off(4, 220.0);
+    for (ModalNetwork* network : { &coupled, &plain, &off }) {
+        network->set_mode_coupling(0, 1, 0.8);
+        network->excite_mode(0);
+    }
+
+    coupled.set({ .coupling_enabled = true });
+    off.set({ .coupling_enabled = false });
+
+    const auto with = render(coupled, 512);
+    const auto without = render(plain, 512);
+    const auto disabled = render(off, 512);
+
+    double difference = 0.0;
+    for (size_t i = 0; i < with.size(); ++i) {
+        difference = std::max(difference, std::abs(with[i] - without[i]));
+    }
+    EXPECT_GT(difference, 1e-9);
+    EXPECT_EQ(disabled, without);
+}
+
+TEST(ModalControlsTest, AnExciterDurationIsFlooredLikeTheSetter)
+{
+    ModalNetwork network(2, 220.0);
+
+    network.set({ .exciter_duration = 0.0001 });
+    render(network, 1);
+    EXPECT_DOUBLE_EQ(network.get().exciter_duration.value(), 0.001);
+
+    network.set({ .exciter_duration = 0.02 });
+    render(network, 1);
+    EXPECT_DOUBLE_EQ(network.get().exciter_duration.value(), 0.02);
+}
+
+TEST(ModalControlsTest, TheDeprecatedSettersRenderTheSameSoundAsTheControls)
+{
+    ModalNetwork by_setter(4, 220.0);
+    ModalNetwork by_control(4, 220.0);
+    by_setter.set_fundamental(330.0);
+    by_setter.set_decay_multiplier(0.5);
+    by_setter.set_coupling_enabled(true);
+    by_setter.set_mode_coupling(0, 1, 0.5);
+    by_control.set_mode_coupling(0, 1, 0.5);
+    by_control.set({ .frequency = 330.0, .decay = 0.5, .coupling_enabled = true });
+    by_setter.excite_mode(0);
+    by_control.excite_mode(0);
+
+    const auto expected = render(by_setter, 512);
+    const auto actual = render(by_control, 512);
+
+    ASSERT_EQ(actual.size(), expected.size());
+    for (size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_NEAR(actual[i], expected[i], 1e-12) << "sample " << i;
+    }
+}
+
+TEST(ModalControlsTest, AnImmediateSetterAfterATypedSetWinsAndBeforeItLoses)
+{
+    ModalNetwork later(2, 220.0);
+    later.set({ .frequency = 500.0, .decay = 2.0 });
+    later.set_fundamental(300.0);
+    later.set_decay_multiplier(0.5);
+    render(later, 1);
+    EXPECT_DOUBLE_EQ(later.get().frequency.value(), 300.0);
+    EXPECT_DOUBLE_EQ(later.get().decay.value(), 0.5);
+
+    ModalNetwork earlier(2, 220.0);
+    earlier.set_fundamental(300.0);
+    earlier.set_decay_multiplier(0.5);
+    earlier.set({ .frequency = 500.0, .decay = 2.0 });
+    render(earlier, 1);
+    EXPECT_DOUBLE_EQ(earlier.get().frequency.value(), 500.0);
+    EXPECT_DOUBLE_EQ(earlier.get().decay.value(), 2.0);
+}
+
+TEST(ModalControlsTest, GetReportsTheCouplingAndExciterDurationTheNetworkHolds)
+{
+    ModalNetwork network(2, 220.0);
+
+    const auto controls = network.get();
+
+    EXPECT_FALSE(controls.coupling_enabled.value<bool>());
+    EXPECT_DOUBLE_EQ(controls.exciter_duration.value(), 0.01);
+}
+
+TEST(ModalControlsTest, ANodeAboveHalfEnablesCouplingAndBelowItDisables)
+{
+    ModalNetwork on(4, 220.0);
+    ModalNetwork off(4, 220.0);
+    ModalNetwork plain(4, 220.0);
+    for (ModalNetwork* network : { &on, &off, &plain }) {
+        network->set_mode_coupling(0, 1, 0.8);
+        network->excite_mode(0);
+    }
+    on.set({ .coupling_enabled = constant_source(1.0) });
+    off.set({ .coupling_enabled = constant_source(0.2) });
+
+    const auto enabled = render(on, 512);
+    const auto disabled = render(off, 512);
+    const auto reference = render(plain, 512);
+
+    EXPECT_EQ(disabled, reference);
+    EXPECT_NE(enabled, reference);
+}
+
+TEST(ModalControlsTest, TheDeprecatedGettersAgreeWithGet)
+{
+    ModalNetwork network(2, 220.0);
+
+    network.set({ .frequency = 330.0, .coupling_enabled = true });
+    render(network, 1);
+
+    EXPECT_DOUBLE_EQ(network.get_fundamental(), network.get().frequency.value());
+    EXPECT_EQ(network.is_coupling_enabled(), network.get().coupling_enabled.value<bool>());
+    EXPECT_TRUE(network.is_coupling_enabled());
 }
 
 TEST(ControlStoreTest, ADeclaredStructIsOwnedByTheStoreAndMergesIntoItself)
@@ -1498,7 +1633,7 @@ TEST(ModalControlsTest, TheTypedPathWorksThroughASharedPointerAndTheBase)
     network->set({ .frequency = 440.0 });
     base->process_batch(1);
 
-    EXPECT_DOUBLE_EQ(network->get_fundamental(), 440.0);
+    EXPECT_DOUBLE_EQ(network->get().frequency.value(), 440.0);
 }
 
 }

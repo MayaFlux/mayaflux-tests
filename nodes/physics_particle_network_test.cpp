@@ -148,7 +148,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, GravityIntegratesWithSemiImplicitEuler)
     {
-        op.set_gravity({ 0.0F, -10.0F, 0.0F });
+        op.set({ .gravity = glm::vec3(0.0F, -10.0F, 0.0F) });
         op.initialize(particles(1));
 
         op.process(0.1F);
@@ -162,7 +162,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, DragScalesVelocityEachStep)
     {
-        op.set_drag(0.5F);
+        op.set({ .drag = 0.5F });
         op.initialize(particles(1));
         op.apply_impulse(0, { 1.0F, 0.0F, 0.0F });
 
@@ -174,9 +174,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, ForcedInternalDtOverridesTheCallersDt)
     {
-        op.set_gravity({ 0.0F, -10.0F, 0.0F });
-        op.set_force_internal_dt(true);
-        op.set_internal_dt(0.5F);
+        op.set({ .gravity = glm::vec3(0.0F, -10.0F, 0.0F), .internal_dt = 0.5F, .force_internal_dt = true });
         op.initialize(particles(1));
 
         op.process(0.1F);
@@ -193,7 +191,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, GravityDoesNotDependOnMass)
     {
-        op.set_gravity({ 0.0F, -10.0F, 0.0F });
+        op.set({ .gravity = glm::vec3(0.0F, -10.0F, 0.0F) });
         op.add_collection(particles(1), 1.0F);
         op.add_collection(particles(1), 4.0F);
 
@@ -243,10 +241,10 @@ namespace {
     TEST_F(PhysicsOperatorTest, AttractionPullsTowardThePointAndStopsWhenCleared)
     {
         op.initialize(particles(1, 1.0F, 5.0F));
-        op.set_attraction_point({ 0.0F, 0.0F, 0.0F });
-        EXPECT_TRUE(op.has_attraction_point());
+        op.set({ .attraction_point = glm::vec3(0.0F, 0.0F, 0.0F) });
 
         op.process(0.1F);
+        EXPECT_TRUE(op.has_attraction_point());
         const auto pulled = velocity(0);
         EXPECT_LT(pulled.x, 0.0F);
 
@@ -262,7 +260,7 @@ namespace {
         op.process(0.1F);
         EXPECT_NEAR(glm::length(velocity(0)), 0.0F, k_eps);
 
-        op.set_turbulence_strength(5.0F);
+        op.set({ .turbulence = 5.0F });
         op.process(0.1F);
 
         float total = 0.0F;
@@ -324,10 +322,10 @@ namespace {
     TEST_P(PhysicsOperatorBoundsTest, BehavesAtTheBox)
     {
         PhysicsOperator op;
-        op.set_gravity(glm::vec3(0.0F));
-        op.set_drag(0.0F);
-        op.set_bounds({ -1.0F, -1.0F, -1.0F }, { 1.0F, 1.0F, 1.0F });
-        op.set_bounds_mode(GetParam().mode);
+        op.set({ .gravity = glm::vec3(0.0F),
+            .drag = 0.0F,
+            .bounds = Kinesis::SamplerBounds { .min = { -1.0F, -1.0F, -1.0F }, .max = { 1.0F, 1.0F, 1.0F } },
+            .bounds_mode = GetParam().mode });
         op.initialize(at({ { 0.5F, GetParam().start_y, 0.0F } }));
         op.apply_impulse(0, { 0.0F, GetParam().push, 0.0F });
 
@@ -358,12 +356,12 @@ namespace {
     {
         PhysicsOperator op;
 
-        EXPECT_EQ(op.get_bounds_mode(), BoundsMode::BOUNCE);
-        EXPECT_EQ(op.get_gravity(), glm::vec3(0.0F, -9.81F, 0.0F));
-        EXPECT_FLOAT_EQ(op.get_drag(), 0.01F);
-        EXPECT_FALSE(op.spatial_interactions_enabled());
+        EXPECT_EQ(op.get().bounds_mode.value<BoundsMode>(), BoundsMode::BOUNCE);
+        EXPECT_EQ(op.get().gravity.value<glm::vec3>(), glm::vec3(0.0F, -9.81F, 0.0F));
+        EXPECT_FLOAT_EQ(op.get().drag.value(), 0.01F);
+        EXPECT_FALSE(op.get().spatial_interactions.value<bool>());
         EXPECT_FALSE(op.has_attraction_point());
-        EXPECT_TRUE(op.bonds_enabled());
+        EXPECT_TRUE(op.get().bonds_enabled.value<bool>());
     }
 
     TEST_F(PhysicsOperatorTest, ParametersAreCaseInsensitiveAndReachTheState)
@@ -375,25 +373,25 @@ namespace {
         op.set_parameter("repulsion_strength", 5.0);
         op.set_parameter("spatial_interactions", 1.0);
 
-        EXPECT_EQ(op.get_gravity(), glm::vec3(1.0F, 2.0F, 3.0F));
-        EXPECT_FLOAT_EQ(op.get_interaction_radius(), 4.0F);
-        EXPECT_FLOAT_EQ(op.get_repulsion_strength(), 5.0F);
-        EXPECT_TRUE(op.spatial_interactions_enabled());
+        EXPECT_EQ(op.get().gravity.value<glm::vec3>(), glm::vec3(1.0F, 2.0F, 3.0F));
+        EXPECT_FLOAT_EQ(op.get().interaction_radius.value(), 4.0F);
+        EXPECT_FLOAT_EQ(op.get().repulsion_strength.value(), 5.0F);
+        EXPECT_TRUE(op.get().spatial_interactions.value<bool>());
 
         op.set_parameter("spatial_interactions", 0.0);
-        EXPECT_FALSE(op.spatial_interactions_enabled());
+        EXPECT_FALSE(op.get().spatial_interactions.value<bool>());
     }
 
     TEST_F(PhysicsOperatorTest, DragParameterIsClampedToUnitRange)
     {
         op.set_parameter("drag", 5.0);
-        EXPECT_FLOAT_EQ(op.get_drag(), 1.0F);
+        EXPECT_FLOAT_EQ(op.get().drag.value(), 1.0F);
 
         op.set_parameter("drag", -3.0);
-        EXPECT_FLOAT_EQ(op.get_drag(), 0.0F);
+        EXPECT_FLOAT_EQ(op.get().drag.value(), 0.0F);
 
         op.set_parameter("drag", 0.25);
-        EXPECT_FLOAT_EQ(op.get_drag(), 0.25F);
+        EXPECT_FLOAT_EQ(op.get().drag.value(), 0.25F);
     }
 
     TEST_F(PhysicsOperatorTest, PointSizeParameterResizesExistingParticles)
@@ -411,8 +409,8 @@ namespace {
     {
         op.set_parameter("no_such_parameter", 3.0);
 
-        EXPECT_EQ(op.get_gravity(), glm::vec3(0.0F));
-        EXPECT_FLOAT_EQ(op.get_drag(), 0.0F);
+        EXPECT_EQ(op.get().gravity.value<glm::vec3>(), glm::vec3(0.0F));
+        EXPECT_FLOAT_EQ(op.get().drag.value(), 0.0F);
     }
 
     TEST_F(PhysicsOperatorTest, SpatialInteractionIsOffByDefault)
@@ -427,7 +425,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, SpatialInteractionAttractsAMidRangePairEqualAndOpposite)
     {
-        op.enable_spatial_interactions(true);
+        op.set({ .spatial_interactions = true });
         op.initialize(at({ { 0.0F, 0.0F, 0.0F }, { 0.8F, 0.0F, 0.0F } }));
 
         op.process(0.1F);
@@ -439,7 +437,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, SpatialInteractionRepelsAVeryClosePair)
     {
-        op.enable_spatial_interactions(true);
+        op.set({ .spatial_interactions = true });
         op.initialize(at({ { 0.0F, 0.0F, 0.0F }, { 0.2F, 0.0F, 0.0F } }));
 
         op.process(0.1F);
@@ -450,8 +448,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, SpatialInteractionIgnoresAPairBeyondTheRadius)
     {
-        op.enable_spatial_interactions(true);
-        op.set_interaction_radius(1.0F);
+        op.set({ .interaction_radius = 1.0F, .spatial_interactions = true });
         op.initialize(at({ { 0.0F, 0.0F, 0.0F }, { 2.0F, 0.0F, 0.0F } }));
 
         op.process(0.1F);
@@ -464,10 +461,10 @@ namespace {
         PhysicsOperator same;
         PhysicsOperator cross;
         for (auto* o : { &same, &cross }) {
-            o->set_gravity(glm::vec3(0.0F));
-            o->set_drag(0.0F);
-            o->set_bounds_mode(BoundsMode::NONE);
-            o->enable_spatial_interactions(true);
+            o->set({ .gravity = glm::vec3(0.0F),
+                .drag = 0.0F,
+                .spatial_interactions = true,
+                .bounds_mode = BoundsMode::NONE });
         }
         same.initialize(at({ { 0.0F, 0.0F, 0.0F }, { 0.8F, 0.0F, 0.0F } }));
         cross.initialize_collections({ at({ { 0.0F, 0.0F, 0.0F } }), at({ { 0.8F, 0.0F, 0.0F } }) });
@@ -522,9 +519,10 @@ namespace {
         op.sync_bonds_from_claims(std::vector<uint32_t> { 0, 0, 2, 2 });
         ASSERT_EQ(op.bond_count(), 2U);
 
-        op.enable_bonds(false);
+        op.set({ .bonds_enabled = false });
+        op.process(0.1F);
         EXPECT_EQ(op.bond_count(), 0U);
-        EXPECT_FALSE(op.bonds_enabled());
+        EXPECT_FALSE(op.get().bonds_enabled.value<bool>());
 
         op.sync_bonds_from_claims(std::vector<uint32_t> { 0, 0, 2, 2 });
         EXPECT_EQ(op.bond_count(), 0U);
@@ -561,7 +559,7 @@ namespace {
             pts.push_back(v);
         }
         op.initialize(pts);
-        op.set_bond_rest_length(1.0F);
+        op.set({ .bond_rest_length = 1.0F });
         op.sync_bonds_from_claims(std::vector<uint32_t> { 0, 0, 0, 0, 0, 0, 0, 0 });
 
         op.process(0.1F);
@@ -635,7 +633,7 @@ namespace {
     TEST(PhysicsOperatorMappingTest, MassMappingSetsPerParticleMassWithAFloor)
     {
         PhysicsOperator op;
-        op.set_gravity(glm::vec3(0.0F));
+        op.set({ .gravity = glm::vec3(0.0F) });
         op.initialize(particles(4));
 
         op.apply_one_to_one("mass", index_source(4));
@@ -677,7 +675,7 @@ namespace {
     TEST(PhysicsOperatorMappingTest, SourceOfTheWrongSizeIsIgnored)
     {
         PhysicsOperator op;
-        op.set_gravity(glm::vec3(0.0F));
+        op.set({ .gravity = glm::vec3(0.0F) });
         op.initialize(particles(4));
 
         op.apply_one_to_one("color", index_source(2));
@@ -691,9 +689,7 @@ namespace {
     TEST(PhysicsOperatorMappingTest, ForceMappingAcceleratesEachParticleByItsSourceValue)
     {
         PhysicsOperator op;
-        op.set_gravity(glm::vec3(0.0F));
-        op.set_drag(0.0F);
-        op.set_bounds_mode(BoundsMode::NONE);
+        op.set({ .gravity = glm::vec3(0.0F), .drag = 0.0F, .bounds_mode = BoundsMode::NONE });
         op.initialize(particles(3));
 
         op.apply_one_to_one("force_x", index_source(3));
@@ -973,15 +969,15 @@ namespace {
         EXPECT_EQ(net.get_bounds().max, glm::vec3(5.0F));
     }
 
-    TEST(ParticleNetworkTest, ResetAppliesBoundsChangedWithSetBounds)
+    TEST(ParticleNetworkTest, ResetAppliesTheBoundsControl)
     {
         ParticleNetwork net(1, glm::vec3(-100.0F), glm::vec3(100.0F));
         net.initialize();
-        net.set_bounds(glm::vec3(-1.0F), glm::vec3(1.0F));
+        net.set({ .bounds = Kinesis::SamplerBounds { .min = glm::vec3(-1.0F), .max = glm::vec3(1.0F) } });
+        net.process_batch(1);
         net.reset();
         auto* physics = net.as_operator<PhysicsOperator>();
-        physics->set_gravity(glm::vec3(0.0F));
-        physics->set_drag(0.0F);
+        physics->set({ .gravity = glm::vec3(0.0F), .drag = 0.0F });
         physics->apply_impulse(0, { 0.0F, 1000.0F, 0.0F });
 
         net.process_batch(1);
@@ -1044,8 +1040,7 @@ namespace {
         ParticleNetwork net(1, glm::vec3(-1.0F), glm::vec3(1.0F));
         net.initialize();
         auto* fresh = net.create_operator<PhysicsOperator>();
-        fresh->set_gravity(glm::vec3(0.0F));
-        fresh->set_drag(0.0F);
+        fresh->set({ .gravity = glm::vec3(0.0F), .drag = 0.0F });
         fresh->apply_impulse(0, { 0.0F, 1000.0F, 0.0F });
 
         net.process_batch(1);
@@ -1139,7 +1134,7 @@ namespace {
         net.map_parameter("gravity_y", source, MappingMode::BROADCAST);
         net.process_batch(1);
 
-        EXPECT_FLOAT_EQ(net.as_operator<PhysicsOperator>()->get_gravity().y, 3.0F);
+        EXPECT_FLOAT_EQ(net.as_operator<PhysicsOperator>()->get().gravity.value<glm::vec3>().y, 3.0F);
     }
 
     TEST(ParticleNetworkMappingTest, CaseInsensitiveMappingSurvivesOperatorReplacement)
@@ -1153,12 +1148,12 @@ namespace {
 
         net.process_batch(1);
         ASSERT_NE(net.as_operator<PhysicsOperator>(), nullptr);
-        EXPECT_FLOAT_EQ(net.as_operator<PhysicsOperator>()->get_gravity().y, 3.0F);
+        EXPECT_FLOAT_EQ(net.as_operator<PhysicsOperator>()->get().gravity.value<glm::vec3>().y, 3.0F);
 
         net.set_operator(std::make_unique<PhysicsOperator>());
         net.process_batch(1);
         ASSERT_NE(net.as_operator<PhysicsOperator>(), nullptr);
-        EXPECT_FLOAT_EQ(net.as_operator<PhysicsOperator>()->get_gravity().y, 3.0F);
+        EXPECT_FLOAT_EQ(net.as_operator<PhysicsOperator>()->get().gravity.value<glm::vec3>().y, 3.0F);
     }
 
     TEST(ParticleNetworkMappingTest, MismatchedOneToOneSourceDoesNotWriteForces)
@@ -1166,8 +1161,7 @@ namespace {
         auto net = make_swarm(3);
         net.initialize();
         auto* physics = net.as_operator<PhysicsOperator>();
-        physics->set_gravity(glm::vec3(0.0F));
-        physics->set_drag(0.0F);
+        physics->set({ .gravity = glm::vec3(0.0F), .drag = 0.0F });
 
         static_cast<NodeNetwork&>(net).map_parameter("force_x", index_source(2));
         net.process_batch(1);
@@ -1189,10 +1183,10 @@ namespace {
         net.process_batch(1);
 
         net.unmap_parameter("gravity_y");
-        net.as_operator<PhysicsOperator>()->set_gravity({ 0.0F, -1.0F, 0.0F });
+        net.as_operator<PhysicsOperator>()->set({ .gravity = glm::vec3(0.0F, -1.0F, 0.0F) });
         net.process_batch(1);
 
-        EXPECT_FLOAT_EQ(net.as_operator<PhysicsOperator>()->get_gravity().y, -1.0F);
+        EXPECT_FLOAT_EQ(net.as_operator<PhysicsOperator>()->get().gravity.value<glm::vec3>().y, -1.0F);
     }
 
     TEST(ParticleNetworkMappingTest, OneToOneMassMappingReachesEveryParticle)
@@ -1200,7 +1194,7 @@ namespace {
         auto net = make_swarm(4);
         net.initialize();
         auto* physics = net.as_operator<PhysicsOperator>();
-        physics->set_gravity(glm::vec3(0.0F));
+        physics->set({ .gravity = glm::vec3(0.0F) });
 
         static_cast<NodeNetwork&>(net).map_parameter("mass", index_source(4));
         net.process_batch(1);
@@ -1229,8 +1223,7 @@ namespace {
         auto net = make_swarm(3);
         net.initialize();
         auto* physics = net.as_operator<PhysicsOperator>();
-        physics->set_gravity(glm::vec3(0.0F));
-        physics->set_drag(0.0F);
+        physics->set({ .gravity = glm::vec3(0.0F), .drag = 0.0F });
 
         static_cast<NodeNetwork&>(net).map_parameter("force_x", index_source(3));
         net.process_batch(1);

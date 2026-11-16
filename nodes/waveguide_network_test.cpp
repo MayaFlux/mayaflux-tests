@@ -90,9 +90,9 @@ namespace {
     std::vector<double> lossless_ring(GuideType type, double frequency)
     {
         WaveguideNetwork network(type, frequency);
-        network.set_loss_factor(1.0);
+        network.set({ .damping = 1.0 });
         set_unity_loops(network);
-        network.set_pickup_position(0.1);
+        network.set({ .position = 0.1 });
         network.pluck(0.3);
         return render(network, 8704);
     }
@@ -220,9 +220,9 @@ namespace {
     size_t ring_period(GuideType type, double frequency)
     {
         WaveguideNetwork network(type, frequency);
-        network.set_loss_factor(1.0);
+        network.set({ .damping = 1.0 });
         set_unity_loops(network);
-        network.set_pickup_position(0.1);
+        network.set({ .position = 0.1 });
         network.pluck(0.3);
 
         const auto audio = render(network, 8704);
@@ -273,13 +273,15 @@ TEST(WaveguideTuningTest, LowerFrequencyExpandsTheDelayAndMinimumIsTwentyHertz)
     WaveguideNetwork network(GuideType::STRING, 880.0);
     const size_t old_capacity = network.get_segments().at(0).p_plus.capacity();
 
-    network.set_fundamental(110.0);
+    network.set({ .frequency = 110.0 });
+    render(network, 1);
     EXPECT_GT(network.get_segments().at(0).p_plus.capacity(), old_capacity);
     EXPECT_EQ(network.get_segments().at(0).p_plus.capacity(),
         static_cast<size_t>(48000.0 / 110.0 - k_pass_latency) + 2);
 
-    network.set_fundamental(5.0);
-    EXPECT_DOUBLE_EQ(network.get_fundamental(), 20.0);
+    network.set({ .frequency = 5.0 });
+    render(network, 1);
+    EXPECT_DOUBLE_EQ(network.get().frequency.value(), 20.0);
     EXPECT_EQ(network.get_segments().at(0).p_plus.capacity(),
         static_cast<size_t>(48000.0 / 20.0 - k_pass_latency) + 2);
 }
@@ -382,7 +384,7 @@ TEST(WaveguideMeasurementTest, TubePressureAndVelocityReadDifferentRailCombinati
     WaveguideNetwork velocity(GuideType::TUBE, 480.0);
     pressure.pluck(0.5);
     velocity.pluck(0.5);
-    velocity.set_measurement_mode(WaveguideNetwork::MeasurementMode::VELOCITY);
+    velocity.set({ .measurement_mode = WaveguideNetwork::MeasurementMode::VELOCITY });
 
     const auto pressure_audio = render(pressure, 512);
     const auto velocity_audio = render(velocity, 512);
@@ -401,9 +403,9 @@ TEST(WaveguideMeasurementTest, TubeOutputEqualsTheMeasuredRailSumOrDifference)
     WaveguideNetwork velocity(GuideType::TUBE, 480.0);
     pressure.pluck(0.5);
     velocity.pluck(0.5);
-    pressure.set_pickup_position(0.0);
-    velocity.set_pickup_position(0.0);
-    velocity.set_measurement_mode(WaveguideNetwork::MeasurementMode::VELOCITY);
+    pressure.set({ .position = 0.0 });
+    velocity.set({ .position = 0.0 });
+    velocity.set({ .measurement_mode = WaveguideNetwork::MeasurementMode::VELOCITY });
 
     const auto pressure_audio = render(pressure, 10);
     const auto velocity_audio = render(velocity, 10);
@@ -420,7 +422,7 @@ TEST(WaveguideMeasurementTest, TubeOutputEqualsTheMeasuredRailSumOrDifference)
 TEST(WaveguideReflectionTest, TubeOpenAndClosedEndsPropagateWithOppositeSigns)
 {
     WaveguideNetwork tube(GuideType::TUBE, 480.0);
-    tube.set_loss_factor(1.0);
+    tube.set({ .damping = 1.0 });
     set_unity_loops(tube);
     tube.pluck(0.5);
     render(tube, 3);
@@ -447,7 +449,7 @@ TEST(WaveguideReflectionTest, TubeOpenAndClosedEndsPropagateWithOppositeSigns)
 TEST(WaveguideReflectionTest, LumpedStringLoopReturnsTheWaveWithItsSign)
 {
     WaveguideNetwork string(GuideType::STRING, 480.0);
-    string.set_loss_factor(1.0);
+    string.set({ .damping = 1.0 });
     string.set_loop_filter(tap(1.0));
     string.pluck(0.5);
     render(string, 3);
@@ -466,9 +468,10 @@ class WaveguideLossBoundaryTest : public ::testing::TestWithParam<LossCase> { };
 TEST_P(WaveguideLossBoundaryTest, LossFactorIsClampedToTheUnitInterval)
 {
     WaveguideNetwork network(GuideType::STRING, 480.0);
-    network.set_loss_factor(GetParam().requested);
+    network.set({ .damping = GetParam().requested });
+    render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_loss_factor(), GetParam().effective);
+    EXPECT_DOUBLE_EQ(network.get().damping.value(), GetParam().effective);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -486,8 +489,8 @@ TEST(WaveguideLossTest, LowerLossFactorReducesLateRingEnergy)
     WaveguideNetwork longer(GuideType::STRING, 480.0);
     shorter.set_loop_filter(tap(1.0));
     longer.set_loop_filter(tap(1.0));
-    shorter.set_loss_factor(0.8);
-    longer.set_loss_factor(1.0);
+    shorter.set({ .damping = 0.8 });
+    longer.set({ .damping = 1.0 });
     shorter.pluck(0.5);
     longer.pluck(0.5);
 
@@ -505,8 +508,8 @@ TEST_P(WaveguideTerminationTest, ZeroGainTerminationStopsTheLateRing)
     const auto& config = GetParam();
     WaveguideNetwork open(config.type, 480.0);
     WaveguideNetwork blocked(config.type, 480.0);
-    open.set_loss_factor(1.0);
-    blocked.set_loss_factor(1.0);
+    open.set({ .damping = 1.0 });
+    blocked.set({ .damping = 1.0 });
     set_unity_loops(open);
     set_unity_loops(blocked);
     if (config.type == GuideType::TUBE) {
@@ -541,7 +544,7 @@ TEST(WaveguideTerminationTest, OpenAndClosedFiltersEachReduceTheRoundTrip)
     WaveguideNetwork both(GuideType::TUBE, 480.0);
 
     for (auto* tube : { &unfiltered, &open_only, &closed_only, &both }) {
-        tube->set_loss_factor(1.0);
+        tube->set({ .damping = 1.0 });
         set_unity_loops(*tube);
         tube->pluck(0.5);
     }
@@ -570,11 +573,12 @@ TEST_P(WaveguidePickupTest, RequestedPositionIsClampedAndQuantizedToASample)
 {
     const auto& config = GetParam();
     WaveguideNetwork network(GuideType::STRING, 480.0);
-    network.set_pickup_position(config.requested);
+    network.set({ .position = config.requested });
+    render(network, 1);
 
     const size_t delay = network.get_segments().at(0).p_plus.capacity() - 2;
     const size_t tap_sample = static_cast<size_t>(config.clamped * static_cast<double>(delay));
-    EXPECT_DOUBLE_EQ(network.get_pickup_position(),
+    EXPECT_DOUBLE_EQ(network.get().position.value(),
         static_cast<double>(tap_sample) / static_cast<double>(delay));
 }
 
@@ -591,22 +595,25 @@ INSTANTIATE_TEST_SUITE_P(
 TEST(WaveguidePickupExtraTest, PositionSetBeforeFirstRenderRemainsSelected)
 {
     WaveguideNetwork network(GuideType::STRING, 480.0);
-    network.set_pickup_position(0.25);
-    const double selected = network.get_pickup_position();
+    network.set({ .position = 0.25 });
+    render(network, 1);
+    const double selected = network.get().position.value();
 
     render(network, 128);
 
-    EXPECT_DOUBLE_EQ(network.get_pickup_position(), selected);
+    EXPECT_DOUBLE_EQ(network.get().position.value(), selected);
 }
 
 TEST(WaveguidePickupExtraTest, RetuningPreservesTheSelectedPosition)
 {
     WaveguideNetwork network(GuideType::STRING, 480.0);
-    network.set_pickup_position(0.25);
+    network.set({ .position = 0.25 });
+    render(network, 1);
 
-    network.set_fundamental(120.0);
+    network.set({ .frequency = 120.0 });
+    render(network, 1);
 
-    EXPECT_NEAR(network.get_pickup_position(), 0.25, 0.01);
+    EXPECT_NEAR(network.get().position.value(), 0.25, 0.01);
 }
 
 TEST(WaveguidePickupExtraTest, MovingThePickupChangesTheRenderedWave)
@@ -617,8 +624,8 @@ TEST(WaveguidePickupExtraTest, MovingThePickupChangesTheRenderedWave)
     near_end.pluck(0.3);
     render(near_bridge, 1);
     render(near_end, 1);
-    near_bridge.set_pickup_position(0.1);
-    near_end.set_pickup_position(0.8);
+    near_bridge.set({ .position = 0.1 });
+    near_end.set({ .position = 0.8 });
 
     const auto first = render(near_bridge, 128);
     const auto second = render(near_end, 128);
@@ -669,7 +676,7 @@ TEST(WaveguideReleaseTest, ReleaseStopsAContinuousSource)
 TEST(WaveguideReleaseTest, ReleasedWaveguideRingsOutAfterActiveDriving)
 {
     WaveguideNetwork network(GuideType::STRING, 480.0);
-    network.set_loss_factor(0.5);
+    network.set({ .damping = 0.5 });
     network.set_exciter_node(constant(1.0));
     network.set_exciter_type(WaveguideNetwork::ExciterType::CONTINUOUS);
     ASSERT_GT(peak(render(network, 256)), 1e-4);
@@ -748,7 +755,7 @@ TEST(WaveguideMappingTest, BroadcastFrequencyRecomputesTheDelay)
 
     render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_fundamental(), 120.0);
+    EXPECT_DOUBLE_EQ(network.get().frequency.value(), 120.0);
     EXPECT_EQ(network.get_segments().at(0).p_plus.capacity(),
         static_cast<size_t>(48000.0 / 120.0 - k_pass_latency) + 2);
 }
@@ -761,7 +768,7 @@ TEST(WaveguideMappingTest, OneToOneFrequencyDoesNotChangeTheGuide)
 
     render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_fundamental(), 480.0);
+    EXPECT_DOUBLE_EQ(network.get().frequency.value(), 480.0);
 }
 
 class WaveguideLossMappingTest : public ::testing::TestWithParam<const char*> { };
@@ -773,7 +780,7 @@ TEST_P(WaveguideLossMappingTest, BroadcastMappingSetsTheLossFactor)
 
     render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_loss_factor(), 0.7);
+    EXPECT_DOUBLE_EQ(network.get().damping.value(), 0.7);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -788,7 +795,7 @@ TEST(WaveguideMappingTest, BroadcastPositionMovesThePickup)
 
     render(network, 1);
 
-    EXPECT_NEAR(network.get_pickup_position(), 0.25, 0.01);
+    EXPECT_NEAR(network.get().position.value(), 0.25, 0.01);
 }
 
 TEST(WaveguideMappingTest, BroadcastScaleChangesTheAudioMix)
@@ -822,26 +829,26 @@ TEST(WaveguideMappingTest, UnmappingStopsFurtherFrequencyUpdates)
     WaveguideNetwork network(GuideType::STRING, 480.0);
     network.map_parameter("frequency", constant(240.0));
     render(network, 1);
-    ASSERT_DOUBLE_EQ(network.get_fundamental(), 240.0);
+    ASSERT_DOUBLE_EQ(network.get().frequency.value(), 240.0);
 
     network.unmap_parameter("frequency");
-    network.set_fundamental(480.0);
+    network.set({ .frequency = 480.0 });
     render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_fundamental(), 480.0);
+    EXPECT_DOUBLE_EQ(network.get().frequency.value(), 480.0);
 }
 
 TEST(WaveguideMappingTest, BroadcastFrequencyKeepsTheSelectedPickup)
 {
     WaveguideNetwork network(GuideType::STRING, 480.0);
-    network.set_pickup_position(0.25);
+    network.set({ .position = 0.25 });
     network.map_parameter("frequency", constant(240.0));
 
     for (size_t block = 0; block < 4; ++block) {
         render(network, 64);
     }
 
-    EXPECT_NEAR(network.get_pickup_position(), 0.25, 0.01);
+    EXPECT_NEAR(network.get().position.value(), 0.25, 0.01);
 }
 
 class WaveguidePitchTest : public ::testing::TestWithParam<PitchCase> { };
@@ -851,9 +858,9 @@ TEST_P(WaveguidePitchTest, AMemorylessLoopRunsHalfASamplePerPassShortOfTheFundam
     const auto& config = GetParam();
     const double passes = config.type == GuideType::TUBE ? 4.0 : 1.0;
     WaveguideNetwork network(config.type, config.frequency);
-    network.set_loss_factor(1.0);
+    network.set({ .damping = 1.0 });
     set_unity_loops(network);
-    network.set_pickup_position(0.1);
+    network.set({ .position = 0.1 });
     network.pluck(0.3);
 
     const auto audio = render(network, 8704);
@@ -881,8 +888,8 @@ TEST_P(WaveguideDefaultTuningTest, ADefaultRingRepeatsAtTheRequestedFundamental)
 {
     const auto& config = GetParam();
     WaveguideNetwork network(config.type, config.frequency);
-    network.set_loss_factor(1.0);
-    network.set_pickup_position(0.1);
+    network.set({ .damping = 1.0 });
+    network.set({ .position = 0.1 });
     network.pluck(0.3);
 
     const auto audio = render(network, 8704);
@@ -1047,9 +1054,9 @@ TEST_P(WaveguideRetuneTest, RetuningMidRingStaysFinite)
     network.pluck(0.5);
     render(network, 256);
 
-    network.set_fundamental(960.0);
+    network.set({ .frequency = 960.0 });
     const auto raised = render(network, 256);
-    network.set_fundamental(240.0);
+    network.set({ .frequency = 240.0 });
     const auto lowered = render(network, 512);
 
     EXPECT_GT(peak(raised), 1e-4);
@@ -1177,7 +1184,7 @@ TEST_P(WaveguideConstructionTest, ANewNetworkIsAnAudioSinkRingWithItsOwnTerminat
     WaveguideNetwork network(GetParam(), 220.0);
     const auto& segment = network.get_segments().at(0);
 
-    EXPECT_DOUBLE_EQ(network.get_fundamental(), 220.0);
+    EXPECT_DOUBLE_EQ(network.get().frequency.value(), 220.0);
     EXPECT_EQ(network.get_type(), GetParam());
     EXPECT_EQ(network.get_output_mode(), Nodes::Network::OutputMode::AUDIO_SINK);
     EXPECT_EQ(network.get_topology(), Nodes::Network::Topology::RING);
@@ -1245,7 +1252,8 @@ TEST(WaveguideMetadataTest, MetadataCarriesTheKeysAndTracksTheDelay)
     }
 
     const auto before = metadata.at("delay_length");
-    network.set_fundamental(440.0);
+    network.set({ .frequency = 440.0 });
+    render(network, 1);
 
     EXPECT_NE(network.get_metadata().at("delay_length"), before);
 }
@@ -1264,7 +1272,7 @@ TEST(WaveguideTerminationTest, ADefaultTubeKeepsRingingAfterTheFirstPeriods)
 TEST(WaveguideTerminationTest, EachTerminationOfATubeKeepsItsOwnFilterState)
 {
     WaveguideNetwork tube(GuideType::TUBE, 480.0);
-    tube.set_loss_factor(1.0);
+    tube.set({ .damping = 1.0 });
     tube.pluck(0.5);
     render(tube, 1024);
 

@@ -262,4 +262,48 @@ TEST(ResonatorControlsTest, GetReportsTheScaleAndWhatWasSet)
     EXPECT_FALSE(controls.gain.has_value());
 }
 
+TEST(ResonatorControlsTest, TheDeprecatedNetworkWideSettersRenderTheSameSoundAsTheControls)
+{
+    auto by_setter = trio();
+    auto by_control = trio();
+    by_setter->set_exciter(pulse());
+    by_control->set_exciter(pulse());
+
+    by_setter->set_all_frequencies(800.0);
+    by_setter->set_all_q(5.0);
+    by_control->set({ .frequency = 800.0, .q = 5.0 });
+
+    const auto expected = render(by_setter, 256);
+    const auto actual = render(by_control, 256);
+
+    ASSERT_EQ(actual.size(), expected.size());
+    for (size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_NEAR(actual[i], expected[i], 1e-12) << "sample " << i;
+    }
+    EXPECT_GT(*std::ranges::max_element(expected), 0.0);
+}
+
+TEST(ResonatorControlsTest, AnImmediateSetterAfterATypedSetWinsAndBeforeItLoses)
+{
+    auto later = trio();
+    later->set({ .frequency = 700.0, .q = 20.0 });
+    later->set_all_frequencies(900.0);
+    later->set_all_q(4.0);
+    later->process_batch(1);
+    for (const auto& resonator : later->get_resonators()) {
+        EXPECT_DOUBLE_EQ(resonator.frequency, 900.0);
+        EXPECT_DOUBLE_EQ(resonator.q, 4.0);
+    }
+
+    auto earlier = trio();
+    earlier->set_all_frequencies(900.0);
+    earlier->set_all_q(4.0);
+    earlier->set({ .frequency = 700.0, .q = 20.0 });
+    earlier->process_batch(1);
+    for (const auto& resonator : earlier->get_resonators()) {
+        EXPECT_DOUBLE_EQ(resonator.frequency, 700.0);
+        EXPECT_DOUBLE_EQ(resonator.q, 20.0);
+    }
+}
+
 }

@@ -60,7 +60,7 @@ TEST(WaveguideControlsTest, ANumberFrequencyRecomputesTheDelay)
     network.set({ .frequency = 120.0 });
     render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_fundamental(), 120.0);
+    EXPECT_DOUBLE_EQ(network.get().frequency.value(), 120.0);
 }
 
 TEST(WaveguideControlsTest, ANetworkFrequencyDoesNotChangeTheGuide)
@@ -90,11 +90,11 @@ TEST(WaveguideControlsTest, ANumberDampingSetsTheLossFactorOnce)
 
     network.set({ .damping = 0.7 });
     render(network, 1);
-    ASSERT_DOUBLE_EQ(network.get_loss_factor(), 0.7);
+    ASSERT_DOUBLE_EQ(network.get().damping.value(), 0.7);
 
     network.set_loss_factor(0.9);
     render(network, 1);
-    EXPECT_DOUBLE_EQ(network.get_loss_factor(), 0.9);
+    EXPECT_DOUBLE_EQ(network.get().damping.value(), 0.9);
 }
 
 TEST(WaveguideControlsTest, ADampingOutsideTheUnitIntervalIsClampedLikeTheSetter)
@@ -104,7 +104,7 @@ TEST(WaveguideControlsTest, ADampingOutsideTheUnitIntervalIsClampedLikeTheSetter
     network.set({ .damping = 5.0 });
     render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_loss_factor(), 1.0);
+    EXPECT_DOUBLE_EQ(network.get().damping.value(), 1.0);
 }
 
 TEST(WaveguideControlsTest, APositionMovesThePickup)
@@ -125,8 +125,8 @@ TEST(WaveguideControlsTest, AMemberLeftOutLeavesTheOthersAlone)
     network.set({ .position = 0.25 });
     render(network, 1);
 
-    EXPECT_DOUBLE_EQ(network.get_fundamental(), 480.0);
-    EXPECT_DOUBLE_EQ(network.get_loss_factor(), 0.8);
+    EXPECT_DOUBLE_EQ(network.get().frequency.value(), 480.0);
+    EXPECT_DOUBLE_EQ(network.get().damping.value(), 0.8);
 }
 
 TEST(WaveguideControlsTest, ANodeScaleChangesTheAudioMix)
@@ -207,6 +207,133 @@ TEST(WaveguideControlsTest, GetKeepsAMappedMemberMapped)
 
     EXPECT_TRUE(controls.damping.sourced());
     EXPECT_DOUBLE_EQ(controls.damping.value(), 0.7);
+}
+
+TEST(WaveguideControlsTest, AnExciterDurationIsFlooredLikeTheSetter)
+{
+    WaveguideNetwork network(GuideType::STRING, 480.0);
+
+    network.set({ .exciter_duration = 0.0001 });
+    render(network, 1);
+    EXPECT_DOUBLE_EQ(network.get().exciter_duration.value(), 0.001);
+
+    network.set({ .exciter_duration = 0.02 });
+    render(network, 1);
+    EXPECT_DOUBLE_EQ(network.get().exciter_duration.value(), 0.02);
+}
+
+TEST(WaveguideControlsTest, VelocityMeasurementReadsADifferentSignalThanPressure)
+{
+    WaveguideNetwork pressure(GuideType::TUBE, 480.0);
+    WaveguideNetwork velocity(GuideType::TUBE, 480.0);
+    pressure.pluck(0.3);
+    velocity.pluck(0.3);
+
+    velocity.set({ .measurement_mode = WaveguideNetwork::MeasurementMode::VELOCITY });
+
+    const auto expected = render(pressure, 256);
+    const auto actual = render(velocity, 256);
+
+    double difference = 0.0;
+    for (size_t i = 0; i < expected.size(); ++i) {
+        difference = std::max(difference, std::abs(actual[i] - expected[i]));
+    }
+    EXPECT_GT(difference, 1e-9);
+    EXPECT_DOUBLE_EQ(velocity.get().measurement_mode.value(), 1.0);
+    EXPECT_DOUBLE_EQ(pressure.get().measurement_mode.value(), 0.0);
+}
+
+TEST(WaveguideControlsTest, TheDeprecatedSettersRenderTheSameSoundAsTheControls)
+{
+    WaveguideNetwork by_setter(GuideType::TUBE, 480.0);
+    WaveguideNetwork by_control(GuideType::TUBE, 480.0);
+    by_setter.pluck(0.5);
+    by_control.pluck(0.5);
+
+    by_setter.set_fundamental(240.0);
+    by_setter.set_loss_factor(0.9);
+    by_setter.set_pickup_position(0.3);
+    by_setter.set_measurement_mode(WaveguideNetwork::MeasurementMode::VELOCITY);
+    by_control.set({ .frequency = 240.0,
+        .damping = 0.9,
+        .position = 0.3,
+        .measurement_mode = WaveguideNetwork::MeasurementMode::VELOCITY });
+
+    const auto expected = render(by_setter, 256);
+    const auto actual = render(by_control, 256);
+
+    ASSERT_EQ(actual.size(), expected.size());
+    for (size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_NEAR(actual[i], expected[i], 1e-12) << "sample " << i;
+    }
+}
+
+TEST(WaveguideControlsTest, AnImmediateSetterAfterATypedSetWinsAndBeforeItLoses)
+{
+    WaveguideNetwork later(GuideType::STRING, 480.0);
+    later.set({ .damping = 0.9, .position = 0.2 });
+    later.set_loss_factor(0.8);
+    later.set_pickup_position(0.7);
+    render(later, 1);
+    EXPECT_DOUBLE_EQ(later.get().damping.value(), 0.8);
+    EXPECT_NEAR(later.get().position.value(), 0.7, 0.02);
+
+    WaveguideNetwork earlier(GuideType::STRING, 480.0);
+    earlier.set_loss_factor(0.8);
+    earlier.set({ .damping = 0.9 });
+    render(earlier, 1);
+    EXPECT_DOUBLE_EQ(earlier.get().damping.value(), 0.9);
+}
+
+TEST(WaveguideControlsTest, GetReportsTheExciterDurationAndMeasurementModeTheNetworkHolds)
+{
+    WaveguideNetwork network(GuideType::STRING, 480.0);
+
+    const auto controls = network.get();
+
+    EXPECT_DOUBLE_EQ(controls.exciter_duration.value(), 0.005);
+    EXPECT_DOUBLE_EQ(controls.measurement_mode.value(), 0.0);
+}
+
+TEST(WaveguideControlsTest, ANodeAboveHalfSelectsVelocityMeasurement)
+{
+    WaveguideNetwork by_node(GuideType::TUBE, 480.0);
+    WaveguideNetwork by_enum(GuideType::TUBE, 480.0);
+    WaveguideNetwork pressure(GuideType::TUBE, 480.0);
+    by_node.pluck(0.3);
+    by_enum.pluck(0.3);
+    pressure.pluck(0.3);
+
+    by_node.set({ .measurement_mode = constant_source(1.0) });
+    by_enum.set({ .measurement_mode = WaveguideNetwork::MeasurementMode::VELOCITY });
+
+    const auto expected = render(by_enum, 256);
+    const auto actual = render(by_node, 256);
+    const auto unchanged = render(pressure, 256);
+
+    ASSERT_EQ(actual.size(), expected.size());
+    double difference = 0.0;
+    for (size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_NEAR(actual[i], expected[i], 1e-12) << "sample " << i;
+        difference = std::max(difference, std::abs(actual[i] - unchanged[i]));
+    }
+    EXPECT_GT(difference, 1e-9);
+}
+
+TEST(WaveguideControlsTest, TheDeprecatedGettersAgreeWithGet)
+{
+    WaveguideNetwork network(GuideType::STRING, 480.0);
+
+    network.set({ .frequency = 240.0,
+        .damping = 0.9,
+        .position = 0.3,
+        .measurement_mode = WaveguideNetwork::MeasurementMode::VELOCITY });
+    render(network, 1);
+
+    EXPECT_DOUBLE_EQ(network.get_fundamental(), network.get().frequency.value());
+    EXPECT_DOUBLE_EQ(network.get_loss_factor(), network.get().damping.value());
+    EXPECT_DOUBLE_EQ(network.get_pickup_position(), network.get().position.value());
+    EXPECT_EQ(network.get_measurement_mode(), WaveguideNetwork::MeasurementMode::VELOCITY);
 }
 
 }

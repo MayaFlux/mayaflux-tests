@@ -259,6 +259,77 @@ namespace {
         }
     }
 
+    TEST_F(NetworkClaimTest, CaptureGrowthSetThroughTheControlReachesAnAlreadyBuiltClaimProcessor)
+    {
+        prepare();
+        std::vector<float> mass(k_particles, 0.0F);
+        mass[0] = 8.0F;
+        write_state<float>("mutation_accreted_mass", mass);
+        add_claim(false);
+
+        op->set({ .capture_growth = 0.5F });
+        op->process(0.0F);
+        run_stages();
+
+        std::vector<float> radius = uniform_radius(k_particles, k_absorb);
+        radius[0] = std::max(k_absorb, std::cbrt(8.0F) * 0.5F);
+        const auto expected = expected_claims(positions, radius);
+        EXPECT_EQ(read_state<uint32_t>("mutation_claimed_by"), expected.raw);
+        EXPECT_EQ(read_state<uint32_t>("mutation_claim_events")[0], expected.events);
+    }
+
+    TEST_F(NetworkClaimTest, CrossClusterSetThroughTheControlLetsAnAlreadyBuiltClaimProcessorSeeAcrossClusters)
+    {
+        prepare();
+        assign_alternating_clusters();
+        add_claim(false);
+
+        op->set({ .cross_cluster = true });
+        op->process(0.0F);
+        run_stages();
+
+        const auto radius = uniform_radius(k_particles, k_absorb);
+        const auto across = expected_claims(positions, radius, {}, clusters, true);
+        const auto scoped = expected_claims(positions, radius, {}, clusters, false);
+        EXPECT_EQ(read_state<uint32_t>("mutation_claimed_by"), across.raw);
+        EXPECT_NE(across.raw, scoped.raw);
+    }
+
+    TEST_F(NetworkClaimTest, SwallowTuningSetThroughTheControlsReachesAnAlreadyBuiltSwallowProcessor)
+    {
+        prepare();
+        lay_chain(20);
+        add_claim();
+        add(std::make_shared<ClaimAccumulateProcessor>(claim, nullptr, 0U, op, false));
+        add(std::make_shared<ClaimSwallowProcessor>(claim, op, false));
+
+        op->set({ .swallow_base_size = 20.0F,
+            .swallow_growth_rate = 1.0F,
+            .swallow_max_size = 50.0F,
+            .swallow_dim_factor = 0.5F });
+        op->process(0.0F);
+        run_stages();
+
+        const auto expected = expected_claims(positions, uniform_radius(k_particles, k_absorb));
+        const auto counts = members_per_root(expected);
+        const auto floats = floats_of(read_vertices(static_cast<size_t>(k_particles) * stride_words * 4));
+        const auto field = [&](uint32_t i, size_t word) {
+            return floats[static_cast<size_t>(i) * stride_words + word];
+        };
+
+        for (uint32_t i = 0; i < k_particles; ++i) {
+            const uint32_t root = expected.root[i];
+            const float size = std::clamp(20.0F + static_cast<float>(counts[root]) * 1.0F, 20.0F, 50.0F);
+            const glm::vec3 heat = heat_of((size - 20.0F) / 30.0F);
+            if (root == i) {
+                EXPECT_NEAR(field(i, k_size_word), size, 1e-4F) << "root " << i;
+                EXPECT_NEAR(field(i, k_color_word), heat.x, 1e-4F) << "root " << i;
+                continue;
+            }
+            EXPECT_NEAR(field(i, k_color_word), heat.x * 0.5F, 1e-4F) << "member " << i;
+        }
+    }
+
     TEST_F(NetworkClaimTest, TransferAdoptsTheRootsClusterAndAccumulateIgnoresCrossClusterMembers)
     {
         prepare(SpatialFieldConfig { .cross_cluster = true, .transfer_on_claim = true });
@@ -493,6 +564,29 @@ namespace {
             EXPECT_TRUE(spawner_records.contains(record(bytes, slot))) << "slot " << slot;
         }
         EXPECT_EQ(spawned_records, spawner_records);
+    }
+
+    TEST_F(NetworkPopulationTest, SpawnThresholdSetThroughTheControlReachesAnAlreadyBuiltSpawnProcessor)
+    {
+        const auto neighbours = live_neighbour_counts();
+        auto ranked = neighbours;
+        std::ranges::sort(ranked, std::greater<> {});
+        const auto threshold = static_cast<float>(ranked[39]);
+        const auto spawners = static_cast<uint32_t>(std::ranges::count_if(
+            neighbours, [&](uint32_t n) { return static_cast<float>(n) >= threshold; }));
+        ASSERT_GT(spawners, 0U);
+
+        const auto op = std::make_shared<GpuFieldOperator>(
+            Kakshya::VertexLayout::for_points(), SpatialFieldConfig { .spawn_density_threshold = 1.0e6F });
+        add(std::make_shared<PopulationInitProcessor>(population));
+        add_gated_hash_build();
+        add(std::make_shared<PopulationSpawnProcessor>(population, op));
+
+        op->set({ .spawn_density_threshold = threshold });
+        op->process(0.0F);
+        run_stages();
+
+        EXPECT_GE(read_state<uint32_t>("mutation_spawn_cursor")[0], k_live + spawners);
     }
 
     TEST_F(NetworkPopulationTest, SpawnStopsAtTheReserveCapacity)

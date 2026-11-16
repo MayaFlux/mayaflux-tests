@@ -48,7 +48,7 @@ TEST(DuctControlsTest, NodesDriveTheBlowingPressureThePickupAndTheScale)
     duct.process_batch(kBlock);
 
     EXPECT_DOUBLE_EQ(duct.get_mouth()->query_state("pressure").value(), 1500.0);
-    EXPECT_DOUBLE_EQ(duct.get_pickup_position(), 0.25);
+    EXPECT_DOUBLE_EQ(duct.get().pickup.value(), 0.25);
     EXPECT_DOUBLE_EQ(duct.get_output_scale(), 2.0);
 }
 
@@ -128,36 +128,47 @@ TEST(DuctControlsTest, JunctionMembersReachAJunctionMouth)
 TEST(DuctControlsTest, AMemberLeftOutLeavesTheOthersAlone)
 {
     DuctNetwork duct(kLength, kRadius);
-    duct.set_pickup_position(0.7);
+    duct.set({ .pickup = 0.7 });
+    duct.process_batch(kBlock);
     duct.get_mouth()->set_parameter("pressure", 800.0);
 
     duct.set({ .lip = 0.5 });
     duct.process_batch(kBlock);
 
-    EXPECT_DOUBLE_EQ(duct.get_pickup_position(), 0.7);
+    EXPECT_DOUBLE_EQ(duct.get().pickup.value(), 0.7);
     EXPECT_DOUBLE_EQ(duct.get_mouth()->query_state("pressure").value(), 800.0);
 }
 
 TEST(DuctControlsTest, ANetworkSourceIsNotUsedByAnyDuctControl)
 {
-    DuctNetwork duct(kLength, kRadius);
-    duct.set_pickup_position(0.7);
+    DuctNetwork sourced(kLength, kRadius);
+    DuctNetwork reference(kLength, kRadius);
+    for (DuctNetwork* duct : { &sourced, &reference }) {
+        duct->set({ .pickup = 0.7, .pressure = 1800.0, .output = DuctNetwork::Output::PICKUP });
+        duct->process_batch(kBlock);
+    }
     auto source = std::make_shared<ControlsProbeNetwork>(3);
     source->outputs = { 0.1, 0.2, 0.3 };
 
-    duct.set({ .pickup = source });
-    duct.process_batch(kBlock);
+    sourced.set({ .pickup = source });
 
-    EXPECT_DOUBLE_EQ(duct.get_pickup_position(), 0.7);
+    const auto actual = render(sourced, 20);
+    const auto expected = render(reference, 20);
+
+    ASSERT_EQ(actual.size(), expected.size());
+    EXPECT_GT(std::ranges::max(actual) - std::ranges::min(actual), 0.0);
+    for (size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_NEAR(actual[i], expected[i], 1e-9) << "sample " << i;
+    }
 }
 
 TEST(DuctControlsTest, ABlownDuctSoundsThroughTheTypedPressure)
 {
     DuctNetwork blown(kLength, kRadius);
-    blown.set_output(DuctNetwork::Output::PICKUP);
+    blown.set({ .output = DuctNetwork::Output::PICKUP });
     blown.set({ .pressure = 1800.0 });
     DuctNetwork quiet(kLength, kRadius);
-    quiet.set_output(DuctNetwork::Output::PICKUP);
+    quiet.set({ .output = DuctNetwork::Output::PICKUP });
 
     const auto sound = render(blown, 100);
     const auto silence = render(quiet, 100);
@@ -171,8 +182,8 @@ TEST(DuctControlsTest, TypedAndStringMappingsRenderTheSameSound)
 {
     DuctNetwork by_string(kLength, kRadius);
     DuctNetwork by_control(kLength, kRadius);
-    by_string.set_output(DuctNetwork::Output::PICKUP);
-    by_control.set_output(DuctNetwork::Output::PICKUP);
+    by_string.set({ .output = DuctNetwork::Output::PICKUP });
+    by_control.set({ .output = DuctNetwork::Output::PICKUP });
 
     by_string.map_parameter("pressure", constant(1800.0));
     by_string.map_parameter("pickup", constant(0.4));
@@ -191,14 +202,65 @@ TEST(DuctControlsTest, TypedAndStringMappingsRenderTheSameSound)
 TEST(DuctControlsTest, GetReportsThePickupAndTheScaleTheNetworkHolds)
 {
     DuctNetwork duct(kLength, kRadius);
-    duct.set_pickup_position(0.25);
+    duct.set({ .pickup = 0.25 });
     duct.set_output_scale(0.4);
+    duct.process_batch(kBlock);
 
     const auto controls = duct.get();
 
     EXPECT_DOUBLE_EQ(controls.pickup.value(), 0.25);
     EXPECT_DOUBLE_EQ(controls.scale.value(), 0.4);
     EXPECT_FALSE(controls.pressure.has_value());
+}
+
+TEST(DuctControlsTest, AnOutputControlSelectsThePickupOrTheRadiatedPressure)
+{
+    DuctNetwork pickup(kLength, kRadius);
+    DuctNetwork radiated(kLength, kRadius);
+    pickup.set({ .pressure = 1800.0, .output = DuctNetwork::Output::PICKUP });
+    radiated.set({ .pressure = 1800.0, .output = DuctNetwork::Output::RADIATED });
+
+    const auto picked = render(pickup, 20);
+    const auto heard = render(radiated, 20);
+
+    ASSERT_EQ(picked.size(), heard.size());
+    EXPECT_NE(picked, heard);
+    EXPECT_DOUBLE_EQ(pickup.get().output.value(), 1.0);
+    EXPECT_DOUBLE_EQ(radiated.get().output.value(), 0.0);
+}
+
+TEST(DuctControlsTest, TheOutputControlIsNotOfferedToTheTerminations)
+{
+    DuctNetwork duct(kLength, kRadius);
+
+    duct.set({ .output = DuctNetwork::Output::PICKUP });
+    duct.process_batch(kBlock);
+
+    EXPECT_FALSE(duct.get_mouth()->query_state("output").has_value());
+    EXPECT_FALSE(duct.get_bell()->query_state("output").has_value());
+}
+
+TEST(DuctControlsTest, GetReportsTheRadiatedOutputByDefault)
+{
+    DuctNetwork duct(kLength, kRadius);
+
+    EXPECT_DOUBLE_EQ(duct.get().output.value(), 0.0);
+}
+
+TEST(DuctControlsTest, ANodeAboveHalfSelectsThePickupPressure)
+{
+    DuctNetwork by_node(kLength, kRadius);
+    DuctNetwork by_enum(kLength, kRadius);
+    by_node.set({ .pressure = 1800.0, .output = constant(1.0) });
+    by_enum.set({ .pressure = 1800.0, .output = DuctNetwork::Output::PICKUP });
+
+    const auto expected = render(by_enum, 20);
+    const auto actual = render(by_node, 20);
+
+    ASSERT_EQ(actual.size(), expected.size());
+    for (size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_NEAR(actual[i], expected[i], 1e-9) << "sample " << i;
+    }
 }
 
 }

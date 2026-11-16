@@ -192,7 +192,8 @@ namespace {
         run_stages();
         const auto before = read_colors();
 
-        op->set_density_saturation_count(96.0F);
+        op->set({ .density_saturation_count = 96.0F });
+        op->process(0.0F);
         run_stages();
 
         const auto after = read_colors();

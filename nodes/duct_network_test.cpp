@@ -370,7 +370,7 @@ TEST(TerminationOperatorTest, TheLipNarrowsTheOpeningAndTheReedAreaAddsTheReedsO
 TEST(DuctNetworkTest, ABlownDuctWithADynamicReedSounds)
 {
     DuctNetwork duct(kLength, kRadius);
-    duct.set_output(DuctNetwork::Output::PICKUP);
+    duct.set({ .output = DuctNetwork::Output::PICKUP });
     duct.get_mouth()->set_parameter("pressure", 1800.0);
     duct.get_mouth()->set_parameter("resonance", 2500.0);
 
@@ -428,7 +428,7 @@ TEST(DuctNetworkTest, ALengthThatSlidesKeepsTheNoteSoundingWhileAResetRestartsIt
 
     const auto blown = [] {
         auto duct = std::make_unique<DuctNetwork>(kLength, kRadius);
-        duct->set_output(DuctNetwork::Output::PICKUP);
+        duct->set({ .output = DuctNetwork::Output::PICKUP });
         duct->get_mouth()->set_parameter("pressure", 1800.0);
         duct->get_mouth()->set_parameter("resonance", 2500.0);
         return duct;
@@ -472,7 +472,7 @@ TEST(DuctNetworkTest, ALengthThatSlidesKeepsTheNoteSoundingWhileAResetRestartsIt
 TEST(DuctNetworkTest, ChangingTheProfileOrTheMouthVolumeKeepsTheSoundToo)
 {
     DuctNetwork duct(kLength, kRadius);
-    duct.set_output(DuctNetwork::Output::PICKUP);
+    duct.set({ .output = DuctNetwork::Output::PICKUP });
     duct.get_mouth()->set_parameter("pressure", 1800.0);
     duct.get_mouth()->set_parameter("resonance", 2500.0);
     static_cast<void>(render(duct, 80));
@@ -540,8 +540,7 @@ TEST(DuctNetworkTest, TheNetworkGivesTheSamplesOfTheKinesisCallsItIsBuiltFrom)
 {
     DuctNetwork duct(kLength, kRadius);
     ASSERT_TRUE(duct.set_wall_losses(0.0, 0.0));
-    duct.set_output(DuctNetwork::Output::PICKUP);
-    duct.set_pickup_position(0.5);
+    duct.set({ .pickup = 0.5, .output = DuctNetwork::Output::PICKUP });
     duct.get_mouth()->set_parameter("smoothing", 0.0);
     duct.get_mouth()->set_parameter("pressure", 1500.0);
 
@@ -585,7 +584,7 @@ TEST(DuctNetworkTest, RadiatedOutputIsTheRateOfChangeOfTheBellFlow)
         duct->get_mouth()->set_parameter("smoothing", 0.0);
         duct->get_mouth()->set_parameter("pressure", 1500.0);
     }
-    pickup.set_output(DuctNetwork::Output::PICKUP);
+    pickup.set({ .output = DuctNetwork::Output::PICKUP });
 
     const auto from_flow = render(radiated, 2);
     const auto from_pressure = render(pickup, 2);
@@ -597,10 +596,10 @@ TEST(DuctNetworkTest, RadiatedOutputIsTheRateOfChangeOfTheBellFlow)
 TEST(DuctNetworkTest, ABlownDuctSoundsAndAnUnblownOneDoesNot)
 {
     DuctNetwork blown(kLength, kRadius);
-    blown.set_output(DuctNetwork::Output::PICKUP);
+    blown.set({ .output = DuctNetwork::Output::PICKUP });
     blown.get_mouth()->set_parameter("pressure", 1800.0);
     DuctNetwork quiet(kLength, kRadius);
-    quiet.set_output(DuctNetwork::Output::PICKUP);
+    quiet.set({ .output = DuctNetwork::Output::PICKUP });
 
     const auto sound = render(blown, 100);
     const auto silence = render(quiet, 100);
@@ -626,7 +625,7 @@ TEST(DuctNetworkTest, AMappedNodeDrivesTheBlowingPressureThePickupAndTheScale)
     duct.process_batch(kBlock);
 
     EXPECT_DOUBLE_EQ(duct.get_mouth()->query_state("pressure").value(), 1500.0);
-    EXPECT_DOUBLE_EQ(duct.get_pickup_position(), 0.25);
+    EXPECT_DOUBLE_EQ(duct.get().pickup.value(), 0.25);
     EXPECT_DOUBLE_EQ(duct.get_output_scale(), 2.0);
 
     duct.unmap_parameter("pressure");
@@ -684,7 +683,7 @@ TEST(DuctNetworkTest, ATerminationCanBeReplacedAndOneThatCannotTerminateIsRefuse
     EXPECT_EQ(duct.get_operator_chain()->find<ReedOperator>(), nullptr);
     EXPECT_EQ(duct.get_operator_chain()->find<JunctionOperator>(), source);
 
-    duct.set_output(DuctNetwork::Output::PICKUP);
+    duct.set({ .output = DuctNetwork::Output::PICKUP });
     const auto out = render(duct, 8);
     EXPECT_GT(peak_to_peak(out), 0.0);
     for (const double sample : out) {
@@ -702,7 +701,7 @@ TEST(DuctNetworkTest, ADuctDrivenThroughAnOhmicSourceThenReleasedDoesNotGrow)
     const auto pulse = std::make_shared<JunctionOperator>(
         [](double d) -> Acoustics::FlowSample { return { 2.0e-6 * d, 2.0e-6 }; }, 1.0, 500.0);
     ASSERT_TRUE(duct.set_mouth(pulse));
-    duct.set_output(DuctNetwork::Output::PICKUP);
+    duct.set({ .output = DuctNetwork::Output::PICKUP });
 
     render(duct, 4);
     pulse->set_parameter("driving_pressure", 0.0);
@@ -797,7 +796,7 @@ TEST(DuctNetworkTest, WallLossesLetASealedDuctRingDownWhereALosslessOneKeepsRing
         const auto pulse = std::make_shared<JunctionOperator>(
             [](double d) -> Acoustics::FlowSample { return { 1.0e-12 * d, 1.0e-12 }; }, 1.0, 1.0e8);
         EXPECT_TRUE(duct.set_mouth(pulse));
-        duct.set_output(DuctNetwork::Output::PICKUP);
+        duct.set({ .output = DuctNetwork::Output::PICKUP });
 
         render(duct, 2);
         pulse->set_parameter("driving_pressure", 0.0);

@@ -3,6 +3,7 @@
 
 #include "MayaFlux/Kinesis/Tendency/DualField.hpp"
 #include "MayaFlux/Kinesis/Tendency/ShaderCompat.hpp"
+#include "MayaFlux/Nodes/Generators/Polynomial.hpp"
 #include "MayaFlux/Nodes/Network/Operators/GpuFieldOperator.hpp"
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 
@@ -496,70 +497,250 @@ namespace {
         EXPECT_EQ(op.get_field_config().capture_growth, 0.75F);
     }
 
+    std::shared_ptr<Nodes::Generator::Polynomial> constant_source(double value)
+    {
+        auto source = std::make_shared<Nodes::Generator::Polynomial>([value](double) { return value; });
+        source->process_sample(0.0);
+        return source;
+    }
+
+    using Nodes::Network::GpuFieldControls;
+
     struct ConfigSetter {
         const char* name;
+        const char* key;
         void (GpuFieldOperator::*set)(float);
+        std::function<GpuFieldControls(const Nodes::Network::Control&)> make;
         std::function<float(const SpatialFieldConfig&)> read;
     };
 
     class GpuFieldConfigSetterTest : public ::testing::TestWithParam<ConfigSetter> { };
 
-    TEST_P(GpuFieldConfigSetterTest, StoresTheValueAndBumpsRevision)
-    {
-        GpuFieldOperator op(points_layout());
-        const auto before = op.revision();
-
-        (op.*GetParam().set)(3.5F);
-
-        EXPECT_EQ(GetParam().read(op.get_field_config()), 3.5F);
-        EXPECT_GT(op.revision(), before);
-    }
-
-    TEST_P(GpuFieldConfigSetterTest, InvalidatesTheCachedSpec)
+    TEST_P(GpuFieldConfigSetterTest, StoresTheValueAndBumpsOnlyTheConfigRevision)
     {
         GpuFieldOperator op(points_layout());
         op.bind(FieldTarget::POSITION, fields::push_up);
         (void)op.build_spec();
-        const auto before = op.revision();
+        const auto spec_before = op.revision();
+        const auto config_before = op.config_revision();
 
-        (op.*GetParam().set)(1.25F);
+        (op.*GetParam().set)(3.5F);
 
-        EXPECT_GT(op.revision(), before);
+        EXPECT_EQ(GetParam().read(op.get_field_config()), 3.5F);
+        EXPECT_GT(op.config_revision(), config_before);
+        EXPECT_EQ(op.revision(), spec_before);
         EXPECT_TRUE(op.build_spec().has_value());
+    }
+
+    TEST_P(GpuFieldConfigSetterTest, AnUnchangedValueBumpsNothing)
+    {
+        GpuFieldOperator op(points_layout());
+        (op.*GetParam().set)(3.5F);
+        const auto config_before = op.config_revision();
+
+        (op.*GetParam().set)(3.5F);
+
+        EXPECT_EQ(op.config_revision(), config_before);
+    }
+
+    TEST_P(GpuFieldConfigSetterTest, ANumberControlIsAppliedByProcessAndLeavesTheSpecRevisionAlone)
+    {
+        GpuFieldOperator op(points_layout());
+        op.bind(FieldTarget::POSITION, fields::push_up);
+        const auto default_value = GetParam().read(op.get_field_config());
+        const auto spec_before = op.revision();
+        const auto config_before = op.config_revision();
+
+        op.set(GetParam().make(3.5));
+        EXPECT_EQ(GetParam().read(op.get_field_config()), default_value);
+
+        op.process(0.0F);
+
+        EXPECT_EQ(GetParam().read(op.get_field_config()), 3.5F);
+        EXPECT_GT(op.config_revision(), config_before);
+        EXPECT_EQ(op.revision(), spec_before);
+    }
+
+    TEST_P(GpuFieldConfigSetterTest, ANumberControlIsAppliedOnceAndRepeatedProcessBumpsNothing)
+    {
+        GpuFieldOperator op(points_layout());
+        op.set(GetParam().make(3.5));
+        op.process(0.0F);
+        const auto config_before = op.config_revision();
+
+        op.process(0.0F);
+        op.process(0.0F);
+
+        EXPECT_EQ(op.config_revision(), config_before);
+    }
+
+    TEST_P(GpuFieldConfigSetterTest, ANodeControlBumpsTheRevisionOnlyWhenItsValueChanges)
+    {
+        GpuFieldOperator op(points_layout());
+        op.set(GetParam().make(constant_source(3.5)));
+
+        op.process(0.0F);
+        const auto after_first = op.config_revision();
+        op.process(0.0F);
+        op.process(0.0F);
+
+        EXPECT_EQ(GetParam().read(op.get_field_config()), 3.5F);
+        EXPECT_GT(after_first, 0U);
+        EXPECT_EQ(op.config_revision(), after_first);
+    }
+
+    TEST_P(GpuFieldConfigSetterTest, TheStringNameIsTheSameControl)
+    {
+        GpuFieldOperator op(points_layout());
+
+        op.set_parameter(GetParam().key, 2.0);
+        op.process(0.0F);
+
+        EXPECT_EQ(GetParam().read(op.get_field_config()), 2.0F);
+    }
+
+    TEST_P(GpuFieldConfigSetterTest, AnImmediateSetterAfterATypedSetWinsAndBeforeItLoses)
+    {
+        GpuFieldOperator later(points_layout());
+        later.set(GetParam().make(9.0));
+        (later.*GetParam().set)(1.0F);
+        later.process(0.0F);
+        EXPECT_EQ(GetParam().read(later.get_field_config()), 1.0F);
+
+        GpuFieldOperator earlier(points_layout());
+        (earlier.*GetParam().set)(1.0F);
+        earlier.set(GetParam().make(9.0));
+        earlier.process(0.0F);
+        EXPECT_EQ(GetParam().read(earlier.get_field_config()), 9.0F);
     }
 
     INSTANTIATE_TEST_SUITE_P(
         GpuFieldOperators,
         GpuFieldConfigSetterTest,
         ::testing::Values(
-            ConfigSetter { "DensitySaturationCount", &GpuFieldOperator::set_density_saturation_count,
+            ConfigSetter { "DensitySaturationCount", "density_saturation_count", &GpuFieldOperator::set_density_saturation_count,
+                [](const Nodes::Network::Control& v) { return GpuFieldControls { .density_saturation_count = v }; },
                 [](const SpatialFieldConfig& c) { return static_cast<float>(c.density_saturation_count); } },
-            ConfigSetter { "CaptureGrowth", &GpuFieldOperator::set_capture_growth,
+            ConfigSetter { "CaptureGrowth", "capture_growth", &GpuFieldOperator::set_capture_growth,
+                [](const Nodes::Network::Control& v) { return GpuFieldControls { .capture_growth = v }; },
                 [](const SpatialFieldConfig& c) { return static_cast<float>(c.capture_growth); } },
-            ConfigSetter { "SwallowBaseSize", &GpuFieldOperator::set_swallow_base_size,
+            ConfigSetter { "SwallowBaseSize", "swallow_base_size", &GpuFieldOperator::set_swallow_base_size,
+                [](const Nodes::Network::Control& v) { return GpuFieldControls { .swallow_base_size = v }; },
                 [](const SpatialFieldConfig& c) { return static_cast<float>(c.swallow_base_size); } },
-            ConfigSetter { "SwallowGrowthRate", &GpuFieldOperator::set_swallow_growth_rate,
+            ConfigSetter { "SwallowGrowthRate", "swallow_growth_rate", &GpuFieldOperator::set_swallow_growth_rate,
+                [](const Nodes::Network::Control& v) { return GpuFieldControls { .swallow_growth_rate = v }; },
                 [](const SpatialFieldConfig& c) { return static_cast<float>(c.swallow_growth_rate); } },
-            ConfigSetter { "SwallowMaxSize", &GpuFieldOperator::set_swallow_max_size,
+            ConfigSetter { "SwallowMaxSize", "swallow_max_size", &GpuFieldOperator::set_swallow_max_size,
+                [](const Nodes::Network::Control& v) { return GpuFieldControls { .swallow_max_size = v }; },
                 [](const SpatialFieldConfig& c) { return static_cast<float>(c.swallow_max_size); } },
-            ConfigSetter { "SwallowDimFactor", &GpuFieldOperator::set_swallow_dim_factor,
+            ConfigSetter { "SwallowDimFactor", "swallow_dim_factor", &GpuFieldOperator::set_swallow_dim_factor,
+                [](const Nodes::Network::Control& v) { return GpuFieldControls { .swallow_dim_factor = v }; },
                 [](const SpatialFieldConfig& c) { return static_cast<float>(c.swallow_dim_factor); } },
-            ConfigSetter { "SpawnDensityThreshold", &GpuFieldOperator::set_spawn_density_threshold,
+            ConfigSetter { "SpawnDensityThreshold", "spawn_density_threshold", &GpuFieldOperator::set_spawn_density_threshold,
+                [](const Nodes::Network::Control& v) { return GpuFieldControls { .spawn_density_threshold = v }; },
                 [](const SpatialFieldConfig& c) { return static_cast<float>(c.spawn_density_threshold); } }),
         [](const ::testing::TestParamInfo<ConfigSetter>& info) { return std::string(info.param.name); });
 
-    TEST(GpuFieldConfigTest, CrossClusterToggleStoresAndBumpsRevision)
+    TEST(GpuFieldConfigTest, GetReportsEveryTuningValueTheOperatorHolds)
+    {
+        SpatialFieldConfig config;
+        config.capture_growth = 0.75F;
+        config.cross_cluster = true;
+        GpuFieldOperator op(points_layout(), config);
+        op.set({ .swallow_max_size = 55.0F });
+        op.process(0.0F);
+
+        const auto controls = op.get();
+
+        EXPECT_FLOAT_EQ(controls.capture_growth.value(), 0.75F);
+        EXPECT_DOUBLE_EQ(controls.cross_cluster.value(), 1.0);
+        EXPECT_FLOAT_EQ(controls.swallow_max_size.value(), 55.0F);
+        EXPECT_FLOAT_EQ(controls.density_saturation_count.value(), config.density_saturation_count);
+        EXPECT_FLOAT_EQ(controls.swallow_base_size.value(), config.swallow_base_size);
+        EXPECT_FLOAT_EQ(controls.swallow_growth_rate.value(), config.swallow_growth_rate);
+        EXPECT_FLOAT_EQ(controls.swallow_dim_factor.value(), config.swallow_dim_factor);
+        EXPECT_FLOAT_EQ(controls.spawn_density_threshold.value(), config.spawn_density_threshold);
+        EXPECT_EQ(controls.params.value<glm::vec4>(), glm::vec4(0.0F));
+    }
+
+    TEST(GpuFieldConfigTest, CrossClusterToggleStoresAndBumpsOnlyTheConfigRevision)
     {
         GpuFieldOperator op(points_layout());
-        const auto before = op.revision();
+        op.bind(FieldTarget::POSITION, fields::push_up);
+        const auto spec_before = op.revision();
+        const auto before = op.config_revision();
 
         op.set_cross_cluster(true);
 
         EXPECT_TRUE(op.get_field_config().cross_cluster);
-        EXPECT_GT(op.revision(), before);
+        EXPECT_GT(op.config_revision(), before);
+        EXPECT_EQ(op.revision(), spec_before);
 
         op.set_cross_cluster(false);
         EXPECT_FALSE(op.get_field_config().cross_cluster);
+    }
+
+    TEST(GpuFieldConfigTest, CrossClusterIsOnAboveOneHalfFromANumberOrANode)
+    {
+        GpuFieldOperator by_number(points_layout());
+        GpuFieldOperator by_node(points_layout());
+        GpuFieldOperator low(points_layout());
+
+        by_number.set({ .cross_cluster = true });
+        by_node.set({ .cross_cluster = constant_source(0.9) });
+        low.set({ .cross_cluster = constant_source(0.2) });
+        by_number.process(0.0F);
+        by_node.process(0.0F);
+        low.process(0.0F);
+
+        EXPECT_TRUE(by_number.get_field_config().cross_cluster);
+        EXPECT_TRUE(by_node.get_field_config().cross_cluster);
+        EXPECT_FALSE(low.get_field_config().cross_cluster);
+    }
+
+    TEST(GpuFieldConfigTest, TheParamsBlockIsHeldPushedAndNeverTouchesEitherRevision)
+    {
+        GpuFieldOperator op(points_layout());
+        op.bind(FieldTarget::POSITION, fields::push_up);
+        const auto spec_before = op.revision();
+        const auto config_before = op.config_revision();
+
+        op.set({ .params = glm::vec4(1.0F, 2.0F, 3.0F, 4.0F) });
+        op.process(0.0F);
+
+        EXPECT_EQ(op.get_params(), glm::vec4(1.0F, 2.0F, 3.0F, 4.0F));
+        EXPECT_EQ(op.get().params.value<glm::vec4>(), glm::vec4(1.0F, 2.0F, 3.0F, 4.0F));
+        EXPECT_EQ(op.revision(), spec_before);
+        EXPECT_EQ(op.config_revision(), config_before);
+    }
+
+    TEST(GpuFieldConfigTest, TheDeprecatedParamsSetterMatchesTheControlAndWinsWhenCalledLater)
+    {
+        GpuFieldOperator by_setter(points_layout());
+        by_setter.set({ .params = glm::vec4(9.0F) });
+        by_setter.set_params(glm::vec4(0.25F, 0.0F, 0.0F, 0.0F));
+        by_setter.process(0.0F);
+
+        GpuFieldOperator by_control(points_layout());
+        by_control.set({ .params = glm::vec4(0.25F, 0.0F, 0.0F, 0.0F) });
+        by_control.process(0.0F);
+
+        EXPECT_EQ(by_setter.get_params(), by_control.get_params());
+        EXPECT_EQ(by_setter.get_params(), glm::vec4(0.25F, 0.0F, 0.0F, 0.0F));
+    }
+
+    TEST(GpuFieldConfigTest, BindingAndLayoutChangesBumpTheSpecRevisionAndNotTheConfigRevision)
+    {
+        GpuFieldOperator op(points_layout());
+        const auto config_before = op.config_revision();
+
+        op.bind(FieldTarget::POSITION, fields::push_up);
+        op.set_workgroup_size(64);
+        op.set_vertex_binding(2);
+        op.unbind(FieldTarget::POSITION);
+
+        EXPECT_EQ(op.config_revision(), config_before);
+        EXPECT_GT(op.revision(), 0U);
     }
 
 } // namespace
