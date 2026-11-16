@@ -224,7 +224,7 @@ namespace {
     {
         PathOperator op;
         op.initialize(points(6));
-        op.set_global_thickness(6.0F);
+        op.set_parameter("thickness", 6.0);
 
         op.add_path(points(8, 20.0F), InterpolationMode::CATMULL_ROM);
         op.process(0.0F);
@@ -239,7 +239,7 @@ namespace {
         PathOperator op;
         op.initialize_paths({ points(6), points(8) }, InterpolationMode::CATMULL_ROM);
 
-        op.set_global_color({ 0.2F, 0.4F, 0.6F, 1.0F });
+        op.set({ .color = glm::vec4(0.2F, 0.4F, 0.6F, 1.0F) });
         op.process(0.0F);
 
         const auto bytes = op.get_vertex_data();
@@ -248,15 +248,14 @@ namespace {
         }
     }
 
-    TEST(PathOperatorTest, TypedSettersMatchTheirParameters)
+    TEST(PathOperatorTest, TypedControlsMatchTheirParameters)
     {
         PathOperator by_setter;
         PathOperator by_parameter;
         by_setter.initialize(points(6));
         by_parameter.initialize(points(6));
 
-        by_setter.set_samples_per_segment(4);
-        by_setter.set_tension(0.1);
+        by_setter.set({ .tension = 0.1, .samples_per_segment = 4.0 });
         by_parameter.set_parameter("samples_per_segment", 4.0);
         by_parameter.set_parameter("tension", 0.1);
         by_setter.process(0.0F);

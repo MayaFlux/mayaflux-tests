@@ -223,7 +223,7 @@ namespace {
 
     TEST_F(FieldOperatorTest, AccumulateModeCompoundsTheDisplacement)
     {
-        op.set_mode(FieldMode::ACCUMULATE);
+        op.set({ .mode = FieldMode::ACCUMULATE });
         op.bind(FieldTarget::POSITION, constant_vector({ 0.0F, 10.0F, 0.0F }));
 
         op.process(0.0F);
@@ -235,23 +235,23 @@ namespace {
 
     TEST_F(FieldOperatorTest, ModeParameterSwitchesBetweenAbsoluteAndAccumulate)
     {
-        EXPECT_EQ(op.get_mode(), FieldMode::ABSOLUTE);
+        EXPECT_DOUBLE_EQ(op.get().mode.value(), 0.0);
 
         op.set_parameter("mode", 1.0);
-        EXPECT_EQ(op.get_mode(), FieldMode::ACCUMULATE);
+        EXPECT_DOUBLE_EQ(op.get().mode.value(), 1.0);
 
         op.set_parameter("mode", 0.0);
-        EXPECT_EQ(op.get_mode(), FieldMode::ABSOLUTE);
+        EXPECT_DOUBLE_EQ(op.get().mode.value(), 0.0);
     }
 
     TEST_F(FieldOperatorTest, SwitchingBackToAbsoluteRestoresTheReference)
     {
-        op.set_mode(FieldMode::ACCUMULATE);
+        op.set({ .mode = FieldMode::ACCUMULATE });
         op.bind(FieldTarget::POSITION, constant_vector({ 0.0F, 10.0F, 0.0F }));
         op.process(0.0F);
         op.process(0.0F);
 
-        op.set_mode(FieldMode::ABSOLUTE);
+        op.set({ .mode = FieldMode::ABSOLUTE });
         op.process(0.0F);
 
         EXPECT_TRUE(near_vec(vertex(0).position, { 0.0F, 11.0F, 2.0F }));

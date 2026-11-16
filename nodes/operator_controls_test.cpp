@@ -351,7 +351,7 @@ TEST(PathControlsTest, ANodeThicknessIsAppliedEveryBlock)
 
     op.set({ .thickness = constant_source(6.0) });
     op.process(0.0F);
-    op.set_global_thickness(2.0F);
+    op.set_parameter("thickness", 2.0);
     op.process(0.0F);
 
     EXPECT_FLOAT_EQ(op.get_path(0)->get_path_thickness(), 6.0F);
@@ -364,7 +364,7 @@ TEST(PathControlsTest, ANumberIsAppliedOnceAndLaterEditsStay)
 
     op.set({ .thickness = 7.0 });
     op.process(0.0F);
-    op.set_global_thickness(2.0F);
+    op.set_parameter("thickness", 2.0);
     op.process(0.0F);
 
     EXPECT_FLOAT_EQ(op.get_path(0)->get_path_thickness(), 2.0F);
@@ -432,12 +432,12 @@ TEST(TopologyControlsTest, ARadiusThroughTheStringPathAndTheControlAgree)
 TEST(FieldControlsTest, AModeAboveHalfAccumulates)
 {
     FieldOperator op;
-    ASSERT_EQ(op.get_mode(), FieldMode::ABSOLUTE);
+    ASSERT_DOUBLE_EQ(op.get().mode.value(), 0.0);
 
     op.set({ .mode = 1.0 });
     op.process(0.0F);
 
-    EXPECT_EQ(op.get_mode(), FieldMode::ACCUMULATE);
+    EXPECT_DOUBLE_EQ(op.get().mode.value(), 1.0);
 }
 
 TEST(FieldControlsTest, AModeOfHalfOrBelowIsAbsolute)
@@ -447,7 +447,7 @@ TEST(FieldControlsTest, AModeOfHalfOrBelowIsAbsolute)
     op.set({ .mode = 0.5 });
     op.process(0.0F);
 
-    EXPECT_EQ(op.get_mode(), FieldMode::ABSOLUTE);
+    EXPECT_DOUBLE_EQ(op.get().mode.value(), 0.0);
 }
 
 TEST(FieldControlsTest, ANodeModeFollowsTheNode)
@@ -457,7 +457,7 @@ TEST(FieldControlsTest, ANodeModeFollowsTheNode)
     op.set({ .mode = constant_source(1.0) });
     op.process(0.0F);
 
-    EXPECT_EQ(op.get_mode(), FieldMode::ACCUMULATE);
+    EXPECT_DOUBLE_EQ(op.get().mode.value(), 1.0);
 }
 
 TEST(FieldControlsTest, GetReportsTheModeTheOperatorHolds)
@@ -466,7 +466,7 @@ TEST(FieldControlsTest, GetReportsTheModeTheOperatorHolds)
 
     EXPECT_DOUBLE_EQ(op.get().mode.value(), 1.0);
 
-    op.set_mode(FieldMode::ABSOLUTE);
+    op.set_parameter("mode", 0.0);
     EXPECT_DOUBLE_EQ(op.get().mode.value(), 0.0);
 }
 
@@ -476,7 +476,7 @@ TEST(FieldControlsTest, TheStringModeStillWorks)
 
     op.set_parameter("mode", 1.0);
 
-    EXPECT_EQ(op.get_mode(), FieldMode::ACCUMULATE);
+    EXPECT_DOUBLE_EQ(op.get().mode.value(), 1.0);
 }
 
 TEST(ModalDampingControlsTest, ANumberFieldSetsThatFieldOnEveryMode)
@@ -772,7 +772,7 @@ TEST(PathControlsTest, AMemberLeftOutLeavesTheThicknessAlone)
 {
     PathOperator op;
     op.initialize(line_points(4));
-    op.set_global_thickness(3.0F);
+    op.set_parameter("thickness", 3.0);
 
     op.set({ .tension = 0.1 });
     op.process(0.0F);
@@ -1498,8 +1498,7 @@ TEST(PointCloudControlsTest, APathOperatorReceivesColourThicknessSamplesAndTensi
     PathOperator reference;
     reference.initialize(line_points(6));
     const glm::vec4 colour { 0.2F, 0.4F, 0.6F, 1.0F };
-    reference.set({ .tension = 0.1, .samples_per_segment = 4.0, .thickness = 3.0 });
-    reference.set_global_color(colour);
+    reference.set({ .tension = 0.1, .samples_per_segment = 4.0, .thickness = 3.0, .color = colour });
 
     net->set({ .line_color = colour, .line_thickness = 3.0, .samples_per_segment = 4.0, .tension = 0.1 });
     net->process_batch(1);
@@ -1593,6 +1592,253 @@ TEST(ParticleControlsTest, ABoundsControlReachesThePhysicsOperatorAfterAReset)
 
     EXPECT_EQ(physics->get().bounds.value<Kinesis::SamplerBounds>().max, glm::vec3(2.0F));
     EXPECT_EQ(net->get().bounds.value<Kinesis::SamplerBounds>().min, glm::vec3(-2.0F));
+}
+
+
+TEST(PathControlsTest, AColourTintReachesEveryVertex)
+{
+    PathOperator op;
+    op.initialize(line_points(6));
+
+    op.set({ .color = glm::vec4(0.2F, 0.4F, 0.6F, 1.0F) });
+    op.process(0.0F);
+
+    EXPECT_EQ(op.get().color.value<glm::vec4>(), glm::vec4(0.2F, 0.4F, 0.6F, 1.0F));
+    PathOperator reference;
+    reference.initialize(line_points(6));
+    reference.set_global_color(glm::vec4(0.2F, 0.4F, 0.6F, 1.0F));
+    reference.process(0.0F);
+    const auto expected = reference.get_vertex_data();
+    const auto actual = op.get_vertex_data();
+    ASSERT_EQ(actual.size(), expected.size());
+    EXPECT_TRUE(std::equal(actual.begin(), actual.end(), expected.begin()));
+}
+
+TEST(PathControlsTest, TheDeprecatedSettersAndTheControlsGiveTheSameVertices)
+{
+    PathOperator by_setter;
+    PathOperator by_control;
+    by_setter.initialize(line_points(6));
+    by_control.initialize(line_points(6));
+
+    by_setter.set_tension(0.1);
+    by_setter.set_samples_per_segment(4);
+    by_setter.set_global_thickness(3.0F);
+    by_setter.set_global_color(glm::vec4(0.2F, 0.4F, 0.6F, 1.0F));
+    by_control.set({ .tension = 0.1, .samples_per_segment = 4.0, .thickness = 3.0, .color = glm::vec4(0.2F, 0.4F, 0.6F, 1.0F) });
+
+    by_setter.process(0.0F);
+    by_control.process(0.0F);
+
+    ASSERT_EQ(by_control.get_vertex_count(), by_setter.get_vertex_count());
+    const auto expected = by_setter.get_vertex_data();
+    const auto actual = by_control.get_vertex_data();
+    ASSERT_EQ(actual.size(), expected.size());
+    EXPECT_TRUE(std::equal(actual.begin(), actual.end(), expected.begin()));
+}
+
+TEST(FieldControlsTest, TheDeprecatedModeSetterAndGetterAgreeWithTheControl)
+{
+    FieldOperator by_setter;
+    FieldOperator by_control;
+
+    by_setter.set_mode(FieldMode::ACCUMULATE);
+    by_control.set({ .mode = FieldMode::ACCUMULATE });
+    by_control.process(0.0F);
+
+    EXPECT_EQ(by_setter.get_mode(), FieldMode::ACCUMULATE);
+    EXPECT_EQ(by_control.get_mode(), FieldMode::ACCUMULATE);
+    EXPECT_DOUBLE_EQ(by_setter.get().mode.value(), by_control.get().mode.value());
+}
+
+TEST(WalkControlsTest, TheSelfSteppingRateIsAControlAndTheDeprecatedSetterAgrees)
+{
+    WalkRig typed;
+    WalkRig legacy;
+
+    typed.walk->set({ .every_n_blocks = 4.0 });
+    typed.walk->process(1.0F);
+    legacy.walk->set_every_n_blocks(4);
+    legacy.walk->process(1.0F);
+
+    EXPECT_DOUBLE_EQ(typed.walk->get().every_n_blocks.value(), 4.0);
+    EXPECT_DOUBLE_EQ(legacy.walk->get().every_n_blocks.value(), 4.0);
+
+    typed.walk->set({ .every_n_blocks = 0.0 });
+    typed.walk->process(1.0F);
+    EXPECT_DOUBLE_EQ(typed.walk->get().every_n_blocks.value(), 0.0);
+}
+
+TEST(WalkControlsTest, ASteppingRateWithoutEnoughBlocksNeverMovesTheWalk)
+{
+    WalkRig rig;
+
+    rig.walk->set({ .every_n_blocks = 1000.0 });
+    for (int block = 0; block < 5; ++block) {
+        rig.walk->process(1.0F);
+    }
+
+    EXPECT_EQ(rig.walk->current(), 0U);
+}
+
+TEST(OperatorOrderingTest, APhysicsStringWriteAfterATypedSetWinsAndBeforeItLoses)
+{
+    PhysicsOperator later;
+    later.initialize(particles(1));
+    later.set({ .drag = 0.5 });
+    later.set_parameter("drag", 0.25);
+    later.process(0.1F);
+    EXPECT_DOUBLE_EQ(later.get().drag.value(), 0.25);
+
+    PhysicsOperator earlier;
+    earlier.initialize(particles(1));
+    earlier.set_parameter("drag", 0.25);
+    earlier.set({ .drag = 0.5 });
+    earlier.process(0.1F);
+    EXPECT_DOUBLE_EQ(earlier.get().drag.value(), 0.5);
+}
+
+TEST(OperatorOrderingTest, AGravityComponentWrittenByStringKeepsTheRestOfAPendingTypedGravity)
+{
+    PhysicsOperator later;
+    later.initialize(particles(1));
+    later.set({ .gravity = glm::vec3(1.0F, 2.0F, 3.0F) });
+    later.set_parameter("gravity_y", 9.0);
+    later.process(0.1F);
+    EXPECT_TRUE(near_vec(later.get().gravity.value<glm::vec3>(), { 1.0F, 9.0F, 3.0F }));
+
+    PhysicsOperator earlier;
+    earlier.initialize(particles(1));
+    earlier.set_parameter("gravity_y", 9.0);
+    earlier.set({ .gravity = glm::vec3(1.0F, 2.0F, 3.0F) });
+    earlier.process(0.1F);
+    EXPECT_TRUE(near_vec(earlier.get().gravity.value<glm::vec3>(), { 1.0F, 2.0F, 3.0F }));
+}
+
+TEST(OperatorOrderingTest, APhysicsNameInAnyCaseSettlesTheSameControl)
+{
+    PhysicsOperator op;
+    op.initialize(particles(1));
+
+    op.set({ .spring_stiffness = 4.0 });
+    op.set_parameter("SPRING_STIFFNESS", 1.5);
+    op.process(0.1F);
+
+    EXPECT_DOUBLE_EQ(op.get().spring_stiffness.value(), 1.5);
+}
+
+TEST(OperatorOrderingTest, APathStringWriteAfterATypedSetWinsAndBeforeItLoses)
+{
+    PathOperator later;
+    PathOperator earlier;
+    PathOperator few;
+    PathOperator many;
+    for (PathOperator* op : { &later, &earlier, &few, &many }) {
+        op->initialize(line_points(6));
+    }
+
+    later.set({ .samples_per_segment = 4.0 });
+    later.set_parameter("samples_per_segment", 16.0);
+    earlier.set_parameter("samples_per_segment", 16.0);
+    earlier.set({ .samples_per_segment = 4.0 });
+    few.set({ .samples_per_segment = 4.0 });
+    many.set({ .samples_per_segment = 16.0 });
+    for (PathOperator* op : { &later, &earlier, &few, &many }) {
+        op->process(0.0F);
+    }
+
+    ASSERT_GT(many.get_vertex_count(), few.get_vertex_count());
+    EXPECT_EQ(later.get_vertex_count(), many.get_vertex_count());
+    EXPECT_EQ(earlier.get_vertex_count(), few.get_vertex_count());
+}
+
+TEST(OperatorOrderingTest, ATopologyStringWriteAfterATypedSetWinsAndBeforeItLoses)
+{
+    TopologyOperator later;
+    TopologyOperator earlier;
+    TopologyOperator sparse;
+    TopologyOperator dense;
+    for (TopologyOperator* op : { &later, &earlier, &sparse, &dense }) {
+        op->initialize(line_points(8));
+    }
+
+    later.set({ .k_neighbors = 1.0 });
+    later.set_parameter("k_neighbors", 3.0);
+    earlier.set_parameter("k_neighbors", 3.0);
+    earlier.set({ .k_neighbors = 1.0 });
+    sparse.set({ .k_neighbors = 1.0 });
+    dense.set({ .k_neighbors = 3.0 });
+    for (int block = 0; block < 2; ++block) {
+        for (TopologyOperator* op : { &later, &earlier, &sparse, &dense }) {
+            op->process(0.0F);
+        }
+    }
+
+    ASSERT_GT(dense.get_vertex_count(), sparse.get_vertex_count());
+    EXPECT_EQ(later.get_vertex_count(), dense.get_vertex_count());
+    EXPECT_EQ(earlier.get_vertex_count(), sparse.get_vertex_count());
+}
+
+TEST(OperatorOrderingTest, AFieldStringWriteAfterATypedSetWinsAndBeforeItLoses)
+{
+    FieldOperator later;
+    later.set({ .mode = 1.0 });
+    later.set_parameter("mode", 0.0);
+    later.process(0.0F);
+    EXPECT_DOUBLE_EQ(later.get().mode.value(), 0.0);
+
+    FieldOperator earlier;
+    earlier.set_parameter("mode", 0.0);
+    earlier.set({ .mode = 1.0 });
+    earlier.process(0.0F);
+    EXPECT_DOUBLE_EQ(earlier.get().mode.value(), 1.0);
+}
+
+TEST(OperatorOrderingTest, AWalkStringWriteAfterATypedSetWinsAndBeforeItLoses)
+{
+    WalkRig later;
+    later.walk->set({ .current = 2.0 });
+    later.walk->set_parameter("current", 1.0);
+    later.walk->process(1.0F);
+    EXPECT_EQ(later.walk->current(), 1U);
+
+    WalkRig earlier;
+    earlier.walk->set_parameter("current", 1.0);
+    earlier.walk->set({ .current = 2.0 });
+    earlier.walk->process(1.0F);
+    EXPECT_EQ(earlier.walk->current(), 2U);
+}
+
+TEST(OperatorOrderingTest, AReedStringWriteAfterATypedSetWinsAndBeforeItLoses)
+{
+    ReedOperator later;
+    later.set({ .pressure = 900.0, .lip = 0.8 });
+    later.set_parameter("pressure", 400.0);
+    later.process(1.0F);
+    EXPECT_DOUBLE_EQ(later.query_state("pressure").value(), 400.0);
+    EXPECT_DOUBLE_EQ(later.query_state("lip").value(), 0.8);
+
+    ReedOperator earlier;
+    earlier.set_parameter("pressure", 400.0);
+    earlier.set({ .pressure = 900.0 });
+    earlier.process(1.0F);
+    EXPECT_DOUBLE_EQ(earlier.query_state("pressure").value(), 900.0);
+}
+
+TEST(OperatorOrderingTest, AJunctionStringWriteAfterATypedSetWinsAndBeforeItLoses)
+{
+    const auto law = [](double d) -> Acoustics::FlowSample { return { 1.0e-6 * d, 1.0e-6 }; };
+    JunctionOperator later(law, 1.0, 100.0);
+    later.set({ .driving_pressure = 500.0 });
+    later.set_parameter("driving_pressure", 250.0);
+    later.process(1.0F);
+    EXPECT_DOUBLE_EQ(later.query_state("driving_pressure").value(), 250.0);
+
+    JunctionOperator earlier(law, 1.0, 100.0);
+    earlier.set_parameter("driving_pressure", 250.0);
+    earlier.set({ .driving_pressure = 500.0 });
+    earlier.process(1.0F);
+    EXPECT_DOUBLE_EQ(earlier.query_state("driving_pressure").value(), 500.0);
 }
 
 }
