@@ -636,14 +636,15 @@ namespace {
         const auto parallel = backend.for_token(Buffers::ProcessingToken::AUDIO_PARALLEL);
 
         EXPECT_EQ(backend.channel_count(), 2U);
-        EXPECT_EQ(parallel.channel_count(), 0U);
+        EXPECT_EQ(parallel.channel_count(), 2U);
+        EXPECT_EQ(parallel.channel_count(), manager->get_num_channels(Buffers::ProcessingToken::AUDIO_PARALLEL));
 
         auto child = std::make_shared<Buffers::AudioBuffer>(0, 512);
         child->resize(512);
         std::ranges::fill(child->get_data(), 0.5);
         manager->add_buffer(child, Buffers::ProcessingToken::AUDIO_PARALLEL, 0);
 
-        EXPECT_EQ(parallel.channel_count(), 1U);
+        EXPECT_EQ(parallel.channel_count(), 2U);
         EXPECT_EQ(backend.channel_count(), 2U);
     }
 

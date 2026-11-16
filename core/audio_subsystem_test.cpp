@@ -1,5 +1,5 @@
-#include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
+#include "gtest/gtest.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -11,6 +11,7 @@
 #include "MayaFlux/Core/ProcessingArchitecture.hpp"
 #include "MayaFlux/Core/Subsystems/AudioSubsystem.hpp"
 #include "MayaFlux/Kakshya/Source/DynamicSoundStream.hpp"
+#include "MayaFlux/Kinesis/Scalar.hpp"
 #include "MayaFlux/Kriya/BufferPipeline.hpp"
 #include "MayaFlux/Nodes/Generators/Polynomial.hpp"
 #include "MayaFlux/Nodes/NodeGraphManager.hpp"
@@ -20,9 +21,9 @@
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output>() }))
 
-#define REQUIRE_AUDIO(rig)                                                                    \
-    do {                                                                                      \
-        if (!(rig).bring_up())                                                                \
+#define REQUIRE_AUDIO(rig)                                                                      \
+    do {                                                                                        \
+        if (!(rig).bring_up())                                                                  \
             GTEST_SKIP() << "Audio stream could not be created or started in this environment"; \
     } while (false)
 
@@ -38,6 +39,16 @@ namespace {
     std::shared_ptr<Nodes::Node> constant_node(double value)
     {
         return std::make_shared<Nodes::Generator::Polynomial>([value](double) { return value; });
+    }
+
+    /**
+     * @brief The node stage of the recommended chain for one constant source: scaling and soft knee.
+     */
+    double node_stage_sample(double value)
+    {
+        Nodes::NodeGraphManager manager;
+        manager.add_to_root(constant_node(value), Nodes::ProcessingToken::AUDIO_RATE, 0);
+        return manager.process_sample(Nodes::ProcessingToken::AUDIO_RATE, 0);
     }
 
     /**
@@ -599,7 +610,8 @@ namespace {
         ASSERT_EQ(output.size(), static_cast<size_t>(param.frames) * param.channels);
         for (uint32_t frame = 0; frame < param.frames; ++frame) {
             for (uint32_t channel = 0; channel < param.channels; ++channel) {
-                const double expected = std::clamp(param.value + 0.01 * channel, -1.0, 1.0);
+                const double node_stage = node_stage_sample(param.value + 0.01 * channel);
+                const double expected = std::clamp(Kinesis::soft_limit(node_stage), -1.0, 1.0);
                 EXPECT_NEAR(output[static_cast<size_t>(frame) * param.channels + channel], expected, 1e-12)
                     << "frame " << frame << " channel " << channel;
             }
@@ -780,7 +792,6 @@ namespace {
 
         EXPECT_EQ(probe->calls(), calls_at_stop);
     }
-
 
     double record_value(uint64_t block, uint32_t frame)
     {
