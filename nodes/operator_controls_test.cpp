@@ -482,11 +482,9 @@ TEST(FieldControlsTest, TheStringModeStillWorks)
 TEST(ModalDampingControlsTest, ANumberFieldSetsThatFieldOnEveryMode)
 {
     auto network = std::make_shared<ModalNetwork>(2, 440.0);
-    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(
-        network,
-        ModalDampingOperator::Response { .quiet_seconds = 1.0, .loud_seconds = 0.5, .reference_rms = 0.05, .smoothing_seconds = 0.0 });
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
 
-    damping->set({ .loud_seconds = 0.25 });
+    damping->set({ .quiet_seconds = 1.0, .loud_seconds = 0.25, .reference_rms = 0.05, .smoothing_seconds = 0.0 });
     network->excite_mode(0);
     network->excite_mode(1);
     render(*network, 256);
@@ -499,10 +497,9 @@ TEST(ModalDampingControlsTest, ANumberFieldSetsThatFieldOnEveryMode)
 TEST(ModalDampingControlsTest, AFieldLeavesTheOtherFieldsOfEachModeAlone)
 {
     auto network = std::make_shared<ModalNetwork>(2, 440.0);
-    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(
-        network,
-        ModalDampingOperator::Response { .quiet_seconds = 1.0, .loud_seconds = 0.5, .reference_rms = 0.05, .smoothing_seconds = 0.0 });
-    ASSERT_TRUE(damping->set_mode_response(1, { .quiet_seconds = 3.0, .loud_seconds = 0.3, .reference_rms = 0.05, .smoothing_seconds = 0.0 }));
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    damping->set({ .quiet_seconds = 1.0, .loud_seconds = 0.5, .reference_rms = 0.05, .smoothing_seconds = 0.0 });
+    damping->set_mode(1, { .quiet_seconds = 3.0, .loud_seconds = 0.3 });
 
     damping->set({ .reference_rms = 0.1 });
     render(*network, 256);
@@ -514,33 +511,110 @@ TEST(ModalDampingControlsTest, AFieldLeavesTheOtherFieldsOfEachModeAlone)
 TEST(ModalDampingControlsTest, AnInvalidValueIsRefusedAndTheResponseKept)
 {
     auto network = std::make_shared<ModalNetwork>(1, 440.0);
-    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(
-        network, ModalDampingOperator::Response {});
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
 
     damping->set({ .quiet_seconds = 0.0, .reference_rms = -1.0 });
     render(*network, 64);
 
-    EXPECT_EQ(damping->query_state("quiet_decay"), 1.0);
-    EXPECT_EQ(damping->query_state("reference_rms"), 0.1);
+    EXPECT_DOUBLE_EQ(damping->get().quiet_seconds.value(), 1.0);
+    EXPECT_DOUBLE_EQ(damping->get().reference_rms.value(), 0.1);
 }
 
 TEST(ModalDampingControlsTest, ANodeFieldIsAppliedEveryBlock)
 {
     auto network = std::make_shared<ModalNetwork>(1, 440.0);
-    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(
-        network,
-        ModalDampingOperator::Response { .quiet_seconds = 1.0, .loud_seconds = 0.5, .reference_rms = 0.05, .smoothing_seconds = 0.0 });
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    damping->set({ .quiet_seconds = 1.0, .loud_seconds = constant_source(0.2), .reference_rms = 0.05, .smoothing_seconds = 0.0 });
 
-    damping->set({ .loud_seconds = constant_source(0.2) });
     network->excite_mode(0);
     render(*network, 256);
     render(*network, 256);
     ASSERT_EQ(network->get_mode_decay_time(0), 0.2);
 
-    damping->set_parameter("loud_decay", 0.4);
+    damping->set_mode(0, { .loud_seconds = 0.9 });
     render(*network, 256);
 
-    EXPECT_EQ(damping->query_state("loud_decay"), 0.2);
+    EXPECT_DOUBLE_EQ(damping->get().loud_seconds.value(), 0.2);
+    EXPECT_EQ(network->get_mode_decay_time(0), 0.2);
+}
+
+TEST(ModalDampingControlsTest, AFreshOperatorHoldsTheDefaults)
+{
+    auto network = std::make_shared<ModalNetwork>(3, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+
+    const auto controls = damping->get();
+
+    EXPECT_DOUBLE_EQ(controls.quiet_seconds.value(), 1.0);
+    EXPECT_DOUBLE_EQ(controls.loud_seconds.value(), 0.2);
+    EXPECT_DOUBLE_EQ(controls.reference_rms.value(), 0.1);
+    EXPECT_DOUBLE_EQ(controls.smoothing_seconds.value(), 0.05);
+    EXPECT_EQ(damping->query_state("mode_count"), 3.0);
+}
+
+TEST(ModalDampingControlsTest, SetModeChangesOnlyTheFieldsGiven)
+{
+    auto network = std::make_shared<ModalNetwork>(2, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    damping->set({ .quiet_seconds = 2.0, .smoothing_seconds = 0.0 });
+
+    damping->set_mode(1, { .quiet_seconds = 5.0 });
+    render(*network, 256);
+
+    EXPECT_EQ(network->get_mode_decay_time(0), 2.0);
+    EXPECT_EQ(network->get_mode_decay_time(1), 5.0);
+}
+
+TEST(ModalDampingControlsTest, SetModeAppliesAPendingSetFirstSoCallsTakeEffectInOrder)
+{
+    auto network = std::make_shared<ModalNetwork>(2, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+
+    damping->set({ .quiet_seconds = 9.0, .smoothing_seconds = 0.0 });
+    damping->set_mode(1, { .quiet_seconds = 4.0 });
+    render(*network, 256);
+
+    EXPECT_EQ(network->get_mode_decay_time(0), 9.0);
+    EXPECT_EQ(network->get_mode_decay_time(1), 4.0);
+}
+
+TEST(ModalDampingControlsTest, AModeIndexPastTheLastIsIgnored)
+{
+    auto network = std::make_shared<ModalNetwork>(2, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+
+    damping->set_mode(2, { .quiet_seconds = 7.0 });
+    damping->set_mode(99, { .quiet_seconds = 7.0 });
+    render(*network, 64);
+
+    EXPECT_EQ(damping->query_state("mode_count"), 2.0);
+    EXPECT_DOUBLE_EQ(damping->get().quiet_seconds.value(), 1.0);
+}
+
+TEST(ModalDampingControlsTest, SetModeRefusesAnInvalidValueAndKeepsTheRest)
+{
+    auto network = std::make_shared<ModalNetwork>(1, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    damping->set({ .smoothing_seconds = 0.0 });
+
+    damping->set_mode(0, { .quiet_seconds = 0.0, .loud_seconds = 0.4 });
+    network->excite_mode(0);
+    render(*network, 256);
+    render(*network, 256);
+
+    EXPECT_EQ(network->get_mode_decay_time(0), 0.4);
+}
+
+TEST(ModalDampingControlsTest, ASourceOnASingleModeIsIgnored)
+{
+    auto network = std::make_shared<ModalNetwork>(1, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    damping->set({ .smoothing_seconds = 0.0 });
+
+    damping->set_mode(0, { .quiet_seconds = constant_source(6.0) });
+    render(*network, 64);
+
+    EXPECT_EQ(network->get_mode_decay_time(0), 1.0);
 }
 
 namespace {
@@ -1088,18 +1162,83 @@ TEST(WalkControlsTest, TheStringCurrentStillWorks)
     EXPECT_EQ(rig.walk->current(), 1U);
 }
 
-TEST(ModalDampingControlsTest, TheStringNamesAndTheControlsShareOneVocabularyOfFields)
+TEST(ModalDampingControlsTest, AStringNameIsTheFieldName)
+{
+    auto network = std::make_shared<ModalNetwork>(2, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+
+    damping->set_parameter("loud_seconds", 0.3);
+    render(*network, 64);
+
+    EXPECT_DOUBLE_EQ(damping->get().loud_seconds.value(), 0.3);
+    EXPECT_EQ(damping->query_state("loud_seconds"), 0.3);
+}
+
+TEST(ModalDampingControlsTest, AStringAndATypedSetMeetInTheSameControlSoTheLaterWins)
 {
     auto network = std::make_shared<ModalNetwork>(1, 440.0);
-    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(
-        network, ModalDampingOperator::Response {});
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
 
-    damping->set_parameter("smoothing", 0.3);
-    EXPECT_DOUBLE_EQ(damping->get().smoothing_seconds.value(), 0.3);
+    damping->set({ .loud_seconds = 0.3 });
+    damping->set_parameter("loud_seconds", 0.6);
+    render(*network, 64);
+    EXPECT_DOUBLE_EQ(damping->get().loud_seconds.value(), 0.6);
+
+    damping->set_parameter("loud_seconds", 0.1);
+    damping->set({ .loud_seconds = 0.5 });
+    render(*network, 64);
+    EXPECT_DOUBLE_EQ(damping->get().loud_seconds.value(), 0.5);
+}
+
+TEST(ModalDampingControlsTest, AnUnknownStringNameIsIgnored)
+{
+    auto network = std::make_shared<ModalNetwork>(1, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+
+    damping->set_parameter("loud", 1.0);
+    damping->set_parameter("quiet_decay", 5.0);
+    render(*network, 64);
+
+    EXPECT_DOUBLE_EQ(damping->get().quiet_seconds.value(), 1.0);
+    EXPECT_DOUBLE_EQ(damping->get().loud_seconds.value(), 0.2);
+    EXPECT_FALSE(damping->query_state("loud").has_value());
+    EXPECT_FALSE(damping->query_state("quiet_decay").has_value());
+}
+
+TEST(ModalDampingControlsTest, AStringValueThatWouldBeInvalidIsRefused)
+{
+    auto network = std::make_shared<ModalNetwork>(1, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+
+    damping->set_parameter("reference_rms", 0.0);
+    damping->set_parameter("quiet_seconds", -2.0);
+    render(*network, 64);
+
+    EXPECT_DOUBLE_EQ(damping->get().reference_rms.value(), 0.1);
+    EXPECT_DOUBLE_EQ(damping->get().quiet_seconds.value(), 1.0);
+}
+
+TEST(ModalDampingControlsTest, QueryStateReportsWhatTheOperatorHoldsNotWhatIsPending)
+{
+    auto network = std::make_shared<ModalNetwork>(1, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+
+    damping->set({ .quiet_seconds = 2.0 });
+    EXPECT_EQ(damping->query_state("quiet_seconds"), 1.0);
+
+    render(*network, 64);
+    EXPECT_EQ(damping->query_state("quiet_seconds"), 2.0);
+    EXPECT_EQ(damping->query_state("mode_count"), 1.0);
+}
+
+TEST(ModalDampingControlsTest, ASetValueReadsBackThroughGet)
+{
+    auto network = std::make_shared<ModalNetwork>(1, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
 
     damping->set({ .smoothing_seconds = 0.4 });
     render(*network, 64);
-    EXPECT_EQ(damping->query_state("smoothing"), 0.4);
+
     EXPECT_DOUBLE_EQ(damping->get().smoothing_seconds.value(), 0.4);
 }
 

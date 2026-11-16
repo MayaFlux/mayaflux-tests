@@ -10,6 +10,7 @@ MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta:
 namespace MayaFlux::Test {
 
 using Nodes::Generator::Polynomial;
+using Nodes::Network::ModalDampingOperator;
 using Nodes::Network::ModalNetwork;
 
 namespace {
@@ -948,6 +949,173 @@ TEST(ModalMetadataTest, MetadataReportsFundamentalAndNodeCount)
 
     EXPECT_EQ(metadata.at("fundamental"), "440.000000 Hz");
     EXPECT_EQ(metadata.at("node_count"), "6");
+}
+
+TEST(ModalDampingTest, ANetworkWithoutTheOperatorKeepsItsOriginalDecay)
+{
+    ModalNetwork network(2, 440.0, ModalNetwork::Spectrum::HARMONIC, 2.0);
+    const double sample_rate = network.get_sample_rate();
+
+    EXPECT_DOUBLE_EQ(network.get_mode(0).decay_time, 2.0);
+    EXPECT_DOUBLE_EQ(network.get_mode(1).decay_time, 1.0);
+    EXPECT_DOUBLE_EQ(network.get_mode(0).decay_coefficient, std::exp(-1.0 / (2.0 * sample_rate)));
+    EXPECT_DOUBLE_EQ(network.get_mode(1).decay_coefficient, std::exp(-1.0 / (2.0 * sample_rate)));
+    EXPECT_EQ(network.get_mode_decay_time(1), 2.0);
+
+    network.set_decay_multiplier(0.5);
+    render(network, 64);
+
+    EXPECT_DOUBLE_EQ(network.get_mode(0).decay_coefficient, std::exp(-1.0 / sample_rate));
+    EXPECT_DOUBLE_EQ(network.get_mode(1).decay_coefficient, std::exp(-1.0 / sample_rate));
+    EXPECT_DOUBLE_EQ(network.get_mode(1).decay_time, 1.0);
+}
+
+TEST(ModalDampingTest, APerModeDecayChangePreservesTheRingAndOtherModes)
+{
+    ModalNetwork network(2, 440.0, ModalNetwork::Spectrum::HARMONIC, 2.0);
+    network.excite_mode(0, 0.7);
+    const double amplitude = network.get_mode(0).amplitude;
+    const double other_coefficient = network.get_mode(1).decay_coefficient;
+
+    ASSERT_TRUE(network.set_mode_decay_time(0, 0.25));
+
+    EXPECT_DOUBLE_EQ(network.get_mode(0).amplitude, amplitude);
+    EXPECT_EQ(network.get_mode_decay_time(0), 0.25);
+    EXPECT_EQ(network.get_mode_decay_time(1), 2.0);
+    EXPECT_DOUBLE_EQ(network.get_mode(1).decay_coefficient, other_coefficient);
+
+    network.set_decay_multiplier(2.0);
+    EXPECT_DOUBLE_EQ(network.get_mode(0).decay_coefficient,
+        std::exp(-1.0 / (0.5 * network.get_sample_rate())));
+    EXPECT_DOUBLE_EQ(network.get_mode(1).decay_coefficient,
+        std::exp(-1.0 / (4.0 * network.get_sample_rate())));
+}
+
+TEST(ModalDampingTest, InvalidPerModeDecayLeavesTheNetworkUntouched)
+{
+    ModalNetwork network(2, 440.0);
+    const double coefficient = network.get_mode(0).decay_coefficient;
+
+    EXPECT_FALSE(network.set_mode_decay_time(0, 0.0));
+    EXPECT_FALSE(network.set_mode_decay_time(0, -1.0));
+    EXPECT_FALSE(network.set_mode_decay_time(0, std::numeric_limits<double>::quiet_NaN()));
+    EXPECT_FALSE(network.set_mode_decay_time(0, std::numeric_limits<double>::infinity()));
+    EXPECT_FALSE(network.set_mode_decay_time(2, 1.0));
+    EXPECT_FALSE(network.get_mode_decay_time(2).has_value());
+
+    EXPECT_EQ(network.get_mode_decay_time(0), 1.0);
+    EXPECT_DOUBLE_EQ(network.get_mode(0).decay_coefficient, coefficient);
+}
+
+TEST(ModalDampingTest, TheCompletedBlockChangesOnlyItsModeOnTheNextBlock)
+{
+    auto network = std::make_shared<ModalNetwork>(2, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    damping->set({ .quiet_seconds = 1.0, .loud_seconds = 0.1, .reference_rms = 0.05, .smoothing_seconds = 0.0 });
+
+    network->excite_mode(0);
+    render(*network, 256);
+
+    const auto first_mode = network->get_node_audio_buffer(0);
+    ASSERT_TRUE(first_mode.has_value());
+    EXPECT_GT(peak(*first_mode), 0.05);
+    EXPECT_EQ(network->get_mode_decay_time(0), 1.0);
+    EXPECT_EQ(network->get_mode_decay_time(1), 1.0);
+
+    render(*network, 256);
+
+    EXPECT_EQ(network->get_mode_decay_time(0), 0.1);
+    EXPECT_EQ(network->get_mode_decay_time(1), 1.0);
+    EXPECT_EQ(damping->get_type_name(), "ModalDamping");
+}
+
+TEST(ModalDampingTest, ResponseSmoothingAndPerModeSettingsRemainIndependent)
+{
+    auto network = std::make_shared<ModalNetwork>(2, 440.0, ModalNetwork::Spectrum::HARMONIC, 10.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    damping->set({ .quiet_seconds = 10.0, .loud_seconds = 0.2, .reference_rms = 0.01, .smoothing_seconds = 0.1 });
+    damping->set_mode(1, { .quiet_seconds = 3.0, .loud_seconds = 0.3, .reference_rms = 0.01, .smoothing_seconds = 0.0 });
+
+    network->excite_mode(0);
+    render(*network, 256);
+    render(*network, 256);
+    const double first = network->get_mode_decay_time(0).value();
+
+    EXPECT_GT(first, 0.2);
+    EXPECT_LT(first, 10.0);
+    EXPECT_EQ(network->get_mode_decay_time(1), 3.0);
+
+    render(*network, 256);
+    EXPECT_LT(network->get_mode_decay_time(0).value(), first);
+}
+
+TEST(ModalDampingTest, InvalidValuesDoNotReplaceActiveSettings)
+{
+    auto network = std::make_shared<ModalNetwork>(1, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+
+    damping->set_mode(1, { .quiet_seconds = 2.0 });
+    damping->set_mode(0, { .quiet_seconds = 0.0 });
+    damping->set({ .quiet_seconds = 0.0, .reference_rms = std::numeric_limits<double>::quiet_NaN() });
+    render(*network, 64);
+
+    EXPECT_DOUBLE_EQ(damping->get().quiet_seconds.value(), 1.0);
+    EXPECT_DOUBLE_EQ(damping->get().reference_rms.value(), 0.1);
+    EXPECT_EQ(damping->query_state("mode_count"), 1.0);
+    EXPECT_FALSE(damping->query_state("unknown").has_value());
+}
+
+TEST(ModalDampingTest, TypedFieldsChangeEveryModeAndRejectInvalidValues)
+{
+    auto network = std::make_shared<ModalNetwork>(2, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    damping->set({ .quiet_seconds = 1.0, .loud_seconds = 0.5, .reference_rms = 0.05, .smoothing_seconds = 0.0 });
+    render(*network, 64);
+    damping->set({ .loud_seconds = 0.25 });
+    damping->set({ .reference_rms = 0.0 });
+
+    network->excite_mode(0);
+    network->excite_mode(1);
+    render(*network, 256);
+    render(*network, 256);
+
+    EXPECT_DOUBLE_EQ(damping->get().loud_seconds.value(), 0.25);
+    EXPECT_DOUBLE_EQ(damping->get().reference_rms.value(), 0.05);
+    EXPECT_EQ(network->get_mode_decay_time(0), 0.25);
+    EXPECT_EQ(network->get_mode_decay_time(1), 0.25);
+}
+
+TEST(ModalDampingTest, NamedParametersChangeEveryModeAndRejectInvalidValues)
+{
+    auto network = std::make_shared<ModalNetwork>(2, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    damping->set({ .quiet_seconds = 1.0, .loud_seconds = 0.5, .reference_rms = 0.05, .smoothing_seconds = 0.0 });
+    render(*network, 64);
+
+    damping->set_parameter("loud_seconds", 0.25);
+    damping->set_parameter("reference_rms", 0.0);
+
+    network->excite_mode(0);
+    network->excite_mode(1);
+    render(*network, 256);
+    render(*network, 256);
+
+    EXPECT_EQ(damping->query_state("loud_seconds"), 0.25);
+    EXPECT_EQ(damping->query_state("reference_rms"), 0.05);
+    EXPECT_EQ(network->get_mode_decay_time(0), 0.25);
+    EXPECT_EQ(network->get_mode_decay_time(1), 0.25);
+}
+
+TEST(ModalDampingTest, ARetainedOperatorDoesNotKeepItsNetworkAlive)
+{
+    auto network = std::make_shared<ModalNetwork>(1, 440.0);
+    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    const std::weak_ptr<ModalNetwork> weak = network;
+
+    network.reset();
+
+    EXPECT_TRUE(weak.expired());
+    damping->process(64.0F);
 }
 
 }

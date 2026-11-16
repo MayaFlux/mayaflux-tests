@@ -1119,6 +1119,52 @@ TEST(ControlTypeTest, ObservingAScalarOfAnyTypeShowsItAsThatType)
     EXPECT_FALSE(control.due());
 }
 
+TEST(ControlStoreTest, ANamedSetReachesTheMemberLikeASet)
+{
+    Nodes::Network::ControlStore store;
+    auto& live = store.declare<ControlsProbeOperatorControls>();
+
+    EXPECT_TRUE(store.set_named("gain", 2.0));
+
+    const auto taken = live.gain.pending();
+    ASSERT_TRUE(taken.has_value());
+    EXPECT_DOUBLE_EQ(*taken, 2.0);
+}
+
+TEST(ControlStoreTest, AnUnknownNameSetsNothing)
+{
+    Nodes::Network::ControlStore store;
+    auto& live = store.declare<ControlsProbeOperatorControls>();
+
+    EXPECT_FALSE(store.set_named("nope", 2.0));
+    EXPECT_FALSE(store.set_named("Gain", 2.0));
+    EXPECT_FALSE(live.gain.has_value());
+}
+
+TEST(ControlStoreTest, ANumberCannotReplaceAHeldVector)
+{
+    Nodes::Network::ControlStore store;
+    auto& live = store.declare<ControlsProbeOperatorControls>();
+    store.merge(ControlsProbeOperatorControls { .direction = glm::vec3(1.0F, 2.0F, 3.0F) });
+
+    EXPECT_FALSE(store.set_named("direction", 9.0));
+
+    EXPECT_EQ(live.direction.value<glm::vec3>(), glm::vec3(1.0F, 2.0F, 3.0F));
+}
+
+TEST(ControlStoreTest, ANamedReadGivesTheNumberASnapshotHolds)
+{
+    Nodes::Network::ControlStore store;
+    static_cast<void>(store.declare<ControlsProbeOperatorControls>());
+    store.merge(ControlsProbeOperatorControls { .gain = 2.5, .direction = glm::vec3(1.0F) });
+    const auto copy = store.snapshot<ControlsProbeOperatorControls>();
+
+    EXPECT_EQ(Nodes::Network::ControlStore::read_named(copy, "gain"), 2.5);
+    EXPECT_FALSE(Nodes::Network::ControlStore::read_named(copy, "tilt").has_value());
+    EXPECT_FALSE(Nodes::Network::ControlStore::read_named(copy, "direction").has_value());
+    EXPECT_FALSE(Nodes::Network::ControlStore::read_named(copy, "nope").has_value());
+}
+
 TEST(ControlStoreTest, AStoreCannotBeCopiedOrMoved)
 {
     static_assert(!std::is_copy_constructible_v<Nodes::Network::ControlStore>);
