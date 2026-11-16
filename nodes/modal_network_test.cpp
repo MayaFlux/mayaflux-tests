@@ -1010,7 +1010,7 @@ TEST(ModalDampingTest, InvalidPerModeDecayLeavesTheNetworkUntouched)
 TEST(ModalDampingTest, TheCompletedBlockChangesOnlyItsModeOnTheNextBlock)
 {
     auto network = std::make_shared<ModalNetwork>(2, 440.0);
-    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    auto damping = network->add<ModalDampingOperator>();
     damping->set({ .quiet_seconds = 1.0, .loud_seconds = 0.1, .reference_rms = 0.05, .smoothing_seconds = 0.0 });
 
     network->excite_mode(0);
@@ -1032,7 +1032,7 @@ TEST(ModalDampingTest, TheCompletedBlockChangesOnlyItsModeOnTheNextBlock)
 TEST(ModalDampingTest, ResponseSmoothingAndPerModeSettingsRemainIndependent)
 {
     auto network = std::make_shared<ModalNetwork>(2, 440.0, ModalNetwork::Spectrum::HARMONIC, 10.0);
-    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    auto damping = network->add<ModalDampingOperator>();
     damping->set({ .quiet_seconds = 10.0, .loud_seconds = 0.2, .reference_rms = 0.01, .smoothing_seconds = 0.1 });
     damping->set_mode(1, { .quiet_seconds = 3.0, .loud_seconds = 0.3, .reference_rms = 0.01, .smoothing_seconds = 0.0 });
 
@@ -1052,7 +1052,7 @@ TEST(ModalDampingTest, ResponseSmoothingAndPerModeSettingsRemainIndependent)
 TEST(ModalDampingTest, InvalidValuesDoNotReplaceActiveSettings)
 {
     auto network = std::make_shared<ModalNetwork>(1, 440.0);
-    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    auto damping = network->add<ModalDampingOperator>();
 
     damping->set_mode(1, { .quiet_seconds = 2.0 });
     damping->set_mode(0, { .quiet_seconds = 0.0 });
@@ -1068,7 +1068,7 @@ TEST(ModalDampingTest, InvalidValuesDoNotReplaceActiveSettings)
 TEST(ModalDampingTest, TypedFieldsChangeEveryModeAndRejectInvalidValues)
 {
     auto network = std::make_shared<ModalNetwork>(2, 440.0);
-    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    auto damping = network->add<ModalDampingOperator>();
     damping->set({ .quiet_seconds = 1.0, .loud_seconds = 0.5, .reference_rms = 0.05, .smoothing_seconds = 0.0 });
     render(*network, 64);
     damping->set({ .loud_seconds = 0.25 });
@@ -1088,7 +1088,7 @@ TEST(ModalDampingTest, TypedFieldsChangeEveryModeAndRejectInvalidValues)
 TEST(ModalDampingTest, NamedParametersChangeEveryModeAndRejectInvalidValues)
 {
     auto network = std::make_shared<ModalNetwork>(2, 440.0);
-    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    auto damping = network->add<ModalDampingOperator>();
     damping->set({ .quiet_seconds = 1.0, .loud_seconds = 0.5, .reference_rms = 0.05, .smoothing_seconds = 0.0 });
     render(*network, 64);
 
@@ -1109,13 +1109,46 @@ TEST(ModalDampingTest, NamedParametersChangeEveryModeAndRejectInvalidValues)
 TEST(ModalDampingTest, ARetainedOperatorDoesNotKeepItsNetworkAlive)
 {
     auto network = std::make_shared<ModalNetwork>(1, 440.0);
-    auto damping = network->get_operator_chain()->emplace<ModalDampingOperator>(network);
+    auto damping = network->add<ModalDampingOperator>();
     const std::weak_ptr<ModalNetwork> weak = network;
 
     network.reset();
 
     EXPECT_TRUE(weak.expired());
     damping->process(64.0F);
+}
+
+TEST(ModalDampingTest, AddHandsTheNetworkToTheOperatorAndAppendsItToTheChain)
+{
+    auto network = std::make_shared<ModalNetwork>(2, 440.0);
+    auto damping = network->add<ModalDampingOperator>();
+
+    ASSERT_NE(damping, nullptr);
+    ASSERT_EQ(network->get_operator_chain()->size(), 1U);
+    EXPECT_EQ(network->get_operator_chain()->get(0), damping);
+    EXPECT_EQ(damping->query_state("mode_count"), 2.0);
+}
+
+TEST(ModalDampingTest, AddBuildsAnOperatorThatTakesNoHostFromItsArguments)
+{
+    struct Plain final : Nodes::Network::NetworkOperator {
+        explicit Plain(int tag)
+            : tag(tag)
+        {
+        }
+        void process(float) override { }
+        void set_parameter(std::string_view, double) override { }
+        [[nodiscard]] std::optional<double> query_state(std::string_view) const override { return tag; }
+        [[nodiscard]] std::string_view get_type_name() const override { return "Plain"; }
+        int tag;
+    };
+
+    auto network = std::make_shared<ModalNetwork>(1, 440.0);
+    auto plain = network->add<Plain>(7);
+
+    ASSERT_NE(plain, nullptr);
+    EXPECT_EQ(plain->tag, 7);
+    EXPECT_EQ(network->get_operator_chain()->find<Plain>(), plain);
 }
 
 }
