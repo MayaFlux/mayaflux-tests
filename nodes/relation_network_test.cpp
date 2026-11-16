@@ -934,6 +934,76 @@ TEST(RelationRewriteTest, InvalidEmittedArityAndFailedCallbacksDoNotReplaceTheWo
     EXPECT_EQ(rewrite.active_word()->symbols[0].id, 1U);
 }
 
+TEST(RelationRewriteTest, TheDraftWordStartsAsTheAxiomAndFollowsRewriteAndRestore)
+{
+    RewriteOperator rewrite(RewriteOperator::Config {
+        .axiom = RewriteOperator::symbols_from_text("A"),
+        .max_word_length = 64,
+        .max_generations = 8 });
+    ASSERT_TRUE(rewrite.replace('A', "AB"));
+    ASSERT_TRUE(rewrite.replace('B', "A"));
+
+    ASSERT_NE(rewrite.draft_word(), nullptr);
+    EXPECT_EQ(rewrite.draft_word()->symbols.size(), 1U);
+    EXPECT_EQ(rewrite.draft_word()->generation, 0U);
+
+    ASSERT_EQ(rewrite.rewrite(3), RewriteOperator::RewriteResult::REWRITTEN);
+    const auto draft = rewrite.draft_word();
+    ASSERT_EQ(draft->symbols.size(), 5U);
+    EXPECT_EQ(draft->generation, rewrite.draft_generation());
+    EXPECT_EQ(draft->symbols[0].id, static_cast<RewriteOperator::SymbolId>('A'));
+    EXPECT_EQ(draft->symbols[1].id, static_cast<RewriteOperator::SymbolId>('B'));
+    EXPECT_EQ(rewrite.active_word()->symbols.size(), 1U);
+
+    ASSERT_TRUE(rewrite.restore_axiom());
+    EXPECT_EQ(rewrite.draft_word()->symbols.size(), 1U);
+    EXPECT_EQ(rewrite.draft_word()->generation, 0U);
+    EXPECT_EQ(draft->symbols.size(), 5U);
+}
+
+TEST(RelationRewriteTest, ARefusedRewriteLeavesTheDraftWordWhereItWas)
+{
+    RewriteOperator rewrite(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 } },
+        .max_word_length = 2,
+        .max_generations = 4 });
+    rewrite.replace(1, [](const auto&, auto, const auto& emit) {
+        emit(RewriteOperator::Symbol { 1 });
+        emit(RewriteOperator::Symbol { 2 });
+    });
+    const auto before = rewrite.draft_word();
+
+    EXPECT_EQ(rewrite.rewrite(2), RewriteOperator::RewriteResult::WORD_LIMIT);
+
+    EXPECT_EQ(rewrite.draft_word(), before);
+    EXPECT_EQ(rewrite.draft_word()->symbols.size(), 1U);
+}
+
+TEST(RelationRewriteTest, TheDraftWordIsTheSubmittedWordOnceItIsActive)
+{
+    RelationNetwork network;
+    auto rewrite = network.add<RewriteOperator>(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 } },
+        .max_word_length = 4,
+        .max_generations = 2 });
+    rewrite->replace(1, [](const auto&, auto, const auto& emit) {
+        emit(RewriteOperator::Symbol { 1 });
+        emit(RewriteOperator::Symbol { 2 });
+    });
+
+    ASSERT_EQ(rewrite->rewrite(), RewriteOperator::RewriteResult::REWRITTEN);
+    const auto draft = rewrite->draft_word();
+    ASSERT_EQ(rewrite->submit(), RewriteOperator::SubmitResult::SUBMITTED);
+    EXPECT_EQ(rewrite->draft_word(), draft);
+    EXPECT_EQ(rewrite->active_word()->symbols.size(), 1U);
+
+    network.process_batch(FRAMES);
+
+    EXPECT_EQ(rewrite->active_word(), draft);
+    EXPECT_EQ(rewrite->draft_word(), draft);
+    EXPECT_EQ(rewrite->active_symbols().size(), 2U);
+}
+
 TEST(RelationRewriteTest, SubmissionBecomesActiveAtTheBlockBoundaryAndRetainsOldWords)
 {
     RelationNetwork network;
