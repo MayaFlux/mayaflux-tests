@@ -1,6 +1,8 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
+#include "MayaFlux/Kinesis/Spatial/Bounds.hpp"
+#include "MayaFlux/Kinesis/VertexSampler.hpp"
 #include "MayaFlux/Nodes/Generators/Polynomial.hpp"
 #include "MayaFlux/Nodes/Network/ModalNetwork.hpp"
 #include "network_controls_fixtures.hpp"
@@ -984,6 +986,136 @@ TEST(ControlTypeTest, ControlsConvertImplicitlyFromEveryValueKind)
     static_assert(std::is_convertible_v<glm::vec4, Control>);
     static_assert(!std::is_convertible_v<std::string, Control>);
     static_assert(!std::is_convertible_v<std::vector<double>, Control>);
+}
+
+TEST(ControlBoxTest, ControlsConvertFromAnyStructOfTwoCornersAndNothingElse)
+{
+    struct Scalars {
+        float min;
+        float max;
+    };
+    struct ThreeCorners {
+        glm::vec3 min;
+        glm::vec3 max;
+        glm::vec3 mid;
+    };
+    struct WideCorners {
+        glm::vec4 min;
+        glm::vec4 max;
+    };
+
+    static_assert(std::is_convertible_v<Kinesis::AABB3D, Control>);
+    static_assert(std::is_convertible_v<Kinesis::SamplerBounds, Control>);
+    static_assert(!std::is_convertible_v<Scalars, Control>);
+    static_assert(!std::is_convertible_v<ThreeCorners, Control>);
+    static_assert(!std::is_convertible_v<WideCorners, Control>);
+    static_assert(!Control::is_box<glm::vec3>);
+    static_assert(!Control::is_box<double>);
+    SUCCEED();
+}
+
+TEST(ControlBoxTest, ABoxIsHeldWholeAndReadBackAsItsType)
+{
+    Control control = Kinesis::AABB3D { .min = { -1.0F, -2.0F, -3.0F }, .max = { 4.0F, 5.0F, 6.0F } };
+
+    EXPECT_TRUE(control.has_value());
+    EXPECT_EQ(control.width(), 6U);
+    EXPECT_EQ(control.value<Kinesis::AABB3D>().min, glm::vec3(-1.0F, -2.0F, -3.0F));
+    EXPECT_EQ(control.value<Kinesis::AABB3D>().max, glm::vec3(4.0F, 5.0F, 6.0F));
+
+    const auto taken = control.pending<Kinesis::AABB3D>();
+    ASSERT_TRUE(taken.has_value());
+    EXPECT_EQ(taken->min, glm::vec3(-1.0F, -2.0F, -3.0F));
+    EXPECT_EQ(taken->max, glm::vec3(4.0F, 5.0F, 6.0F));
+    EXPECT_FALSE(control.pending<Kinesis::AABB3D>().has_value());
+}
+
+TEST(ControlBoxTest, SamplerBoundsRoundTripAndKeepTheirDerivedValues)
+{
+    Control control = Kinesis::SamplerBounds { .min = glm::vec3(-2.0F), .max = glm::vec3(4.0F) };
+
+    const auto bounds = control.pending<Kinesis::SamplerBounds>();
+
+    ASSERT_TRUE(bounds.has_value());
+    EXPECT_EQ(bounds->center(), glm::vec3(1.0F));
+    EXPECT_EQ(bounds->extent(), glm::vec3(6.0F));
+}
+
+TEST(ControlBoxTest, ABoxIsNeverReadAsANumberOrAVector)
+{
+    Control box = Kinesis::AABB3D { .min = glm::vec3(0.0F), .max = glm::vec3(1.0F) };
+    Control wide = glm::vec4(1.0F);
+
+    EXPECT_FALSE(box.pending().has_value());
+    EXPECT_FALSE(box.pending<glm::vec3>().has_value());
+    EXPECT_FALSE(box.pending<glm::vec4>().has_value());
+    EXPECT_FALSE(wide.pending<Kinesis::AABB3D>().has_value());
+    EXPECT_TRUE(box.pending<Kinesis::AABB3D>().has_value());
+}
+
+TEST(ControlBoxTest, AssigningABoxOverAVectorChangesTheTypeItReads)
+{
+    Control live = glm::vec3(1.0F);
+
+    live.assign(Control(Kinesis::AABB3D { .min = glm::vec3(-1.0F), .max = glm::vec3(1.0F) }));
+
+    EXPECT_FALSE(live.pending<glm::vec3>().has_value());
+    EXPECT_EQ(live.value<Kinesis::AABB3D>().max, glm::vec3(1.0F));
+}
+
+TEST(ControlBoxTest, ObservingABoxShowsTheOwnersValueWithoutMakingItDue)
+{
+    Control control;
+
+    control.observe(Kinesis::SamplerBounds { .min = glm::vec3(-10.0F), .max = glm::vec3(10.0F) });
+
+    EXPECT_TRUE(control.has_value());
+    EXPECT_EQ(control.value<Kinesis::SamplerBounds>().max, glm::vec3(10.0F));
+    EXPECT_FALSE(control.due());
+}
+
+TEST(ControlBoxTest, ACopyOfABoxKeepsBothCorners)
+{
+    const Control original = Kinesis::AABB3D { .min = { 1.0F, 2.0F, 3.0F }, .max = { 4.0F, 5.0F, 6.0F } };
+
+    const Control copy = original;
+
+    EXPECT_EQ(copy.value<Kinesis::AABB3D>().min, glm::vec3(1.0F, 2.0F, 3.0F));
+    EXPECT_EQ(copy.value<Kinesis::AABB3D>().max, glm::vec3(4.0F, 5.0F, 6.0F));
+    EXPECT_TRUE(copy.due());
+}
+
+TEST(ControlBoxTest, ABoxSetFromAnotherThreadIsNeverSeenWithMismatchedCorners)
+{
+    Control live = Kinesis::AABB3D { .min = glm::vec3(0.0F), .max = glm::vec3(0.0F) };
+    static_cast<void>(live.pending<Kinesis::AABB3D>());
+    constexpr int last = 20000;
+    std::atomic<bool> done { false };
+
+    std::thread writer([&] {
+        for (int i = 1; i <= last; ++i) {
+            const auto value = static_cast<float>(i);
+            live.assign(Control(Kinesis::AABB3D { .min = glm::vec3(-value), .max = glm::vec3(value) }));
+        }
+        done.store(true, std::memory_order_release);
+    });
+
+    bool whole = true;
+    float previous = 0.0F;
+    for (;;) {
+        const bool finished = done.load(std::memory_order_acquire);
+        if (const auto taken = live.pending<Kinesis::AABB3D>()) {
+            whole = whole && taken->min == -taken->max && taken->max.x == taken->max.z && taken->max.x >= previous;
+            previous = taken->max.x;
+        }
+        if (finished) {
+            break;
+        }
+    }
+    writer.join();
+
+    EXPECT_TRUE(whole);
+    EXPECT_FLOAT_EQ(previous, static_cast<float>(last));
 }
 
 TEST(ControlStoreTest, AVectorControlMergesAndIsReadBackFromTheStruct)

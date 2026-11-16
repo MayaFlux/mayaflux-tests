@@ -1255,4 +1255,344 @@ TEST(ModalDampingControlsTest, ASetValueReadsBackThroughGet)
     EXPECT_DOUBLE_EQ(damping->get().smoothing_seconds.value(), 0.4);
 }
 
+
+TEST_F(PhysicsControlsTest, BoundsAreSetAsOneStructAndHeldByTheMode)
+{
+    op.initialize(particles(3));
+
+    op.set({ .bounds = Kinesis::SamplerBounds { .min = glm::vec3(-1.0F), .max = glm::vec3(1.0F) },
+        .bounds_mode = BoundsMode::CLAMP });
+    op.process(0.1F);
+
+    EXPECT_NEAR(position(2).x, 1.0F, k_eps);
+    const auto held = op.get().bounds.value<Kinesis::SamplerBounds>();
+    EXPECT_EQ(held.min, glm::vec3(-1.0F));
+    EXPECT_EQ(held.max, glm::vec3(1.0F));
+    EXPECT_EQ(op.get().bounds_mode.value<BoundsMode>(), BoundsMode::CLAMP);
+}
+
+TEST_F(PhysicsControlsTest, AnAttractionPointTurnsAttractionOnUntilItIsCleared)
+{
+    op.initialize(particles(2));
+    ASSERT_FALSE(op.has_attraction_point());
+
+    op.set({ .attraction_point = glm::vec3(5.0F, 0.0F, 0.0F) });
+    op.process(0.1F);
+
+    EXPECT_TRUE(op.has_attraction_point());
+    EXPECT_TRUE(near_vec(op.get().attraction_point.value<glm::vec3>(), { 5.0F, 0.0F, 0.0F }));
+
+    op.clear_attraction_point();
+    EXPECT_FALSE(op.has_attraction_point());
+}
+
+TEST_F(PhysicsControlsTest, BondValuesAreHeldAndDisablingDropsTheBonds)
+{
+    op.initialize(particles(4));
+    op.sync_bonds_from_claims(std::vector<uint32_t> { 0, 0, 2, 2 });
+    ASSERT_EQ(op.bond_count(), 2U);
+
+    op.set({ .bond_stiffness = 3.0, .bond_rest_length = 0.5 });
+    op.process(0.1F);
+    EXPECT_DOUBLE_EQ(op.get().bond_stiffness.value(), 3.0);
+    EXPECT_DOUBLE_EQ(op.get().bond_rest_length.value(), 0.5);
+    EXPECT_TRUE(op.get().bonds_enabled.value<bool>());
+
+    op.set({ .bonds_enabled = false });
+    op.process(0.1F);
+    EXPECT_EQ(op.bond_count(), 0U);
+    EXPECT_FALSE(op.get().bonds_enabled.value<bool>());
+}
+
+TEST_F(PhysicsControlsTest, AForcedInternalDtReplacesTheIncomingOne)
+{
+    op.initialize(particles(1));
+    op.apply_impulse(0, { 1.0F, 0.0F, 0.0F });
+
+    op.set({ .internal_dt = 0.5, .force_internal_dt = true });
+    op.process(0.0F);
+
+    EXPECT_NEAR(position(0).x, 0.5F, k_eps);
+    EXPECT_TRUE(op.get().force_internal_dt.value<bool>());
+}
+
+TEST(TopologyControlsTest, ALineColourAndSegmentSamplesMatchTheirSetters)
+{
+    TopologyOperator by_setter;
+    TopologyOperator by_control;
+    by_setter.initialize(line_points(6));
+    by_control.initialize(line_points(6));
+
+    const glm::vec4 colour { 0.2F, 0.4F, 0.6F, 1.0F };
+    by_setter.set_global_line_color(colour);
+    by_setter.set_samples_per_segment(3);
+    by_control.set({ .samples_per_segment = 3, .line_color = colour });
+
+    by_setter.process(0.0F);
+    by_control.process(0.0F);
+
+    ASSERT_EQ(by_control.get_vertex_count(), by_setter.get_vertex_count());
+    const auto expected = by_setter.get_vertex_data();
+    const auto actual = by_control.get_vertex_data();
+    ASSERT_EQ(actual.size(), expected.size());
+    EXPECT_TRUE(std::equal(actual.begin(), actual.end(), expected.begin()));
+}
+
+TEST(PointCloudControlsTest, NeighboursReachTheTopologyOperatorOnTheNextBlock)
+{
+    auto net = std::make_shared<PointCloudNetwork>(20);
+    net->initialize();
+    auto* topology = dynamic_cast<TopologyOperator*>(net->get_operator());
+    ASSERT_NE(topology, nullptr);
+
+    net->set({ .k_neighbors = 1.0 });
+    net->process_batch(1);
+    const auto sparse = topology->get_topology(0)->get_connection_count();
+
+    net->set({ .k_neighbors = 6.0 });
+    net->process_batch(1);
+    const auto dense = topology->get_topology(0)->get_connection_count();
+
+    EXPECT_GT(dense, sparse);
+}
+
+TEST(PointCloudControlsTest, AValueSetBeforeTheOperatorExistsIsAppliedOnceItDoes)
+{
+    auto net = std::make_shared<PointCloudNetwork>(20);
+    net->set({ .k_neighbors = 1.0 });
+    net->initialize();
+    auto* topology = dynamic_cast<TopologyOperator*>(net->get_operator());
+    ASSERT_NE(topology, nullptr);
+
+    net->process_batch(1);
+    const auto sparse = topology->get_topology(0)->get_connection_count();
+
+    auto reference = std::make_shared<PointCloudNetwork>(20);
+    reference->set({ .k_neighbors = 6.0 });
+    reference->initialize();
+    reference->process_batch(1);
+    auto* dense_topology = dynamic_cast<TopologyOperator*>(reference->get_operator());
+    ASSERT_NE(dense_topology, nullptr);
+
+    EXPECT_LT(sparse, dense_topology->get_topology(0)->get_connection_count());
+}
+
+TEST(ParticleControlsTest, BoundsAreHeldByTheNetworkAsOneStruct)
+{
+    auto net = std::make_shared<Nodes::Network::ParticleNetwork>(8);
+
+    net->set({ .bounds = Kinesis::SamplerBounds { .min = glm::vec3(-2.0F), .max = glm::vec3(2.0F) } });
+    net->process_batch(1);
+
+    EXPECT_EQ(net->get_bounds().min, glm::vec3(-2.0F));
+    EXPECT_EQ(net->get_bounds().max, glm::vec3(2.0F));
+    EXPECT_EQ(net->get().bounds.value<Kinesis::SamplerBounds>().max, glm::vec3(2.0F));
+}
+
+
+TEST(PhysicsControlsParityTest, TheDeprecatedBoundsSettersAndTheControlsMoveParticlesAlike)
+{
+    PhysicsOperator by_setter;
+    PhysicsOperator by_control;
+    by_setter.initialize(particles(4));
+    by_control.initialize(particles(4));
+    by_setter.set({ .gravity = glm::vec3(0.0F), .drag = 0.0 });
+    by_control.set({ .gravity = glm::vec3(0.0F), .drag = 0.0 });
+
+    by_setter.set_bounds({ -1.0F, -1.0F, -1.0F }, { 1.5F, 1.0F, 1.0F });
+    by_setter.set_bounds_mode(BoundsMode::CLAMP);
+    by_control.set({ .bounds = Kinesis::SamplerBounds { .min = glm::vec3(-1.0F), .max = glm::vec3(1.5F, 1.0F, 1.0F) },
+        .bounds_mode = BoundsMode::CLAMP });
+
+    by_setter.process(0.1F);
+    by_control.process(0.1F);
+
+    const auto expected = by_setter.extract_vertices();
+    const auto actual = by_control.extract_vertices();
+    ASSERT_EQ(actual.size(), expected.size());
+    for (size_t i = 0; i < actual.size(); ++i) {
+        EXPECT_TRUE(near_vec(actual[i].position, expected[i].position)) << "particle " << i;
+    }
+    EXPECT_NEAR(actual[3].position.x, 1.5F, k_eps);
+}
+
+TEST(PhysicsControlsParityTest, TheDeprecatedAttractionSetterAndTheControlMoveParticlesAlike)
+{
+    PhysicsOperator by_setter;
+    PhysicsOperator by_control;
+    by_setter.initialize(particles(3));
+    by_control.initialize(particles(3));
+    by_setter.set({ .gravity = glm::vec3(0.0F), .drag = 0.0, .attraction_strength = 2.0 });
+    by_control.set({ .gravity = glm::vec3(0.0F), .drag = 0.0, .attraction_strength = 2.0 });
+
+    by_setter.set_attraction_point({ 10.0F, 0.0F, 0.0F });
+    by_control.set({ .attraction_point = glm::vec3(10.0F, 0.0F, 0.0F) });
+
+    for (int step = 0; step < 3; ++step) {
+        by_setter.process(0.1F);
+        by_control.process(0.1F);
+    }
+
+    const auto expected = by_setter.extract_vertices();
+    const auto actual = by_control.extract_vertices();
+    for (size_t i = 0; i < actual.size(); ++i) {
+        EXPECT_TRUE(near_vec(actual[i].position, expected[i].position)) << "particle " << i;
+    }
+    EXPECT_GT(actual[0].position.x, 0.0F);
+}
+
+TEST(PhysicsControlsParityTest, AnAttractionPointKeepsItsOwnValueWhenOnlyBoundsChange)
+{
+    PhysicsOperator op;
+    op.initialize(particles(2));
+
+    op.set({ .attraction_point = glm::vec3(3.0F, 0.0F, 0.0F) });
+    op.process(0.1F);
+    op.set({ .bounds = Kinesis::SamplerBounds { .min = glm::vec3(-5.0F), .max = glm::vec3(5.0F) } });
+    op.process(0.1F);
+
+    EXPECT_TRUE(op.has_attraction_point());
+    EXPECT_TRUE(near_vec(op.get().attraction_point.value<glm::vec3>(), { 3.0F, 0.0F, 0.0F }));
+}
+
+TEST(PhysicsControlsParityTest, TheDeprecatedBondSettersAndTheControlsHoldTheSameValues)
+{
+    PhysicsOperator by_setter;
+    PhysicsOperator by_control;
+    by_setter.initialize(particles(4));
+    by_control.initialize(particles(4));
+    by_setter.sync_bonds_from_claims(std::vector<uint32_t> { 0, 0, 2, 2 });
+    by_control.sync_bonds_from_claims(std::vector<uint32_t> { 0, 0, 2, 2 });
+
+    by_setter.set_bond_stiffness(4.0F);
+    by_setter.set_bond_rest_length(0.25F);
+    by_setter.enable_bonds(false);
+    by_control.set({ .bond_stiffness = 4.0, .bond_rest_length = 0.25, .bonds_enabled = false });
+    by_setter.process(0.1F);
+    by_control.process(0.1F);
+
+    EXPECT_EQ(by_control.bond_count(), by_setter.bond_count());
+    EXPECT_EQ(by_control.get().bond_stiffness.value(), static_cast<double>(by_setter.get_bond_stiffness()));
+    EXPECT_EQ(by_control.get().bond_rest_length.value(), static_cast<double>(by_setter.get_bond_rest_length()));
+    EXPECT_EQ(by_control.get().bonds_enabled.value<bool>(), by_setter.bonds_enabled());
+}
+
+TEST(PointCloudControlsTest, AnUnsupportedControlIsDroppedWithoutDisturbingTheOperator)
+{
+    auto net = std::make_shared<PointCloudNetwork>();
+    auto* path = net->create_operator<PathOperator>();
+    path->initialize(line_points(6));
+
+    net->set({ .connection_radius = 5.0, .k_neighbors = 3.0 });
+
+    EXPECT_NO_THROW(net->process_batch(1));
+    EXPECT_GT(path->get_vertex_count(), 0U);
+}
+
+TEST(PointCloudControlsTest, APathOperatorReceivesColourThicknessSamplesAndTension)
+{
+    auto net = std::make_shared<PointCloudNetwork>();
+    auto* path = net->create_operator<PathOperator>();
+    path->initialize(line_points(6));
+
+    PathOperator reference;
+    reference.initialize(line_points(6));
+    const glm::vec4 colour { 0.2F, 0.4F, 0.6F, 1.0F };
+    reference.set({ .tension = 0.1, .samples_per_segment = 4.0, .thickness = 3.0 });
+    reference.set_global_color(colour);
+
+    net->set({ .line_color = colour, .line_thickness = 3.0, .samples_per_segment = 4.0, .tension = 0.1 });
+    net->process_batch(1);
+    reference.process(0.0F);
+
+    ASSERT_EQ(path->get_vertex_count(), reference.get_vertex_count());
+    const auto expected = reference.get_vertex_data();
+    const auto actual = path->get_vertex_data();
+    ASSERT_EQ(actual.size(), expected.size());
+    EXPECT_TRUE(std::equal(actual.begin(), actual.end(), expected.begin()));
+}
+
+TEST(PointCloudControlsTest, ATopologyOperatorReceivesColourThicknessAndSamples)
+{
+    auto net = std::make_shared<PointCloudNetwork>();
+    auto* topology = net->create_operator<TopologyOperator>();
+    topology->initialize(line_points(6));
+
+    TopologyOperator reference;
+    reference.initialize(line_points(6));
+    const glm::vec4 colour { 0.2F, 0.4F, 0.6F, 1.0F };
+    reference.set({ .line_thickness = 3.0, .samples_per_segment = 3.0, .line_color = colour });
+
+    net->set({ .line_color = colour, .line_thickness = 3.0, .samples_per_segment = 3.0 });
+    net->process_batch(1);
+    reference.process(0.0F);
+
+    ASSERT_EQ(topology->get_vertex_count(), reference.get_vertex_count());
+    const auto expected = reference.get_vertex_data();
+    const auto actual = topology->get_vertex_data();
+    ASSERT_EQ(actual.size(), expected.size());
+    EXPECT_TRUE(std::equal(actual.begin(), actual.end(), expected.begin()));
+}
+
+TEST(PointCloudControlsTest, ANodeSourceIsForwardedEveryBlock)
+{
+    auto net = std::make_shared<PointCloudNetwork>(20);
+    net->initialize();
+    auto* topology = dynamic_cast<TopologyOperator*>(net->get_operator());
+    ASSERT_NE(topology, nullptr);
+
+    net->set({ .k_neighbors = constant_source(1.0) });
+    net->process_batch(1);
+    const auto sparse = topology->get_topology(0)->get_connection_count();
+
+    net->set({ .k_neighbors = constant_source(6.0) });
+    net->process_batch(1);
+    const auto dense = topology->get_topology(0)->get_connection_count();
+
+    EXPECT_GT(dense, sparse);
+}
+
+TEST(PointCloudControlsTest, TheDeprecatedForwardersWriteTheSameControls)
+{
+    auto net = std::make_shared<PointCloudNetwork>(20);
+    net->initialize();
+
+    net->set_k_neighbors(4);
+    net->set_line_thickness(2.5F);
+    net->set_connection_radius(0.5F);
+
+    EXPECT_DOUBLE_EQ(net->get().k_neighbors.value(), 4.0);
+    EXPECT_DOUBLE_EQ(net->get().line_thickness.value(), 2.5);
+    EXPECT_DOUBLE_EQ(net->get().connection_radius.value(), 0.5);
+}
+
+TEST(ParticleControlsTest, TheNetworksBoundsReachThePhysicsOperatorOnTheFirstBlock)
+{
+    auto net = std::make_shared<ParticleNetwork>(8, glm::vec3(-3.0F), glm::vec3(3.0F));
+    net->initialize();
+    auto* physics = net->as_operator<PhysicsOperator>();
+    ASSERT_NE(physics, nullptr);
+
+    net->process_batch(1);
+
+    EXPECT_EQ(physics->get().bounds.value<Kinesis::SamplerBounds>().min, glm::vec3(-3.0F));
+    EXPECT_EQ(physics->get().bounds.value<Kinesis::SamplerBounds>().max, glm::vec3(3.0F));
+}
+
+TEST(ParticleControlsTest, ABoundsControlReachesThePhysicsOperatorAfterAReset)
+{
+    auto net = std::make_shared<ParticleNetwork>(8);
+    net->initialize();
+    auto* physics = net->as_operator<PhysicsOperator>();
+    ASSERT_NE(physics, nullptr);
+
+    net->set({ .bounds = Kinesis::SamplerBounds { .min = glm::vec3(-2.0F), .max = glm::vec3(2.0F) } });
+    net->process_batch(1);
+    net->reset();
+    net->process_batch(1);
+
+    EXPECT_EQ(physics->get().bounds.value<Kinesis::SamplerBounds>().max, glm::vec3(2.0F));
+    EXPECT_EQ(net->get().bounds.value<Kinesis::SamplerBounds>().min, glm::vec3(-2.0F));
+}
+
 }
