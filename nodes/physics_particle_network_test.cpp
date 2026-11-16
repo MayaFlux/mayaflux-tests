@@ -1061,8 +1061,9 @@ namespace {
         net.initialize();
 
         net.set_topology(GetParam().first);
+        net.process_batch(1);
 
-        EXPECT_EQ(net.as_operator<PhysicsOperator>()->spatial_interactions_enabled(), GetParam().second);
+        EXPECT_EQ(net.as_operator<PhysicsOperator>()->get().spatial_interactions.value() > 0.5, GetParam().second);
     }
 
     TEST_P(ParticleTopologyTest, ANewPhysicsOperatorFollowsTheSameRule)
@@ -1072,8 +1073,9 @@ namespace {
         net.set_topology(GetParam().first);
 
         auto* fresh = net.create_operator<PhysicsOperator>();
+        net.process_batch(1);
 
-        EXPECT_EQ(fresh->spatial_interactions_enabled(), GetParam().second);
+        EXPECT_EQ(fresh->get().spatial_interactions.value() > 0.5, GetParam().second);
     }
 
     INSTANTIATE_TEST_SUITE_P(
