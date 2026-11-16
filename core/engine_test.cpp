@@ -1,4 +1,5 @@
 #include <chrono>
+#include <future>
 
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
@@ -439,6 +440,68 @@ namespace {
         EXPECT_TRUE(observed);
         EXPECT_GT(*executions, 0);
     }
+
+#ifndef MAYAFLUX_PLATFORM_MACOS
+    std::future<void> start_await(Core::Engine& engine)
+    {
+        auto done = std::make_shared<std::promise<void>>();
+        auto finished = done->get_future();
+        std::thread([&engine, done] {
+            engine.await_shutdown();
+            done->set_value();
+        }).detach();
+        return finished;
+    }
+
+    void expect_still_parked(std::future<void>& finished)
+    {
+        std::this_thread::sleep_for(50ms);
+        EXPECT_EQ(finished.wait_for(0s), std::future_status::timeout);
+    }
+
+    void expect_released(std::future<void>& finished, const char* what)
+    {
+        if (finished.wait_for(10s) != std::future_status::ready) {
+            std::cerr << "engine_test: " << what << " did not return within the deadline, aborting\n"
+                      << std::flush;
+            std::_Exit(EXIT_FAILURE);
+        }
+    }
+
+    TEST(EngineLifecycleTest, RequestShutdownReleasesParkedAwait)
+    {
+        Core::Engine engine;
+        auto finished = start_await(engine);
+        expect_still_parked(finished);
+        engine.request_shutdown();
+        expect_released(finished, "await_shutdown");
+        EXPECT_TRUE(engine.is_shutdown_requested());
+    }
+
+    TEST(EngineLifecycleTest, RequestBeforeAwaitDoesNotEndNextAwait)
+    {
+        Core::Engine engine;
+        engine.request_shutdown();
+        EXPECT_TRUE(engine.is_shutdown_requested());
+        auto finished = start_await(engine);
+        expect_still_parked(finished);
+        engine.request_shutdown();
+        expect_released(finished, "await_shutdown");
+    }
+
+    TEST(EngineLifecycleTest, SecondAwaitParksAgainAfterRelease)
+    {
+        Core::Engine engine;
+        auto first = start_await(engine);
+        expect_still_parked(first);
+        engine.request_shutdown();
+        expect_released(first, "first await_shutdown");
+        auto second = start_await(engine);
+        expect_still_parked(second);
+        engine.request_shutdown();
+        expect_released(second, "second await_shutdown");
+    }
+#endif
 
 }
 }

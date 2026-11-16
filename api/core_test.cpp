@@ -128,6 +128,49 @@ TEST_F(ApiCoreTest, EndIsIdempotent)
     EXPECT_FALSE(MayaFlux::is_initialized());
 }
 
+TEST_F(ApiCoreTest, UnblockWithoutEngineIsHarmless)
+{
+    MayaFlux::End();
+    MayaFlux::Unblock();
+
+    EXPECT_FALSE(MayaFlux::is_initialized());
+}
+
+TEST_F(ApiCoreTest, UnblockDoesNotTearDownTheEngine)
+{
+    MayaFlux::Init(48000, 512, 2, 0);
+    MayaFlux::Unblock();
+
+    EXPECT_TRUE(MayaFlux::is_initialized());
+    EXPECT_TRUE(MayaFlux::is_configured());
+}
+
+#ifndef MAYAFLUX_PLATFORM_MACOS
+TEST_F(ApiCoreTest, UnblockReleasesAwait)
+{
+    (void)MayaFlux::get_context();
+
+    auto done = std::make_shared<std::promise<void>>();
+    auto finished = done->get_future();
+    std::thread([done] {
+        MayaFlux::Await();
+        done->set_value();
+    }).detach();
+
+    std::this_thread::sleep_for(50ms);
+    EXPECT_EQ(finished.wait_for(0s), std::future_status::timeout);
+
+    MayaFlux::Unblock();
+
+    if (finished.wait_for(k_end_deadline) != std::future_status::ready) {
+        std::cerr << "core_test: Await did not return after Unblock, aborting\n"
+                  << std::flush;
+        std::_Exit(EXIT_FAILURE);
+    }
+    EXPECT_TRUE(MayaFlux::is_initialized());
+}
+#endif
+
 TEST_F(ApiCoreTest, AGetterAfterEndCreatesAFreshEngine)
 {
     (void)MayaFlux::get_context();
