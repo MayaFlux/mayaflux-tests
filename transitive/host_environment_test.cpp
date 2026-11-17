@@ -159,6 +159,71 @@ namespace {
         }
     }
 
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyResolutionPrefersVendoredRootOverConfigureHint, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        FixtureTree fixture;
+        fixture.make_file("vendored/magic_enum.hpp");
+        fixture.make_file("hinted/magic_enum.hpp");
+        const std::string vendored = (fixture.root() / "vendored").string();
+        const std::string hinted = (fixture.root() / "hinted").string();
+
+        MayaFlux::Platform::DependencyHint hint;
+        hint.vendored_root = vendored;
+        hint.env_hint = hinted;
+        hint.marker_file = "magic_enum.hpp";
+
+        EXPECT_EQ(MayaFlux::Platform::SystemConfig::resolve_dependency_include(hint), vendored);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyResolutionFallsBackToConfigureHintThenFallbackPaths, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        FixtureTree hinted_tree;
+        hinted_tree.make_file("hinted/magic_enum.hpp");
+        const std::string hinted = (hinted_tree.root() / "hinted").string();
+
+        MayaFlux::Platform::DependencyHint hinted_hint;
+        hinted_hint.vendored_root = (hinted_tree.root() / "missing").string();
+        hinted_hint.env_hint = hinted;
+        hinted_hint.marker_file = "magic_enum.hpp";
+        EXPECT_EQ(MayaFlux::Platform::SystemConfig::resolve_dependency_include(hinted_hint), hinted);
+
+        FixtureTree fallback_tree;
+        fallback_tree.make_file("fallback/magic_enum.hpp");
+        const std::string fallback = (fallback_tree.root() / "fallback").string();
+
+        const std::string missing = (fallback_tree.root() / "missing").string();
+
+        MayaFlux::Platform::DependencyHint fallback_hint;
+        fallback_hint.env_hint = missing;
+        fallback_hint.fallback_paths = { fallback };
+        fallback_hint.marker_file = "magic_enum.hpp";
+        EXPECT_EQ(MayaFlux::Platform::SystemConfig::resolve_dependency_include(fallback_hint), fallback);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyResolutionRequiresMarkerOnlyWhenNamed, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        FixtureTree fixture;
+        fixture.make_file("dir-without-marker/readme.txt");
+        const std::string directory = (fixture.root() / "dir-without-marker").string();
+
+        MayaFlux::Platform::DependencyHint hint;
+        hint.vendored_root = directory;
+        hint.marker_file = "magic_enum.hpp";
+        EXPECT_TRUE(MayaFlux::Platform::SystemConfig::resolve_dependency_include(hint).empty());
+
+        hint.marker_file = {};
+        EXPECT_EQ(MayaFlux::Platform::SystemConfig::resolve_dependency_include(hint), directory);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyAliasesShareOneEntry, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        EXPECT_EQ(MayaFlux::Platform::SystemConfig::get_dep_includes("Eigen"),
+            MayaFlux::Platform::SystemConfig::get_dep_includes("eigen"));
+        EXPECT_EQ(MayaFlux::Platform::SystemConfig::get_dep_includes("freetype"),
+            MayaFlux::Platform::SystemConfig::get_dep_includes("freetype2"));
+        EXPECT_TRUE(MayaFlux::Platform::SystemConfig::get_dep_includes("no_such_dependency").empty());
+    }
+
     MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, MagicEnumIncludeDiscoveryFindsTheVendoredSourceHeader, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets>() }))
     {
         const auto& resolved = MayaFlux::Platform::SystemConfig::get_dep_includes("magic_enum");
