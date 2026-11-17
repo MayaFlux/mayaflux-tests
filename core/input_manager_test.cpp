@@ -289,6 +289,83 @@ namespace {
         EXPECT_EQ(removed->count(), 0U);
     }
 
+    class SelfRemovingNode : public RecordingNode {
+    public:
+        void attach(InputManager& manager, const std::shared_ptr<SelfRemovingNode>& self)
+        {
+            m_manager = &manager;
+            m_self = self;
+        }
+
+        void process_input(const InputValue& value) override
+        {
+            RecordingNode::process_input(value);
+            if (auto self = m_self.lock())
+                m_manager->unregister_node(self);
+        }
+
+    private:
+        InputManager* m_manager { nullptr };
+        std::weak_ptr<Nodes::Input::InputNode> m_self;
+    };
+
+    TEST(InputManagerTest, NodeMayUnregisterItselfFromItsOwnCallback)
+    {
+        FakeInputService service;
+        InputManager manager;
+        auto remover = std::make_shared<SelfRemovingNode>();
+        auto sentinel = std::make_shared<RecordingNode>();
+        remover->attach(manager, remover);
+        manager.register_node(remover, wildcard(InputType::HID));
+        manager.register_node(sentinel, wildcard(InputType::HID));
+        manager.start();
+
+        manager.enqueue(InputValue::make_scalar(1.0, 1, InputType::HID));
+        manager.enqueue(InputValue::make_scalar(2.0, 1, InputType::HID));
+
+        ASSERT_TRUE(eventually([&] { return sentinel->count() == 2; }));
+        EXPECT_EQ(remover->count(), 1U);
+        EXPECT_EQ(manager.get_registered_node_count(), 1U);
+    }
+
+    TEST(InputManagerTest, RegistrationChurnDuringDispatchLosesNoValue)
+    {
+        FakeInputService service;
+        InputManager manager;
+        auto sentinel = std::make_shared<RecordingNode>();
+        manager.register_node(sentinel, wildcard(InputType::HID));
+        manager.start();
+
+        std::atomic<bool> reading { true };
+        std::thread reader([&] {
+            while (reading.load()) {
+                (void)manager.get_registered_node_count();
+                (void)manager.get_nodes();
+            }
+        });
+
+        constexpr int total = 2000;
+        std::shared_ptr<RecordingNode> previous;
+        for (int i = 0; i < total; ++i) {
+            manager.enqueue(InputValue::make_scalar(static_cast<double>(i), 1, InputType::HID));
+            if (i % 10 == 0) {
+                auto churn = std::make_shared<RecordingNode>();
+                manager.register_node(churn, wildcard(InputType::HID));
+                if (previous)
+                    manager.unregister_node(previous);
+                previous = churn;
+            }
+        }
+
+        ASSERT_TRUE(eventually([&] { return sentinel->count() == total; }, 5s));
+        reading.store(false);
+        reader.join();
+
+        manager.unregister_node(previous);
+        EXPECT_EQ(manager.get_registered_node_count(), 1U);
+        EXPECT_EQ(sentinel->count(), static_cast<size_t>(total));
+    }
+
     TEST(InputManagerTest, DeviceBindingOpensItsDeviceThroughTheService)
     {
         FakeInputService service;
