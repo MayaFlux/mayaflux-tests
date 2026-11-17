@@ -4,7 +4,9 @@
 #include <chrono>
 #include <string_view>
 
+#include <asio/ip/tcp.hpp>
 #include <asio/ip/udp.hpp>
+#include <asio/write.hpp>
 
 #include "MayaFlux/Core/ProcessingArchitecture.hpp"
 #include "MayaFlux/Core/Subsystems/NetworkSubsystem.hpp"
@@ -48,6 +50,13 @@ namespace {
         asio::io_context context;
         asio::ip::udp::socket socket(context, asio::ip::udp::endpoint(asio::ip::udp::v4(), 0));
         return socket.local_endpoint().port();
+    }
+
+    uint16_t free_tcp_port()
+    {
+        asio::io_context context;
+        asio::ip::tcp::acceptor acceptor(context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), 0));
+        return acceptor.local_endpoint().port();
     }
 
     struct NetCounters {
@@ -148,7 +157,22 @@ namespace {
         }
 
         void set_receive_callback(Core::NetworkReceiveCallback callback) override { m_receive = std::move(callback); }
-        void set_state_callback(Core::EndpointStateCallback) override { }
+        void set_state_callback(Core::EndpointStateCallback callback) override { m_state = std::move(callback); }
+
+        void set_endpoint_id_allocator(std::function<uint64_t()> allocator) override { m_allocator = std::move(allocator); }
+
+        uint64_t accept(uint64_t listener_id)
+        {
+            EndpointInfo child;
+            child.id = m_allocator ? m_allocator() : 0;
+            child.transport = m_transport;
+            child.state = EndpointState::OPEN;
+            child.parent_id = listener_id;
+            m_endpoints[child.id] = child;
+            if (m_state)
+                m_state(child, EndpointState::CLOSED, EndpointState::OPEN);
+            return child.id;
+        }
 
         void emit(uint64_t endpoint_id, const std::vector<uint8_t>& bytes, std::string_view sender)
         {
@@ -166,6 +190,8 @@ namespace {
         bool m_running { false };
         std::unordered_map<uint64_t, EndpointInfo> m_endpoints;
         Core::NetworkReceiveCallback m_receive;
+        Core::EndpointStateCallback m_state;
+        std::function<uint64_t()> m_allocator;
     };
 
     class SubsystemRig {
@@ -671,6 +697,192 @@ namespace {
     }
 
     // ------------------------------------------------------------------
+    // Accepted connections
+    // ------------------------------------------------------------------
+
+    TEST(NetworkSubsystemTest, EveryBackendReceivesTheEndpointIdAllocator)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::UDP, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::UDP));
+
+        const uint64_t first = backend->accept(listener);
+        const uint64_t second = backend->accept(listener);
+
+        EXPECT_NE(first, 0U);
+        EXPECT_NE(second, 0U);
+        EXPECT_NE(first, second);
+        EXPECT_NE(first, listener);
+        EXPECT_NE(second, listener);
+    }
+
+    TEST(NetworkSubsystemTest, AcceptedConnectionDeliversToTheListenersCallback)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        std::vector<uint64_t> seen_ids;
+        std::vector<uint8_t> seen_bytes;
+        rig.subsystem.set_endpoint_receive_callback(listener,
+            [&](uint64_t id, const uint8_t* data, size_t size, std::string_view) {
+                seen_ids.push_back(id);
+                seen_bytes.assign(data, data + size);
+            });
+        const uint64_t child = backend->accept(listener);
+
+        backend->emit(child, { 7, 8 }, "peer");
+
+        ASSERT_EQ(seen_ids.size(), 1U);
+        EXPECT_EQ(seen_ids.front(), child);
+        EXPECT_EQ(seen_bytes, (std::vector<uint8_t> { 7, 8 }));
+    }
+
+    TEST(NetworkSubsystemTest, ListenerCallbackSetAfterTheAcceptStillApplies)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        const uint64_t child = backend->accept(listener);
+        int calls = 0;
+
+        rig.subsystem.set_endpoint_receive_callback(listener,
+            [&](uint64_t, const uint8_t*, size_t, std::string_view) { ++calls; });
+        backend->emit(child, { 1 }, "peer");
+
+        EXPECT_EQ(calls, 1);
+    }
+
+    TEST(NetworkSubsystemTest, AcceptedConnectionsOfOneListenerShareItsCallback)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        std::vector<uint64_t> seen_ids;
+        rig.subsystem.set_endpoint_receive_callback(listener,
+            [&](uint64_t id, const uint8_t*, size_t, std::string_view) { seen_ids.push_back(id); });
+        const uint64_t first = backend->accept(listener);
+        const uint64_t second = backend->accept(listener);
+
+        backend->emit(first, { 1 }, "a");
+        backend->emit(second, { 2 }, "b");
+
+        EXPECT_EQ(seen_ids, (std::vector<uint64_t> { first, second }));
+    }
+
+    TEST(NetworkSubsystemTest, AcceptedConnectionOwnCallbackTakesPrecedence)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        const uint64_t child = backend->accept(listener);
+        int from_listener = 0;
+        int from_child = 0;
+        rig.subsystem.set_endpoint_receive_callback(listener,
+            [&](uint64_t, const uint8_t*, size_t, std::string_view) { ++from_listener; });
+        rig.subsystem.set_endpoint_receive_callback(child,
+            [&](uint64_t, const uint8_t*, size_t, std::string_view) { ++from_child; });
+
+        backend->emit(child, { 1 }, "peer");
+
+        EXPECT_EQ(from_listener, 0);
+        EXPECT_EQ(from_child, 1);
+    }
+
+    TEST(NetworkSubsystemTest, AcceptedConnectionIsRoutedForSendAndStateQueries)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto counters = std::make_shared<NetCounters>();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, counters);
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        const uint64_t child = backend->accept(listener);
+        const std::vector<uint8_t> data { 5, 6 };
+
+        EXPECT_EQ(rig.subsystem.get_endpoint_state(child), EndpointState::OPEN);
+        EXPECT_TRUE(rig.subsystem.send(child, data.data(), data.size()));
+
+        ASSERT_EQ(counters->sent.size(), 1U);
+        EXPECT_EQ(counters->sent.front().first, child);
+        EXPECT_EQ(counters->sent.front().second, data);
+    }
+
+    TEST(NetworkSubsystemTest, ConnectionWithoutAKnownListenerIsNotRouted)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto counters = std::make_shared<NetCounters>();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, counters);
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        rig.subsystem.close_endpoint(listener);
+        const uint64_t child = backend->accept(listener);
+        const std::vector<uint8_t> data { 1 };
+
+        EXPECT_FALSE(rig.subsystem.send(child, data.data(), data.size()));
+        EXPECT_TRUE(counters->sent.empty());
+    }
+
+    TEST(NetworkSubsystemTest, ClosingAListenerClosesItsAcceptedConnections)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto counters = std::make_shared<NetCounters>();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, counters);
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        const uint64_t other = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        const uint64_t first = backend->accept(listener);
+        const uint64_t second = backend->accept(listener);
+        const uint64_t unrelated = backend->accept(other);
+        int calls = 0;
+        rig.subsystem.set_endpoint_receive_callback(listener,
+            [&](uint64_t, const uint8_t*, size_t, std::string_view) { ++calls; });
+
+        rig.subsystem.close_endpoint(listener);
+
+        EXPECT_EQ(rig.subsystem.get_endpoint_state(first), EndpointState::CLOSED);
+        EXPECT_EQ(rig.subsystem.get_endpoint_state(second), EndpointState::CLOSED);
+        EXPECT_EQ(rig.subsystem.get_endpoint_state(unrelated), EndpointState::OPEN);
+        EXPECT_EQ(counters->closed.size(), 3U);
+        backend->emit(first, { 1 }, "peer");
+        EXPECT_EQ(calls, 0);
+    }
+
+    TEST(NetworkSubsystemTest, ClosingAnAcceptedConnectionLeavesTheListenerServing)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto counters = std::make_shared<NetCounters>();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, counters);
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        const uint64_t first = backend->accept(listener);
+        const uint64_t second = backend->accept(listener);
+        std::vector<uint64_t> seen_ids;
+        rig.subsystem.set_endpoint_receive_callback(listener,
+            [&](uint64_t id, const uint8_t*, size_t, std::string_view) { seen_ids.push_back(id); });
+
+        rig.subsystem.close_endpoint(first);
+        backend->emit(first, { 1 }, "gone");
+        backend->emit(second, { 2 }, "kept");
+
+        EXPECT_EQ(counters->closed, (std::vector<uint64_t> { first }));
+        EXPECT_EQ(rig.subsystem.get_endpoint_state(listener), EndpointState::OPEN);
+        EXPECT_EQ(seen_ids, (std::vector<uint64_t> { second }));
+    }
+
+    // ------------------------------------------------------------------
     // Registered service
     // ------------------------------------------------------------------
 
@@ -771,6 +983,63 @@ namespace {
         ASSERT_TRUE(service->send(sender_id, data.data(), data.size()));
 
         ASSERT_TRUE(eventually([&] { return inbox.size() == 1; }));
+    }
+
+    // ------------------------------------------------------------------
+    // Real TCP loopback through the service
+    // ------------------------------------------------------------------
+
+    MAYAFLUX_TEST_WITH(TEST, NetworkSubsystemTest, TcpClientReachesTheListenerCallbackAndGetsAReply, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::loopback_tcp>() }))
+    {
+        std::mutex mutex;
+        std::vector<std::pair<uint64_t, std::vector<uint8_t>>> seen;
+        SubsystemRig rig(GlobalNetworkConfig::with_tcp());
+        rig.initialize();
+        rig.subsystem.start();
+        auto* service = SubsystemRig::service();
+        ASSERT_NE(service, nullptr);
+        const uint16_t port = free_tcp_port();
+
+        EndpointInfo listener = info_for(NetworkTransport::TCP, EndpointRole::RECEIVE);
+        listener.local_port = port;
+        const uint64_t listener_id = service->open_endpoint(listener);
+        ASSERT_NE(listener_id, 0U);
+        service->set_endpoint_receive_callback(listener_id,
+            [&](uint64_t id, const uint8_t* data, size_t size, std::string_view) {
+                std::scoped_lock lock(mutex);
+                seen.emplace_back(id, std::vector<uint8_t>(data, data + size));
+            });
+
+        asio::io_context context;
+        asio::ip::tcp::socket client(context);
+        client.connect(asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), port));
+        const std::vector<uint8_t> frame { 0, 0, 0, 3, 1, 2, 3 };
+        asio::write(client, asio::buffer(frame));
+
+        ASSERT_TRUE(eventually([&] {
+            std::scoped_lock lock(mutex);
+            return seen.size() == 1;
+        }));
+        const uint64_t connection_id = seen.front().first;
+        EXPECT_NE(connection_id, listener_id);
+        EXPECT_EQ(seen.front().second, (std::vector<uint8_t> { 1, 2, 3 }));
+        EXPECT_EQ(service->get_endpoint_state(connection_id), EndpointState::OPEN);
+
+        const std::vector<uint8_t> reply { 0xAB, 0xCD };
+        ASSERT_TRUE(service->send(connection_id, reply.data(), reply.size()));
+
+        std::array<uint8_t, 6> received {};
+        size_t got = 0;
+        client.non_blocking(true);
+        ASSERT_TRUE(eventually([&] {
+            asio::error_code ec;
+            got += client.read_some(asio::buffer(received.data() + got, received.size() - got), ec);
+            return got == received.size();
+        }));
+        EXPECT_EQ(received, (std::array<uint8_t, 6> { 0, 0, 0, 2, 0xAB, 0xCD }));
+
+        service->close_endpoint(listener_id);
+        EXPECT_EQ(service->get_endpoint_state(connection_id), EndpointState::CLOSED);
     }
 
 } // namespace
