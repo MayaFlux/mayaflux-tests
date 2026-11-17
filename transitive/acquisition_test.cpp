@@ -118,6 +118,11 @@ namespace {
         return MayaFlux::Platform::LibraryFromSystem { .file_name = file_name };
     }
 
+    MayaFlux::Platform::LibrarySource from_directories(std::vector<fs::path> directories, const std::string& base_name)
+    {
+        return MayaFlux::Platform::LibraryFromDirectories { .directories = std::move(directories), .base_name = base_name };
+    }
+
     template <typename T>
     void expect_refused(const MayaFlux::Platform::Acquired<T>& result, Reason reason)
     {
@@ -572,7 +577,296 @@ namespace {
         expect_refused(MayaFlux::Platform::acquire_library(from_prefix("relative/prefix", "../bad")), Reason::InvalidName);
     }
 
-    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, SystemPassesTheExactNameThrough, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesFindTheLibraryDirectlyInsideTheDirectory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto directory = fixture.make_directory("system");
+        const auto expected = fixture.make_file("system/" + platform_library_file("widget"));
+
+        const auto result = MayaFlux::Platform::acquire_library(from_directories({ directory }, "widget"));
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->path, expected);
+        EXPECT_EQ(result->file_name, platform_library_file("widget"));
+        EXPECT_FALSE(result->resolved_by_system);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesDoNotLookInLibLib64OrBinBelowTheDirectory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto directory = fixture.make_directory("system");
+        const auto file_name = platform_library_file("widget");
+        for (const char* subdirectory : { "lib", "lib64", "bin", "sub" }) {
+            fixture.make_file(std::string("system/") + subdirectory + "/" + file_name);
+        }
+
+        expect_refused(MayaFlux::Platform::acquire_library(from_directories({ directory }, "widget")), Reason::Missing);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesFirstDirectoryWins, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto first = fixture.make_directory("first");
+        const auto second = fixture.make_directory("second");
+        const auto file_name = platform_library_file("widget");
+        const auto in_first = fixture.make_file("first/" + file_name);
+        const auto in_second = fixture.make_file("second/" + file_name);
+
+        const auto forward = MayaFlux::Platform::acquire_library(from_directories({ first, second }, "widget"));
+        const auto reversed = MayaFlux::Platform::acquire_library(from_directories({ second, first }, "widget"));
+
+        ASSERT_TRUE(forward.has_value());
+        ASSERT_TRUE(reversed.has_value());
+        EXPECT_EQ(forward->path, in_first);
+        EXPECT_EQ(reversed->path, in_second);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesDecoratedNameInALaterDirectoryBeatsTheExactNameInAnEarlierOne, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto first = fixture.make_directory("first");
+        const auto second = fixture.make_directory("second");
+        fixture.make_file("first/widget");
+        const auto decorated = fixture.make_file("second/" + platform_library_file("widget"));
+
+        const auto result = MayaFlux::Platform::acquire_library(from_directories({ first, second }, "widget"));
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->path, decorated);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesAcceptAnExactFileName, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto directory = fixture.make_directory("system");
+        const auto expected = fixture.make_file("system/custom.bin");
+
+        const auto result = MayaFlux::Platform::acquire_library(from_directories({ directory }, "custom.bin"));
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->path, expected);
+        EXPECT_EQ(result->file_name, "custom.bin");
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesAcceptALibPrefixedBaseName, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto directory = fixture.make_directory("system");
+        const auto expected = fixture.make_file("system/" + platform_library_file("widget"));
+
+        const auto result = MayaFlux::Platform::acquire_library(from_directories({ directory }, "libwidget"));
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->path, expected);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesMissingListsEveryCandidateNameFirstThenDirectory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto first = fixture.make_directory("first");
+        const auto second = fixture.make_directory("second");
+
+        const auto result = MayaFlux::Platform::acquire_library(from_directories({ first, second }, "widget"));
+
+        expect_refused(result, Reason::Missing);
+        const auto decorated = platform_library_file("widget");
+        const std::vector<fs::path> expected {
+            first / decorated,
+            second / decorated,
+            first / "widget",
+            second / "widget",
+        };
+        EXPECT_EQ(result.error().tried, expected);
+        EXPECT_EQ(result.error().request, "widget");
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesIgnoreADirectoryNamedLikeTheLibrary, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto directory = fixture.make_directory("system");
+        fixture.make_directory("system/" + platform_library_file("widget"));
+        fixture.make_directory("system/widget");
+
+        expect_refused(MayaFlux::Platform::acquire_library(from_directories({ directory }, "widget")), Reason::Missing);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesSkipAnEntryThatIsAFile, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto not_a_directory = fixture.make_file("not-a-directory");
+        const auto directory = fixture.make_directory("system");
+        const auto expected = fixture.make_file("system/" + platform_library_file("widget"));
+
+        const auto result = MayaFlux::Platform::acquire_library(from_directories({ not_a_directory, directory }, "widget"));
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->path, expected);
+        expect_refused(MayaFlux::Platform::acquire_library(from_directories({ not_a_directory }, "widget")), Reason::Missing);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesRecordAndSkipADirectoryThatDoesNotExist, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto absent = fixture.root() / "absent";
+        const auto directory = fixture.make_directory("system");
+        const auto expected = fixture.make_file("system/" + platform_library_file("widget"));
+
+        const auto found = MayaFlux::Platform::acquire_library(from_directories({ absent, directory }, "widget"));
+        ASSERT_TRUE(found.has_value());
+        EXPECT_EQ(found->path, expected);
+
+        const auto missing = MayaFlux::Platform::acquire_library(from_directories({ absent }, "widget"));
+        expect_refused(missing, Reason::Missing);
+        const std::vector<fs::path> tried { absent / platform_library_file("widget"), absent / "widget" };
+        EXPECT_EQ(missing.error().tried, tried);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesEmptyEntriesAreIgnored, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto directory = fixture.make_directory("system");
+        const auto expected = fixture.make_file("system/" + platform_library_file("widget"));
+
+        const auto result = MayaFlux::Platform::acquire_library(from_directories({ fs::path {}, directory, fs::path {} }, "widget"));
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->path, expected);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesNothingToSearchIsEmptyRequest, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        const auto none = MayaFlux::Platform::acquire_library(from_directories({}, "widget"));
+        expect_refused(none, Reason::EmptyRequest);
+        EXPECT_TRUE(none.error().tried.empty());
+
+        expect_refused(MayaFlux::Platform::acquire_library(from_directories({ fs::path {}, fs::path {} }, "widget")), Reason::EmptyRequest);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesRelativeEntriesResolveAgainstTheWorkingDirectory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        fixture.make_file("local/" + platform_library_file("widget"));
+        const WorkingDirectoryGuard cwd(fixture.root());
+
+        const auto result = MayaFlux::Platform::acquire_library(from_directories({ "local" }, "widget"));
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_TRUE(result->path.is_absolute());
+        EXPECT_EQ(result->path, fs::current_path() / "local" / platform_library_file("widget"));
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesFollowASymlinkedDirectory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto real = fixture.make_directory("real");
+        const auto expected = fixture.make_file("real/" + platform_library_file("widget"));
+        const auto link = fixture.root() / "linked";
+        if (!fixture.make_link(real, link, true)) {
+            GTEST_SKIP() << "symlinks unavailable";
+        }
+
+        const auto result = MayaFlux::Platform::acquire_library(from_directories({ link }, "widget"));
+
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->path, link / platform_library_file("widget"));
+        EXPECT_TRUE(fs::equivalent(result->path, expected));
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesWrongPlatformSpellingIsMissing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto directory = fixture.make_directory("system");
+        const auto correct = platform_library_file("widget");
+        const std::vector<std::string> wrong { "widget.so", "widget.dll", "widget.dylib", "libwidget", "libwidget.a", "libwidget.so.1" };
+        for (const auto& name : wrong) {
+            if (name != correct) {
+                fixture.make_file("system/" + name);
+            }
+        }
+
+        expect_refused(MayaFlux::Platform::acquire_library(from_directories({ directory }, "widget")), Reason::Missing);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesRefuseHostileNamesBeforeLookingAtTheDirectories, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        std::vector<std::string> hostile { std::string("../escape"), std::string("sub/widget"), std::string("/abs/widget"), std::string("."), std::string(".."),
+            std::string("wid\0get", 7), std::string("wid\tget"), std::string("wid\nget"), std::string("wid\x7Fget") };
+#if defined(MAYAFLUX_PLATFORM_WINDOWS)
+        hostile.push_back("sub\\widget");
+#endif
+        for (const auto& name : hostile) {
+            const auto result = MayaFlux::Platform::acquire_library(from_directories({ "relative/directory" }, name));
+            expect_refused(result, Reason::InvalidName);
+            EXPECT_TRUE(result.error().tried.empty());
+        }
+
+        expect_refused(MayaFlux::Platform::acquire_library(from_directories({ "relative/directory" }, "")), Reason::EmptyRequest);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesCannotEscapeThroughTheName, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto directory = fixture.make_directory("inner/system");
+        fixture.make_file("inner/outside.so");
+        fixture.make_file("outside.so");
+
+        expect_refused(MayaFlux::Platform::acquire_library(from_directories({ directory }, "../outside.so")), Reason::InvalidName);
+        expect_refused(MayaFlux::Platform::acquire_library(from_directories({ directory }, "../../outside.so")), Reason::InvalidName);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesAHugeListIsSearchedWithoutThrowing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto directory = fixture.make_directory("system");
+        const auto expected = fixture.make_file("system/" + platform_library_file("widget"));
+
+        std::vector<fs::path> directories;
+        for (int index = 0; index < 3000; ++index) {
+            directories.push_back(fixture.root() / ("absent-" + std::to_string(index)));
+        }
+        directories.push_back(directory);
+
+        MayaFlux::Platform::Acquired<MayaFlux::Platform::LibraryLocation> result = std::unexpected(MayaFlux::Platform::AcquireFailure {});
+        EXPECT_NO_THROW(result = MayaFlux::Platform::acquire_library(from_directories(directories, "widget")));
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(result->path, expected);
+
+        directories.pop_back();
+        EXPECT_NO_THROW(result = MayaFlux::Platform::acquire_library(from_directories(directories, "widget")));
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().tried.size(), directories.size() * 2);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesOverlongEntriesAndNamesDoNotThrow, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto overlong_directory = fixture.root() / std::string(400, 'a');
+        const auto directory = fixture.make_directory("system");
+
+        MayaFlux::Platform::Acquired<MayaFlux::Platform::LibraryLocation> result = std::unexpected(MayaFlux::Platform::AcquireFailure {});
+        EXPECT_NO_THROW(result = MayaFlux::Platform::acquire_library(from_directories({ overlong_directory }, "widget")));
+        EXPECT_FALSE(result.has_value());
+        EXPECT_NO_THROW(result = MayaFlux::Platform::acquire_library(from_directories({ directory }, std::string(300, 'a'))));
+        EXPECT_FALSE(result.has_value());
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, DirectoriesAgreeWithPrefixWhenThePrefixLibIsTheDirectory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        AcquisitionFixtureTree fixture;
+        const auto prefix = fixture.root() / "prefix";
+        const auto expected = fixture.make_file("prefix/lib/" + platform_library_file("widget"));
+
+        const auto by_prefix = MayaFlux::Platform::acquire_library(from_prefix(prefix, "widget"));
+        const auto by_directories = MayaFlux::Platform::acquire_library(from_directories({ prefix / "lib" }, "widget"));
+
+        ASSERT_TRUE(by_prefix.has_value());
+        ASSERT_TRUE(by_directories.has_value());
+        EXPECT_EQ(by_prefix->path, expected);
+        EXPECT_EQ(by_directories->path, by_prefix->path);
+        EXPECT_EQ(by_directories->file_name, by_prefix->file_name);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, AcquisitionTest, SystemPassesTheExactNameThrough,(::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<std::string> names { "libvulkan.so.1", "vulkan-1.dll", "libSystem.B.dylib", "lib my.lib.so.1", "w\xC3\xAD" "dget.dll" };
         for (const auto& name : names) {

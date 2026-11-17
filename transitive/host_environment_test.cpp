@@ -2,6 +2,7 @@
 #include "../support/test_metadata.hpp"
 
 #include "../support/scoped_env.hpp"
+#include "../support/scoped_working_dir.hpp"
 #include "MayaFlux/Transitive/Platform/HostEnvironment.hpp"
 
 #include <fstream>
@@ -261,6 +262,255 @@ namespace {
         const auto name = unique_library_name();
 
         EXPECT_TRUE(MayaFlux::Platform::SystemConfig::find_dep_library(name, fixture.root().string()).empty());
+    }
+
+    static_assert(std::is_same_v<decltype(MayaFlux::Platform::SystemConfig::get_clang_resource_dir()), std::string>);
+    static_assert(std::is_same_v<decltype(MayaFlux::Platform::SystemConfig::get_system_includes()), std::vector<std::string>>);
+    static_assert(std::is_same_v<decltype(MayaFlux::Platform::SystemConfig::get_system_libraries()), std::vector<std::string>>);
+    static_assert(std::is_same_v<decltype(MayaFlux::Platform::SystemConfig::find_dep_library("x")), std::string>);
+    static_assert(std::is_same_v<decltype(MayaFlux::Platform::SystemConfig::get_dep_includes("x")), std::string>);
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyLibrarySearchKeepsPrefixesApart, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        FixtureTree first;
+        FixtureTree second;
+        const auto name = unique_library_name();
+        const auto filename = shared_library_filename(name);
+        const auto in_first = first.make_file(std::filesystem::path("lib") / filename);
+        const auto in_second = second.make_file(std::filesystem::path("lib") / filename);
+
+        EXPECT_EQ(std::filesystem::path(MayaFlux::Platform::SystemConfig::find_dep_library(name, first.root().string())), in_first);
+        EXPECT_EQ(std::filesystem::path(MayaFlux::Platform::SystemConfig::find_dep_library(name, second.root().string())), in_second);
+        EXPECT_EQ(std::filesystem::path(MayaFlux::Platform::SystemConfig::find_dep_library(name, first.root().string())), in_first);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyLibrarySearchFindsALibraryThatAppearsAfterAMiss, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        FixtureTree fixture;
+        const auto name = unique_library_name();
+        const auto prefix = fixture.root().string();
+
+        EXPECT_TRUE(MayaFlux::Platform::SystemConfig::find_dep_library(name, prefix).empty());
+
+        const auto expected = fixture.make_file(std::filesystem::path("lib") / shared_library_filename(name));
+        EXPECT_EQ(std::filesystem::path(MayaFlux::Platform::SystemConfig::find_dep_library(name, prefix)), expected);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyLibrarySearchSeesALibraryRemovedAfterAHit, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        FixtureTree fixture;
+        const auto name = unique_library_name();
+        const auto prefix = fixture.root().string();
+        const auto file = fixture.make_file(std::filesystem::path("lib") / shared_library_filename(name));
+
+        EXPECT_EQ(std::filesystem::path(MayaFlux::Platform::SystemConfig::find_dep_library(name, prefix)), file);
+
+        std::filesystem::remove(file);
+        EXPECT_TRUE(MayaFlux::Platform::SystemConfig::find_dep_library(name, prefix).empty());
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyLibrarySearchWithoutAPrefixDoesNotLookInTheWorkingDirectory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        const auto name = unique_library_name();
+        const auto filename = shared_library_filename(name);
+
+        MayaFlux::Test::ScopedWorkingDir cwd;
+        for (const char* subdirectory : { "lib", "lib64", "bin", "." }) {
+            cwd.write(std::filesystem::path(subdirectory) / filename, "fixture");
+        }
+
+        EXPECT_TRUE(MayaFlux::Platform::SystemConfig::find_dep_library(name).empty());
+        EXPECT_TRUE(MayaFlux::Platform::SystemConfig::find_dep_library(name, "").empty());
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyLibrarySearchResolvesARelativePrefixToAnAbsolutePath, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        const auto name = unique_library_name();
+        const auto filename = shared_library_filename(name);
+
+        MayaFlux::Test::ScopedWorkingDir cwd;
+        cwd.write(std::filesystem::path("local") / "lib" / filename, "fixture");
+
+        const std::filesystem::path resolved = MayaFlux::Platform::SystemConfig::find_dep_library(name, "local");
+
+        ASSERT_FALSE(resolved.empty());
+        EXPECT_TRUE(resolved.is_absolute());
+        EXPECT_EQ(resolved, std::filesystem::current_path() / "local" / "lib" / filename);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyLibrarySearchRefusesNamesThatEscapeThePrefix, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        FixtureTree fixture;
+        const auto name = unique_library_name();
+        const auto filename = shared_library_filename(name);
+        fixture.make_file("prefix/lib/keep");
+        fixture.make_file(filename);
+        fixture.make_file(std::filesystem::path("prefix") / "lib" / "sub" / filename);
+        const auto prefix = (fixture.root() / "prefix").string();
+
+        const std::vector<std::string> hostile {
+            "../../" + filename,
+            "../" + filename,
+            "sub/" + filename,
+            (fixture.root() / filename).string(),
+            ".",
+            "..",
+            "",
+            std::string("lib\0x", 5),
+            "lib\tx",
+        };
+        for (const auto& candidate : hostile) {
+            EXPECT_TRUE(MayaFlux::Platform::SystemConfig::find_dep_library(candidate, prefix).empty()) << candidate;
+        }
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyLibrarySearchIgnoresDirectoriesNamedLikeTheLibrary, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        FixtureTree fixture;
+        const auto name = unique_library_name();
+        const auto filename = shared_library_filename(name);
+        for (const char* subdirectory : { "lib", "lib64", "bin" }) {
+            std::filesystem::create_directories(fixture.root() / subdirectory / filename);
+        }
+
+        EXPECT_TRUE(MayaFlux::Platform::SystemConfig::find_dep_library(name, fixture.root().string()).empty());
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyLibrarySearchSurvivesHostilePrefixes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        FixtureTree fixture;
+        const auto file = fixture.make_file("not-a-directory");
+        const auto name = unique_library_name();
+
+        const std::vector<std::string> hostile {
+            file.string(),
+            (fixture.root() / "absent").string(),
+            std::string(400, 'a'),
+            std::string("pre\0fix", 7),
+            "/",
+        };
+        for (const auto& prefix : hostile) {
+            std::string resolved = "unset";
+            EXPECT_NO_THROW(resolved = MayaFlux::Platform::SystemConfig::find_dep_library(name, prefix));
+            EXPECT_TRUE(resolved.empty());
+        }
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyLibrarySearchIsStableWhenManyThreadsUseDifferentPrefixes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        constexpr size_t thread_count = 8;
+        constexpr int rounds = 60;
+
+        const auto name = unique_library_name();
+        const auto filename = shared_library_filename(name);
+
+        std::vector<std::unique_ptr<FixtureTree>> fixtures;
+        std::vector<std::filesystem::path> expected;
+        for (size_t index = 0; index < thread_count; ++index) {
+            fixtures.push_back(std::make_unique<FixtureTree>());
+            expected.push_back(fixtures.back()->make_file(std::filesystem::path("lib") / filename));
+        }
+
+        std::atomic<size_t> mismatches { 0 };
+        std::vector<std::thread> threads;
+        for (size_t index = 0; index < thread_count; ++index) {
+            threads.emplace_back([&, index] {
+                const auto prefix = fixtures[index]->root().string();
+                for (int round = 0; round < rounds; ++round) {
+                    if (std::filesystem::path(MayaFlux::Platform::SystemConfig::find_dep_library(name, prefix)) != expected[index]) {
+                        ++mismatches;
+                    }
+                }
+            });
+        }
+        for (auto& thread : threads) {
+            thread.join();
+        }
+
+        EXPECT_EQ(mismatches.load(), 0U);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyIncludeLookupsAgreeAcrossThreads, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::process_exec>() }))
+    {
+        constexpr size_t thread_count = 8;
+        constexpr int rounds = 200;
+
+        const std::vector<std::string> names { "eigen", "Eigen", "freetype", "freetype2", "magic_enum", "no_such_dependency" };
+        std::vector<std::string> expected;
+        for (const auto& name : names) {
+            const auto* hint = MayaFlux::Platform::find_dependency_hint(name);
+            expected.push_back(hint ? MayaFlux::Platform::SystemConfig::resolve_dependency_include(*hint) : std::string {});
+        }
+
+        std::atomic<size_t> mismatches { 0 };
+        std::vector<std::thread> threads;
+        for (size_t index = 0; index < thread_count; ++index) {
+            threads.emplace_back([&] {
+                for (int round = 0; round < rounds; ++round) {
+                    for (size_t name = 0; name < names.size(); ++name) {
+                        if (MayaFlux::Platform::SystemConfig::get_dep_includes(names[name]) != expected[name]) {
+                            ++mismatches;
+                        }
+                    }
+                }
+            });
+        }
+        for (auto& thread : threads) {
+            thread.join();
+        }
+
+        EXPECT_EQ(mismatches.load(), 0U);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, ToolchainLookupsAgreeAcrossThreads, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::process_exec>() }))
+    {
+        constexpr size_t thread_count = 8;
+        constexpr int rounds = 100;
+
+        const auto includes = MayaFlux::Platform::SystemConfig::get_system_includes();
+        const auto libraries = MayaFlux::Platform::SystemConfig::get_system_libraries();
+        const auto resource_dir = MayaFlux::Platform::SystemConfig::get_clang_resource_dir();
+
+        std::atomic<size_t> mismatches { 0 };
+        std::vector<std::thread> threads;
+        for (size_t index = 0; index < thread_count; ++index) {
+            threads.emplace_back([&] {
+                for (int round = 0; round < rounds; ++round) {
+                    if (MayaFlux::Platform::SystemConfig::get_system_includes() != includes
+                        || MayaFlux::Platform::SystemConfig::get_system_libraries() != libraries
+                        || MayaFlux::Platform::SystemConfig::get_clang_resource_dir() != resource_dir) {
+                        ++mismatches;
+                    }
+                }
+            });
+        }
+        for (auto& thread : threads) {
+            thread.join();
+        }
+
+        EXPECT_EQ(mismatches.load(), 0U);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyIncludeLookupSurvivesHostileNames, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        const std::vector<std::string> hostile {
+            "", " ", "../eigen", "eigen/", std::string("eigen\0x", 7), std::string(400, 'e'), "EIGEN", "Eigen ",
+        };
+        for (const auto& name : hostile) {
+            std::string resolved = "unset";
+            EXPECT_NO_THROW(resolved = MayaFlux::Platform::SystemConfig::get_dep_includes(name));
+            EXPECT_TRUE(resolved.empty()) << name;
+        }
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HostEnvironmentTest, DependencyIncludeLookupGivesTheSameAnswerOnEveryCall, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        for (const auto* name : { "eigen", "freetype2", "magic_enum", "no_such_dependency" }) {
+            const std::string first = MayaFlux::Platform::SystemConfig::get_dep_includes(name);
+            for (int call = 0; call < 500; ++call) {
+                ASSERT_EQ(MayaFlux::Platform::SystemConfig::get_dep_includes(name), first) << name;
+            }
+        }
     }
 
 #if defined(MAYAFLUX_PLATFORM_WINDOWS)
