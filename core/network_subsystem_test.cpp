@@ -301,15 +301,18 @@ namespace {
         GlobalNetworkConfig config;
         config.udp.enabled = true;
         config.tcp.enabled = true;
+        config.uds.enabled = true;
         SubsystemRig rig(config);
 
         rig.initialize();
 
-        EXPECT_EQ(rig.subsystem.get_backends().size(), 2U);
+        EXPECT_EQ(rig.subsystem.get_backends().size(), 3U);
         ASSERT_NE(rig.subsystem.get_backend(NetworkTransport::UDP), nullptr);
         ASSERT_NE(rig.subsystem.get_backend(NetworkTransport::TCP), nullptr);
+        ASSERT_NE(rig.subsystem.get_backend(NetworkTransport::UDS), nullptr);
         EXPECT_EQ(rig.subsystem.get_backend(NetworkTransport::UDP)->get_transport(), NetworkTransport::UDP);
         EXPECT_EQ(rig.subsystem.get_backend(NetworkTransport::TCP)->get_transport(), NetworkTransport::TCP);
+        EXPECT_EQ(rig.subsystem.get_backend(NetworkTransport::UDS)->get_transport(), NetworkTransport::UDS);
     }
 
     TEST(NetworkSubsystemTest, SharedMemoryConfigCreatesNoBackend)
@@ -1040,6 +1043,75 @@ namespace {
 
         service->close_endpoint(listener_id);
         EXPECT_EQ(service->get_endpoint_state(connection_id), EndpointState::CLOSED);
+    }
+
+    // ------------------------------------------------------------------
+    // Real Unix domain socket loopback through the service
+    // ------------------------------------------------------------------
+
+    MAYAFLUX_TEST_WITH(TEST, NetworkSubsystemTest, UdsClientReachesTheListenerCallbackAndGetsAReply, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        const std::filesystem::path directory = std::filesystem::temp_directory_path() / "mfu-subsystem";
+        std::error_code ec;
+        std::filesystem::remove_all(directory, ec);
+        std::filesystem::create_directory(directory);
+        const std::string path = (directory / "s.sock").string();
+
+        std::mutex mutex;
+        std::vector<std::pair<uint64_t, std::vector<uint8_t>>> seen;
+        {
+            SubsystemRig rig(GlobalNetworkConfig::with_uds());
+            rig.initialize();
+            rig.subsystem.start();
+            auto* service = SubsystemRig::service();
+            ASSERT_NE(service, nullptr);
+
+            EndpointInfo listener = info_for(NetworkTransport::UDS, EndpointRole::RECEIVE);
+            listener.local_path = path;
+            const uint64_t listener_id = service->open_endpoint(listener);
+            ASSERT_NE(listener_id, 0U);
+            service->set_endpoint_receive_callback(listener_id,
+                [&](uint64_t id, const uint8_t* data, size_t size, std::string_view) {
+                    std::scoped_lock lock(mutex);
+                    seen.emplace_back(id, std::vector<uint8_t>(data, data + size));
+                });
+
+            EndpointInfo client = info_for(NetworkTransport::UDS);
+            client.remote_path = path;
+            const uint64_t client_id = service->open_endpoint(client);
+            ASSERT_NE(client_id, 0U);
+            ASSERT_TRUE(eventually([&] { return service->get_endpoint_state(client_id) == EndpointState::OPEN; }));
+
+            const std::vector<uint8_t> request { 1, 2, 3 };
+            ASSERT_TRUE(service->send(client_id, request.data(), request.size()));
+            ASSERT_TRUE(eventually([&] {
+                std::scoped_lock lock(mutex);
+                return seen.size() == 1;
+            }));
+            const uint64_t connection_id = seen.front().first;
+            EXPECT_NE(connection_id, listener_id);
+            EXPECT_NE(connection_id, client_id);
+            EXPECT_EQ(seen.front().second, request);
+
+            std::vector<uint64_t> client_seen;
+            service->set_endpoint_receive_callback(client_id,
+                [&](uint64_t id, const uint8_t*, size_t, std::string_view) {
+                    std::scoped_lock lock(mutex);
+                    client_seen.push_back(id);
+                });
+            const std::vector<uint8_t> reply { 0xAB, 0xCD };
+            ASSERT_TRUE(service->send(connection_id, reply.data(), reply.size()));
+            ASSERT_TRUE(eventually([&] {
+                std::scoped_lock lock(mutex);
+                return client_seen.size() == 1;
+            }));
+            EXPECT_EQ(client_seen.front(), client_id);
+
+            service->close_endpoint(listener_id);
+            EXPECT_EQ(service->get_endpoint_state(connection_id), EndpointState::CLOSED);
+        }
+
+        std::filesystem::remove_all(directory, ec);
     }
 
 } // namespace

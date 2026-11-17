@@ -4,6 +4,8 @@
 #include <chrono>
 #include <string_view>
 
+#include <asio/write.hpp>
+
 #include "MayaFlux/Core/Backends/Network/TCPBackend.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::loopback_tcp>() }))
@@ -478,6 +480,120 @@ namespace {
 
         ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 1; }));
         EXPECT_EQ(rig.received.front().bytes, data);
+    }
+
+    // ------------------------------------------------------------------
+    // Raw peers: framing as seen from outside the backend
+    // ------------------------------------------------------------------
+
+    struct RawPeer {
+        RawPeer(TcpRig& rig, uint16_t port)
+            : socket(rig.context)
+        {
+            socket.connect(asio::ip::tcp::endpoint(asio::ip::make_address(k_loopback), port));
+        }
+
+        void write(std::initializer_list<uint8_t> bytes) { asio::write(socket, asio::buffer(std::vector<uint8_t>(bytes))); }
+
+        asio::ip::tcp::socket socket;
+    };
+
+    TEST(TCPBackendTest, FrameSplitAcrossWritesIsReassembled)
+    {
+        TcpRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint16_t port = free_port();
+        ASSERT_EQ(rig.backend.open_endpoint(TcpRig::listener(1, port)), 1U);
+        RawPeer peer(rig, port);
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        peer.write({ 0, 0 });
+        ASSERT_FALSE(rig.pump_until([&] { return rig.count_for(accepted) != 0; }, 50ms));
+        peer.write({ 0, 3, 1 });
+        ASSERT_FALSE(rig.pump_until([&] { return rig.count_for(accepted) != 0; }, 50ms));
+        peer.write({ 2, 3 });
+
+        ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 1; }));
+        EXPECT_EQ(rig.received.front().bytes, bytes_of({ 1, 2, 3 }));
+    }
+
+    TEST(TCPBackendTest, TwoFramesInOneWriteAreBothDelivered)
+    {
+        TcpRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint16_t port = free_port();
+        ASSERT_EQ(rig.backend.open_endpoint(TcpRig::listener(1, port)), 1U);
+        RawPeer peer(rig, port);
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        peer.write({ 0, 0, 0, 1, 7, 0, 0, 0, 2, 8, 9 });
+
+        ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 2; }));
+        EXPECT_EQ(rig.received[0].bytes, bytes_of({ 7 }));
+        EXPECT_EQ(rig.received[1].bytes, bytes_of({ 8, 9 }));
+    }
+
+    TEST(TCPBackendTest, ZeroLengthFrameClosesTheConnection)
+    {
+        TcpRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint16_t port = free_port();
+        ASSERT_EQ(rig.backend.open_endpoint(TcpRig::listener(1, port)), 1U);
+        RawPeer peer(rig, port);
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        peer.write({ 0, 0, 0, 0 });
+
+        ASSERT_TRUE(rig.pump_until([&] { return rig.backend.get_endpoint_state(accepted) == EndpointState::ERROR; }));
+        EXPECT_EQ(rig.count_for(accepted), 0U);
+    }
+
+    TEST(TCPBackendTest, OversizedLengthClosesTheConnection)
+    {
+        TcpRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint16_t port = free_port();
+        ASSERT_EQ(rig.backend.open_endpoint(TcpRig::listener(1, port)), 1U);
+        RawPeer peer(rig, port);
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        peer.write({ 0x04, 0x00, 0x00, 0x01 });
+
+        ASSERT_TRUE(rig.pump_until([&] { return rig.backend.get_endpoint_state(accepted) == EndpointState::ERROR; }));
+        EXPECT_EQ(rig.count_for(accepted), 0U);
+    }
+
+    TEST(TCPBackendTest, EmptyPayloadIsRefusedBeforeItReachesThePeer)
+    {
+        TcpRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint64_t accepted = rig.connect_pair(free_port());
+        ASSERT_NE(accepted, 0U);
+
+        EXPECT_FALSE(rig.backend.send(2, nullptr, 0));
+
+        EXPECT_EQ(rig.backend.get_endpoint_state(accepted), EndpointState::OPEN);
+    }
+
+    TEST(TCPBackendTest, AcceptedConnectionNamesItsListener)
+    {
+        TcpRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint64_t accepted = rig.connect_pair(free_port());
+        ASSERT_NE(accepted, 0U);
+
+        bool found = false;
+        for (const auto& info : rig.backend.get_endpoints()) {
+            if (info.id != accepted)
+                continue;
+            found = true;
+            EXPECT_EQ(info.parent_id, 1U);
+        }
+        EXPECT_TRUE(found);
     }
 
 } // namespace
