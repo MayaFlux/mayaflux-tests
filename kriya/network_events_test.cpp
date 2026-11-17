@@ -21,6 +21,13 @@ namespace {
         return m;
     }
 
+    Core::NetworkMessage message_on(const std::string& sender, uint64_t endpoint, uint8_t tag)
+    {
+        Core::NetworkMessage m = message_from(sender, tag);
+        m.endpoint_id = endpoint;
+        return m;
+    }
+
 } // namespace
 
 TEST(NetworkListenerTest, OnMessageDeliversEachMessageInOrder)
@@ -28,7 +35,7 @@ TEST(NetworkListenerTest, OnMessageDeliversEachMessageInOrder)
     auto source = std::make_shared<Vruta::NetworkSource>(Core::EndpointInfo {});
     Vruta::EventManager manager;
     std::vector<uint8_t> seen;
-    manager.add_event(std::make_shared<Vruta::Event>(Kriya::on_message(
+    manager.add_event(std::make_shared<Vruta::Event>(Kriya::message_received(
                           source, [&seen](const Core::NetworkMessage& m) { seen.push_back(m.data.front()); })),
         "all");
 
@@ -43,7 +50,7 @@ TEST(NetworkListenerTest, OnMessageFromDeliversOnlyTheNamedSender)
     auto source = std::make_shared<Vruta::NetworkSource>(Core::EndpointInfo {});
     Vruta::EventManager manager;
     std::vector<uint8_t> seen;
-    manager.add_event(std::make_shared<Vruta::Event>(Kriya::on_message_from(
+    manager.add_event(std::make_shared<Vruta::Event>(Kriya::message_received(
                           source, "alpha", [&seen](const Core::NetworkMessage& m) { seen.push_back(m.data.front()); })),
         "from");
 
@@ -53,12 +60,29 @@ TEST(NetworkListenerTest, OnMessageFromDeliversOnlyTheNamedSender)
     EXPECT_EQ(seen, std::vector<uint8_t> { 2 });
 }
 
+TEST(NetworkListenerTest, OnMessageFromConnectionSeparatesConnectionsThatShareAnAddress)
+{
+    auto source = std::make_shared<Vruta::NetworkSource>(Core::EndpointInfo {});
+    Vruta::EventManager manager;
+    std::vector<uint8_t> seen;
+    manager.add_event(std::make_shared<Vruta::Event>(Kriya::message_received(
+                          source, uint64_t { 7 }, [&seen](const Core::NetworkMessage& m) { seen.push_back(m.data.front()); })),
+        "connection");
+
+    source->signal(message_on("shared.sock", 5, 1));
+    source->signal(message_on("shared.sock", 7, 2));
+    source->signal(message_on("shared.sock", 9, 3));
+    source->signal(message_on("shared.sock", 7, 4));
+
+    EXPECT_EQ(seen, (std::vector<uint8_t> { 2, 4 }));
+}
+
 TEST(NetworkListenerTest, OnMessageMatchingDeliversOnlyAcceptedMessages)
 {
     auto source = std::make_shared<Vruta::NetworkSource>(Core::EndpointInfo {});
     Vruta::EventManager manager;
     std::vector<uint8_t> seen;
-    manager.add_event(std::make_shared<Vruta::Event>(Kriya::on_message_matching(
+    manager.add_event(std::make_shared<Vruta::Event>(Kriya::message_received(
                           source,
                           [](const Core::NetworkMessage& m) { return m.data.front() % 2 == 0; },
                           [&seen](const Core::NetworkMessage& m) { seen.push_back(m.data.front()); })),
@@ -75,7 +99,7 @@ TEST(NetworkListenerTest, CancelledHeldListenerDoesNotRunItsCallbackOnTheNextMes
     auto source = std::make_shared<Vruta::NetworkSource>(Core::EndpointInfo {});
     Vruta::EventManager manager;
     std::vector<uint8_t> seen;
-    auto held = std::make_shared<Vruta::Event>(Kriya::on_message(
+    auto held = std::make_shared<Vruta::Event>(Kriya::message_received(
         source, [&seen](const Core::NetworkMessage& m) { seen.push_back(m.data.front()); }));
     manager.add_event(held, "held");
 

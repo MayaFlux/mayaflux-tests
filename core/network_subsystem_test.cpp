@@ -11,6 +11,7 @@
 #include "MayaFlux/Core/ProcessingArchitecture.hpp"
 #include "MayaFlux/Core/Subsystems/NetworkSubsystem.hpp"
 #include "MayaFlux/Portal/Network/Network.hpp"
+#include "MayaFlux/Portal/Network/NetworkSink.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/NetworkService.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
@@ -1043,6 +1044,66 @@ namespace {
 
         service->close_endpoint(listener_id);
         EXPECT_EQ(service->get_endpoint_state(connection_id), EndpointState::CLOSED);
+    }
+
+    // ------------------------------------------------------------------
+    // Portal sink over a Unix domain socket
+    // ------------------------------------------------------------------
+
+    MAYAFLUX_TEST_WITH(TEST, NetworkSubsystemTest, UdsSinkDeliversToAListenerOnThePath, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        const std::filesystem::path directory = std::filesystem::temp_directory_path() / "mfu-sink";
+        std::error_code ec;
+        std::filesystem::remove_all(directory, ec);
+        std::filesystem::create_directory(directory);
+        const std::string path = (directory / "s.sock").string();
+
+        Inbox inbox;
+        {
+            SubsystemRig rig(GlobalNetworkConfig::with_uds());
+            rig.initialize();
+            rig.subsystem.start();
+            auto* service = SubsystemRig::service();
+            ASSERT_NE(service, nullptr);
+
+            EndpointInfo listener = info_for(NetworkTransport::UDS, EndpointRole::RECEIVE);
+            listener.local_path = path;
+            const uint64_t listener_id = service->open_endpoint(listener);
+            ASSERT_NE(listener_id, 0U);
+            service->set_endpoint_receive_callback(listener_id,
+                [&inbox](uint64_t, const uint8_t* data, size_t size, std::string_view) {
+                    inbox.push(std::vector<uint8_t>(data, data + size));
+                });
+
+            Portal::Network::NetworkSink sink(Portal::Network::StreamConfig {
+                .name = "uds_out",
+                .endpoint = { .path = path },
+                .profile = Portal::Network::StreamProfile::ARBITRARY,
+                .transport = Portal::Network::NetworkTransportHint::UDS,
+            });
+            ASSERT_TRUE(sink.is_open());
+            const std::vector<uint8_t> data { 0xCA, 0xFE };
+
+            ASSERT_TRUE(eventually([&] { return sink.send(data); }));
+
+            ASSERT_TRUE(eventually([&] { return inbox.size() == 1; }));
+            EXPECT_EQ(inbox.items.front(), data);
+        }
+
+        std::filesystem::remove_all(directory, ec);
+    }
+
+    TEST(NetworkSubsystemTest, UdsSinkWithoutAPathDoesNotOpen)
+    {
+        SubsystemRig rig(GlobalNetworkConfig::with_uds());
+        rig.initialize();
+
+        const Portal::Network::NetworkSink sink(Portal::Network::StreamConfig {
+            .name = "uds_none",
+            .transport = Portal::Network::NetworkTransportHint::UDS,
+        });
+
+        EXPECT_FALSE(sink.is_open());
     }
 
     // ------------------------------------------------------------------
