@@ -411,6 +411,61 @@ namespace {
     }
 
     // ------------------------------------------------------------------
+    // Cursor modes
+    // ------------------------------------------------------------------
+
+    TEST(WaylandWindowTest, CursorModesCanBeSwitchedAcrossPolls)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+        window->show();
+        pump(*window);
+
+        for (const auto mode : { Core::CursorMode::HIDDEN, Core::CursorMode::DISABLED,
+                 Core::CursorMode::CAPTURED, Core::CursorMode::NORMAL }) {
+            Core::InputConfig input;
+            input.cursor_mode = mode;
+            window->set_input_config(input);
+            pump(*window);
+
+            EXPECT_EQ(window->get_input_config().cursor_mode, mode);
+            EXPECT_FALSE(window->should_close());
+        }
+    }
+
+    TEST(WaylandWindowTest, RawMouseMotionWithALockedModeIsAccepted)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+        Core::InputConfig input;
+        input.cursor_mode = Core::CursorMode::DISABLED;
+        input.raw_mouse_motion = true;
+
+        window->set_input_config(input);
+        pump(*window);
+
+        EXPECT_TRUE(window->get_input_config().raw_mouse_motion);
+        EXPECT_FALSE(window->should_close());
+    }
+
+    TEST(WaylandWindowTest, DestroyWithACursorModeAppliedIsClean)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+        Core::InputConfig input;
+        input.cursor_mode = Core::CursorMode::CAPTURED;
+        window->set_input_config(input);
+        pump(*window);
+
+        EXPECT_NO_THROW(window->destroy());
+        EXPECT_NO_THROW(window->destroy());
+        EXPECT_NO_THROW(window->poll());
+    }
+
+    // ------------------------------------------------------------------
     // Key mapping
     // ------------------------------------------------------------------
 
