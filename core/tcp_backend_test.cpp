@@ -155,13 +155,15 @@ namespace {
             return connected ? accepted_id() : 0;
         }
 
-        static EndpointInfo listener(uint64_t id, uint16_t port)
+        static EndpointInfo listener(uint64_t id, uint16_t port,
+            Core::FramingPolicy framing = Core::FramingPolicy::AUTO)
         {
             EndpointInfo info;
             info.id = id;
             info.transport = Core::NetworkTransport::TCP;
             info.role = EndpointRole::BIDIRECTIONAL;
             info.local_port = port;
+            info.framing = framing;
             return info;
         }
 
@@ -576,6 +578,35 @@ namespace {
 
         EXPECT_FALSE(rig.backend.send(2, nullptr, 0));
 
+        EXPECT_EQ(rig.backend.get_endpoint_state(accepted), EndpointState::OPEN);
+    }
+
+    TEST(TCPBackendTest, LineListenerDeliversEachLineAndOversizedLinesDoNotCloseIt)
+    {
+        TcpRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint16_t port = free_port();
+        ASSERT_EQ(rig.backend.open_endpoint(TcpRig::listener(1, port, Core::FramingPolicy::LINE)), 1U);
+        RawPeer peer(rig, port);
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        peer.write({ 'a', '\n', 'b', '\r', '\n' });
+        ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 2; }));
+
+        const std::string oversized = std::string((size_t { 1 } << 20) + 8, 'x') + "\nc\n";
+        size_t sent = 0;
+        peer.socket.non_blocking(true);
+        ASSERT_TRUE(rig.pump_until([&] {
+            asio::error_code ec;
+            sent += peer.socket.write_some(asio::buffer(oversized.data() + sent, oversized.size() - sent), ec);
+            return sent == oversized.size() && rig.count_for(accepted) == 3;
+        },
+            10s));
+        EXPECT_EQ(rig.count_for(accepted), 3U);
+        EXPECT_EQ(rig.received[0].bytes, bytes_of({ 'a' }));
+        EXPECT_EQ(rig.received[1].bytes, bytes_of({ 'b' }));
+        EXPECT_EQ(rig.received[2].bytes, bytes_of({ 'c' }));
         EXPECT_EQ(rig.backend.get_endpoint_state(accepted), EndpointState::OPEN);
     }
 

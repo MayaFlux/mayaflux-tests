@@ -211,6 +211,16 @@ namespace {
             return count;
         }
 
+        [[nodiscard]] std::vector<uint8_t> concatenated(uint64_t id) const
+        {
+            std::vector<uint8_t> all;
+            for (const auto& item : received) {
+                if (item.id == id)
+                    all.insert(all.end(), item.bytes.begin(), item.bytes.end());
+            }
+            return all;
+        }
+
         [[nodiscard]] bool saw(uint64_t id, EndpointState previous, EndpointState current) const
         {
             return std::ranges::any_of(states, [&](const StateEvent& event) {
@@ -240,23 +250,27 @@ namespace {
             return connected ? accepted_id() : 0;
         }
 
-        static EndpointInfo listener(uint64_t id, const std::string& path)
+        static EndpointInfo listener(uint64_t id, const std::string& path,
+            Core::FramingPolicy framing = Core::FramingPolicy::AUTO)
         {
             EndpointInfo info;
             info.id = id;
             info.transport = Core::NetworkTransport::UDS;
             info.role = EndpointRole::BIDIRECTIONAL;
             info.local_path = path;
+            info.framing = framing;
             return info;
         }
 
-        static EndpointInfo outbound(uint64_t id, const std::string& path)
+        static EndpointInfo outbound(uint64_t id, const std::string& path,
+            Core::FramingPolicy framing = Core::FramingPolicy::AUTO)
         {
             EndpointInfo info;
             info.id = id;
             info.transport = Core::NetworkTransport::UDS;
             info.role = EndpointRole::BIDIRECTIONAL;
             info.remote_path = path;
+            info.framing = framing;
             return info;
         }
 
@@ -700,6 +714,234 @@ namespace {
 
         ASSERT_TRUE(rig.pump_until([&] { return rig.backend.get_endpoint_state(accepted) == EndpointState::ERROR; }));
         EXPECT_EQ(rig.count_for(accepted), 0U);
+    }
+
+    // ------------------------------------------------------------------
+    // Line framing
+    // ------------------------------------------------------------------
+
+    TEST(UDSBackendTest, LineListenerDeliversEachLineAndAcceptsCrLf)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE)), 1U);
+        RawPeer peer(rig, directory.socket());
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        peer.write({ 'h', 'i', '\n', 'y', 'o', '\r', '\n', '\n' });
+
+        ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 3; }));
+        EXPECT_EQ(rig.received[0].bytes, bytes_of({ 'h', 'i' }));
+        EXPECT_EQ(rig.received[1].bytes, bytes_of({ 'y', 'o' }));
+        EXPECT_TRUE(rig.received[2].bytes.empty());
+    }
+
+    TEST(UDSBackendTest, LineSplitAcrossWritesIsReassembled)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE)), 1U);
+        RawPeer peer(rig, directory.socket());
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        peer.write({ 'a', 'b' });
+        ASSERT_FALSE(rig.pump_until([&] { return rig.count_for(accepted) != 0; }, 50ms));
+        peer.write({ 'c', '\n' });
+
+        ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 1; }));
+        EXPECT_EQ(rig.received.front().bytes, bytes_of({ 'a', 'b', 'c' }));
+    }
+
+    TEST(UDSBackendTest, AcceptedConnectionUsesItsListenersFraming)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE)), 1U);
+        RawPeer peer(rig, directory.socket());
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        for (const auto& info : rig.backend.get_endpoints()) {
+            if (info.id == accepted)
+                EXPECT_EQ(info.framing, Core::FramingPolicy::LINE);
+        }
+    }
+
+    TEST(UDSBackendTest, LineEndpointSendsATerminatedLine)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE)), 1U);
+        RawPeer peer(rig, directory.socket());
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+        const std::vector<uint8_t> text = bytes_of({ 'p', 'o', 'n', 'g' });
+
+        ASSERT_TRUE(rig.backend.send(accepted, text.data(), text.size()));
+
+        std::array<uint8_t, 5> received {};
+        size_t got = 0;
+        peer.socket.non_blocking(true);
+        ASSERT_TRUE(rig.pump_until([&] {
+            asio::error_code ec;
+            got += peer.socket.read_some(asio::buffer(received.data() + got, received.size() - got), ec);
+            return got == received.size();
+        }));
+        EXPECT_EQ(received, (std::array<uint8_t, 5> { 'p', 'o', 'n', 'g', '\n' }));
+    }
+
+    TEST(UDSBackendTest, LineEndpointRefusesAPayloadThatContainsANewline)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE)), 1U);
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket(), Core::FramingPolicy::LINE)), 2U);
+        ASSERT_TRUE(rig.pump_until([&] { return rig.backend.get_endpoint_state(2) == EndpointState::OPEN; }));
+        const std::vector<uint8_t> text = bytes_of({ 'a', '\n', 'b' });
+
+        EXPECT_FALSE(rig.backend.send(2, text.data(), text.size()));
+    }
+
+    TEST(UDSBackendTest, LineEndpointsExchangeLinesBothWays)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE)), 1U);
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket(), Core::FramingPolicy::LINE)), 2U);
+        ASSERT_TRUE(rig.pump_until([&] {
+            return rig.backend.get_endpoint_state(2) == EndpointState::OPEN && rig.accepted_id() != 0;
+        }));
+        const uint64_t accepted = rig.accepted_id();
+        const std::vector<uint8_t> ping = bytes_of({ 'p', 'i', 'n', 'g' });
+        const std::vector<uint8_t> pong = bytes_of({ 'p', 'o', 'n', 'g' });
+
+        ASSERT_TRUE(rig.backend.send(2, ping.data(), ping.size()));
+        ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 1; }));
+        ASSERT_TRUE(rig.backend.send(accepted, pong.data(), pong.size()));
+        ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(2) == 1; }));
+
+        EXPECT_EQ(rig.received[0].bytes, ping);
+        EXPECT_EQ(rig.received[1].bytes, pong);
+    }
+
+    TEST(UDSBackendTest, AutoFramingMeansLengthPrefix)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LENGTH_PREFIX)), 1U);
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket())), 2U);
+        ASSERT_TRUE(rig.pump_until([&] {
+            return rig.backend.get_endpoint_state(2) == EndpointState::OPEN && rig.accepted_id() != 0;
+        }));
+        const uint64_t accepted = rig.accepted_id();
+        const std::vector<uint8_t> data = bytes_of({ 1, 2, 3 });
+
+        ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
+
+        ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 1; }));
+        EXPECT_EQ(rig.received.front().bytes, data);
+        EXPECT_EQ(EndpointInfo {}.framing, Core::FramingPolicy::AUTO);
+    }
+
+    // ------------------------------------------------------------------
+    // Raw bytes
+    // ------------------------------------------------------------------
+
+    TEST(UDSBackendTest, RawListenerDeliversEveryByteWithoutBoundaries)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::NONE)), 1U);
+        RawPeer peer(rig, directory.socket());
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        peer.write({ 0, 0, 0, 0 });
+        peer.write({ 9, '\n', 7 });
+
+        ASSERT_TRUE(rig.pump_until([&] { return rig.concatenated(accepted).size() == 7; }));
+        EXPECT_EQ(rig.concatenated(accepted), bytes_of({ 0, 0, 0, 0, 9, '\n', 7 }));
+        EXPECT_EQ(rig.backend.get_endpoint_state(accepted), EndpointState::OPEN);
+    }
+
+    TEST(UDSBackendTest, RawEndpointSendsItsPayloadUnchanged)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::NONE)), 1U);
+        RawPeer peer(rig, directory.socket());
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+        const std::vector<uint8_t> data = bytes_of({ 1, '\n', 0, 255 });
+
+        ASSERT_TRUE(rig.backend.send(accepted, data.data(), data.size()));
+
+        std::array<uint8_t, 4> received {};
+        size_t got = 0;
+        peer.socket.non_blocking(true);
+        ASSERT_TRUE(rig.pump_until([&] {
+            asio::error_code ec;
+            got += peer.socket.read_some(asio::buffer(received.data() + got, received.size() - got), ec);
+            return got == received.size();
+        }));
+        EXPECT_EQ(received, (std::array<uint8_t, 4> { 1, '\n', 0, 255 }));
+    }
+
+    TEST(UDSBackendTest, RawEndpointRefusesAnEmptyPayload)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::NONE)), 1U);
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket(), Core::FramingPolicy::NONE)), 2U);
+        ASSERT_TRUE(rig.pump_until([&] { return rig.backend.get_endpoint_state(2) == EndpointState::OPEN; }));
+
+        EXPECT_FALSE(rig.backend.send(2, nullptr, 0));
+    }
+
+    TEST(UDSBackendTest, RawEndpointsCarryTheBytesBothWays)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::NONE)), 1U);
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket(), Core::FramingPolicy::NONE)), 2U);
+        ASSERT_TRUE(rig.pump_until([&] {
+            return rig.backend.get_endpoint_state(2) == EndpointState::OPEN && rig.accepted_id() != 0;
+        }));
+        const uint64_t accepted = rig.accepted_id();
+        const std::vector<uint8_t> request = bytes_of({ 4, 5, 6 });
+        const std::vector<uint8_t> reply = bytes_of({ 7, 8 });
+
+        ASSERT_TRUE(rig.backend.send(2, request.data(), request.size()));
+        ASSERT_TRUE(rig.pump_until([&] { return rig.concatenated(accepted).size() == request.size(); }));
+        ASSERT_TRUE(rig.backend.send(accepted, reply.data(), reply.size()));
+        ASSERT_TRUE(rig.pump_until([&] { return rig.concatenated(2).size() == reply.size(); }));
+
+        EXPECT_EQ(rig.concatenated(accepted), request);
+        EXPECT_EQ(rig.concatenated(2), reply);
+    }
+
+    TEST(UDSBackendTest, ChunkedFramingIsRefused)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+
+        EXPECT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::CHUNKED)), 0U);
+        EXPECT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket(), Core::FramingPolicy::CHUNKED)), 0U);
+        EXPECT_TRUE(rig.backend.get_endpoints().empty());
     }
 
 } // namespace
