@@ -300,4 +300,106 @@ TEST_F(FormaTextSliceTest, ATextFieldDrawsItsCaretInTheSliceOfItsGlyphs)
     EXPECT_EQ(vertex_count(buffer), 18U);
 }
 
+namespace {
+
+    constexpr IO::Modifiers k_shortcut =
+#ifdef MAYAFLUX_PLATFORM_MACOS
+        IO::Modifiers::Super;
+#else
+        IO::Modifiers::Ctrl;
+#endif
+
+}
+
+class FormaTextFieldSelectionDrawTest : public FormaTextSliceTest {
+protected:
+    Forma::TextField focused_field(
+        const std::shared_ptr<Buffers::FormaBuffer>& buffer,
+        const std::shared_ptr<Portal::Text::PressParams>& params,
+        std::string text)
+    {
+        Forma::TextField field;
+        field.place(Forma::FormaTarget(buffer), *surface, k_region, params, std::move(text));
+        window->move_to_ndc({ 0.49F, 0.19F });
+        window->press(IO::MouseButtons::Left);
+        window->release(IO::MouseButtons::Left);
+        return field;
+    }
+
+    std::shared_ptr<Portal::Text::PressParams> tall_params(uint32_t lines, uint32_t width = 400)
+    {
+        auto params = std::make_shared<Portal::Text::PressParams>(params_for());
+        const auto* atlas = Portal::Text::TypeFaceFoundry::instance().get_default_glyph_atlas();
+        params->render_bounds = { width, atlas->line_height() * lines };
+        return params;
+    }
+
+    void select_all()
+    {
+        window->key_down(IO::Keys::A, k_shortcut);
+        window->key_up(IO::Keys::A, k_shortcut);
+    }
+
+    void shift_left()
+    {
+        window->key_down(IO::Keys::Left, IO::Modifiers::Shift);
+        window->key_up(IO::Keys::Left, IO::Modifiers::Shift);
+    }
+
+    void plain_left()
+    {
+        window->key_down(IO::Keys::Left);
+        window->key_up(IO::Keys::Left);
+    }
+};
+
+TEST_F(FormaTextFieldSelectionDrawTest, ASelectedFieldDrawsAnExtraQuadPerLine)
+{
+    auto buffer = text_buffer();
+    auto field = focused_field(buffer, tall_params(1), "hello");
+    const uint32_t plain = vertex_count(buffer);
+    EXPECT_EQ(plain, 36U);
+
+    select_all();
+    EXPECT_EQ(vertex_count(buffer), plain + 6U);
+
+    plain_left();
+    EXPECT_EQ(vertex_count(buffer), plain);
+}
+
+TEST_F(FormaTextFieldSelectionDrawTest, ASelectionAcrossALineBreakDrawsOneQuadPerLine)
+{
+    auto buffer = text_buffer();
+    auto field = focused_field(buffer, tall_params(3), "ab\ncd");
+    const uint32_t plain = vertex_count(buffer);
+
+    select_all();
+
+    EXPECT_EQ(vertex_count(buffer), plain + 12U);
+}
+
+TEST_F(FormaTextFieldSelectionDrawTest, ASelectionAcrossAWrapDrawsOneQuadPerLine)
+{
+    auto buffer = text_buffer();
+    auto field = focused_field(buffer, tall_params(8, 120), "abc abc abc abc abc abc");
+    const uint32_t plain = vertex_count(buffer);
+
+    select_all();
+
+    const uint32_t extra = vertex_count(buffer) - plain;
+    EXPECT_EQ(extra % 6U, 0U);
+    EXPECT_GE(extra / 6U, 2U);
+}
+
+TEST_F(FormaTextFieldSelectionDrawTest, ASelectionOnlyCoversTheSelectedCharacters)
+{
+    auto buffer = text_buffer();
+    auto field = focused_field(buffer, tall_params(3), "ab\ncd");
+    const uint32_t plain = vertex_count(buffer);
+
+    shift_left();
+
+    EXPECT_EQ(vertex_count(buffer), plain + 6U);
+}
+
 }

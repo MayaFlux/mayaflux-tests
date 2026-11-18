@@ -97,6 +97,30 @@ public:
         signal(Core::WindowEventType::WINDOW_CLOSED, std::monostate {});
     }
 
+    /// @brief Text the scripted clipboard holds; nullopt when it holds none.
+    void set_clipboard(std::optional<std::string> text) { m_clipboard = std::move(text); }
+
+    [[nodiscard]] const std::optional<std::string>& clipboard() const noexcept { return m_clipboard; }
+
+    /// @brief Paste requests wait for poll(), as on every native backend.
+    void request_clipboard_text(Core::ClipboardTextCallback callback) override
+    {
+        m_clipboard_requests.push_back(std::move(callback));
+    }
+
+    void set_clipboard_text(const std::string& text) override { m_clipboard = text; }
+
+    /// @brief Deliver the waiting paste requests with the clipboard as it is now.
+    void poll() override
+    {
+        auto requests = std::move(m_clipboard_requests);
+        m_clipboard_requests.clear();
+        for (auto& callback : requests) {
+            if (callback)
+                callback(m_clipboard);
+        }
+    }
+
     void show() override { m_state.is_visible = true; }
     void hide() override { m_state.is_visible = false; }
     void destroy() override { }
@@ -145,6 +169,8 @@ private:
     Core::WindowCreateInfo m_info;
     Core::InputConfig m_input;
     std::vector<uint64_t> m_frame_commands;
+    std::optional<std::string> m_clipboard;
+    std::vector<Core::ClipboardTextCallback> m_clipboard_requests;
     bool m_close_requested {};
     bool m_graphics_registered {};
     bool m_capture {};

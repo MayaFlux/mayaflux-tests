@@ -29,6 +29,12 @@ namespace {
     const glm::vec2 k_far_left_top { -0.89F, 0.85F };
     const glm::vec2 k_far_right_top { 0.89F, 0.85F };
 
+#ifdef MAYAFLUX_PLATFORM_MACOS
+    constexpr IO::Modifiers k_shortcut = IO::Modifiers::Super;
+#else
+    constexpr IO::Modifiers k_shortcut = IO::Modifiers::Ctrl;
+#endif
+
     std::shared_ptr<Buffers::FormaBuffer> make_buffer()
     {
         return std::make_shared<Buffers::FormaBuffer>(4096, PrimitiveTopology::TRIANGLE_LIST);
@@ -81,6 +87,18 @@ protected:
         Forma::TextField field = make_field(std::move(text));
         click(k_far_right_top);
         return field;
+    }
+
+    void shift_tap(Keys key)
+    {
+        window->key_down(key, IO::Modifiers::Shift);
+        window->key_up(key, IO::Modifiers::Shift);
+    }
+
+    void chord(Keys key, IO::Modifiers mods = k_shortcut)
+    {
+        window->key_down(key, mods);
+        window->key_up(key, mods);
     }
 
     void tap(Keys key)
@@ -395,6 +413,338 @@ TEST_F(FormaTextFieldTest, ClickingAnEmptyLinePlacesTheCursorThere)
 
     window->type('x');
     EXPECT_EQ(field.state->value.text, "a\nx\nb");
+}
+
+// =============================================================================
+// Selection
+// =============================================================================
+
+TEST_F(FormaTextFieldTest, ShiftArrowExtendsTheSelectionFromTheCaret)
+{
+    auto field = focused_field("hello");
+
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+
+    EXPECT_EQ(field.state->value.anchor, 5U);
+    EXPECT_EQ(field.state->value.cursor, 3U);
+    EXPECT_EQ(Portal::Text::selected_text(field.state->value), "lo");
+    EXPECT_EQ(field.state->value.text, "hello");
+}
+
+TEST_F(FormaTextFieldTest, ShiftRightGrowsTheSelectionTowardTheEnd)
+{
+    auto field = focused_field("hello");
+    click(k_far_left_top);
+
+    shift_tap(Keys::Right);
+    shift_tap(Keys::Right);
+
+    EXPECT_EQ(Portal::Text::selected_text(field.state->value), "he");
+}
+
+TEST_F(FormaTextFieldTest, AnArrowWithoutShiftCollapsesTheSelection)
+{
+    auto field = focused_field("hello");
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+
+    tap(Keys::Left);
+
+    EXPECT_EQ(field.state->value.cursor, 3U);
+    EXPECT_FALSE(Portal::Text::selection(field.state->value).has_value());
+}
+
+TEST_F(FormaTextFieldTest, ShiftClickExtendsTheSelectionToTheClickedPosition)
+{
+    auto field = focused_field("hello world");
+    ASSERT_EQ(field.state->value.cursor, 11U);
+
+    window->move_to_ndc(k_far_left_top);
+    window->press(MouseButtons::Left, IO::Modifiers::Shift);
+    window->release(MouseButtons::Left, IO::Modifiers::Shift);
+
+    EXPECT_EQ(field.state->value.anchor, 11U);
+    EXPECT_EQ(field.state->value.cursor, 0U);
+    EXPECT_EQ(Portal::Text::selected_text(field.state->value), "hello world");
+}
+
+TEST_F(FormaTextFieldTest, DraggingWithTheLeftButtonSelectsFromThePressToThePointer)
+{
+    auto field = make_field("hello world");
+
+    window->move_to_ndc(k_far_left_top);
+    window->press(MouseButtons::Left);
+    window->move_to_ndc(k_far_right_top);
+    window->release(MouseButtons::Left);
+
+    EXPECT_EQ(field.state->value.anchor, 0U);
+    EXPECT_EQ(field.state->value.cursor, 11U);
+    EXPECT_EQ(Portal::Text::selected_text(field.state->value), "hello world");
+}
+
+TEST_F(FormaTextFieldTest, DraggingBackTowardThePressShrinksTheSelection)
+{
+    auto field = make_field("hello world");
+
+    window->move_to_ndc(k_far_left_top);
+    window->press(MouseButtons::Left);
+    window->move_to_ndc(k_far_right_top);
+    window->move_to_ndc(k_far_left_top);
+    window->release(MouseButtons::Left);
+
+    EXPECT_FALSE(Portal::Text::selection(field.state->value).has_value());
+}
+
+TEST_F(FormaTextFieldTest, ANewPressAfterADragDropsTheSelection)
+{
+    auto field = make_field("hello world");
+    window->move_to_ndc(k_far_left_top);
+    window->press(MouseButtons::Left);
+    window->move_to_ndc(k_far_right_top);
+    window->release(MouseButtons::Left);
+    ASSERT_TRUE(Portal::Text::selection(field.state->value).has_value());
+
+    click(k_far_left_top);
+
+    EXPECT_FALSE(Portal::Text::selection(field.state->value).has_value());
+}
+
+TEST_F(FormaTextFieldTest, APlainClickDropsTheSelection)
+{
+    auto field = focused_field("hello");
+    shift_tap(Keys::Left);
+    ASSERT_TRUE(Portal::Text::selection(field.state->value).has_value());
+
+    click(k_far_left_top);
+
+    EXPECT_FALSE(Portal::Text::selection(field.state->value).has_value());
+    EXPECT_EQ(field.state->value.cursor, 0U);
+}
+
+TEST_F(FormaTextFieldTest, TypingReplacesTheSelection)
+{
+    auto field = focused_field("hello");
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+
+    window->type('p');
+
+    EXPECT_EQ(field.state->value.text, "help");
+    EXPECT_EQ(field.state->value.cursor, 4U);
+    EXPECT_FALSE(Portal::Text::selection(field.state->value).has_value());
+}
+
+TEST_F(FormaTextFieldTest, BackspaceAndDeleteRemoveTheSelectionAndNothingElse)
+{
+    auto field = focused_field("hello");
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+    tap(Keys::Backspace);
+    EXPECT_EQ(field.state->value.text, "hel");
+
+    shift_tap(Keys::Left);
+    tap(Keys::Delete);
+    EXPECT_EQ(field.state->value.text, "he");
+}
+
+TEST_F(FormaTextFieldTest, EnterAndTabReplaceTheSelection)
+{
+    auto field = focused_field("hello");
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+    tap(Keys::Enter);
+    EXPECT_EQ(field.state->value.text, "hel\n");
+
+    shift_tap(Keys::Left);
+    tap(Keys::Tab);
+    EXPECT_EQ(field.state->value.text, "hel\t");
+}
+
+TEST_F(FormaTextFieldTest, ShiftUpAndDownExtendAcrossLines)
+{
+    params->render_bounds.y = atlas->line_height() * 3;
+    auto field = focused_field("ab\ncd");
+    while (field.state->value.cursor < 5U)
+        tap(Keys::Right);
+    ASSERT_EQ(field.state->value.cursor, 5U);
+
+    shift_tap(Keys::Up);
+
+    EXPECT_EQ(field.state->value.anchor, 5U);
+    EXPECT_LT(field.state->value.cursor, 3U);
+    EXPECT_TRUE(Portal::Text::selection(field.state->value).has_value());
+
+    shift_tap(Keys::Down);
+    EXPECT_GE(field.state->value.cursor, 3U);
+    EXPECT_EQ(field.state->value.anchor, 5U);
+}
+
+TEST_F(FormaTextFieldTest, SelectAllSelectsTheWholeTextWithTheCursorAtTheEnd)
+{
+    auto field = focused_field("hello");
+    click(k_far_left_top);
+
+    chord(Keys::A);
+
+    EXPECT_EQ(field.state->value.anchor, 0U);
+    EXPECT_EQ(field.state->value.cursor, 5U);
+    EXPECT_EQ(Portal::Text::selected_text(field.state->value), "hello");
+}
+
+// =============================================================================
+// Clipboard
+// =============================================================================
+
+TEST_F(FormaTextFieldTest, CopyPutsTheSelectionOnTheClipboardAndLeavesTheText)
+{
+    auto field = focused_field("hello world");
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+
+    chord(Keys::C);
+
+    ASSERT_TRUE(window->clipboard().has_value());
+    EXPECT_EQ(*window->clipboard(), "rld");
+    EXPECT_EQ(field.state->value.text, "hello world");
+    EXPECT_EQ(Portal::Text::selected_text(field.state->value), "rld");
+}
+
+TEST_F(FormaTextFieldTest, CopyWithNothingSelectedLeavesTheClipboardAlone)
+{
+    auto field = focused_field("hello");
+    window->set_clipboard("keep");
+
+    chord(Keys::C);
+
+    EXPECT_EQ(window->clipboard(), "keep");
+}
+
+TEST_F(FormaTextFieldTest, CutMovesTheSelectionToTheClipboard)
+{
+    auto field = focused_field("hello world");
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+
+    chord(Keys::X);
+
+    EXPECT_EQ(window->clipboard(), "rld");
+    EXPECT_EQ(field.state->value.text, "hello wo");
+    EXPECT_EQ(field.state->value.cursor, 8U);
+    EXPECT_FALSE(Portal::Text::selection(field.state->value).has_value());
+}
+
+TEST_F(FormaTextFieldTest, CutWithNothingSelectedChangesNothing)
+{
+    auto field = focused_field("hello");
+    window->set_clipboard("keep");
+
+    chord(Keys::X);
+
+    EXPECT_EQ(window->clipboard(), "keep");
+    EXPECT_EQ(field.state->value.text, "hello");
+}
+
+TEST_F(FormaTextFieldTest, PasteInsertsTheClipboardAtTheCursorOnceThePollDeliversIt)
+{
+    auto field = focused_field("hello");
+    window->set_clipboard(" there");
+
+    chord(Keys::V);
+    EXPECT_EQ(field.state->value.text, "hello");
+
+    window->poll();
+    EXPECT_EQ(field.state->value.text, "hello there");
+    EXPECT_EQ(field.state->value.cursor, 11U);
+}
+
+TEST_F(FormaTextFieldTest, PasteReplacesTheSelection)
+{
+    auto field = focused_field("hello world");
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+    shift_tap(Keys::Left);
+    window->set_clipboard("moon");
+
+    chord(Keys::V);
+    window->poll();
+
+    EXPECT_EQ(field.state->value.text, "hello moon");
+    EXPECT_FALSE(Portal::Text::selection(field.state->value).has_value());
+}
+
+TEST_F(FormaTextFieldTest, PasteNormalisesLineEndingsAndDropsControlBytes)
+{
+    auto field = focused_field("");
+    window->set_clipboard(std::string("a\r\nb\x01\tc"));
+
+    chord(Keys::V);
+    window->poll();
+
+    EXPECT_EQ(field.state->value.text, "a\nb\tc");
+}
+
+TEST_F(FormaTextFieldTest, PasteWithAnEmptyClipboardChangesNothing)
+{
+    auto field = focused_field("hello");
+    shift_tap(Keys::Left);
+
+    chord(Keys::V);
+    window->poll();
+
+    EXPECT_EQ(field.state->value.text, "hello");
+    EXPECT_TRUE(Portal::Text::selection(field.state->value).has_value());
+}
+
+TEST_F(FormaTextFieldTest, ACopyThenAPasteRoundTripsThroughTheClipboard)
+{
+    auto field = focused_field("abc");
+    chord(Keys::A);
+    chord(Keys::C);
+    tap(Keys::Right);
+
+    chord(Keys::V);
+    window->poll();
+
+    EXPECT_EQ(field.state->value.text, "abcabc");
+}
+
+TEST_F(FormaTextFieldTest, ShortcutsNeedExactlyTheShortcutModifier)
+{
+    auto field = focused_field("hello");
+    window->set_clipboard("X");
+
+    tap(Keys::V);
+    chord(Keys::V, k_shortcut | IO::Modifiers::Shift);
+    chord(Keys::V, IO::Modifiers::Alt);
+    window->poll();
+
+    EXPECT_EQ(field.state->value.text, "hello");
+}
+
+TEST_F(FormaTextFieldTest, ShortcutsDoNothingWithoutFocus)
+{
+    auto field = make_field("hello");
+    window->set_clipboard("X");
+
+    chord(Keys::V);
+    window->poll();
+
+    EXPECT_EQ(field.state->value.text, "hello");
+}
+
+TEST_F(FormaTextFieldTest, ShortcutsInsertNoTextOfTheirOwn)
+{
+    auto field = focused_field("hello");
+    chord(Keys::A);
+    window->type(0x01);
+
+    EXPECT_EQ(field.state->value.text, "hello");
+    EXPECT_TRUE(Portal::Text::selection(field.state->value).has_value());
 }
 
 TEST_F(FormaTextFieldTest, RepositionUpdatesTheReportedBounds)
