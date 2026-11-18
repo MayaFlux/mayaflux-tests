@@ -855,6 +855,97 @@ namespace {
     }
 
     // ------------------------------------------------------------------
+    // Writes
+    // ------------------------------------------------------------------
+
+    TEST(UDSBackendTest, LargeFramesSentBackToBackArriveWholeAndInOrder)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint64_t accepted = rig.connect_pair(directory.socket());
+        ASSERT_NE(accepted, 0U);
+        const std::vector<uint8_t> first(size_t { 8 } * 1024 * 1024, 0xAA);
+        const std::vector<uint8_t> second(size_t { 8 } * 1024 * 1024, 0xBB);
+
+        ASSERT_TRUE(rig.backend.send(2, first.data(), first.size()));
+        ASSERT_TRUE(rig.backend.send(2, second.data(), second.size()));
+
+        ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 2; }, 20s));
+        EXPECT_EQ(rig.received[0].bytes, first);
+        EXPECT_EQ(rig.received[1].bytes, second);
+    }
+
+    TEST(UDSBackendTest, SendsFromSeveralThreadsKeepEveryFrameWholeAndEachThreadsOrder)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint64_t accepted = rig.connect_pair(directory.socket());
+        ASSERT_NE(accepted, 0U);
+        constexpr uint8_t threads = 4;
+        constexpr uint16_t per_thread = 200;
+        std::atomic<bool> go { false };
+
+        std::vector<std::thread> senders;
+        for (uint8_t thread_id = 0; thread_id < threads; ++thread_id) {
+            senders.emplace_back([&rig, &go, thread_id] {
+                while (!go.load())
+                    std::this_thread::yield();
+                for (uint16_t sequence = 0; sequence < per_thread; ++sequence) {
+                    const std::vector<uint8_t> frame {
+                        thread_id, static_cast<uint8_t>(sequence >> 8), static_cast<uint8_t>(sequence & 0xFF), thread_id
+                    };
+                    EXPECT_TRUE(rig.backend.send(2, frame.data(), frame.size()));
+                }
+            });
+        }
+        go.store(true);
+
+        const bool arrived = rig.pump_until([&] { return rig.count_for(accepted) == size_t { threads } * per_thread; }, 20s);
+        for (auto& sender : senders)
+            sender.join();
+        ASSERT_TRUE(arrived);
+
+        std::array<int, threads> next {};
+        for (const auto& item : rig.received) {
+            if (item.id != accepted)
+                continue;
+            ASSERT_EQ(item.bytes.size(), 4U);
+            const uint8_t thread_id = item.bytes[0];
+            ASSERT_LT(thread_id, threads);
+            EXPECT_EQ(item.bytes[3], thread_id);
+            const int sequence = (item.bytes[1] << 8) | item.bytes[2];
+            EXPECT_EQ(sequence, next[thread_id]++);
+        }
+    }
+
+    TEST(UDSBackendTest, SendRefusesWhenThePeerHasLeftTooMuchUnread)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        constexpr size_t limit = size_t { 1 } * 1024 * 1024;
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::AUTO, limit)), 1U);
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket(), Core::FramingPolicy::AUTO, limit)), 2U);
+        ASSERT_TRUE(rig.pump_until([&] { return rig.backend.get_endpoint_state(2) == EndpointState::OPEN; }));
+        const std::vector<uint8_t> chunk(limit / 2, 0x11);
+
+        int accepted_sends = 0;
+        bool refused = false;
+        for (int i = 0; i < 12 && !refused; ++i) {
+            if (rig.backend.send(2, chunk.data(), chunk.size()))
+                ++accepted_sends;
+            else
+                refused = true;
+        }
+
+        EXPECT_TRUE(refused);
+        EXPECT_GE(accepted_sends, 1);
+        EXPECT_LT(accepted_sends, 12);
+    }
+
+    // ------------------------------------------------------------------
     // Callbacks that call back into the backend
     // ------------------------------------------------------------------
 
