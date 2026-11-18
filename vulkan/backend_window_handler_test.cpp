@@ -665,6 +665,112 @@ TEST_F(BackendWindowHandlerTest, ObserverIdsAreDistinctAndUnregisteringStopsDeli
     EXPECT_EQ(removed->count.load(), removed_before);
 }
 
+TEST_F(BackendWindowHandlerTest, AnObserverMayUnregisterItselfFromItsOwnCallback)
+{
+    auto window = capturing_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+
+    auto own_id = std::make_shared<std::atomic<uint32_t>>(0);
+    auto log = std::make_shared<FrameLog>();
+    const uint32_t id = display->register_frame_observer(window,
+        [display, window, own_id, log](const std::shared_ptr<std::vector<uint8_t>>&, uint32_t, uint32_t, uint32_t) {
+            ++log->count;
+            display->unregister_frame_observer(window, own_id->load());
+        });
+    ASSERT_NE(id, 0U);
+    own_id->store(id);
+
+    ASSERT_TRUE(present_until(window, [log] { return log->count.load() > 0; }));
+    for (int i = 0; i < 5; ++i) {
+        ASSERT_TRUE(present_external_frame(window, { 1.0F, 1.0F, 1.0F, 1.0F }));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    EXPECT_EQ(log->count.load(), 1U);
+}
+
+TEST_F(BackendWindowHandlerTest, AnObserverMayRegisterAnotherFromItsOwnCallback)
+{
+    auto window = capturing_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+
+    auto first = std::make_shared<FrameLog>();
+    auto second = std::make_shared<FrameLog>();
+    auto added = std::make_shared<std::atomic<bool>>(false);
+    ASSERT_NE(display->register_frame_observer(window,
+                  [display, window, second, added](const std::shared_ptr<std::vector<uint8_t>>&, uint32_t, uint32_t, uint32_t) {
+                      if (added->exchange(true))
+                          return;
+                      display->register_frame_observer(window,
+                          [second](const std::shared_ptr<std::vector<uint8_t>>&, uint32_t, uint32_t, uint32_t) { ++second->count; });
+                  }),
+        0U);
+
+    ASSERT_TRUE(present_until(window, [second] { return second->count.load() > 0; }));
+    EXPECT_TRUE(added->load());
+}
+
+TEST_F(BackendWindowHandlerTest, ManyHoldersOfTheLastFrameEachKeepAnIndependentBuffer)
+{
+    auto window = capturing_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+    auto log = std::make_shared<FrameLog>();
+    ASSERT_NE(display->register_frame_observer(window,
+                  [log](const std::shared_ptr<std::vector<uint8_t>>&, uint32_t, uint32_t, uint32_t) { ++log->count; }),
+        0U);
+    ASSERT_TRUE(present_until(window, [log] { return log->count.load() > 0; }));
+
+    std::vector<std::shared_ptr<std::vector<uint8_t>>> held;
+    for (int i = 0; i < 64; ++i) {
+        auto frame = display->get_last_frame(window);
+        ASSERT_NE(frame, nullptr) << "holder " << i;
+        held.push_back(std::move(frame));
+        ASSERT_TRUE(present_external_frame(window, { 1.0F, 1.0F, 1.0F, 1.0F }));
+    }
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    display->get_swapchain_extent(window, width, height);
+    for (const auto& frame : held) {
+        EXPECT_EQ(frame->size(), static_cast<size_t>(width) * height * 4);
+    }
+}
+
+TEST_F(BackendWindowHandlerTest, ObserversCanBeAddedAndRemovedWhileFramesArrive)
+{
+    auto window = capturing_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+    auto steady = std::make_shared<FrameLog>();
+    ASSERT_NE(display->register_frame_observer(window,
+                  [steady](const std::shared_ptr<std::vector<uint8_t>>&, uint32_t, uint32_t, uint32_t) { ++steady->count; }),
+        0U);
+
+    std::atomic<bool> churning { true };
+    auto churned = std::make_shared<FrameLog>();
+    std::thread churn([&] {
+        while (churning.load()) {
+            const uint32_t id = display->register_frame_observer(window,
+                [churned](const std::shared_ptr<std::vector<uint8_t>>&, uint32_t, uint32_t, uint32_t) { ++churned->count; });
+            display->unregister_frame_observer(window, id);
+            (void)display->get_last_frame(window);
+        }
+    });
+
+    const bool delivered = present_until(window, [steady] { return steady->count.load() >= 20; });
+    churning.store(false);
+    churn.join();
+
+    EXPECT_TRUE(delivered);
+}
+
 TEST_F(BackendWindowHandlerTest, CaptureDisabledNeverProducesAFrame)
 {
     auto window = capturing_window(false);
