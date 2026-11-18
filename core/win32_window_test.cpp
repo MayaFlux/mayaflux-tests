@@ -433,6 +433,193 @@ namespace {
     }
 
     // ------------------------------------------------------------------
+    // Modifiers
+    // ------------------------------------------------------------------
+
+    constexpr int32_t k_held_modifier_bits = static_cast<int32_t>(
+        IO::Modifiers::Shift | IO::Modifiers::Ctrl | IO::Modifiers::Alt | IO::Modifiers::Super);
+
+    int32_t held_modifiers(const WindowEvent& event)
+    {
+        return data_of<WindowEvent::KeyData>(event).mods & k_held_modifier_bits;
+    }
+
+    int32_t held_modifiers(int32_t mods)
+    {
+        return mods & k_held_modifier_bits;
+    }
+
+    constexpr int32_t bits(IO::Modifiers flag)
+    {
+        return static_cast<int32_t>(flag);
+    }
+
+    struct ModifierKeyCase {
+        const char* name;
+        WPARAM vk;
+        IO::Keys key;
+        IO::Modifiers flag;
+    };
+
+    class Win32ModifierKeyTest : public ::testing::TestWithParam<ModifierKeyCase> { };
+
+    MAYAFLUX_TEST_WITH(TEST_P, Win32ModifierKeyTest, ModifierKeyPressCarriesItsOwnBitAndReleaseClearsIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        const auto& param = GetParam();
+        WindowHarness harness;
+
+        harness.send(WM_KEYDOWN, param.vk, key_lparam(0));
+        harness.send(WM_KEYUP, param.vk, key_lparam(0));
+        harness.poll();
+
+        const auto pressed = harness.events_of(WindowEventType::KEY_PRESSED);
+        const auto released = harness.events_of(WindowEventType::KEY_RELEASED);
+        ASSERT_EQ(pressed.size(), 1U);
+        ASSERT_EQ(released.size(), 1U);
+        EXPECT_EQ(data_of<WindowEvent::KeyData>(pressed.front()).key, static_cast<int16_t>(param.key));
+        EXPECT_EQ(held_modifiers(pressed.front()), bits(param.flag));
+        EXPECT_EQ(held_modifiers(released.front()), 0);
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Win32Window,
+        Win32ModifierKeyTest,
+        ::testing::Values(
+            ModifierKeyCase { "LeftShift", VK_LSHIFT, IO::Keys::LShift, IO::Modifiers::Shift },
+            ModifierKeyCase { "RightShift", VK_RSHIFT, IO::Keys::RShift, IO::Modifiers::Shift },
+            ModifierKeyCase { "LeftControl", VK_LCONTROL, IO::Keys::LCtrl, IO::Modifiers::Ctrl },
+            ModifierKeyCase { "RightControl", VK_RCONTROL, IO::Keys::RCtrl, IO::Modifiers::Ctrl },
+            ModifierKeyCase { "LeftAlt", VK_LMENU, IO::Keys::LAlt, IO::Modifiers::Alt },
+            ModifierKeyCase { "RightAlt", VK_RMENU, IO::Keys::RAlt, IO::Modifiers::Alt },
+            ModifierKeyCase { "LeftWin", VK_LWIN, IO::Keys::LSuper, IO::Modifiers::Super },
+            ModifierKeyCase { "RightWin", VK_RWIN, IO::Keys::RSuper, IO::Modifiers::Super }),
+        [](const ::testing::TestParamInfo<ModifierKeyCase>& info) { return std::string(info.param.name); });
+
+    TEST(Win32WindowTest, ModifierStaysSetUntilBothSidesAreReleased)
+    {
+        WindowHarness harness;
+
+        harness.send(WM_KEYDOWN, VK_LSHIFT, key_lparam(0));
+        harness.send(WM_KEYDOWN, VK_RSHIFT, key_lparam(0));
+        harness.send(WM_KEYUP, VK_LSHIFT, key_lparam(0));
+        harness.send(WM_KEYDOWN, 'A', key_lparam(k_scancode_a));
+        harness.send(WM_KEYUP, VK_RSHIFT, key_lparam(0));
+        harness.send(WM_KEYUP, 'A', key_lparam(k_scancode_a));
+        harness.poll();
+
+        const auto pressed = harness.events_of(WindowEventType::KEY_PRESSED);
+        const auto released = harness.events_of(WindowEventType::KEY_RELEASED);
+        ASSERT_EQ(pressed.size(), 3U);
+        ASSERT_EQ(released.size(), 3U);
+        EXPECT_EQ(held_modifiers(pressed[2]), bits(IO::Modifiers::Shift));
+        EXPECT_EQ(held_modifiers(released[0]), bits(IO::Modifiers::Shift));
+        EXPECT_EQ(held_modifiers(released[1]), 0);
+        EXPECT_EQ(held_modifiers(released[2]), 0);
+    }
+
+    TEST(Win32WindowTest, KeyEventsCarryHeldModifiers)
+    {
+        WindowHarness harness;
+
+        harness.send(WM_KEYDOWN, VK_LCONTROL, key_lparam(0));
+        harness.send(WM_KEYDOWN, VK_LSHIFT, key_lparam(0));
+        harness.send(WM_KEYDOWN, 'A', key_lparam(k_scancode_a));
+        harness.send(WM_KEYUP, 'A', key_lparam(k_scancode_a));
+        harness.poll();
+
+        const auto expected = bits(IO::Modifiers::Ctrl) | bits(IO::Modifiers::Shift);
+        const auto pressed = harness.events_of(WindowEventType::KEY_PRESSED);
+        ASSERT_EQ(pressed.size(), 3U);
+        EXPECT_EQ(held_modifiers(pressed[2]), expected);
+        EXPECT_TRUE(IO::has_modifiers(
+            data_of<WindowEvent::KeyData>(pressed[2]).mods,
+            IO::Modifiers::Ctrl | IO::Modifiers::Shift));
+        EXPECT_FALSE(IO::has_modifiers(
+            data_of<WindowEvent::KeyData>(pressed[2]).mods, IO::Modifiers::Alt));
+
+        const auto released = harness.events_of(WindowEventType::KEY_RELEASED);
+        ASSERT_EQ(released.size(), 1U);
+        EXPECT_EQ(held_modifiers(released.front()), expected);
+    }
+
+    TEST(Win32WindowTest, MouseButtonsCarryHeldModifiers)
+    {
+        WindowHarness harness;
+
+        harness.send(WM_KEYDOWN, VK_LMENU, key_lparam(0));
+        harness.send(WM_LBUTTONDOWN, 0, MAKELPARAM(5, 5));
+        harness.send(WM_LBUTTONUP, 0, MAKELPARAM(5, 5));
+        harness.send(WM_KEYUP, VK_LMENU, key_lparam(0));
+        harness.send(WM_LBUTTONDOWN, 0, MAKELPARAM(5, 5));
+        harness.poll();
+
+        const auto pressed = harness.events_of(WindowEventType::MOUSE_BUTTON_PRESSED);
+        const auto released = harness.events_of(WindowEventType::MOUSE_BUTTON_RELEASED);
+        ASSERT_EQ(pressed.size(), 2U);
+        ASSERT_EQ(released.size(), 1U);
+        EXPECT_EQ(held_modifiers(data_of<WindowEvent::MouseButtonData>(pressed[0]).mods), bits(IO::Modifiers::Alt));
+        EXPECT_EQ(held_modifiers(data_of<WindowEvent::MouseButtonData>(released[0]).mods), bits(IO::Modifiers::Alt));
+        EXPECT_EQ(held_modifiers(data_of<WindowEvent::MouseButtonData>(pressed[1]).mods), 0);
+    }
+
+    TEST(Win32WindowTest, FocusLossReleasesHeldKeysAndModifiers)
+    {
+        WindowHarness harness;
+        auto& source = harness.window().get_event_source();
+
+        harness.send(WM_SETFOCUS);
+        harness.send(WM_KEYDOWN, VK_LSHIFT, key_lparam(0));
+        harness.send(WM_KEYDOWN, 'A', key_lparam(k_scancode_a));
+        harness.poll();
+        ASSERT_TRUE(source.is_key_pressed(IO::Keys::A));
+        ASSERT_TRUE(source.is_key_pressed(IO::Keys::LShift));
+
+        harness.send(WM_KILLFOCUS);
+        harness.poll();
+
+        const auto released = harness.events_of(WindowEventType::KEY_RELEASED);
+        ASSERT_EQ(released.size(), 2U);
+        for (const auto& event : released)
+            EXPECT_EQ(held_modifiers(event), 0);
+        EXPECT_FALSE(source.is_key_pressed(IO::Keys::A));
+        EXPECT_FALSE(source.is_key_pressed(IO::Keys::LShift));
+
+        harness.send(WM_SETFOCUS);
+        harness.send(WM_KEYDOWN, 'A', key_lparam(k_scancode_a));
+        harness.poll();
+        const auto pressed = harness.events_of(WindowEventType::KEY_PRESSED);
+        ASSERT_EQ(pressed.size(), 3U);
+        EXPECT_EQ(held_modifiers(pressed.back()), 0);
+    }
+
+    TEST(Win32WindowTest, HeldKeyRepeatCarriesCurrentModifiers)
+    {
+        Core::GlobalGraphicsConfig config;
+        config.key_repeat_config.initial_delay_ms = 300;
+        config.key_repeat_config.interval_ms = 5;
+        WindowHarness harness(small_window(), config);
+
+        harness.send(WM_KEYDOWN, 'A', key_lparam(k_scancode_a));
+        harness.send(WM_KEYDOWN, VK_LCONTROL, key_lparam(0));
+
+        const auto repeats_of_a = [&] {
+            std::vector<WindowEvent> matching;
+            for (const auto& event : harness.events_of(WindowEventType::KEY_REPEAT)) {
+                if (data_of<WindowEvent::KeyData>(event).key == static_cast<int16_t>(IO::Keys::A))
+                    matching.push_back(event);
+            }
+            return matching;
+        };
+
+        ASSERT_TRUE(eventually([&] {
+            harness.poll();
+            return !repeats_of_a().empty();
+        }, 3s));
+        for (const auto& event : repeats_of_a())
+            EXPECT_EQ(held_modifiers(event), bits(IO::Modifiers::Ctrl));
+    }
+
+    // ------------------------------------------------------------------
     // Text input
     // ------------------------------------------------------------------
 
