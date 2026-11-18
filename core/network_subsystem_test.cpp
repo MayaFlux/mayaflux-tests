@@ -1093,6 +1093,160 @@ namespace {
         std::filesystem::remove_all(directory, ec);
     }
 
+    class TempSocketDirectory {
+    public:
+        explicit TempSocketDirectory(const std::string& name)
+            : m_path(std::filesystem::temp_directory_path() / name)
+        {
+            std::error_code ec;
+            std::filesystem::remove_all(m_path, ec);
+            std::filesystem::create_directory(m_path);
+        }
+
+        ~TempSocketDirectory()
+        {
+            std::error_code ec;
+            std::filesystem::remove_all(m_path, ec);
+        }
+
+        TempSocketDirectory(const TempSocketDirectory&) = delete;
+        TempSocketDirectory& operator=(const TempSocketDirectory&) = delete;
+        TempSocketDirectory(TempSocketDirectory&&) = delete;
+        TempSocketDirectory& operator=(TempSocketDirectory&&) = delete;
+
+        [[nodiscard]] std::string socket() const { return (m_path / "s.sock").string(); }
+
+    private:
+        std::filesystem::path m_path;
+    };
+
+    std::vector<uint8_t> text_bytes(std::string_view text)
+    {
+        return { text.begin(), text.end() };
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, NetworkSubsystemTest, ConnectionSinkRepliesToTheClientThatSpoke, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        const TempSocketDirectory directory("mfu-reply");
+        Inbox replies;
+        SubsystemRig rig(GlobalNetworkConfig::with_uds());
+        rig.initialize();
+        rig.subsystem.start();
+        auto* service = SubsystemRig::service();
+        ASSERT_NE(service, nullptr);
+
+        EndpointInfo listener = info_for(NetworkTransport::UDS, EndpointRole::RECEIVE);
+        listener.local_path = directory.socket();
+        listener.framing = Core::FramingPolicy::LINE;
+        const uint64_t listener_id = service->open_endpoint(listener);
+        ASSERT_NE(listener_id, 0U);
+        service->set_endpoint_receive_callback(listener_id,
+            [](uint64_t connection, const uint8_t*, size_t, std::string_view) {
+                const auto answer = text_bytes("pong");
+                const auto reply = Portal::Network::NetworkSink::to_connection(connection);
+                (void)reply.send(answer);
+            });
+
+        EndpointInfo client = info_for(NetworkTransport::UDS);
+        client.remote_path = directory.socket();
+        client.framing = Core::FramingPolicy::LINE;
+        const uint64_t client_id = service->open_endpoint(client);
+        ASSERT_NE(client_id, 0U);
+        service->set_endpoint_receive_callback(client_id,
+            [&replies](uint64_t, const uint8_t* data, size_t size, std::string_view) {
+                replies.push(std::vector<uint8_t>(data, data + size));
+            });
+        ASSERT_TRUE(eventually([&] { return service->get_endpoint_state(client_id) == EndpointState::OPEN; }));
+        const auto question = text_bytes("ping");
+
+        ASSERT_TRUE(service->send(client_id, question.data(), question.size()));
+
+        ASSERT_TRUE(eventually([&] { return replies.size() == 1; }));
+        EXPECT_EQ(replies.items.front(), text_bytes("pong"));
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, NetworkSubsystemTest, StoredConnectionSinkSendsLaterAndLeavesTheConnectionOpen, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        const TempSocketDirectory directory("mfu-stored");
+        Inbox received;
+        std::atomic<uint64_t> connection { 0 };
+        SubsystemRig rig(GlobalNetworkConfig::with_uds());
+        rig.initialize();
+        rig.subsystem.start();
+        auto* service = SubsystemRig::service();
+        ASSERT_NE(service, nullptr);
+
+        EndpointInfo listener = info_for(NetworkTransport::UDS, EndpointRole::RECEIVE);
+        listener.local_path = directory.socket();
+        const uint64_t listener_id = service->open_endpoint(listener);
+        ASSERT_NE(listener_id, 0U);
+        service->set_endpoint_receive_callback(listener_id,
+            [&connection](uint64_t id, const uint8_t*, size_t, std::string_view) { connection.store(id); });
+
+        EndpointInfo client = info_for(NetworkTransport::UDS);
+        client.remote_path = directory.socket();
+        const uint64_t client_id = service->open_endpoint(client);
+        ASSERT_NE(client_id, 0U);
+        service->set_endpoint_receive_callback(client_id,
+            [&received](uint64_t, const uint8_t* data, size_t size, std::string_view) {
+                received.push(std::vector<uint8_t>(data, data + size));
+            });
+        ASSERT_TRUE(eventually([&] { return service->get_endpoint_state(client_id) == EndpointState::OPEN; }));
+        const auto hello = text_bytes("hello");
+        ASSERT_TRUE(service->send(client_id, hello.data(), hello.size()));
+        ASSERT_TRUE(eventually([&] { return connection.load() != 0; }));
+
+        {
+            const auto sink = Portal::Network::NetworkSink::to_connection(connection.load());
+            ASSERT_TRUE(sink.is_open());
+            const auto first = text_bytes("one");
+            const auto second = text_bytes("two");
+            EXPECT_TRUE(sink.send(first));
+            EXPECT_TRUE(sink.send(second));
+        }
+
+        ASSERT_TRUE(eventually([&] { return received.size() == 2; }));
+        EXPECT_EQ(received.items[0], text_bytes("one"));
+        EXPECT_EQ(received.items[1], text_bytes("two"));
+        EXPECT_EQ(service->get_endpoint_state(connection.load()), EndpointState::OPEN);
+        EXPECT_EQ(service->get_endpoint_state(client_id), EndpointState::OPEN);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, NetworkSubsystemTest, ConnectionSinkRefusesWhenTheConnectionIsGone, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        const TempSocketDirectory directory("mfu-gone");
+        std::atomic<uint64_t> connection { 0 };
+        SubsystemRig rig(GlobalNetworkConfig::with_uds());
+        rig.initialize();
+        rig.subsystem.start();
+        auto* service = SubsystemRig::service();
+        ASSERT_NE(service, nullptr);
+
+        EndpointInfo listener = info_for(NetworkTransport::UDS, EndpointRole::RECEIVE);
+        listener.local_path = directory.socket();
+        const uint64_t listener_id = service->open_endpoint(listener);
+        ASSERT_NE(listener_id, 0U);
+        service->set_endpoint_receive_callback(listener_id,
+            [&connection](uint64_t id, const uint8_t*, size_t, std::string_view) { connection.store(id); });
+        EndpointInfo client = info_for(NetworkTransport::UDS);
+        client.remote_path = directory.socket();
+        const uint64_t client_id = service->open_endpoint(client);
+        ASSERT_NE(client_id, 0U);
+        ASSERT_TRUE(eventually([&] { return service->get_endpoint_state(client_id) == EndpointState::OPEN; }));
+        const auto hello = text_bytes("hello");
+        ASSERT_TRUE(service->send(client_id, hello.data(), hello.size()));
+        ASSERT_TRUE(eventually([&] { return connection.load() != 0; }));
+        const auto sink = Portal::Network::NetworkSink::to_connection(connection.load());
+        const auto data = text_bytes("late");
+        ASSERT_TRUE(sink.send(data));
+
+        service->close_endpoint(connection.load());
+
+        EXPECT_FALSE(sink.send(data));
+        EXPECT_FALSE(Portal::Network::NetworkSink::to_connection(0).is_open());
+        EXPECT_FALSE(Portal::Network::NetworkSink::to_connection(987654).send(data));
+    }
+
     TEST(NetworkSubsystemTest, UdsSinkWithoutAPathDoesNotOpen)
     {
         SubsystemRig rig(GlobalNetworkConfig::with_uds());
