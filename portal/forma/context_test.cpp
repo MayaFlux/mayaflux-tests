@@ -1096,6 +1096,172 @@ TEST_F(FormaContextTest, AKeySubscriptionReceivesTheKeyInItsEvent)
     EXPECT_EQ(got->key, static_cast<int16_t>(Keys::A));
 }
 
+TEST_F(FormaContextTest, AKeySubscriptionReceivesTheModifiersHeldWithTheKey)
+{
+    const uint32_t id = left_half();
+    std::vector<IO::Modifiers> seen;
+    ctx->subscribe(id, filter_for(WindowEventType::KEY_PRESSED, std::nullopt, Keys::A),
+        [&](uint32_t, const Core::WindowEvent& event, glm::vec2) {
+            if (const auto* data = std::get_if<Core::WindowEvent::KeyData>(&event.data))
+                seen.push_back(data->mods);
+        });
+
+    focus(id, k_left);
+    window->key_down(Keys::A, IO::Modifiers::Ctrl | IO::Modifiers::Shift);
+
+    EXPECT_EQ(seen, std::vector<IO::Modifiers> { IO::Modifiers::Ctrl | IO::Modifiers::Shift });
+}
+
+TEST_F(FormaContextTest, AKeySubscriptionWithModifiersReceivesOnlyThoseModifiers)
+{
+    const uint32_t id = left_half();
+    int calls = 0;
+    auto filter = filter_for(WindowEventType::KEY_PRESSED, std::nullopt, Keys::V);
+    filter.modifiers = IO::Modifiers::Ctrl;
+    ctx->subscribe(id, filter, count_into(calls));
+
+    focus(id, k_left);
+    window->key_down(Keys::V);
+    window->key_down(Keys::V, IO::Modifiers::Shift);
+    EXPECT_EQ(calls, 0);
+
+    window->key_down(Keys::V, IO::Modifiers::Ctrl);
+    EXPECT_EQ(calls, 1);
+}
+
+TEST_F(FormaContextTest, OnPressWithModifiersFiresOnlyForExactlyThoseHeld)
+{
+    const uint32_t id = left_half();
+    int calls = 0;
+    ctx->on_press(id, Keys::V | IO::Modifiers::Ctrl, [&](uint32_t) { ++calls; });
+
+    focus(id, k_left);
+    window->key_down(Keys::V);
+    window->key_down(Keys::V, IO::Modifiers::Shift);
+    window->key_down(Keys::V, IO::Modifiers::Ctrl | IO::Modifiers::Shift);
+    EXPECT_EQ(calls, 0);
+
+    window->key_down(Keys::V, IO::Modifiers::Ctrl);
+    EXPECT_EQ(calls, 1);
+}
+
+TEST_F(FormaContextTest, ABareOnPressAndAChordOnPressAreSeparateSlots)
+{
+    const uint32_t id = left_half();
+    int bare = 0;
+    int chord = 0;
+    ctx->on_press(id, Keys::V, [&](uint32_t) { ++bare; });
+    ctx->on_press(id, Keys::V | IO::Modifiers::Ctrl, [&](uint32_t) { ++chord; });
+
+    focus(id, k_left);
+    window->key_down(Keys::V);
+    EXPECT_EQ(bare, 1);
+    EXPECT_EQ(chord, 0);
+
+    window->key_down(Keys::V, IO::Modifiers::Ctrl);
+    EXPECT_EQ(bare, 2);
+    EXPECT_EQ(chord, 1);
+}
+
+TEST_F(FormaContextTest, ExplicitNoneOnPressIgnoresAKeyHeldWithModifiers)
+{
+    const uint32_t id = left_half();
+    int calls = 0;
+    ctx->on_press(id, Keys::A | IO::Modifiers::None, [&](uint32_t) { ++calls; });
+
+    focus(id, k_left);
+    window->key_down(Keys::A, IO::Modifiers::Ctrl);
+    EXPECT_EQ(calls, 0);
+
+    window->key_down(Keys::A);
+    EXPECT_EQ(calls, 1);
+}
+
+TEST_F(FormaContextTest, PressAndHoldWithModifiersFiresOnPressAndRepeatOnly)
+{
+    const uint32_t id = left_half();
+    int calls = 0;
+    ctx->press_and_hold(id, Keys::Left | IO::Modifiers::Shift, [&](uint32_t) { ++calls; });
+
+    focus(id, k_left);
+    window->key_down(Keys::Left);
+    EXPECT_EQ(calls, 0);
+
+    window->key_down(Keys::Left, IO::Modifiers::Shift);
+    window->key_repeat(Keys::Left, IO::Modifiers::Shift);
+    window->key_up(Keys::Left, IO::Modifiers::Shift);
+    EXPECT_EQ(calls, 2);
+}
+
+TEST_F(FormaContextTest, ChordListenersRegisterOncePerChordNotPerElement)
+{
+    const uint32_t a = left_half();
+    const uint32_t b = right_half();
+    const size_t before = manager.get_all_events().size();
+
+    ctx->on_press(a, Keys::A | IO::Modifiers::Ctrl, [](uint32_t) { });
+    const size_t after_first = manager.get_all_events().size();
+    ctx->on_press(b, Keys::A | IO::Modifiers::Ctrl, [](uint32_t) { });
+    const size_t after_second = manager.get_all_events().size();
+    ctx->on_press(a, Keys::A, [](uint32_t) { });
+
+    EXPECT_EQ(after_first, before + 1);
+    EXPECT_EQ(after_second, after_first);
+    EXPECT_EQ(manager.get_all_events().size(), after_first + 1);
+}
+
+TEST_F(FormaContextTest, ChordHandlersBelongToTheirOwnElement)
+{
+    const uint32_t a = left_half();
+    const uint32_t b = right_half();
+    int from_a = 0;
+    int from_b = 0;
+    ctx->on_press(a, Keys::A | IO::Modifiers::Ctrl, [&](uint32_t) { ++from_a; });
+    ctx->on_press(b, Keys::A | IO::Modifiers::Ctrl, [&](uint32_t) { ++from_b; });
+
+    focus(a, k_left);
+    window->key_down(Keys::A, IO::Modifiers::Ctrl);
+    EXPECT_EQ(from_a, 1);
+    EXPECT_EQ(from_b, 0);
+
+    focus(b, k_right);
+    window->key_down(Keys::A, IO::Modifiers::Ctrl);
+    EXPECT_EQ(from_a, 1);
+    EXPECT_EQ(from_b, 1);
+}
+
+TEST_F(FormaContextTest, UnbindRemovesChordHandlers)
+{
+    const uint32_t id = left_half();
+    int calls = 0;
+    ctx->on_press(id, MouseButtons::Left, [](uint32_t, glm::vec2) { });
+    ctx->on_press(id, Keys::A | IO::Modifiers::Ctrl, [&](uint32_t) { ++calls; });
+    ctx->on_held(id, Keys::B | IO::Modifiers::Shift, [&](uint32_t) { ++calls; });
+
+    focus(id, k_left);
+    window->key_down(Keys::A, IO::Modifiers::Ctrl);
+    ASSERT_EQ(calls, 1);
+
+    ctx->unbind(id);
+    ctx->on_press(id, MouseButtons::Left, [](uint32_t, glm::vec2) { });
+    focus(id, k_left);
+    window->key_down(Keys::A, IO::Modifiers::Ctrl);
+    window->key_down(Keys::B, IO::Modifiers::Shift);
+
+    EXPECT_EQ(calls, 1);
+}
+
+TEST_F(FormaContextTest, DestroyingTheContextCancelsChordHandlers)
+{
+    const uint32_t id = whole();
+    ctx->on_press(id, Keys::A | IO::Modifiers::Ctrl, [](uint32_t) { });
+    ctx->on_held(id, Keys::B | IO::Modifiers::Shift, [](uint32_t) { });
+
+    ctx.reset();
+
+    EXPECT_TRUE(manager.get_all_events().empty());
+}
+
 TEST_F(FormaContextTest, ATextSubscriberReceivesTheCodepointWhileFocused)
 {
     const uint32_t id = left_half();

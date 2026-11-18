@@ -203,6 +203,17 @@ TEST_F(FormaTextFieldTest, BackspaceRemovesTheCodepointBeforeTheCursor)
     EXPECT_EQ(field.state->value.cursor, 4U);
 }
 
+TEST_F(FormaTextFieldTest, EditingKeysStillActWhileAModifierIsHeld)
+{
+    auto field = focused_field("hello");
+
+    window->key_down(Keys::Backspace, IO::Modifiers::Shift);
+    window->key_up(Keys::Backspace, IO::Modifiers::Shift);
+
+    EXPECT_EQ(field.state->value.text, "hell");
+    EXPECT_EQ(field.state->value.cursor, 4U);
+}
+
 TEST_F(FormaTextFieldTest, BackspaceRemovesAWholeMultibyteCodepoint)
 {
     auto field = focused_field("a\xC3\xA9");

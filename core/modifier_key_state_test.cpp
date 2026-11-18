@@ -91,15 +91,72 @@ namespace {
         EXPECT_EQ(state.held(), Modifiers::None);
     }
 
-    TEST(ModifiersTest, HasModifiersRequiresEveryRequestedBit)
+    TEST(ModifiersTest, HasFlagRequiresEveryRequestedBit)
     {
-        const auto mods = static_cast<int32_t>(Modifiers::Ctrl | Modifiers::Shift);
+        const Modifiers mods = Modifiers::Ctrl | Modifiers::Shift;
 
-        EXPECT_TRUE(IO::has_modifiers(mods, Modifiers::Ctrl));
-        EXPECT_TRUE(IO::has_modifiers(mods, Modifiers::Ctrl | Modifiers::Shift));
-        EXPECT_FALSE(IO::has_modifiers(mods, Modifiers::Ctrl | Modifiers::Alt));
-        EXPECT_FALSE(IO::has_modifiers(mods, Modifiers::Super));
-        EXPECT_TRUE(IO::has_modifiers(mods, Modifiers::None));
+        EXPECT_TRUE(IO::has_flag(mods, Modifiers::Ctrl));
+        EXPECT_TRUE(IO::has_flag(mods, Modifiers::Ctrl | Modifiers::Shift));
+        EXPECT_FALSE(IO::has_flag(mods, Modifiers::Ctrl | Modifiers::Alt));
+        EXPECT_FALSE(IO::has_flag(mods, Modifiers::Super));
+        EXPECT_TRUE(IO::has_flag(mods, Modifiers::None));
+    }
+
+    TEST(ModifiedKeyTest, BareKeyConvertsWithNoModifierRequirement)
+    {
+        const IO::ModifiedKey key = Keys::V;
+
+        EXPECT_EQ(key.key, Keys::V);
+        EXPECT_FALSE(key.modifiers.has_value());
+    }
+
+    TEST(ModifiedKeyTest, PipeBuildsAModifierRequirement)
+    {
+        const IO::ModifiedKey key = Keys::V | Modifiers::Ctrl;
+
+        EXPECT_EQ(key.key, Keys::V);
+        EXPECT_EQ(key.modifiers, Modifiers::Ctrl);
+    }
+
+    TEST(ModifiedKeyTest, ChainedPipesAccumulateModifiers)
+    {
+        const IO::ModifiedKey key = Keys::V | Modifiers::Ctrl | Modifiers::Shift;
+
+        EXPECT_EQ(key.key, Keys::V);
+        EXPECT_EQ(key.modifiers, Modifiers::Ctrl | Modifiers::Shift);
+    }
+
+    TEST(ModifiedKeyTest, ExplicitNoneIsARequirementNotAbsence)
+    {
+        const IO::ModifiedKey key = Keys::V | Modifiers::None;
+
+        ASSERT_TRUE(key.modifiers.has_value());
+        EXPECT_EQ(*key.modifiers, Modifiers::None);
+    }
+
+    TEST(ModifierOfTest, EitherSideOfAModifierKeyNamesItsFlag)
+    {
+        EXPECT_EQ(IO::modifier_of(Keys::LShift), Modifiers::Shift);
+        EXPECT_EQ(IO::modifier_of(Keys::RShift), Modifiers::Shift);
+        EXPECT_EQ(IO::modifier_of(Keys::LCtrl), Modifiers::Ctrl);
+        EXPECT_EQ(IO::modifier_of(Keys::RCtrl), Modifiers::Ctrl);
+        EXPECT_EQ(IO::modifier_of(Keys::LAlt), Modifiers::Alt);
+        EXPECT_EQ(IO::modifier_of(Keys::RAlt), Modifiers::Alt);
+        EXPECT_EQ(IO::modifier_of(Keys::LSuper), Modifiers::Super);
+        EXPECT_EQ(IO::modifier_of(Keys::RSuper), Modifiers::Super);
+    }
+
+    TEST(ModifierOfTest, OtherKeysHaveNoModifier)
+    {
+        for (const Keys key : { Keys::A, Keys::Space, Keys::CapsLock, Keys::Menu, Keys::Unknown })
+            EXPECT_EQ(IO::modifier_of(key), Modifiers::None) << static_cast<int>(key);
+    }
+
+    TEST(ModifierOfTest, AgreesWithIsModifier)
+    {
+        for (const Keys key : { Keys::LShift, Keys::RShift, Keys::LCtrl, Keys::RCtrl,
+                 Keys::LAlt, Keys::RAlt, Keys::LSuper, Keys::RSuper, Keys::A, Keys::CapsLock, Keys::Menu })
+            EXPECT_EQ(IO::modifier_of(key) != Modifiers::None, IO::is_modifier(key)) << static_cast<int>(key);
     }
 
     TEST(ModifiersTest, BitsMatchTheValuesBackendsAlreadyEmit)

@@ -535,7 +535,7 @@ namespace {
         const auto& down = data_of<WindowEvent::KeyData>(pressed.front());
         EXPECT_EQ(down.key, static_cast<int16_t>(IO::Keys::A));
         EXPECT_EQ(down.scancode, static_cast<int32_t>(code));
-        EXPECT_EQ(down.mods, 0);
+        EXPECT_EQ(down.mods, IO::Modifiers::None);
         EXPECT_TRUE(source.is_key_pressed(IO::Keys::A));
 
         CocoaInput::key_up(harness.native(), code);
@@ -592,7 +592,7 @@ namespace {
     struct ModifierCase {
         const char* name;
         Modifier flag;
-        int32_t expected_mods;
+        IO::Modifiers expected_mods;
     };
 
     class CocoaModifierMaskTest : public ::testing::TestWithParam<ModifierCase> { };
@@ -620,19 +620,19 @@ namespace {
         CocoaWindow,
         CocoaModifierMaskTest,
         ::testing::Values(
-            ModifierCase { "Shift", Modifier::Shift, 0x0001 },
-            ModifierCase { "Control", Modifier::Control, 0x0002 },
-            ModifierCase { "Option", Modifier::Option, 0x0004 },
-            ModifierCase { "Command", Modifier::Command, 0x0008 },
-            ModifierCase { "CapsLock", Modifier::CapsLock, 0x0010 },
-            ModifierCase { "ShiftAndCommand", Modifier::Shift | Modifier::Command, 0x0009 }),
+            ModifierCase { "Shift", Modifier::Shift, IO::Modifiers::Shift },
+            ModifierCase { "Control", Modifier::Control, IO::Modifiers::Ctrl },
+            ModifierCase { "Option", Modifier::Option, IO::Modifiers::Alt },
+            ModifierCase { "Command", Modifier::Command, IO::Modifiers::Super },
+            ModifierCase { "CapsLock", Modifier::CapsLock, IO::Modifiers::CapsLock },
+            ModifierCase { "ShiftAndCommand", Modifier::Shift | Modifier::Command, IO::Modifiers::Shift | IO::Modifiers::Super }),
         [](const ::testing::TestParamInfo<ModifierCase>& info) { return std::string(info.param.name); });
 
     struct ModifierKeyCase {
         const char* name;
         IO::Keys key;
         Modifier flag;
-        int32_t expected_mods;
+        IO::Modifiers expected_mods;
     };
 
     class CocoaModifierKeyTest : public ::testing::TestWithParam<ModifierKeyCase> { };
@@ -665,14 +665,14 @@ namespace {
         CocoaWindow,
         CocoaModifierKeyTest,
         ::testing::Values(
-            ModifierKeyCase { "LeftShift", IO::Keys::LShift, Modifier::Shift, 0x0001 },
-            ModifierKeyCase { "RightShift", IO::Keys::RShift, Modifier::Shift, 0x0001 },
-            ModifierKeyCase { "LeftControl", IO::Keys::LCtrl, Modifier::Control, 0x0002 },
-            ModifierKeyCase { "RightControl", IO::Keys::RCtrl, Modifier::Control, 0x0002 },
-            ModifierKeyCase { "LeftOption", IO::Keys::LAlt, Modifier::Option, 0x0004 },
-            ModifierKeyCase { "RightOption", IO::Keys::RAlt, Modifier::Option, 0x0004 },
-            ModifierKeyCase { "LeftCommand", IO::Keys::LSuper, Modifier::Command, 0x0008 },
-            ModifierKeyCase { "RightCommand", IO::Keys::RSuper, Modifier::Command, 0x0008 }),
+            ModifierKeyCase { "LeftShift", IO::Keys::LShift, Modifier::Shift, IO::Modifiers::Shift },
+            ModifierKeyCase { "RightShift", IO::Keys::RShift, Modifier::Shift, IO::Modifiers::Shift },
+            ModifierKeyCase { "LeftControl", IO::Keys::LCtrl, Modifier::Control, IO::Modifiers::Ctrl },
+            ModifierKeyCase { "RightControl", IO::Keys::RCtrl, Modifier::Control, IO::Modifiers::Ctrl },
+            ModifierKeyCase { "LeftOption", IO::Keys::LAlt, Modifier::Option, IO::Modifiers::Alt },
+            ModifierKeyCase { "RightOption", IO::Keys::RAlt, Modifier::Option, IO::Modifiers::Alt },
+            ModifierKeyCase { "LeftCommand", IO::Keys::LSuper, Modifier::Command, IO::Modifiers::Super },
+            ModifierKeyCase { "RightCommand", IO::Keys::RSuper, Modifier::Command, IO::Modifiers::Super }),
         [](const ::testing::TestParamInfo<ModifierKeyCase>& info) { return std::string(info.param.name); });
 
     TEST(CocoaWindowTest, CapsLockToggleReportsPressFollowedByReleaseAndNeverRepeats)
@@ -854,7 +854,7 @@ namespace {
 
         const auto pressed = harness.events_of(WindowEventType::MOUSE_BUTTON_PRESSED);
         ASSERT_EQ(pressed.size(), 1U);
-        EXPECT_EQ(data_of<WindowEvent::MouseButtonData>(pressed.front()).mods, 0x0005);
+        EXPECT_EQ(data_of<WindowEvent::MouseButtonData>(pressed.front()).mods, IO::Modifiers::Shift | IO::Modifiers::Alt);
     }
 
     struct ScrollCase {

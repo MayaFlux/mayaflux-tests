@@ -515,6 +515,43 @@ namespace {
         EXPECT_EQ(fired, 5);
     }
 
+    TEST_F(NexusWiringTriggerTest, AKeyTriggerWithModifiersFiresOnlyWithExactlyThoseHeld)
+    {
+        fabric.wire(make_counting_emitter()).on(window, IO::Keys::S | IO::Modifiers::Ctrl).finalise();
+
+        window->key_down(IO::Keys::S);
+        window->key_down(IO::Keys::S, IO::Modifiers::Shift);
+        window->key_down(IO::Keys::S, IO::Modifiers::Ctrl | IO::Modifiers::Shift);
+        EXPECT_EQ(fired, 0);
+
+        window->key_down(IO::Keys::S, IO::Modifiers::Ctrl);
+        EXPECT_EQ(fired, 1);
+    }
+
+    TEST_F(NexusWiringTriggerTest, ABareKeyTriggerStillFiresWithAnyModifiers)
+    {
+        fabric.wire(make_counting_emitter()).on(window, IO::Keys::S).finalise();
+
+        window->key_down(IO::Keys::S);
+        window->key_down(IO::Keys::S, IO::Modifiers::Ctrl | IO::Modifiers::Alt);
+
+        EXPECT_EQ(fired, 2);
+    }
+
+    TEST_F(NexusWiringTriggerTest, AKeyTriggerReleaseCallbackMatchesTheKeyAlone)
+    {
+        int released = 0;
+        fabric.wire(make_counting_emitter())
+            .on(window, IO::Keys::S | IO::Modifiers::Ctrl, true, [&released] { ++released; })
+            .finalise();
+
+        window->key_down(IO::Keys::S, IO::Modifiers::Ctrl);
+        window->key_up(IO::Keys::S);
+
+        EXPECT_EQ(fired, 1);
+        EXPECT_EQ(released, 1);
+    }
+
     TEST_F(NexusWiringTriggerTest, AKeyTriggerFiresExactlyTimesThenStops)
     {
         fabric.wire(make_counting_emitter()).on(window, IO::Keys::Space).times(3).finalise();
@@ -563,6 +600,46 @@ namespace {
         }
 
         EXPECT_EQ(fired, 2);
+    }
+
+    TEST_F(NexusWiringTriggerTest, AHeldKeyTriggerWithModifiersFiresOnPressAndRepeatWhileThoseAreHeld)
+    {
+        fabric.wire(make_counting_emitter()).on(window, IO::Keys::S | IO::Modifiers::Ctrl, true).finalise();
+
+        window->key_down(IO::Keys::S, IO::Modifiers::Ctrl);
+        window->key_repeat(IO::Keys::S, IO::Modifiers::Ctrl);
+        EXPECT_EQ(fired, 2);
+
+        window->key_repeat(IO::Keys::S);
+        window->key_repeat(IO::Keys::S, IO::Modifiers::Ctrl | IO::Modifiers::Shift);
+        EXPECT_EQ(fired, 2);
+    }
+
+    TEST_F(NexusWiringTriggerTest, AKeyTriggerWithModifiersCountsOnlyMatchingPressesTowardTimes)
+    {
+        fabric.wire(make_counting_emitter()).on(window, IO::Keys::S | IO::Modifiers::Ctrl).times(2).finalise();
+
+        window->key_down(IO::Keys::S);
+        window->key_down(IO::Keys::S, IO::Modifiers::Ctrl);
+        window->key_down(IO::Keys::S, IO::Modifiers::Shift);
+        window->key_down(IO::Keys::S, IO::Modifiers::Ctrl);
+        window->key_down(IO::Keys::S, IO::Modifiers::Ctrl);
+
+        EXPECT_EQ(fired, 2);
+    }
+
+    TEST_F(NexusWiringTriggerTest, AWindowEventTriggerFiltersByModifiers)
+    {
+        Vruta::WindowEventFilter filter { IO::Keys::S | IO::Modifiers::Alt };
+        filter.event_type = Core::WindowEventType::KEY_PRESSED;
+        fabric.wire(make_counting_emitter()).on(window->get_event_source(), filter).finalise();
+
+        window->key_down(IO::Keys::S);
+        window->key_down(IO::Keys::S, IO::Modifiers::Ctrl);
+        EXPECT_EQ(fired, 0);
+
+        window->key_down(IO::Keys::S, IO::Modifiers::Alt);
+        EXPECT_EQ(fired, 1);
     }
 
     TEST_F(NexusWiringTriggerTest, ALimitedTriggerLeavesAnotherWiringOnTheSameWindowRunning)

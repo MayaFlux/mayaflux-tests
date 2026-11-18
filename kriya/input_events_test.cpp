@@ -25,6 +25,141 @@ namespace {
 
 } // namespace
 
+TEST(InputEventsModifiedKeyTest, KeyPressedWithModifiersFiresOnlyForExactlyThoseHeld)
+{
+    InputRig rig;
+    int calls = 0;
+    rig.start("paste", Kriya::key_pressed(rig.window, IO::Keys::V | IO::Modifiers::Ctrl, [&calls]() { ++calls; }));
+
+    rig.window->key_down(IO::Keys::V);
+    EXPECT_EQ(calls, 0);
+
+    rig.window->key_down(IO::Keys::V, IO::Modifiers::Shift);
+    EXPECT_EQ(calls, 0);
+
+    rig.window->key_down(IO::Keys::V, IO::Modifiers::Ctrl | IO::Modifiers::Shift);
+    EXPECT_EQ(calls, 0);
+
+    rig.window->key_down(IO::Keys::V, IO::Modifiers::Ctrl);
+    EXPECT_EQ(calls, 1);
+
+    rig.window->key_down(IO::Keys::C, IO::Modifiers::Ctrl);
+    EXPECT_EQ(calls, 1);
+}
+
+TEST(InputEventsModifiedKeyTest, LockBitsDoNotAffectAModifierMatch)
+{
+    InputRig rig;
+    int calls = 0;
+    rig.start("paste", Kriya::key_pressed(rig.window, IO::Keys::V | IO::Modifiers::Ctrl, [&calls]() { ++calls; }));
+
+    rig.window->key_down(IO::Keys::V,
+        IO::Modifiers::Ctrl | IO::Modifiers::CapsLock | IO::Modifiers::NumLock);
+
+    EXPECT_EQ(calls, 1);
+}
+
+TEST(InputEventsModifiedKeyTest, ExplicitNoneMatchesOnlyAKeyWithNoModifiersHeld)
+{
+    InputRig rig;
+    int calls = 0;
+    rig.start("plain", Kriya::key_pressed(rig.window, IO::Keys::A | IO::Modifiers::None, [&calls]() { ++calls; }));
+
+    rig.window->key_down(IO::Keys::A, IO::Modifiers::Ctrl);
+    EXPECT_EQ(calls, 0);
+
+    rig.window->key_down(IO::Keys::A, IO::Modifiers::NumLock);
+    EXPECT_EQ(calls, 1);
+}
+
+TEST(InputEventsModifiedKeyTest, ABareKeyAcceptsAnyModifiers)
+{
+    InputRig rig;
+    int calls = 0;
+    rig.start("any_mods", Kriya::key_pressed(rig.window, IO::Keys::A, [&calls]() { ++calls; }));
+
+    rig.window->key_down(IO::Keys::A);
+    rig.window->key_down(IO::Keys::A, IO::Modifiers::Ctrl | IO::Modifiers::Alt);
+
+    EXPECT_EQ(calls, 2);
+}
+
+TEST(InputEventsModifiedKeyTest, KeyHeldWithModifiersFollowsPressAndRepeatsOnly)
+{
+    InputRig rig;
+    int calls = 0;
+    rig.start("extend", Kriya::key_held(rig.window, IO::Keys::Left | IO::Modifiers::Shift, [&calls]() { ++calls; }));
+
+    rig.window->key_down(IO::Keys::Left);
+    EXPECT_EQ(calls, 0);
+
+    rig.window->key_down(IO::Keys::Left, IO::Modifiers::Shift);
+    rig.window->key_repeat(IO::Keys::Left, IO::Modifiers::Shift);
+    EXPECT_EQ(calls, 2);
+
+    rig.window->key_up(IO::Keys::Left, IO::Modifiers::Shift);
+    EXPECT_EQ(calls, 2);
+}
+
+TEST(InputEventsModifiedKeyTest, KeyReleasedMatchesTheKeyWhateverModifiersAreHeld)
+{
+    InputRig rig;
+    int calls = 0;
+    rig.start("release_v", Kriya::key_released(rig.window, IO::Keys::V, [&calls]() { ++calls; }));
+
+    rig.window->key_down(IO::Keys::V, IO::Modifiers::Ctrl);
+    rig.window->key_up(IO::Keys::V);
+
+    EXPECT_EQ(calls, 1);
+}
+
+TEST(InputEventsModifiedKeyTest, KeyHeldWithModifiersStopsFiringOnceAModifierIsLifted)
+{
+    InputRig rig;
+    int calls = 0;
+    rig.start("extend", Kriya::key_held(rig.window, IO::Keys::Left | IO::Modifiers::Shift, [&calls]() { ++calls; }));
+
+    rig.window->key_down(IO::Keys::Left, IO::Modifiers::Shift);
+    rig.window->key_repeat(IO::Keys::Left, IO::Modifiers::Shift);
+    EXPECT_EQ(calls, 2);
+
+    rig.window->key_repeat(IO::Keys::Left);
+    EXPECT_EQ(calls, 2);
+
+    rig.window->key_repeat(IO::Keys::Left, IO::Modifiers::Shift);
+    EXPECT_EQ(calls, 3);
+}
+
+TEST(InputEventsModifiedKeyTest, ChordsOnTheSameKeyFireIndependently)
+{
+    InputRig rig;
+    int plain_paste = 0;
+    int special_paste = 0;
+    rig.start("paste", Kriya::key_pressed(rig.window, IO::Keys::V | IO::Modifiers::Ctrl, [&]() { ++plain_paste; }));
+    rig.start("special", Kriya::key_pressed(rig.window, IO::Keys::V | IO::Modifiers::Ctrl | IO::Modifiers::Shift, [&]() { ++special_paste; }));
+
+    rig.window->key_down(IO::Keys::V, IO::Modifiers::Ctrl);
+    EXPECT_EQ(plain_paste, 1);
+    EXPECT_EQ(special_paste, 0);
+
+    rig.window->key_down(IO::Keys::V, IO::Modifiers::Ctrl | IO::Modifiers::Shift);
+    EXPECT_EQ(plain_paste, 1);
+    EXPECT_EQ(special_paste, 1);
+}
+
+TEST(InputEventsModifiedKeyTest, KeyPressedWithModifiersIgnoresRepeatsAndReleases)
+{
+    InputRig rig;
+    int calls = 0;
+    rig.start("paste", Kriya::key_pressed(rig.window, IO::Keys::V | IO::Modifiers::Ctrl, [&calls]() { ++calls; }));
+
+    rig.window->key_down(IO::Keys::V, IO::Modifiers::Ctrl);
+    rig.window->key_repeat(IO::Keys::V, IO::Modifiers::Ctrl);
+    rig.window->key_up(IO::Keys::V, IO::Modifiers::Ctrl);
+
+    EXPECT_EQ(calls, 1);
+}
+
 TEST(InputEventsKeyTest, KeyPressedFiresOnlyForItsKeyOnPress)
 {
     InputRig rig;

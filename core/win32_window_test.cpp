@@ -436,22 +436,17 @@ namespace {
     // Modifiers
     // ------------------------------------------------------------------
 
-    constexpr int32_t k_held_modifier_bits = static_cast<int32_t>(
-        IO::Modifiers::Shift | IO::Modifiers::Ctrl | IO::Modifiers::Alt | IO::Modifiers::Super);
+    constexpr IO::Modifiers k_held_modifier_bits
+        = IO::Modifiers::Shift | IO::Modifiers::Ctrl | IO::Modifiers::Alt | IO::Modifiers::Super;
 
-    int32_t held_modifiers(const WindowEvent& event)
+    IO::Modifiers held_modifiers(const WindowEvent& event)
     {
         return data_of<WindowEvent::KeyData>(event).mods & k_held_modifier_bits;
     }
 
-    int32_t held_modifiers(int32_t mods)
+    IO::Modifiers held_modifiers(IO::Modifiers mods)
     {
         return mods & k_held_modifier_bits;
-    }
-
-    constexpr int32_t bits(IO::Modifiers flag)
-    {
-        return static_cast<int32_t>(flag);
     }
 
     struct ModifierKeyCase {
@@ -477,8 +472,8 @@ namespace {
         ASSERT_EQ(pressed.size(), 1U);
         ASSERT_EQ(released.size(), 1U);
         EXPECT_EQ(data_of<WindowEvent::KeyData>(pressed.front()).key, static_cast<int16_t>(param.key));
-        EXPECT_EQ(held_modifiers(pressed.front()), bits(param.flag));
-        EXPECT_EQ(held_modifiers(released.front()), 0);
+        EXPECT_EQ(held_modifiers(pressed.front()), param.flag);
+        EXPECT_EQ(held_modifiers(released.front()), IO::Modifiers::None);
     }
 
     INSTANTIATE_TEST_SUITE_P(
@@ -511,10 +506,10 @@ namespace {
         const auto released = harness.events_of(WindowEventType::KEY_RELEASED);
         ASSERT_EQ(pressed.size(), 3U);
         ASSERT_EQ(released.size(), 3U);
-        EXPECT_EQ(held_modifiers(pressed[2]), bits(IO::Modifiers::Shift));
-        EXPECT_EQ(held_modifiers(released[0]), bits(IO::Modifiers::Shift));
-        EXPECT_EQ(held_modifiers(released[1]), 0);
-        EXPECT_EQ(held_modifiers(released[2]), 0);
+        EXPECT_EQ(held_modifiers(pressed[2]), IO::Modifiers::Shift);
+        EXPECT_EQ(held_modifiers(released[0]), IO::Modifiers::Shift);
+        EXPECT_EQ(held_modifiers(released[1]), IO::Modifiers::None);
+        EXPECT_EQ(held_modifiers(released[2]), IO::Modifiers::None);
     }
 
     TEST(Win32WindowTest, KeyEventsCarryHeldModifiers)
@@ -527,14 +522,14 @@ namespace {
         harness.send(WM_KEYUP, 'A', key_lparam(k_scancode_a));
         harness.poll();
 
-        const auto expected = bits(IO::Modifiers::Ctrl) | bits(IO::Modifiers::Shift);
+        const auto expected = IO::Modifiers::Ctrl | IO::Modifiers::Shift;
         const auto pressed = harness.events_of(WindowEventType::KEY_PRESSED);
         ASSERT_EQ(pressed.size(), 3U);
         EXPECT_EQ(held_modifiers(pressed[2]), expected);
-        EXPECT_TRUE(IO::has_modifiers(
+        EXPECT_TRUE(has_flag(
             data_of<WindowEvent::KeyData>(pressed[2]).mods,
             IO::Modifiers::Ctrl | IO::Modifiers::Shift));
-        EXPECT_FALSE(IO::has_modifiers(
+        EXPECT_FALSE(has_flag(
             data_of<WindowEvent::KeyData>(pressed[2]).mods, IO::Modifiers::Alt));
 
         const auto released = harness.events_of(WindowEventType::KEY_RELEASED);
@@ -557,9 +552,9 @@ namespace {
         const auto released = harness.events_of(WindowEventType::MOUSE_BUTTON_RELEASED);
         ASSERT_EQ(pressed.size(), 2U);
         ASSERT_EQ(released.size(), 1U);
-        EXPECT_EQ(held_modifiers(data_of<WindowEvent::MouseButtonData>(pressed[0]).mods), bits(IO::Modifiers::Alt));
-        EXPECT_EQ(held_modifiers(data_of<WindowEvent::MouseButtonData>(released[0]).mods), bits(IO::Modifiers::Alt));
-        EXPECT_EQ(held_modifiers(data_of<WindowEvent::MouseButtonData>(pressed[1]).mods), 0);
+        EXPECT_EQ(held_modifiers(data_of<WindowEvent::MouseButtonData>(pressed[0]).mods), IO::Modifiers::Alt);
+        EXPECT_EQ(held_modifiers(data_of<WindowEvent::MouseButtonData>(released[0]).mods), IO::Modifiers::Alt);
+        EXPECT_EQ(held_modifiers(data_of<WindowEvent::MouseButtonData>(pressed[1]).mods), IO::Modifiers::None);
     }
 
     TEST(Win32WindowTest, FocusLossReleasesHeldKeysAndModifiers)
@@ -580,7 +575,7 @@ namespace {
         const auto released = harness.events_of(WindowEventType::KEY_RELEASED);
         ASSERT_EQ(released.size(), 2U);
         for (const auto& event : released)
-            EXPECT_EQ(held_modifiers(event), 0);
+            EXPECT_EQ(held_modifiers(event), IO::Modifiers::None);
         EXPECT_FALSE(source.is_key_pressed(IO::Keys::A));
         EXPECT_FALSE(source.is_key_pressed(IO::Keys::LShift));
 
@@ -589,7 +584,7 @@ namespace {
         harness.poll();
         const auto pressed = harness.events_of(WindowEventType::KEY_PRESSED);
         ASSERT_EQ(pressed.size(), 3U);
-        EXPECT_EQ(held_modifiers(pressed.back()), 0);
+        EXPECT_EQ(held_modifiers(pressed.back()), IO::Modifiers::None);
     }
 
     TEST(Win32WindowTest, HeldKeyRepeatCarriesCurrentModifiers)
@@ -616,7 +611,7 @@ namespace {
             return !repeats_of_a().empty();
         }, 3s));
         for (const auto& event : repeats_of_a())
-            EXPECT_EQ(held_modifiers(event), bits(IO::Modifiers::Ctrl));
+            EXPECT_EQ(held_modifiers(event), IO::Modifiers::Ctrl);
     }
 
     // ------------------------------------------------------------------

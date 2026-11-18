@@ -3,6 +3,7 @@
 
 #include "../support/frame_scheduler.hpp"
 #include "../support/scoped_working_dir.hpp"
+#include "../support/scripted_window.hpp"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/IO/GlmSerializer.hpp"
@@ -274,6 +275,30 @@ namespace {
         const auto& factory_record = schema->entities[5].wiring;
         EXPECT_EQ(factory_record.kind, WiringKind::Factory);
         EXPECT_EQ(factory_record.factory_name, "make");
+    }
+
+    TEST_F(NexusStateTest, KeyWiringRecordsItsKeyAndModifiers)
+    {
+        auto window = std::make_shared<ScriptedWindow>(400U, 300U);
+
+        source.wire(std::make_shared<Emitter>()).on(window, IO::Keys::Space).finalise();
+        source.wire(std::make_shared<Emitter>()).on(window, IO::Keys::S | IO::Modifiers::Ctrl).finalise();
+
+        ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
+        const auto schema = read_schema(snap_base);
+
+        ASSERT_TRUE(schema.has_value());
+        ASSERT_EQ(schema->entities.size(), 2U);
+
+        const auto& plain = schema->entities[0].wiring;
+        EXPECT_EQ(plain.kind, WiringKind::Key);
+        EXPECT_EQ(plain.key, IO::Keys::Space);
+        EXPECT_FALSE(plain.key_modifiers.has_value());
+
+        const auto& chord = schema->entities[1].wiring;
+        EXPECT_EQ(chord.kind, WiringKind::Key);
+        EXPECT_EQ(chord.key, IO::Keys::S);
+        EXPECT_EQ(chord.key_modifiers, IO::Modifiers::Ctrl);
     }
 
     TEST_F(NexusStateTest, LocusAndPresenceRecordTheirSubkinds)

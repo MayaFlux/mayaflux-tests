@@ -37,16 +37,16 @@ public:
             (1.0 - static_cast<double>(ndc.y)) * 0.5 * m_state.current_height);
     }
 
-    void press(IO::MouseButtons button)
+    void press(IO::MouseButtons button, IO::Modifiers mods = IO::Modifiers::None)
     {
         signal(Core::WindowEventType::MOUSE_BUTTON_PRESSED,
-            Core::WindowEvent::MouseButtonData { static_cast<int8_t>(button), 0 });
+            Core::WindowEvent::MouseButtonData { static_cast<int8_t>(button), mods });
     }
 
-    void release(IO::MouseButtons button)
+    void release(IO::MouseButtons button, IO::Modifiers mods = IO::Modifiers::None)
     {
         signal(Core::WindowEventType::MOUSE_BUTTON_RELEASED,
-            Core::WindowEvent::MouseButtonData { static_cast<int8_t>(button), 0 });
+            Core::WindowEvent::MouseButtonData { static_cast<int8_t>(button), mods });
     }
 
     void scroll(double dx, double dy)
@@ -54,22 +54,22 @@ public:
         signal(Core::WindowEventType::MOUSE_SCROLLED, Core::WindowEvent::ScrollData { dx, dy });
     }
 
-    void key_down(IO::Keys key)
+    void key_down(IO::Keys key, IO::Modifiers mods = IO::Modifiers::None)
     {
         signal(Core::WindowEventType::KEY_PRESSED,
-            Core::WindowEvent::KeyData { static_cast<int16_t>(key), 0, 0 });
+            Core::WindowEvent::KeyData { static_cast<int16_t>(key), 0, mods });
     }
 
-    void key_up(IO::Keys key)
+    void key_up(IO::Keys key, IO::Modifiers mods = IO::Modifiers::None)
     {
         signal(Core::WindowEventType::KEY_RELEASED,
-            Core::WindowEvent::KeyData { static_cast<int16_t>(key), 0, 0 });
+            Core::WindowEvent::KeyData { static_cast<int16_t>(key), 0, mods });
     }
 
-    void key_repeat(IO::Keys key)
+    void key_repeat(IO::Keys key, IO::Modifiers mods = IO::Modifiers::None)
     {
         signal(Core::WindowEventType::KEY_REPEAT,
-            Core::WindowEvent::KeyData { static_cast<int16_t>(key), 0, 0 });
+            Core::WindowEvent::KeyData { static_cast<int16_t>(key), 0, mods });
     }
 
     void type(uint32_t codepoint)
