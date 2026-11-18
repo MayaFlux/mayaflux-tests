@@ -251,7 +251,7 @@ namespace {
         }
 
         static EndpointInfo listener(uint64_t id, const std::string& path,
-            Core::FramingPolicy framing = Core::FramingPolicy::AUTO)
+            Core::FramingPolicy framing = Core::FramingPolicy::AUTO, size_t max_message_size = 0)
         {
             EndpointInfo info;
             info.id = id;
@@ -259,11 +259,12 @@ namespace {
             info.role = EndpointRole::BIDIRECTIONAL;
             info.local_path = path;
             info.framing = framing;
+            info.max_message_size = max_message_size;
             return info;
         }
 
         static EndpointInfo outbound(uint64_t id, const std::string& path,
-            Core::FramingPolicy framing = Core::FramingPolicy::AUTO)
+            Core::FramingPolicy framing = Core::FramingPolicy::AUTO, size_t max_message_size = 0)
         {
             EndpointInfo info;
             info.id = id;
@@ -271,6 +272,7 @@ namespace {
             info.role = EndpointRole::BIDIRECTIONAL;
             info.remote_path = path;
             info.framing = framing;
+            info.max_message_size = max_message_size;
             return info;
         }
 
@@ -850,6 +852,74 @@ namespace {
         ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 1; }));
         EXPECT_EQ(rig.received.front().bytes, data);
         EXPECT_EQ(EndpointInfo {}.framing, Core::FramingPolicy::AUTO);
+    }
+
+    // ------------------------------------------------------------------
+    // Message size limit
+    // ------------------------------------------------------------------
+
+    TEST(UDSBackendTest, LineOverTheConfiguredLimitIsDroppedAndTheNextOneArrives)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE, 8)), 1U);
+        RawPeer peer(rig, directory.socket());
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        peer.write({ 't', 'o', 'o', ' ', 'l', 'o', 'n', 'g', ' ', 'b', 'y', ' ', 'f', 'a', 'r', '\n', 'o', 'k', '\n' });
+
+        ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 1; }));
+        EXPECT_EQ(rig.received.front().bytes, bytes_of({ 'o', 'k' }));
+        EXPECT_EQ(rig.backend.get_endpoint_state(accepted), EndpointState::OPEN);
+    }
+
+    TEST(UDSBackendTest, LengthOverTheConfiguredLimitClosesTheConnection)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LENGTH_PREFIX, 8)), 1U);
+        RawPeer peer(rig, directory.socket());
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        peer.write({ 0, 0, 0, 9 });
+
+        ASSERT_TRUE(rig.pump_until([&] { return rig.backend.get_endpoint_state(accepted) == EndpointState::ERROR; }));
+        EXPECT_EQ(rig.count_for(accepted), 0U);
+    }
+
+    TEST(UDSBackendTest, LengthPrefixedSendOverTheConfiguredLimitIsRefused)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket())), 1U);
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket(), Core::FramingPolicy::LENGTH_PREFIX, 4)), 2U);
+        ASSERT_TRUE(rig.pump_until([&] { return rig.backend.get_endpoint_state(2) == EndpointState::OPEN; }));
+        const std::vector<uint8_t> fits = bytes_of({ 1, 2, 3, 4 });
+        const std::vector<uint8_t> too_big = bytes_of({ 1, 2, 3, 4, 5 });
+
+        EXPECT_TRUE(rig.backend.send(2, fits.data(), fits.size()));
+        EXPECT_FALSE(rig.backend.send(2, too_big.data(), too_big.size()));
+    }
+
+    TEST(UDSBackendTest, AcceptedConnectionInheritsTheLimit)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE, 8)), 1U);
+        RawPeer peer(rig, directory.socket());
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        for (const auto& info : rig.backend.get_endpoints()) {
+            if (info.id == accepted)
+                EXPECT_EQ(info.max_message_size, 8U);
+        }
     }
 
     // ------------------------------------------------------------------
