@@ -855,6 +855,78 @@ namespace {
     }
 
     // ------------------------------------------------------------------
+    // Callbacks that call back into the backend
+    // ------------------------------------------------------------------
+
+    TEST(UDSBackendTest, HandlerMayCloseItsOwnConnection)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint64_t accepted = rig.connect_pair(directory.socket());
+        ASSERT_NE(accepted, 0U);
+        int calls = 0;
+        rig.backend.set_receive_callback(
+            [&rig, &calls](uint64_t id, const uint8_t*, size_t, std::string_view) {
+                ++calls;
+                rig.backend.close_endpoint(id);
+            });
+        const std::vector<uint8_t> data = bytes_of({ 1 });
+
+        ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
+
+        ASSERT_TRUE(rig.pump_until([&] { return rig.backend.get_endpoint_state(accepted) == EndpointState::CLOSED; }));
+        EXPECT_EQ(calls, 1);
+    }
+
+    TEST(UDSBackendTest, HandlerMayReplyOnItsOwnConnection)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint64_t accepted = rig.connect_pair(directory.socket());
+        ASSERT_NE(accepted, 0U);
+        std::vector<uint8_t> answer;
+        rig.backend.set_receive_callback(
+            [&rig, &answer, accepted](uint64_t id, const uint8_t* data, size_t size, std::string_view) {
+                if (id == accepted) {
+                    const std::vector<uint8_t> reply { 9, 8 };
+                    EXPECT_TRUE(rig.backend.send(id, reply.data(), reply.size()));
+                } else {
+                    answer.assign(data, data + size);
+                }
+            });
+        const std::vector<uint8_t> data = bytes_of({ 1 });
+
+        ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
+
+        ASSERT_TRUE(rig.pump_until([&] { return !answer.empty(); }));
+        EXPECT_EQ(answer, bytes_of({ 9, 8 }));
+    }
+
+    TEST(UDSBackendTest, HandlerMayOpenAnotherEndpoint)
+    {
+        SocketDirectory directory;
+        UdsRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint64_t accepted = rig.connect_pair(directory.socket());
+        ASSERT_NE(accepted, 0U);
+        const std::string second = (std::filesystem::path(directory.socket()).parent_path() / "second.sock").string();
+        uint64_t opened = 0;
+        rig.backend.set_receive_callback(
+            [&rig, &opened, second](uint64_t, const uint8_t*, size_t, std::string_view) {
+                opened = rig.backend.open_endpoint(UdsRig::listener(7, second));
+            });
+        const std::vector<uint8_t> data = bytes_of({ 1 });
+
+        ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
+
+        ASSERT_TRUE(rig.pump_until([&] { return opened != 0; }));
+        EXPECT_EQ(opened, 7U);
+        EXPECT_EQ(rig.backend.get_endpoint_state(7), EndpointState::OPEN);
+    }
+
+    // ------------------------------------------------------------------
     // Message size limit
     // ------------------------------------------------------------------
 

@@ -2,7 +2,9 @@
 #include "../support/test_metadata.hpp"
 
 #include <chrono>
+#include <future>
 #include <string_view>
+#include <thread>
 
 #include <asio/ip/tcp.hpp>
 #include <asio/ip/udp.hpp>
@@ -884,6 +886,103 @@ namespace {
         EXPECT_EQ(counters->closed, (std::vector<uint64_t> { first }));
         EXPECT_EQ(rig.subsystem.get_endpoint_state(listener), EndpointState::OPEN);
         EXPECT_EQ(seen_ids, (std::vector<uint64_t> { second }));
+    }
+
+    // ------------------------------------------------------------------
+    // Callbacks that call back into the subsystem
+    // ------------------------------------------------------------------
+
+    template <typename Body>
+    bool finishes_within(Body body, std::chrono::milliseconds limit)
+    {
+        auto done = std::make_shared<std::promise<void>>();
+        auto finished = done->get_future();
+        std::thread worker([body = std::move(body), done]() mutable {
+            body();
+            done->set_value();
+        });
+
+        if (finished.wait_for(limit) == std::future_status::ready) {
+            worker.join();
+            return true;
+        }
+        worker.detach();
+        return false;
+    }
+
+    TEST(NetworkSubsystemTest, HandlerMayCloseItsOwnConnection)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto counters = std::make_shared<NetCounters>();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, counters);
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        const uint64_t child = backend->accept(listener);
+        int calls = 0;
+        rig.subsystem.set_endpoint_receive_callback(listener,
+            [&](uint64_t id, const uint8_t*, size_t, std::string_view) {
+                ++calls;
+                rig.subsystem.close_endpoint(id);
+            });
+
+        ASSERT_TRUE(finishes_within([&] { backend->emit(child, { 1 }, "peer"); }, 5s));
+
+        EXPECT_EQ(calls, 1);
+        EXPECT_EQ(counters->closed, (std::vector<uint64_t> { child }));
+        EXPECT_EQ(rig.subsystem.get_endpoint_state(child), EndpointState::CLOSED);
+    }
+
+    TEST(NetworkSubsystemTest, HandlerMayReplaceItsOwnCallback)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        const uint64_t child = backend->accept(listener);
+        int first = 0;
+        int second = 0;
+        rig.subsystem.set_endpoint_receive_callback(listener,
+            [&](uint64_t, const uint8_t*, size_t, std::string_view) {
+                ++first;
+                rig.subsystem.set_endpoint_receive_callback(listener,
+                    [&](uint64_t, const uint8_t*, size_t, std::string_view) { ++second; });
+            });
+
+        ASSERT_TRUE(finishes_within([&] {
+            backend->emit(child, { 1 }, "peer");
+            backend->emit(child, { 2 }, "peer");
+        },
+            5s));
+
+        EXPECT_EQ(first, 1);
+        EXPECT_EQ(second, 1);
+    }
+
+    TEST(NetworkSubsystemTest, HandlerMayOpenAnotherEndpoint)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto udp = std::make_shared<NetCounters>();
+        auto* tcp_backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
+        ASSERT_NE(rig.add_fake(NetworkTransport::UDP, udp), nullptr);
+        ASSERT_NE(tcp_backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        const uint64_t child = tcp_backend->accept(listener);
+        uint64_t opened = 0;
+        rig.subsystem.set_endpoint_receive_callback(listener,
+            [&](uint64_t, const uint8_t*, size_t, std::string_view) {
+                opened = rig.subsystem.open_endpoint(info_for(NetworkTransport::UDP));
+                rig.subsystem.set_endpoint_receive_callback(opened,
+                    [](uint64_t, const uint8_t*, size_t, std::string_view) { });
+            });
+
+        ASSERT_TRUE(finishes_within([&] { tcp_backend->emit(child, { 1 }, "peer"); }, 5s));
+
+        EXPECT_NE(opened, 0U);
+        EXPECT_EQ(udp->opened.size(), 1U);
+        EXPECT_EQ(rig.subsystem.get_endpoint_state(opened), EndpointState::OPEN);
     }
 
     // ------------------------------------------------------------------
