@@ -1019,6 +1019,103 @@ namespace {
         EXPECT_FALSE(Core::is_valid_cocoa_key(0xFFFF));
     }
 
+    // ------------------------------------------------------------------
+    // Clipboard
+    // ------------------------------------------------------------------
+
+    class PasteboardRestore {
+    public:
+        explicit PasteboardRestore(WindowHarness& harness)
+            : m_harness(harness)
+        {
+            m_harness.window().request_clipboard_text([this](std::optional<std::string> text) {
+                m_saved = std::move(text);
+            });
+            m_harness.poll();
+        }
+
+        PasteboardRestore(const PasteboardRestore&) = delete;
+        PasteboardRestore& operator=(const PasteboardRestore&) = delete;
+
+        ~PasteboardRestore()
+        {
+            if (m_saved)
+                m_harness.window().set_clipboard_text(*m_saved);
+        }
+
+    private:
+        WindowHarness& m_harness;
+        std::optional<std::string> m_saved;
+    };
+
+    TEST(CocoaWindowTest, ACopyIsReadBackFromThePasteboard)
+    {
+        REQUIRE_DISPLAY();
+        WindowHarness harness;
+        PasteboardRestore restore(harness);
+        std::optional<std::string> got;
+
+        harness.window().set_clipboard_text("h\xC3\xA9llo");
+        harness.window().request_clipboard_text([&](std::optional<std::string> text) { got = std::move(text); });
+        harness.poll();
+
+        ASSERT_TRUE(got.has_value());
+        EXPECT_EQ(*got, "h\xC3\xA9llo");
+    }
+
+    TEST(CocoaWindowTest, NewlinesSurviveTheRoundTrip)
+    {
+        REQUIRE_DISPLAY();
+        WindowHarness harness;
+        PasteboardRestore restore(harness);
+        std::optional<std::string> got;
+
+        harness.window().set_clipboard_text("one\ntwo\n");
+        harness.window().request_clipboard_text([&](std::optional<std::string> text) { got = std::move(text); });
+        harness.poll();
+
+        ASSERT_TRUE(got.has_value());
+        EXPECT_EQ(*got, "one\ntwo\n");
+    }
+
+    TEST(CocoaWindowTest, AClipboardRequestIsDeliveredFromPollOnce)
+    {
+        REQUIRE_DISPLAY();
+        WindowHarness harness;
+        PasteboardRestore restore(harness);
+        int calls = 0;
+
+        harness.window().request_clipboard_text([&](std::optional<std::string>) { ++calls; });
+        EXPECT_EQ(calls, 0);
+
+        harness.poll();
+        harness.poll();
+        EXPECT_EQ(calls, 1);
+    }
+
+    TEST(CocoaWindowTest, ARequestStillPendingWhenTheWindowIsDestroyedIsDeliveredOnce)
+    {
+        REQUIRE_DISPLAY();
+        WindowHarness harness;
+        PasteboardRestore restore(harness);
+        int calls = 0;
+
+        harness.window().request_clipboard_text([&](std::optional<std::string>) { ++calls; });
+        harness.window().destroy();
+        harness.poll();
+
+        EXPECT_EQ(calls, 1);
+    }
+
+    TEST(CocoaWindowTest, AnEmptyClipboardCallbackIsIgnored)
+    {
+        REQUIRE_DISPLAY();
+        WindowHarness harness;
+
+        EXPECT_NO_THROW(harness.window().request_clipboard_text({}));
+        EXPECT_NO_THROW(harness.poll());
+    }
+
 }
 }
 
