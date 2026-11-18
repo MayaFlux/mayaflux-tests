@@ -844,6 +844,393 @@ namespace {
         EXPECT_EQ(Core::from_win32_scancode(0x1E), IO::Keys::Unknown);
     }
 
+    // ------------------------------------------------------------------
+    // Cursor modes
+    // ------------------------------------------------------------------
+
+    class ClipRestore {
+    public:
+        ClipRestore() { GetClipCursor(&m_baseline); }
+        ClipRestore(const ClipRestore&) = delete;
+        ClipRestore& operator=(const ClipRestore&) = delete;
+        ~ClipRestore() { ClipCursor(nullptr); }
+
+        [[nodiscard]] bool is_baseline() const
+        {
+            RECT now {};
+            GetClipCursor(&now);
+            return EqualRect(&now, &m_baseline) != FALSE;
+        }
+
+    private:
+        RECT m_baseline {};
+    };
+
+    RECT client_in_screen(HWND hwnd)
+    {
+        RECT client {};
+        GetClientRect(hwnd, &client);
+        POINT top_left { client.left, client.top };
+        POINT bottom_right { client.right, client.bottom };
+        ClientToScreen(hwnd, &top_left);
+        ClientToScreen(hwnd, &bottom_right);
+        return { top_left.x, top_left.y, bottom_right.x, bottom_right.y };
+    }
+
+    bool clip_matches_client(HWND hwnd)
+    {
+        RECT clip {};
+        GetClipCursor(&clip);
+        const RECT client = client_in_screen(hwnd);
+        return EqualRect(&clip, &client) != FALSE;
+    }
+
+    HWND registered_mouse_target()
+    {
+        UINT count = 0;
+        GetRegisteredRawInputDevices(nullptr, &count, sizeof(RAWINPUTDEVICE));
+        std::vector<RAWINPUTDEVICE> devices(count);
+        if (count == 0 || GetRegisteredRawInputDevices(devices.data(), &count, sizeof(RAWINPUTDEVICE)) == static_cast<UINT>(-1))
+            return nullptr;
+        for (const auto& device : devices) {
+            if (device.usUsagePage == 0x01 && device.usUsage == 0x02)
+                return device.hwndTarget;
+        }
+        return nullptr;
+    }
+
+    Core::InputConfig cursor_config(Core::CursorMode mode, bool raw = false)
+    {
+        Core::InputConfig input;
+        input.cursor_mode = mode;
+        input.raw_mouse_motion = raw;
+        return input;
+    }
+
+    TEST(Win32RawMouseTest, RelativeRecordsReportTheirDeltas)
+    {
+        RAWMOUSE mouse {};
+        mouse.usFlags = MOUSE_MOVE_RELATIVE;
+        mouse.lLastX = 5;
+        mouse.lLastY = -3;
+        Core::RawMouseState state;
+
+        const auto delta = Core::raw_mouse_delta(mouse, state, SIZE { 1920, 1080 }, SIZE { 3840, 1080 });
+
+        ASSERT_TRUE(delta.has_value());
+        EXPECT_DOUBLE_EQ(delta->first, 5.0);
+        EXPECT_DOUBLE_EQ(delta->second, -3.0);
+    }
+
+    TEST(Win32RawMouseTest, ARecordWithoutMotionReportsNothing)
+    {
+        RAWMOUSE mouse {};
+        mouse.usFlags = MOUSE_MOVE_RELATIVE;
+        Core::RawMouseState state;
+
+        EXPECT_FALSE(Core::raw_mouse_delta(mouse, state, SIZE { 1920, 1080 }, SIZE { 3840, 1080 }).has_value());
+    }
+
+    TEST(Win32RawMouseTest, AbsoluteRecordsAreDifferencedAndScaledToPixels)
+    {
+        RAWMOUSE mouse {};
+        mouse.usFlags = MOUSE_MOVE_ABSOLUTE;
+        Core::RawMouseState state;
+        const SIZE primary { 1920, 1080 };
+        const SIZE desktop { 3840, 1080 };
+
+        mouse.lLastX = 0;
+        mouse.lLastY = 0;
+        EXPECT_FALSE(Core::raw_mouse_delta(mouse, state, primary, desktop).has_value());
+
+        mouse.lLastX = 65535;
+        mouse.lLastY = 32768;
+        const auto delta = Core::raw_mouse_delta(mouse, state, primary, desktop);
+
+        ASSERT_TRUE(delta.has_value());
+        EXPECT_NEAR(delta->first, 1920.0, 0.01);
+        EXPECT_NEAR(delta->second, 540.0, 0.1);
+    }
+
+    TEST(Win32RawMouseTest, TheVirtualDesktopFlagScalesByTheWholeDesktop)
+    {
+        RAWMOUSE mouse {};
+        mouse.usFlags = MOUSE_MOVE_ABSOLUTE | MOUSE_VIRTUAL_DESKTOP;
+        Core::RawMouseState state;
+        const SIZE primary { 1920, 1080 };
+        const SIZE desktop { 3840, 1080 };
+
+        (void)Core::raw_mouse_delta(mouse, state, primary, desktop);
+        mouse.lLastX = 65535;
+        const auto delta = Core::raw_mouse_delta(mouse, state, primary, desktop);
+
+        ASSERT_TRUE(delta.has_value());
+        EXPECT_NEAR(delta->first, 3840.0, 0.01);
+    }
+
+    TEST(Win32WindowTest, AFocusedWindowInALockedModeConfinesTheCursorToItsClientArea)
+    {
+        ClipRestore restore;
+        WindowHarness harness;
+
+        harness.window().set_input_config(cursor_config(Core::CursorMode::DISABLED));
+        harness.send(WM_SETFOCUS);
+        ASSERT_TRUE(eventually([&] { return clip_matches_client(harness.hwnd()); }));
+
+        harness.send(WM_KILLFOCUS);
+        EXPECT_TRUE(eventually([&] { return restore.is_baseline(); }));
+
+        harness.send(WM_SETFOCUS);
+        ASSERT_TRUE(eventually([&] { return clip_matches_client(harness.hwnd()); }));
+
+        harness.window().set_input_config(cursor_config(Core::CursorMode::NORMAL));
+        EXPECT_TRUE(eventually([&] { return restore.is_baseline(); }));
+    }
+
+    TEST(Win32WindowTest, AnUnfocusedWindowDoesNotConfineTheCursor)
+    {
+        ClipRestore restore;
+        WindowHarness harness;
+
+        harness.window().set_input_config(cursor_config(Core::CursorMode::CAPTURED));
+        harness.send(WM_KILLFOCUS);
+        std::this_thread::sleep_for(100ms);
+
+        EXPECT_TRUE(restore.is_baseline());
+    }
+
+    TEST(Win32WindowTest, ADestroyedWindowReleasesItsLock)
+    {
+        ClipRestore restore;
+        {
+            WindowHarness harness;
+            harness.window().set_input_config(cursor_config(Core::CursorMode::DISABLED));
+            harness.send(WM_SETFOCUS);
+            ASSERT_TRUE(eventually([&] { return clip_matches_client(harness.hwnd()); }));
+
+            harness.window().destroy();
+        }
+
+        EXPECT_TRUE(restore.is_baseline());
+    }
+
+    TEST(Win32WindowTest, AHiddenModeHandlesTheClientCursorRequest)
+    {
+        WindowHarness harness;
+        const auto set_cursor = [&] {
+            return harness.send(WM_SETCURSOR, reinterpret_cast<WPARAM>(harness.hwnd()), MAKELPARAM(HTCLIENT, WM_MOUSEMOVE));
+        };
+
+        harness.window().set_input_config(cursor_config(Core::CursorMode::HIDDEN));
+
+        EXPECT_TRUE(eventually([&] { return set_cursor() == TRUE; }));
+    }
+
+    TEST(Win32WindowTest, LockedMotionReportsAVirtualPositionFromTheClientCentre)
+    {
+        ClipRestore restore;
+        WindowHarness harness;
+        harness.window().set_input_config(cursor_config(Core::CursorMode::DISABLED));
+        harness.send(WM_SETFOCUS);
+        ASSERT_TRUE(eventually([&] { return clip_matches_client(harness.hwnd()); }));
+
+        RECT client {};
+        GetClientRect(harness.hwnd(), &client);
+        const int cx = client.right / 2;
+        const int cy = client.bottom / 2;
+        harness.poll();
+        harness.clear_events();
+
+        harness.send(WM_MOUSEMOVE, 0, MAKELPARAM(cx + 5, cy + 3));
+        harness.poll();
+        auto moves = harness.events_of(WindowEventType::MOUSE_MOTION);
+        ASSERT_FALSE(moves.empty());
+        EXPECT_DOUBLE_EQ(data_of<WindowEvent::MousePosData>(moves.back()).x, cx + 5.0);
+        EXPECT_DOUBLE_EQ(data_of<WindowEvent::MousePosData>(moves.back()).y, cy + 3.0);
+
+        const size_t before = moves.size();
+        harness.send(WM_MOUSEMOVE, 0, MAKELPARAM(cx, cy));
+        harness.send(WM_MOUSEMOVE, 0, MAKELPARAM(cx + 5, cy + 3));
+        harness.poll();
+        moves = harness.events_of(WindowEventType::MOUSE_MOTION);
+        ASSERT_EQ(moves.size(), before + 1);
+        EXPECT_DOUBLE_EQ(data_of<WindowEvent::MousePosData>(moves.back()).x, cx + 10.0);
+        EXPECT_DOUBLE_EQ(data_of<WindowEvent::MousePosData>(moves.back()).y, cy + 6.0);
+    }
+
+    TEST(Win32WindowTest, ACapturedWindowRegistersRawMouseInputOnlyWhileFocused)
+    {
+        ClipRestore restore;
+        WindowHarness harness;
+        const HWND before = registered_mouse_target();
+
+        harness.window().set_input_config(cursor_config(Core::CursorMode::CAPTURED));
+        harness.send(WM_SETFOCUS);
+        ASSERT_TRUE(eventually([&] { return registered_mouse_target() == harness.hwnd(); }));
+
+        harness.send(WM_KILLFOCUS);
+        EXPECT_TRUE(eventually([&] { return registered_mouse_target() == before; }));
+    }
+
+    // ------------------------------------------------------------------
+    // Clipboard
+    // ------------------------------------------------------------------
+
+    std::optional<std::string> read_clipboard(WindowHarness& harness)
+    {
+        int calls = 0;
+        std::optional<std::string> got;
+        harness.window().request_clipboard_text([&](std::optional<std::string> text) {
+            got = std::move(text);
+            ++calls;
+        });
+        EXPECT_TRUE(eventually([&] {
+            harness.poll();
+            return calls > 0;
+        }));
+        EXPECT_EQ(calls, 1);
+        return got;
+    }
+
+    std::optional<std::wstring> raw_clipboard_text()
+    {
+        for (int attempt = 0; attempt < 50; ++attempt) {
+            if (OpenClipboard(nullptr)) {
+                std::optional<std::wstring> text;
+                if (HANDLE handle = GetClipboardData(CF_UNICODETEXT)) {
+                    if (const auto* wide = static_cast<const wchar_t*>(GlobalLock(handle))) {
+                        text = std::wstring(wide);
+                        GlobalUnlock(handle);
+                    }
+                }
+                CloseClipboard();
+                return text;
+            }
+            std::this_thread::sleep_for(10ms);
+        }
+        return std::nullopt;
+    }
+
+    class ClipboardRestore {
+    public:
+        explicit ClipboardRestore(WindowHarness& harness)
+            : m_harness(harness)
+            , m_saved(read_clipboard(harness))
+        {
+        }
+
+        ClipboardRestore(const ClipboardRestore&) = delete;
+        ClipboardRestore& operator=(const ClipboardRestore&) = delete;
+
+        ~ClipboardRestore()
+        {
+            if (m_saved) {
+                m_harness.window().set_clipboard_text(*m_saved);
+                (void)read_clipboard(m_harness);
+            }
+        }
+
+    private:
+        WindowHarness& m_harness;
+        std::optional<std::string> m_saved;
+    };
+
+    TEST(Win32WindowTest, ACopyIsReadBackFromTheClipboard)
+    {
+        WindowHarness harness;
+        ClipboardRestore restore(harness);
+
+        harness.window().set_clipboard_text("h\xC3\xA9llo \xF0\x9F\x8E\xB5");
+        const auto got = read_clipboard(harness);
+
+        ASSERT_TRUE(got.has_value());
+        EXPECT_EQ(*got, "h\xC3\xA9llo \xF0\x9F\x8E\xB5");
+    }
+
+    TEST(Win32WindowTest, NewlinesAreStoredAsCarriageReturnLineFeedAndReadBackAsLineFeed)
+    {
+        WindowHarness harness;
+        ClipboardRestore restore(harness);
+
+        harness.window().set_clipboard_text("a\nb");
+        const auto got = read_clipboard(harness);
+
+        ASSERT_TRUE(got.has_value());
+        EXPECT_EQ(*got, "a\nb");
+        const auto stored = raw_clipboard_text();
+        ASSERT_TRUE(stored.has_value());
+        EXPECT_EQ(*stored, L"a\r\nb");
+    }
+
+    TEST(Win32WindowTest, TextThatIsNotValidUtf8LeavesTheClipboardAlone)
+    {
+        WindowHarness harness;
+        ClipboardRestore restore(harness);
+
+        harness.window().set_clipboard_text("keep");
+        harness.window().set_clipboard_text("\xFF\xFE");
+        const auto got = read_clipboard(harness);
+
+        ASSERT_TRUE(got.has_value());
+        EXPECT_EQ(*got, "keep");
+    }
+
+    TEST(Win32WindowTest, AClipboardRequestIsDeliveredFromPollOnce)
+    {
+        WindowHarness harness;
+        ClipboardRestore restore(harness);
+        int calls = 0;
+
+        harness.window().request_clipboard_text([&](std::optional<std::string>) { ++calls; });
+        EXPECT_EQ(calls, 0);
+
+        EXPECT_TRUE(eventually([&] {
+            harness.poll();
+            return calls > 0;
+        }));
+        harness.poll();
+        harness.poll();
+        EXPECT_EQ(calls, 1);
+    }
+
+    TEST(Win32WindowTest, ARequestStillPendingWhenTheWindowIsDestroyedIsDeliveredOnce)
+    {
+        WindowHarness harness;
+        ClipboardRestore restore(harness);
+        int calls = 0;
+
+        harness.window().request_clipboard_text([&](std::optional<std::string>) { ++calls; });
+        harness.window().destroy();
+        harness.poll();
+
+        EXPECT_EQ(calls, 1);
+    }
+
+    TEST(Win32WindowTest, ARequestAfterDestroyDeliversNothingOnce)
+    {
+        WindowHarness harness;
+        harness.window().destroy();
+        int calls = 0;
+        std::optional<std::string> got = "unset";
+
+        harness.window().request_clipboard_text([&](std::optional<std::string> text) {
+            got = std::move(text);
+            ++calls;
+        });
+        harness.poll();
+
+        EXPECT_EQ(calls, 1);
+        EXPECT_FALSE(got.has_value());
+    }
+
+    TEST(Win32WindowTest, AnEmptyClipboardCallbackIsIgnored)
+    {
+        WindowHarness harness;
+
+        EXPECT_NO_THROW(harness.window().request_clipboard_text({}));
+        EXPECT_NO_THROW(harness.poll());
+    }
+
 }
 }
 
