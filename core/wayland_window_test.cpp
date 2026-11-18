@@ -466,6 +466,111 @@ namespace {
     }
 
     // ------------------------------------------------------------------
+    // Clipboard
+    // ------------------------------------------------------------------
+
+    TEST(WaylandWindowTest, ACopyIsReadBackFromTheSameWindow)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+        pump(*window);
+        int calls = 0;
+        std::optional<std::string> got;
+
+        window->set_clipboard_text("h\xC3\xA9llo");
+        window->request_clipboard_text([&](std::optional<std::string> text) {
+            got = std::move(text);
+            ++calls;
+        });
+        pump(*window);
+
+        EXPECT_EQ(calls, 1);
+        ASSERT_TRUE(got.has_value());
+        EXPECT_EQ(*got, "h\xC3\xA9llo");
+    }
+
+    TEST(WaylandWindowTest, ASecondCopyReplacesTheFirst)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+        pump(*window);
+        std::optional<std::string> got;
+
+        window->set_clipboard_text("one");
+        window->set_clipboard_text("two");
+        window->request_clipboard_text([&](std::optional<std::string> text) { got = std::move(text); });
+        pump(*window);
+
+        ASSERT_TRUE(got.has_value());
+        EXPECT_EQ(*got, "two");
+    }
+
+    TEST(WaylandWindowTest, ARequestStillPendingWhenTheWindowIsDestroyedIsDeliveredOnce)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+        pump(*window);
+        int calls = 0;
+        std::optional<std::string> got;
+
+        window->set_clipboard_text("kept");
+        window->request_clipboard_text([&](std::optional<std::string> text) {
+            got = std::move(text);
+            ++calls;
+        });
+        window->destroy();
+        pump(*window);
+
+        EXPECT_EQ(calls, 1);
+        ASSERT_TRUE(got.has_value());
+        EXPECT_EQ(*got, "kept");
+    }
+
+    TEST(WaylandWindowTest, ARequestAfterDestroyDeliversNothingOnce)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+        pump(*window);
+        window->destroy();
+        int calls = 0;
+        std::optional<std::string> got = "unset";
+
+        window->request_clipboard_text([&](std::optional<std::string> text) {
+            got = std::move(text);
+            ++calls;
+        });
+        pump(*window);
+
+        EXPECT_EQ(calls, 1);
+        EXPECT_FALSE(got.has_value());
+    }
+
+    TEST(WaylandWindowTest, AnEmptyClipboardCallbackIsIgnored)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+
+        EXPECT_NO_THROW(window->request_clipboard_text({}));
+        EXPECT_NO_THROW(pump(*window));
+    }
+
+    TEST(WaylandWindowTest, CopyAndRequestAfterDestroyAreSafe)
+    {
+        REQUIRE_COMPOSITOR();
+
+        auto window = make_window();
+        window->destroy();
+
+        EXPECT_NO_THROW(window->set_clipboard_text("late"));
+        EXPECT_NO_THROW(pump(*window));
+    }
+
+    // ------------------------------------------------------------------
     // Key mapping
     // ------------------------------------------------------------------
 
