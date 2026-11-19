@@ -725,5 +725,79 @@ namespace {
         EXPECT_EQ(probes, 0);
     }
 
+    // ---------------------------------------------------------------------
+    // Listing
+    // ---------------------------------------------------------------------
+
+    std::vector<fs::path> listed_inside(const fs::path& root)
+    {
+        std::vector<fs::path> inside;
+        for (const auto& path : P::list_unix_sockets()) {
+            if (path.parent_path() == root)
+                inside.push_back(path);
+        }
+        return inside;
+    }
+
+    TEST(UnixSocketTest, ListingFindsTheSocketsInTheRuntimeDirectoryAndNothingElse)
+    {
+        SocketTree tree;
+        const auto first = tree.root() / "a.sock";
+        const auto second = tree.root() / "b.sock";
+        if (!make_socket_file(first) || !make_socket_file(second))
+            GTEST_SKIP() << "Unix sockets cannot be created here";
+        tree.make_file("plain.txt");
+        tree.make_directory("directory");
+
+        const std::string directory = tree.root().string();
+        MayaFlux::Test::ScopedEnv variable(runtime_variable(), directory.c_str());
+
+        EXPECT_EQ(listed_inside(tree.root()), (std::vector<fs::path> { first, second }));
+    }
+
+    TEST(UnixSocketTest, ListingNamesEachSocketOnceAndSortedByPath)
+    {
+        SocketTree tree;
+        const auto later = tree.root() / "z.sock";
+        const auto earlier = tree.root() / "m.sock";
+        if (!make_socket_file(later) || !make_socket_file(earlier))
+            GTEST_SKIP() << "Unix sockets cannot be created here";
+
+        const std::string directory = tree.root().string();
+        MayaFlux::Test::ScopedEnv variable(runtime_variable(), directory.c_str());
+
+        const auto all = P::list_unix_sockets();
+        EXPECT_TRUE(std::ranges::is_sorted(all));
+        EXPECT_EQ(std::ranges::count(all, earlier), 1);
+        EXPECT_EQ(std::ranges::count(all, later), 1);
+    }
+
+    TEST(UnixSocketTest, ListingLeavesOutASymbolicLinkToASocket)
+    {
+        SocketTree tree;
+        const auto target = tree.root() / "real.sock";
+        if (!make_socket_file(target))
+            GTEST_SKIP() << "Unix sockets cannot be created here";
+
+        std::error_code error;
+        fs::create_symlink(target, tree.root() / "link.sock", error);
+        if (error)
+            GTEST_SKIP() << "Symbolic links cannot be created here";
+
+        const std::string directory = tree.root().string();
+        MayaFlux::Test::ScopedEnv variable(runtime_variable(), directory.c_str());
+
+        EXPECT_EQ(listed_inside(tree.root()), (std::vector<fs::path> { target }));
+    }
+
+    TEST(UnixSocketTest, ListingSkipsARuntimeDirectoryThatDoesNotExist)
+    {
+        SocketTree tree;
+        const std::string missing = (tree.root() / "missing").string();
+        MayaFlux::Test::ScopedEnv variable(runtime_variable(), missing.c_str());
+
+        EXPECT_NO_THROW((void)P::list_unix_sockets());
+    }
+
 }
 }
