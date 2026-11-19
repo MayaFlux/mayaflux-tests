@@ -1,7 +1,7 @@
 #include "file_contract_fixture.hpp"
 #include "../support/test_metadata.hpp"
 
-#include "MayaFlux/IO/GlmTextCodec.hpp"
+#include "MayaFlux/Portal/Forma/Manifest/BoundsText.hpp"
 
 #include "MayaFlux/IO/Composite/DelimitedTextReader.hpp"
 #include "MayaFlux/IO/Composite/DescribedRecords.hpp"

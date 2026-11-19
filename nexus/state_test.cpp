@@ -6,7 +6,6 @@
 #include "../support/scripted_window.hpp"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
-#include "MayaFlux/IO/GlmSerializer.hpp"
 #include "MayaFlux/IO/Image/EXRWriter.hpp"
 #include "MayaFlux/Nexus/Principals/Locus.hpp"
 #include "MayaFlux/Nexus/Principals/Presence.hpp"
