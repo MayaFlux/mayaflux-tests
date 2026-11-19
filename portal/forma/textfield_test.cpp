@@ -277,6 +277,201 @@ TEST_F(FormaTextFieldTest, TabAndEnterInsertLiteralCharacters)
     EXPECT_EQ(field.state->value.cursor, 2U);
 }
 
+// =============================================================================
+// Single line, commit, cancel and change
+// =============================================================================
+
+TEST_F(FormaTextFieldTest, EnterCommitsTheTextOfASingleLineFieldAndInsertsNothing)
+{
+    auto field = focused_field("abc");
+    std::vector<std::string> committed;
+    field.single_line().on_commit([&](const std::string& text) { committed.push_back(text); });
+
+    tap(Keys::Enter);
+
+    EXPECT_EQ(committed, std::vector<std::string> { "abc" });
+    EXPECT_EQ(field.state->value.text, "abc");
+}
+
+TEST_F(FormaTextFieldTest, EnterInAMultiLineFieldStillInsertsALineBreakAndCommitsNothing)
+{
+    auto field = focused_field("ab");
+    int commits = 0;
+    field.on_commit([&](const std::string&) { ++commits; });
+
+    tap(Keys::Enter);
+
+    EXPECT_EQ(field.state->value.text, "ab\n");
+    EXPECT_EQ(commits, 0);
+}
+
+TEST_F(FormaTextFieldTest, HoldingEnterInASingleLineFieldCommitsOnce)
+{
+    auto field = focused_field("abc");
+    int commits = 0;
+    field.single_line().on_commit([&](const std::string&) { ++commits; });
+
+    window->key_down(Keys::Enter);
+    window->key_repeat(Keys::Enter);
+    window->key_repeat(Keys::Enter);
+    window->key_up(Keys::Enter);
+
+    EXPECT_EQ(commits, 1);
+}
+
+TEST_F(FormaTextFieldTest, EscapeCancelsInEitherMode)
+{
+    auto field = focused_field("abc");
+    int cancels = 0;
+    field.on_cancel([&] { ++cancels; });
+
+    tap(Keys::Escape);
+    field.single_line();
+    tap(Keys::Escape);
+
+    EXPECT_EQ(cancels, 2);
+    EXPECT_EQ(field.state->value.text, "abc");
+}
+
+TEST_F(FormaTextFieldTest, ChangeReportsEveryEditWithTheStateAlreadyUpdated)
+{
+    auto field = focused_field("");
+    std::vector<std::string> seen;
+    std::vector<bool> state_matched;
+    field.on_change([&](const std::string& text) {
+        seen.push_back(text);
+        state_matched.push_back(field.state->value.text == text);
+    });
+
+    window->type('x');
+    window->type('y');
+    tap(Keys::Backspace);
+
+    EXPECT_EQ(seen, (std::vector<std::string> { "x", "xy", "x" }));
+    EXPECT_EQ(state_matched, (std::vector<bool> { true, true, true }));
+}
+
+TEST_F(FormaTextFieldTest, ChangeIsNotReportedForMovesOrACommit)
+{
+    auto field = focused_field("abc");
+    int changes = 0;
+    field.single_line().on_change([&](const std::string&) { ++changes; });
+    field.on_commit([](const std::string&) { });
+
+    tap(Keys::Left);
+    shift_tap(Keys::Home);
+    tap(Keys::Enter);
+
+    EXPECT_EQ(changes, 0);
+}
+
+TEST_F(FormaTextFieldTest, ChangeMayRecolourTheSharedParametersForTheSameDraw)
+{
+    auto field = focused_field("");
+    field.on_change([&](const std::string&) { params->color = { 1.F, 0.F, 0.F, 1.F }; });
+
+    window->type('x');
+
+    EXPECT_EQ(params->color, glm::vec4(1.F, 0.F, 0.F, 1.F));
+}
+
+TEST_F(FormaTextFieldTest, TabDoesNothingInASingleLineField)
+{
+    auto field = focused_field("ab");
+    field.single_line();
+
+    tap(Keys::Tab);
+
+    EXPECT_EQ(field.state->value.text, "ab");
+}
+
+TEST_F(FormaTextFieldTest, UpAndDownJumpToTheStartAndEndOfASingleLineField)
+{
+    auto field = focused_field("hello");
+    field.single_line();
+
+    tap(Keys::Up);
+    EXPECT_EQ(field.state->value.cursor, 0U);
+
+    tap(Keys::Down);
+    EXPECT_EQ(field.state->value.cursor, 5U);
+
+    shift_tap(Keys::Up);
+    const auto range = Portal::Text::selection(field.state->value);
+    ASSERT_TRUE(range.has_value());
+    EXPECT_EQ(range->first, 0U);
+    EXPECT_EQ(range->second, 5U);
+}
+
+TEST_F(FormaTextFieldTest, PasteDropsLineBreaksInASingleLineField)
+{
+    auto field = focused_field("");
+    field.single_line();
+    window->set_clipboard(std::string("a\r\nb"));
+
+    chord(Keys::V);
+    window->poll();
+
+    EXPECT_EQ(field.state->value.text, "ab");
+}
+
+TEST_F(FormaTextFieldTest, BehaviourIsSharedByCopiesOfAField)
+{
+    auto field = focused_field("abc");
+    Forma::TextField copy = field;
+    int commits = 0;
+
+    copy.single_line().on_commit([&](const std::string&) { ++commits; });
+    tap(Keys::Enter);
+
+    EXPECT_EQ(commits, 1);
+}
+
+// =============================================================================
+// Home and End
+// =============================================================================
+
+TEST_F(FormaTextFieldTest, HomeAndEndMoveToTheStartAndEndOfTheCursorsLine)
+{
+    auto field = focused_field("ab\ncd");
+
+    const auto put_cursor = [&](size_t index) {
+        Portal::Text::EditableText edit = field.state->value;
+        Portal::Text::move_to(edit, index, false);
+        field.state->write(edit);
+    };
+
+    put_cursor(4);
+    tap(Keys::Home);
+    EXPECT_EQ(field.state->value.cursor, 3U);
+
+    tap(Keys::End);
+    EXPECT_EQ(field.state->value.cursor, 5U);
+
+    put_cursor(2);
+    tap(Keys::End);
+    EXPECT_EQ(field.state->value.cursor, 2U);
+
+    tap(Keys::Home);
+    EXPECT_EQ(field.state->value.cursor, 0U);
+}
+
+TEST_F(FormaTextFieldTest, HomeAndEndWithShiftExtendTheSelection)
+{
+    auto field = focused_field("hello");
+
+    shift_tap(Keys::Home);
+    const auto range = Portal::Text::selection(field.state->value);
+
+    ASSERT_TRUE(range.has_value());
+    EXPECT_EQ(range->first, 0U);
+    EXPECT_EQ(range->second, 5U);
+
+    tap(Keys::End);
+    EXPECT_FALSE(Portal::Text::selection(field.state->value).has_value());
+    EXPECT_EQ(field.state->value.cursor, 5U);
+}
+
 TEST_F(FormaTextFieldTest, EachEditPublishesANewStateVersion)
 {
     auto field = focused_field("ab");

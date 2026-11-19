@@ -253,6 +253,23 @@ TEST_F(FormaWindowApiTest, PickingFromALongListShowsTenRowsAndScrolls)
     EXPECT_EQ(window->get_create_info().height, row_px() * 10U + row_px() / 2U);
 }
 
+// =============================================================================
+// Prompt
+// =============================================================================
+
+TEST_F(FormaWindowApiTest, AskingOpensAOneRowWindowTitledWithTheKeysThatAnswerIt)
+{
+    int calls = 0;
+
+    Forma::ask("name-ask", "start", [&](std::optional<std::string>) { ++calls; });
+    auto window = expect_window("name-ask  (Enter accepts, Escape cancels)");
+
+    ASSERT_NE(window, nullptr);
+    EXPECT_EQ(window->get_create_info().width, 520U);
+    EXPECT_EQ(window->get_create_info().height, row_px());
+    EXPECT_EQ(calls, 0);
+}
+
 class FormaCollapsiblePresentationTest : public FormaWindowApiTest {
 protected:
     void SetUp() override
