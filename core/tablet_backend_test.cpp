@@ -194,6 +194,55 @@ namespace {
         EXPECT_EQ(wheel->slot, TabletFrame::WHEEL);
     }
 
+    std::vector<uint8_t> mouse_with_pressure_descriptor()
+    {
+        return {
+            0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x85, 0x07, 0x09, 0x01, 0xA1, 0x00,
+            0x05, 0x09, 0x19, 0x01, 0x29, 0x03,
+            0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x03, 0x81, 0x02,
+            0x95, 0x05, 0x81, 0x03,
+            0x05, 0x01, 0x09, 0x30, 0x09, 0x31,
+            0x15, 0x00, 0x26, 0xFF, 0x7F, 0x75, 0x10, 0x95, 0x02, 0x81, 0x02,
+            0x05, 0x0D, 0x09, 0x30,
+            0x15, 0x00, 0x26, 0xFF, 0x03, 0x75, 0x10, 0x95, 0x01, 0x81, 0x02,
+            0xC0, 0xC0
+        };
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, MouseCollectionCarryingPressureIsNotADigitizer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        const TabletLayout layout = layout_of(mouse_with_pressure_descriptor());
+
+        EXPECT_TRUE(layout.fields.empty());
+        EXPECT_EQ(layout.axes, TabletAxes::NONE);
+        EXPECT_FALSE(layout.has_invert);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, OnlyTheDigitizerCollectionOfAMixedDescriptorContributesFields, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        auto mixed = mouse_with_pressure_descriptor();
+        const auto pen = pen_descriptor();
+        mixed.insert(mixed.end(), pen.begin(), pen.end());
+
+        const TabletLayout layout = layout_of(mixed);
+        const TabletLayout pen_only = layout_of(pen);
+
+        EXPECT_EQ(layout.fields.size(), pen_only.fields.size());
+        for (const auto& field : layout.fields)
+            EXPECT_NE(field.report_id, 7U);
+        EXPECT_TRUE(layout.has_invert);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, ADescriptorWithoutACollectionYieldsNoFields, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        const std::vector<uint8_t> descriptor {
+            0x05, 0x0D, 0x09, 0x30,
+            0x15, 0x00, 0x26, 0xFF, 0x03, 0x75, 0x10, 0x95, 0x01, 0x81, 0x02
+        };
+
+        EXPECT_TRUE(layout_of(descriptor).fields.empty());
+    }
+
     MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, ReportIdsKeepIndependentBitCursors, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<uint8_t> descriptor {
@@ -243,7 +292,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST, TabletDescriptorTest, ExtendedUsageCarriesItsOwnPage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const std::vector<uint8_t> descriptor {
-            0x05, 0x01, 0x09, 0x02, 0xA1, 0x01,
+            0x05, 0x01, 0x0B, 0x02, 0x00, 0x0D, 0x00, 0xA1, 0x01,
             0x0B, 0x30, 0x00, 0x0D, 0x00,
             0x15, 0x00, 0x26, 0xFF, 0x03, 0x75, 0x10, 0x95, 0x01, 0x81, 0x02,
             0xC0
