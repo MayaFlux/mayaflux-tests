@@ -424,6 +424,47 @@ namespace {
         EXPECT_EQ(disconnects, all);
     }
 
+    TEST(HIDBackendTest, ADeviceKeepsItsIdWhenItReturnsAfterBeingFilteredOut)
+    {
+        HIDBackend backend;
+        ASSERT_TRUE(backend.initialize());
+        REQUIRE_HID_DEVICE(backend);
+        const auto before = ids_by_path(backend);
+
+        backend.add_device_filter(unmatched_filter());
+        backend.refresh_devices();
+        ASSERT_TRUE(backend.get_devices().empty());
+
+        backend.clear_device_filters();
+        backend.refresh_devices();
+
+        EXPECT_EQ(ids_by_path(backend), before);
+    }
+
+    TEST(HIDBackendTest, ADeviceCallbackMayCallBackIntoTheBackend)
+    {
+        HIDBackend backend;
+        std::atomic<size_t> calls { 0 };
+        std::atomic<size_t> seen { 0 };
+        backend.set_device_callback([&](const Core::InputDeviceInfo&, bool) {
+            seen.store(backend.get_devices().size());
+            static_cast<void>(backend.get_open_devices());
+            calls.fetch_add(1);
+        });
+
+        ASSERT_TRUE(backend.initialize());
+        REQUIRE_HID_DEVICE(backend);
+        const size_t announced = calls.load();
+        EXPECT_GT(announced, 0U);
+        EXPECT_EQ(seen.load(), backend.get_devices().size());
+
+        backend.add_device_filter(unmatched_filter());
+        backend.refresh_devices();
+
+        EXPECT_GT(calls.load(), announced);
+        EXPECT_EQ(seen.load(), 0U);
+    }
+
     // ------------------------------------------------------------------
     // Opening devices
     // ------------------------------------------------------------------
@@ -523,6 +564,66 @@ namespace {
         }
 
         EXPECT_TRUE(backend.is_device_open(*id));
+    }
+
+    // ------------------------------------------------------------------
+    // Reconnection
+    // ------------------------------------------------------------------
+
+    MAYAFLUX_TEST_WITH(TEST, HIDBackendReconnectTest, ADeviceThatWasOpenIsReopenedWhenItReturns, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hid_enumeration, ::MayaFlux::Test::Meta::Capability::hid_open>() }))
+    {
+        HIDBackend backend;
+        ASSERT_TRUE(backend.initialize());
+        REQUIRE_HID_DEVICE(backend);
+        const auto id = openable_non_pointer(backend);
+        if (!id)
+            GTEST_SKIP() << "No openable HID device other than a pointer or keyboard";
+
+        backend.add_device_filter(unmatched_filter());
+        backend.refresh_devices();
+        EXPECT_FALSE(backend.is_device_open(*id));
+
+        backend.clear_device_filters();
+        backend.refresh_devices();
+
+        EXPECT_TRUE(backend.is_device_open(*id));
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HIDBackendReconnectTest, ADeviceClosedByTheUserIsNotReopened, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hid_enumeration, ::MayaFlux::Test::Meta::Capability::hid_open>() }))
+    {
+        HIDBackend backend;
+        ASSERT_TRUE(backend.initialize());
+        REQUIRE_HID_DEVICE(backend);
+        const auto id = openable_non_pointer(backend);
+        if (!id)
+            GTEST_SKIP() << "No openable HID device other than a pointer or keyboard";
+
+        backend.close_device(*id);
+        backend.add_device_filter(unmatched_filter());
+        backend.refresh_devices();
+        backend.clear_device_filters();
+        backend.refresh_devices();
+
+        EXPECT_FALSE(backend.is_device_open(*id));
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HIDBackendReconnectTest, WithoutAutoReconnectADroppedDeviceStaysClosed, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hid_enumeration, ::MayaFlux::Test::Meta::Capability::hid_open>() }))
+    {
+        HIDBackend::Config config;
+        config.auto_reconnect = false;
+        HIDBackend backend(config);
+        ASSERT_TRUE(backend.initialize());
+        REQUIRE_HID_DEVICE(backend);
+        const auto id = openable_non_pointer(backend);
+        if (!id)
+            GTEST_SKIP() << "No openable HID device other than a pointer or keyboard";
+
+        backend.add_device_filter(unmatched_filter());
+        backend.refresh_devices();
+        backend.clear_device_filters();
+        backend.refresh_devices();
+
+        EXPECT_FALSE(backend.is_device_open(*id));
     }
 
 } // namespace
