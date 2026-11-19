@@ -491,10 +491,18 @@ namespace {
         EXPECT_TRUE(backend.is_device_open(*id));
 
         std::lock_guard lock(mutex);
+        const auto layout = backend.get_layout(*id);
+        ASSERT_NE(layout, nullptr);
+
         for (const auto& value : received) {
-            EXPECT_EQ(value.type, Core::InputValue::Type::BYTES);
+            ASSERT_EQ(value.type, Core::InputValue::Type::HID);
             EXPECT_EQ(value.source_type, Core::InputType::HID);
             EXPECT_EQ(value.device_id, *id);
+
+            const auto& frame = value.as_hid();
+            EXPECT_EQ(frame.layout, layout);
+            EXPECT_EQ(frame.raw.size(), layout->fields.size());
+            EXPECT_FALSE(frame.report.empty());
         }
     }
 
