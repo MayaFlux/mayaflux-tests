@@ -14,6 +14,7 @@ namespace {
     using Nodes::Input::InputConfig;
     using Nodes::Input::InputContext;
     using Nodes::Input::InputNode;
+    using Nodes::Input::InputTuning;
     using Nodes::Input::SmoothingMode;
 
     class ProbeInputNode : public InputNode {
@@ -422,6 +423,91 @@ namespace {
 
         feed(*node, 1.0);
         EXPECT_EQ(rising, 1);
+    }
+
+    // ------------------------------------------------------------------
+    // Tuning
+    // ------------------------------------------------------------------
+
+    TEST(InputNodeTuningTest, AFreshNodeHoldsNoTuningAndTheConfigStaysInForce)
+    {
+        auto node = make_node(SmoothingMode::EXPONENTIAL, 0.5);
+        const auto tuning = node->get_tuning();
+
+        EXPECT_FALSE(tuning.smoothing.has_value());
+        EXPECT_FALSE(tuning.smoothing_factor.has_value());
+        EXPECT_FALSE(tuning.slew_rate.has_value());
+
+        feed(*node, 1.0);
+        EXPECT_DOUBLE_EQ(node->get_current_value(), 0.5);
+    }
+
+    TEST(InputNodeTuningTest, ATunedModeWinsOverTheConfig)
+    {
+        auto node = make_node(SmoothingMode::EXPONENTIAL, 0.1);
+        InputTuning tuning;
+        tuning.smoothing = ControlValue(SmoothingMode::NONE);
+
+        node->set_tuning(tuning);
+        feed(*node, 1.0);
+
+        EXPECT_DOUBLE_EQ(node->get_current_value(), 1.0);
+    }
+
+    TEST(InputNodeTuningTest, ATunedFactorWinsOverTheConfig)
+    {
+        auto node = make_node(SmoothingMode::EXPONENTIAL, 0.1);
+        InputTuning tuning;
+        tuning.smoothing_factor = ControlValue(0.5);
+
+        node->set_tuning(tuning);
+        feed(*node, 1.0);
+
+        EXPECT_DOUBLE_EQ(node->get_current_value(), 0.5);
+    }
+
+    TEST(InputNodeTuningTest, ATunedSlewRateWinsOverTheConfig)
+    {
+        auto node = make_node(SmoothingMode::SLEW, 0.1, 0.0, 1.0);
+        InputTuning tuning;
+        tuning.slew_rate = ControlValue(0.25);
+
+        node->set_tuning(tuning);
+        feed(*node, 10.0);
+
+        EXPECT_DOUBLE_EQ(node->get_current_value(), 0.25);
+    }
+
+    TEST(InputNodeTuningTest, SettingATuningKeepsWhatWasTunedBefore)
+    {
+        auto node = make_node();
+        InputTuning mode;
+        mode.smoothing = ControlValue(SmoothingMode::LINEAR);
+        InputTuning factor;
+        factor.smoothing_factor = ControlValue(0.3);
+
+        node->set_tuning(mode);
+        node->set_tuning(factor);
+
+        const auto tuning = node->get_tuning();
+        ASSERT_TRUE(tuning.smoothing.has_value());
+        EXPECT_EQ(tuning.smoothing.value<SmoothingMode>(), SmoothingMode::LINEAR);
+        ASSERT_TRUE(tuning.smoothing_factor.has_value());
+        EXPECT_DOUBLE_EQ(tuning.smoothing_factor.value(), 0.3);
+        EXPECT_FALSE(tuning.slew_rate.has_value());
+    }
+
+    TEST(InputNodeTuningTest, TheNextSampleSeesATuningMadeWhileRunning)
+    {
+        auto node = make_node(SmoothingMode::EXPONENTIAL, 0.1);
+        feed(*node, 1.0);
+        ASSERT_DOUBLE_EQ(node->get_current_value(), 0.1);
+
+        InputTuning tuning;
+        tuning.smoothing_factor = ControlValue(1.0);
+        node->set_tuning(tuning);
+
+        EXPECT_DOUBLE_EQ(node->process_sample(), 1.0);
     }
 
 } // namespace

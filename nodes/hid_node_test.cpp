@@ -15,8 +15,12 @@ namespace {
     using Nodes::Input::HIDContext;
     using Nodes::Input::HIDControl;
     using Nodes::Input::HIDControlSpec;
+    using Nodes::Input::HIDControlTuning;
     using Nodes::Input::HIDNode;
+    using Nodes::Input::HIDRest;
     using Nodes::Input::HIDSnapshot;
+    using Nodes::Input::HIDStickTuning;
+    using Nodes::Input::InputTuning;
     using Nodes::Input::SmoothingMode;
 
     std::vector<uint8_t> pad_descriptor(bool swapped = false)
@@ -487,6 +491,158 @@ namespace {
 
         EXPECT_EQ(HIDControl::from_key(control.key()), control);
         EXPECT_NE(HIDControl::button(1).key(), HIDControl::derived(1).key());
+    }
+
+    TEST(HIDNodeTuningTest, AControlWithNoTuningIsConvertedByItsSpec)
+    {
+        const auto layout = pad_layout();
+        HIDNode node(HIDConfig::device().with_spec(k_x, HIDControlSpec {}.with_deadzone(0.2)));
+
+        node.process_input(frame_of(layout, pad_report(153, 0)));
+
+        EXPECT_NEAR(node.value(k_x), 0.5, 1e-9);
+        EXPECT_FALSE(node.get_tuning(k_x).deadzone.has_value());
+    }
+
+    TEST(HIDNodeTuningTest, ATunedInvertAppliesAndKeepsTheSpecsDeadzone)
+    {
+        const auto layout = pad_layout();
+        HIDNode node(HIDConfig::device().with_spec(k_x, HIDControlSpec {}.with_deadzone(0.2)));
+        HIDControlTuning tuning;
+        tuning.invert = ControlValue(true);
+
+        node.set_tuning(k_x, tuning);
+        node.process_input(frame_of(layout, pad_report(153, 0)));
+
+        EXPECT_NEAR(node.value(k_x), 0.25, 1e-9);
+    }
+
+    TEST(HIDNodeTuningTest, ATunedDeadzoneReplacesTheSpecsDeadzone)
+    {
+        const auto layout = pad_layout();
+        HIDNode node(HIDConfig::device().with_spec(k_x, HIDControlSpec {}.with_deadzone(0.2)));
+        HIDControlTuning tuning;
+        tuning.deadzone = ControlValue(0.5);
+
+        node.set_tuning(k_x, tuning);
+        node.process_input(frame_of(layout, pad_report(204, 0)));
+
+        EXPECT_NEAR(node.value(k_x), 0.6, 1e-9);
+    }
+
+    TEST(HIDNodeTuningTest, ATunedRestMakesAControlCentered)
+    {
+        const auto layout = pad_layout();
+        HIDNode node(HIDConfig::device());
+
+        node.process_input(frame_of(layout, pad_report(0, 0)));
+        EXPECT_NEAR(node.value(k_x), 0.0, 1e-9);
+
+        HIDControlTuning tuning;
+        tuning.rest = ControlValue(HIDRest::CENTER);
+        node.set_tuning(k_x, tuning);
+        node.process_input(frame_of(layout, pad_report(0, 0)));
+
+        EXPECT_NEAR(node.value(k_x), -1.0, 1e-9);
+    }
+
+    TEST(HIDNodeTuningTest, ATunedRangeNeedsBothEnds)
+    {
+        const auto layout = pad_layout();
+        HIDNode node(HIDConfig::device());
+        HIDControlTuning low;
+        low.range_min = ControlValue(0.0);
+
+        node.set_tuning(k_x, low);
+        node.process_input(frame_of(layout, pad_report(50, 0)));
+        EXPECT_NEAR(node.value(k_x), 50.0 / 255.0, 1e-9);
+
+        HIDControlTuning high;
+        high.range_max = ControlValue(100.0);
+        node.set_tuning(k_x, high);
+        node.process_input(frame_of(layout, pad_report(50, 0)));
+
+        EXPECT_NEAR(node.value(k_x), 0.5, 1e-9);
+    }
+
+    TEST(HIDNodeTuningTest, ATuningLeavesOtherControlsAlone)
+    {
+        const auto layout = pad_layout();
+        HIDNode node(HIDConfig::device());
+        HIDControlTuning tuning;
+        tuning.invert = ControlValue(true);
+
+        node.set_tuning(k_x, tuning);
+        node.process_input(frame_of(layout, pad_report(51, 51)));
+
+        EXPECT_NEAR(node.value(k_x), 0.8, 1e-9);
+        EXPECT_NEAR(node.value(k_y), 0.2, 1e-9);
+    }
+
+    TEST(HIDNodeTuningTest, ATuningMergesWithWhatWasTunedBefore)
+    {
+        HIDNode node(HIDConfig::device());
+        HIDControlTuning first;
+        first.deadzone = ControlValue(0.3);
+        HIDControlTuning second;
+        second.invert = ControlValue(true);
+
+        node.set_tuning(k_x, first);
+        node.set_tuning(k_x, second);
+
+        const auto tuning = node.get_tuning(k_x);
+        ASSERT_TRUE(tuning.deadzone.has_value());
+        EXPECT_DOUBLE_EQ(tuning.deadzone.value(), 0.3);
+        EXPECT_TRUE(tuning.invert.value<bool>());
+        EXPECT_FALSE(tuning.rest.has_value());
+        EXPECT_FALSE(node.get_tuning(k_y).invert.has_value());
+    }
+
+    TEST(HIDNodeTuningTest, ATuningForAControlTheDeviceLacksIsKeptAndIgnored)
+    {
+        const auto layout = pad_layout();
+        HIDNode node(HIDConfig::device());
+        HIDControlTuning tuning;
+        tuning.invert = ControlValue(true);
+
+        node.set_tuning(HIDControl::button(20), tuning);
+        node.process_input(frame_of(layout, pad_report(51, 0)));
+
+        EXPECT_NEAR(node.value(k_x), 0.2, 1e-9);
+        EXPECT_TRUE(node.get_tuning(HIDControl::button(20)).invert.has_value());
+    }
+
+    TEST(HIDNodeTuningTest, AStickDeadzoneCanBeTuned)
+    {
+        const auto layout = pad_layout();
+        HIDNode node(HIDConfig::device().with_stick(k_x, k_y, 0.0));
+
+        node.process_input(frame_of(layout, pad_report(255, 255)));
+        EXPECT_GT(node.value(k_x), 0.5);
+
+        HIDStickTuning tuning;
+        tuning.deadzone = ControlValue(1.0);
+        node.set_stick_tuning(k_x, tuning);
+        node.process_input(frame_of(layout, pad_report(255, 255)));
+
+        EXPECT_DOUBLE_EQ(node.value(k_x), 0.0);
+        EXPECT_DOUBLE_EQ(node.value(k_y), 0.0);
+        EXPECT_TRUE(node.get_stick_tuning(k_x).deadzone.has_value());
+        EXPECT_FALSE(node.get_stick_tuning(k_y).deadzone.has_value());
+    }
+
+    TEST(HIDNodeTuningTest, ASignalNodeTakesItsOwnSmoothingTuning)
+    {
+        const auto layout = pad_layout();
+        HIDNode node(HIDConfig::device());
+        const auto signal = node.signal(k_x);
+        InputTuning tuning;
+        tuning.smoothing = ControlValue(SmoothingMode::NONE);
+
+        signal->set_tuning(tuning);
+        node.process_input(frame_of(layout, pad_report(255, 0)));
+
+        EXPECT_DOUBLE_EQ(signal->get_current_value(), 1.0);
     }
 
 } // namespace
