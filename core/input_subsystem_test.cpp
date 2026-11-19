@@ -52,6 +52,8 @@ namespace {
         int shutdown { 0 };
         std::vector<uint32_t> opened;
         std::vector<uint32_t> closed;
+        std::vector<std::pair<uint32_t, std::vector<uint8_t>>> written;
+        std::vector<std::pair<uint32_t, std::vector<uint8_t>>> features;
     };
 
     class FakeBackend : public Core::IInputBackend {
@@ -103,6 +105,19 @@ namespace {
         }
 
         void close_device(uint32_t device_id) override { m_counters->closed.push_back(device_id); }
+
+        int write(uint32_t device_id, std::span<const uint8_t> data) override
+        {
+            m_counters->written.emplace_back(device_id, std::vector<uint8_t>(data.begin(), data.end()));
+            return static_cast<int>(data.size());
+        }
+
+        int send_feature_report(uint32_t device_id, std::span<const uint8_t> data) override
+        {
+            m_counters->features.emplace_back(device_id, std::vector<uint8_t>(data.begin(), data.end()));
+            return static_cast<int>(data.size());
+        }
+
         [[nodiscard]] bool is_device_open(uint32_t) const override { return false; }
         [[nodiscard]] std::vector<uint32_t> get_open_devices() const override { return {}; }
         void set_input_callback(Core::InputCallback callback) override { m_input = std::move(callback); }
@@ -542,6 +557,37 @@ namespace {
         service->close_device(InputType::HID, 2);
         EXPECT_EQ(hid->opened, (std::vector<uint32_t> { 2 }));
         EXPECT_EQ(hid->closed, (std::vector<uint32_t> { 2 }));
+    }
+
+    TEST(InputSubsystemTest, ServiceWritesAndFeatureReportsReachTheBackend)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto hid = std::make_shared<BackendCounters>();
+        rig.add_fake(InputType::HID, hid, pad_devices());
+        auto* service = Registry::BackendRegistry::instance().get_service<Registry::Service::InputService>();
+        ASSERT_NE(service, nullptr);
+        const std::array<uint8_t, 3> rumble { 0x01, 0x40, 0x40 };
+        const std::array<uint8_t, 2> led { 0x05, 0xFF };
+
+        EXPECT_EQ(service->write(InputType::HID, 2, rumble), 3);
+        EXPECT_EQ(service->send_feature_report(InputType::HID, 2, led), 2);
+
+        ASSERT_EQ(hid->written.size(), 1U);
+        EXPECT_EQ(hid->written.front().first, 2U);
+        EXPECT_EQ(hid->written.front().second, (std::vector<uint8_t> { 0x01, 0x40, 0x40 }));
+        ASSERT_EQ(hid->features.size(), 1U);
+        EXPECT_EQ(hid->features.front().second, (std::vector<uint8_t> { 0x05, 0xFF }));
+    }
+
+    TEST(InputSubsystemTest, WritingThroughAMissingBackendFails)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        const std::array<uint8_t, 2> bytes { 0x01, 0x02 };
+
+        EXPECT_EQ(rig.subsystem.write(InputType::OSC, 1, bytes), -1);
+        EXPECT_EQ(rig.subsystem.send_feature_report(InputType::OSC, 1, bytes), -1);
     }
 
     // ------------------------------------------------------------------
