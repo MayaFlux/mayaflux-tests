@@ -37,8 +37,10 @@ namespace {
         asio::error_code ec;
         if (acceptor.open(asio::ip::tcp::v4(), ec))
             return false;
+#if !defined(MAYAFLUX_PLATFORM_WINDOWS)
         if (acceptor.set_option(asio::socket_base::reuse_address(true), ec))
             return false;
+#endif
         if (acceptor.bind(asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port), ec))
             return false;
         return !acceptor.listen(asio::socket_base::max_listen_connections, ec);
@@ -236,6 +238,22 @@ namespace {
 
         EXPECT_TRUE(rig.backend.get_endpoints().empty());
         EXPECT_TRUE(can_listen(port));
+    }
+
+    TEST(TCPBackendTest, ARestartRebindsOverLeftoverConnections)
+    {
+        const uint16_t port = free_port();
+        {
+            TcpRig first;
+            ASSERT_TRUE(first.up());
+            ASSERT_NE(first.connect_pair(port), 0U);
+            first.backend.shutdown();
+        }
+
+        TcpRig second;
+        ASSERT_TRUE(second.up());
+
+        EXPECT_EQ(second.backend.open_endpoint(TcpRig::listener(1, port)), 1U);
     }
 
     // ------------------------------------------------------------------

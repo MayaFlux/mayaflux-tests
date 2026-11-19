@@ -302,8 +302,7 @@ namespace {
 
     bool is_socket_file(const std::string& path)
     {
-        std::error_code ec;
-        return std::filesystem::symlink_status(path, ec).type() == std::filesystem::file_type::socket;
+        return Platform::is_unix_socket(path);
     }
 
     // ------------------------------------------------------------------
@@ -426,7 +425,10 @@ namespace {
         SocketDirectory directory;
         {
             asio::io_context context;
-            Stream::acceptor stale(context, Stream::endpoint(directory.socket()));
+            Stream::acceptor stale(context);
+            stale.open(Stream());
+            stale.bind(Stream::endpoint(directory.socket()));
+            stale.listen(asio::socket_base::max_listen_connections);
         }
         ASSERT_TRUE(is_socket_file(directory.socket()));
         UdsRig rig;

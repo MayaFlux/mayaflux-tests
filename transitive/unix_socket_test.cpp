@@ -467,6 +467,35 @@ namespace {
         EXPECT_TRUE(fs::is_symlink(link));
     }
 
+    TEST(UnixSocketTest, IsUnixSocketRejectsMissingPathsFilesAndDirectories)
+    {
+        SocketTree tree;
+
+        EXPECT_FALSE(P::is_unix_socket(tree.root() / "absent.sock"));
+        EXPECT_FALSE(P::is_unix_socket(tree.make_file("plain.sock")));
+        EXPECT_FALSE(P::is_unix_socket(tree.make_directory("dir.sock")));
+    }
+
+    TEST(UnixSocketTest, IsUnixSocketRecognisesASocketFileAndNotALinkToIt)
+    {
+#if defined(MAYAFLUX_PLATFORM_WINDOWS)
+        GTEST_SKIP() << "socket files are not created here on Windows";
+#else
+        SocketTree tree;
+        const auto real = tree.root() / "real.sock";
+        ASSERT_TRUE(make_socket_file(real));
+
+        EXPECT_TRUE(P::is_unix_socket(real));
+
+        const auto link = tree.root() / "link.sock";
+        std::error_code ec;
+        fs::create_symlink(real, link, ec);
+        if (!ec) {
+            EXPECT_FALSE(P::is_unix_socket(link));
+        }
+#endif
+    }
+
     TEST(UnixSocketTest, ASymbolicLinkToARealSocketLeavesTheSocketAlone)
     {
 #if defined(MAYAFLUX_PLATFORM_WINDOWS)
