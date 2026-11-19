@@ -645,5 +645,86 @@ namespace {
         EXPECT_TRUE(found);
     }
 
+    // ------------------------------------------------------------------
+    // Read size and write backlog
+    // ------------------------------------------------------------------
+
+    TEST(TCPBackendTest, ReadSizeBoundsEachDeliveryOnARawListener)
+    {
+        TcpRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint16_t port = free_port();
+        EndpointInfo listener = TcpRig::listener(1, port, Core::FramingPolicy::NONE);
+        listener.read_size = 4;
+        ASSERT_EQ(rig.backend.open_endpoint(listener), 1U);
+        RawPeer peer(rig, port);
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        peer.write({ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
+
+        const auto total = [&] {
+            size_t sum = 0;
+            for (const auto& item : rig.received)
+                sum += item.bytes.size();
+            return sum;
+        };
+        ASSERT_TRUE(rig.pump_until([&] { return total() == 10; }));
+        std::vector<uint8_t> joined;
+        for (const auto& item : rig.received) {
+            EXPECT_EQ(item.id, accepted);
+            EXPECT_LE(item.bytes.size(), 4U);
+            joined.insert(joined.end(), item.bytes.begin(), item.bytes.end());
+        }
+        EXPECT_GE(rig.received.size(), 3U);
+        EXPECT_EQ(joined, bytes_of({ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }));
+    }
+
+    TEST(TCPBackendTest, ReadSizeIsReportedByTheAcceptedConnection)
+    {
+        TcpRig rig;
+        ASSERT_TRUE(rig.up());
+        const uint16_t port = free_port();
+        EndpointInfo listener = TcpRig::listener(1, port);
+        listener.read_size = 512;
+        ASSERT_EQ(rig.backend.open_endpoint(listener), 1U);
+        ASSERT_EQ(rig.backend.open_endpoint(TcpRig::outbound(2, port)), 2U);
+        ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
+        const uint64_t accepted = rig.accepted_id();
+
+        bool found = false;
+        for (const auto& info : rig.backend.get_endpoints()) {
+            if (info.id != accepted)
+                continue;
+            found = true;
+            EXPECT_EQ(info.read_size, 512U);
+        }
+        EXPECT_TRUE(found);
+    }
+
+    TEST(TCPBackendTest, WriteBacklogCountsQueuedBytesUntilTheyAreWritten)
+    {
+        TcpRig rig;
+        ASSERT_TRUE(rig.up());
+        ASSERT_NE(rig.connect_pair(free_port()), 0U);
+        const std::vector<uint8_t> data = bytes_of({ 1 });
+        ASSERT_EQ(rig.backend.get_write_backlog(2), 0U);
+
+        ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
+        ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
+        ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
+
+        EXPECT_EQ(rig.backend.get_write_backlog(2), 15U);
+        ASSERT_TRUE(rig.pump_until([&] { return rig.backend.get_write_backlog(2) == 0; }));
+    }
+
+    TEST(TCPBackendTest, WriteBacklogOfAnUnknownEndpointIsZero)
+    {
+        TcpRig rig;
+        ASSERT_TRUE(rig.up());
+
+        EXPECT_EQ(rig.backend.get_write_backlog(77), 0U);
+    }
+
 } // namespace
 } // namespace MayaFlux::Test

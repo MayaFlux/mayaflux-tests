@@ -164,6 +164,46 @@ namespace {
 
         void set_endpoint_id_allocator(std::function<uint64_t()> allocator) override { m_allocator = std::move(allocator); }
 
+        [[nodiscard]] size_t get_write_backlog(uint64_t endpoint_id) const override
+        {
+            const auto it = backlog.find(endpoint_id);
+            return it == backlog.end() ? 0 : it->second;
+        }
+
+        bool set_control_lines(uint64_t endpoint_id, std::optional<bool> dtr, std::optional<bool> rts) override
+        {
+            control_calls.push_back({ endpoint_id, dtr, rts });
+            return m_endpoints.contains(endpoint_id);
+        }
+
+        bool send_break(uint64_t endpoint_id) override
+        {
+            breaks.push_back(endpoint_id);
+            return m_endpoints.contains(endpoint_id);
+        }
+
+        void transition(uint64_t endpoint_id, EndpointState previous, EndpointState current)
+        {
+            EndpointInfo info;
+            info.id = endpoint_id;
+            if (const auto it = m_endpoints.find(endpoint_id); it != m_endpoints.end()) {
+                it->second.state = current;
+                info = it->second;
+            }
+            if (m_state)
+                m_state(info, previous, current);
+        }
+
+        struct ControlCall {
+            uint64_t id {};
+            std::optional<bool> dtr;
+            std::optional<bool> rts;
+        };
+
+        std::unordered_map<uint64_t, size_t> backlog;
+        std::vector<ControlCall> control_calls;
+        std::vector<uint64_t> breaks;
+
         uint64_t accept(uint64_t listener_id)
         {
             EndpointInfo child;
@@ -986,6 +1026,305 @@ namespace {
     }
 
     // ------------------------------------------------------------------
+    // State callbacks
+    // ------------------------------------------------------------------
+
+    struct StateEvent {
+        uint64_t id {};
+        EndpointState previous {};
+        EndpointState current {};
+    };
+
+    TEST(NetworkSubsystemTest, StateCallbackReportsTheTransitionsOfItsEndpointOnly)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t watched = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP));
+        const uint64_t other = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP));
+        std::vector<StateEvent> events;
+        rig.subsystem.set_endpoint_state_callback(watched,
+            [&](uint64_t id, EndpointState previous, EndpointState current) {
+                events.push_back({ id, previous, current });
+            });
+
+        backend->transition(other, EndpointState::OPEN, EndpointState::ERROR);
+        backend->transition(watched, EndpointState::OPEN, EndpointState::RECONNECTING);
+        backend->transition(watched, EndpointState::RECONNECTING, EndpointState::OPEN);
+
+        ASSERT_EQ(events.size(), 2U);
+        EXPECT_EQ(events[0].id, watched);
+        EXPECT_EQ(events[0].previous, EndpointState::OPEN);
+        EXPECT_EQ(events[0].current, EndpointState::RECONNECTING);
+        EXPECT_EQ(events[1].previous, EndpointState::RECONNECTING);
+        EXPECT_EQ(events[1].current, EndpointState::OPEN);
+    }
+
+    TEST(NetworkSubsystemTest, ReplacingTheStateCallbackRedirectsDelivery)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t id = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP));
+        int first = 0;
+        int second = 0;
+        rig.subsystem.set_endpoint_state_callback(id,
+            [&](uint64_t, EndpointState, EndpointState) { ++first; });
+        rig.subsystem.set_endpoint_state_callback(id,
+            [&](uint64_t, EndpointState, EndpointState) { ++second; });
+
+        backend->transition(id, EndpointState::OPEN, EndpointState::ERROR);
+
+        EXPECT_EQ(first, 0);
+        EXPECT_EQ(second, 1);
+    }
+
+    TEST(NetworkSubsystemTest, AcceptedConnectionReportsThroughTheListenersStateCallback)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        std::vector<StateEvent> events;
+        rig.subsystem.set_endpoint_state_callback(listener,
+            [&](uint64_t id, EndpointState previous, EndpointState current) {
+                events.push_back({ id, previous, current });
+            });
+
+        const uint64_t child = backend->accept(listener);
+        backend->transition(child, EndpointState::OPEN, EndpointState::ERROR);
+
+        ASSERT_EQ(events.size(), 2U);
+        EXPECT_EQ(events[0].id, child);
+        EXPECT_EQ(events[0].previous, EndpointState::CLOSED);
+        EXPECT_EQ(events[0].current, EndpointState::OPEN);
+        EXPECT_EQ(events[1].id, child);
+        EXPECT_EQ(events[1].current, EndpointState::ERROR);
+    }
+
+    TEST(NetworkSubsystemTest, AcceptedConnectionOwnStateCallbackTakesPrecedence)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t listener = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP, EndpointRole::RECEIVE));
+        const uint64_t child = backend->accept(listener);
+        int from_listener = 0;
+        int from_child = 0;
+        rig.subsystem.set_endpoint_state_callback(listener,
+            [&](uint64_t, EndpointState, EndpointState) { ++from_listener; });
+        rig.subsystem.set_endpoint_state_callback(child,
+            [&](uint64_t, EndpointState, EndpointState) { ++from_child; });
+
+        backend->transition(child, EndpointState::OPEN, EndpointState::ERROR);
+
+        EXPECT_EQ(from_listener, 0);
+        EXPECT_EQ(from_child, 1);
+    }
+
+    TEST(NetworkSubsystemTest, ClosedEndpointNoLongerReportsState)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t id = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP));
+        int calls = 0;
+        rig.subsystem.set_endpoint_state_callback(id,
+            [&](uint64_t, EndpointState, EndpointState) { ++calls; });
+        backend->transition(id, EndpointState::OPEN, EndpointState::ERROR);
+        ASSERT_EQ(calls, 1);
+
+        rig.subsystem.close_endpoint(id);
+        backend->transition(id, EndpointState::OPEN, EndpointState::ERROR);
+
+        EXPECT_EQ(calls, 1);
+    }
+
+    TEST(NetworkSubsystemTest, StateHandlerMayCloseItsOwnEndpoint)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto counters = std::make_shared<NetCounters>();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, counters);
+        ASSERT_NE(backend, nullptr);
+        const uint64_t id = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP));
+        rig.subsystem.set_endpoint_state_callback(id,
+            [&](uint64_t endpoint, EndpointState, EndpointState) { rig.subsystem.close_endpoint(endpoint); });
+
+        backend->transition(id, EndpointState::OPEN, EndpointState::ERROR);
+
+        EXPECT_EQ(counters->closed, (std::vector<uint64_t> { id }));
+    }
+
+    // ------------------------------------------------------------------
+    // Write backlog and serial line control
+    // ------------------------------------------------------------------
+
+    TEST(NetworkSubsystemTest, WriteBacklogComesFromTheOwningBackend)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t id = rig.subsystem.open_endpoint(info_for(NetworkTransport::TCP));
+        backend->backlog[id] = 4096;
+
+        EXPECT_EQ(rig.subsystem.get_write_backlog(id), 4096U);
+        EXPECT_EQ(rig.subsystem.get_write_backlog(id + 100), 0U);
+    }
+
+    TEST(NetworkSubsystemTest, LineControlReachesTheOwningBackendWithEachLineOptional)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        auto* backend = rig.add_fake(NetworkTransport::SERIAL, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        const uint64_t id = rig.subsystem.open_endpoint(info_for(NetworkTransport::SERIAL));
+
+        EXPECT_TRUE(rig.subsystem.set_control_lines(id, false, std::nullopt));
+        EXPECT_TRUE(rig.subsystem.set_control_lines(id, std::nullopt, true));
+        EXPECT_TRUE(rig.subsystem.send_break(id));
+
+        ASSERT_EQ(backend->control_calls.size(), 2U);
+        EXPECT_EQ(backend->control_calls[0].id, id);
+        EXPECT_EQ(backend->control_calls[0].dtr, std::optional<bool> { false });
+        EXPECT_FALSE(backend->control_calls[0].rts.has_value());
+        EXPECT_FALSE(backend->control_calls[1].dtr.has_value());
+        EXPECT_EQ(backend->control_calls[1].rts, std::optional<bool> { true });
+        EXPECT_EQ(backend->breaks, (std::vector<uint64_t> { id }));
+    }
+
+    TEST(NetworkSubsystemTest, LineControlOfAnUnknownEndpointIsRefused)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+
+        EXPECT_FALSE(rig.subsystem.set_control_lines(99, true, true));
+        EXPECT_FALSE(rig.subsystem.send_break(99));
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, NetworkSubsystemTest, ABackendWithoutLineControlRefusesIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::loopback_tcp>() }))
+    {
+        SubsystemRig rig(GlobalNetworkConfig::with_tcp());
+        rig.initialize();
+        EndpointInfo listener = info_for(NetworkTransport::TCP, EndpointRole::RECEIVE);
+        listener.local_port = free_tcp_port();
+        const uint64_t id = rig.subsystem.open_endpoint(listener);
+        ASSERT_NE(id, 0U);
+
+        EXPECT_FALSE(rig.subsystem.set_control_lines(id, true, true));
+        EXPECT_FALSE(rig.subsystem.send_break(id));
+        EXPECT_EQ(rig.subsystem.get_write_backlog(id), 0U);
+    }
+
+    // ------------------------------------------------------------------
+    // Timer
+    // ------------------------------------------------------------------
+
+    TEST(NetworkSubsystemTest, PostedCallableRunsOnceAfterItsDelay)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        rig.subsystem.start();
+        std::atomic<int> runs { 0 };
+        const auto posted = std::chrono::steady_clock::now();
+        std::atomic<std::chrono::steady_clock::time_point> ran_at {};
+
+        const uint64_t token = rig.subsystem.post_after(40ms, [&] {
+            ran_at.store(std::chrono::steady_clock::now());
+            ++runs;
+        });
+
+        EXPECT_NE(token, 0U);
+        ASSERT_TRUE(eventually([&] { return runs.load() == 1; }));
+        EXPECT_GE(ran_at.load() - posted, 40ms);
+        std::this_thread::sleep_for(60ms);
+        EXPECT_EQ(runs.load(), 1);
+    }
+
+    TEST(NetworkSubsystemTest, EachPostedTimerGetsItsOwnToken)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+
+        const uint64_t first = rig.subsystem.post_after(10s, [] { });
+        const uint64_t second = rig.subsystem.post_after(10s, [] { });
+
+        EXPECT_NE(first, 0U);
+        EXPECT_NE(second, 0U);
+        EXPECT_NE(first, second);
+    }
+
+    TEST(NetworkSubsystemTest, CancelledTimerNeverRuns)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        rig.subsystem.start();
+        std::atomic<int> runs { 0 };
+        const uint64_t token = rig.subsystem.post_after(80ms, [&] { ++runs; });
+
+        rig.subsystem.cancel_post(token);
+
+        std::this_thread::sleep_for(200ms);
+        EXPECT_EQ(runs.load(), 0);
+    }
+
+    TEST(NetworkSubsystemTest, CancellingATimerThatAlreadyRanOrIsUnknownIsHarmless)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        rig.subsystem.start();
+        std::atomic<int> runs { 0 };
+        const uint64_t token = rig.subsystem.post_after(5ms, [&] { ++runs; });
+        ASSERT_TRUE(eventually([&] { return runs.load() == 1; }));
+
+        EXPECT_NO_THROW(rig.subsystem.cancel_post(token));
+        EXPECT_NO_THROW(rig.subsystem.cancel_post(token));
+        EXPECT_NO_THROW(rig.subsystem.cancel_post(987654));
+        EXPECT_EQ(runs.load(), 1);
+    }
+
+    TEST(NetworkSubsystemTest, TimersRunTogetherOnOneThreadThatIsNotTheCaller)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        rig.subsystem.start();
+        std::promise<std::thread::id> first;
+        std::promise<std::thread::id> second;
+        auto first_id = first.get_future();
+        auto second_id = second.get_future();
+
+        rig.subsystem.post_after(5ms, [&] { first.set_value(std::this_thread::get_id()); });
+        rig.subsystem.post_after(10ms, [&] { second.set_value(std::this_thread::get_id()); });
+
+        ASSERT_EQ(first_id.wait_for(3s), std::future_status::ready);
+        ASSERT_EQ(second_id.wait_for(3s), std::future_status::ready);
+        const auto runner = first_id.get();
+        EXPECT_NE(runner, std::this_thread::get_id());
+        EXPECT_EQ(second_id.get(), runner);
+    }
+
+    TEST(NetworkSubsystemTest, PendingTimersAreDroppedAtShutdown)
+    {
+        std::atomic<int> runs { 0 };
+        {
+            SubsystemRig rig;
+            rig.initialize();
+            rig.subsystem.start();
+            rig.subsystem.post_after(100ms, [&] { ++runs; });
+            rig.subsystem.shutdown();
+        }
+
+        std::this_thread::sleep_for(200ms);
+        EXPECT_EQ(runs.load(), 0);
+    }
+
+    // ------------------------------------------------------------------
     // Registered service
     // ------------------------------------------------------------------
 
@@ -1016,6 +1355,44 @@ namespace {
         service->close_endpoint(id);
         EXPECT_EQ(counters->closed, (std::vector<uint64_t> { id }));
         EXPECT_EQ(service->get_endpoint_state(id), EndpointState::CLOSED);
+    }
+
+    TEST(NetworkSubsystemTest, RegisteredServiceRoutesTheStateBacklogLineControlAndTimerMembers)
+    {
+        SubsystemRig rig;
+        rig.initialize();
+        rig.subsystem.start();
+        auto* backend = rig.add_fake(NetworkTransport::SERIAL, std::make_shared<NetCounters>());
+        ASSERT_NE(backend, nullptr);
+        auto* service = SubsystemRig::service();
+        ASSERT_NE(service, nullptr);
+        ASSERT_TRUE(service->set_endpoint_state_callback);
+        ASSERT_TRUE(service->get_write_backlog);
+        ASSERT_TRUE(service->set_control_lines);
+        ASSERT_TRUE(service->send_break);
+        ASSERT_TRUE(service->post_after);
+        ASSERT_TRUE(service->cancel_post);
+        const uint64_t id = service->open_endpoint(info_for(NetworkTransport::SERIAL));
+        ASSERT_NE(id, 0U);
+
+        int transitions = 0;
+        service->set_endpoint_state_callback(id,
+            [&](uint64_t, EndpointState, EndpointState) { ++transitions; });
+        backend->transition(id, EndpointState::OPEN, EndpointState::RECONNECTING);
+        EXPECT_EQ(transitions, 1);
+
+        backend->backlog[id] = 12;
+        EXPECT_EQ(service->get_write_backlog(id), 12U);
+        EXPECT_TRUE(service->set_control_lines(id, true, std::nullopt));
+        EXPECT_TRUE(service->send_break(id));
+        EXPECT_EQ(backend->control_calls.size(), 1U);
+        EXPECT_EQ(backend->breaks.size(), 1U);
+
+        std::atomic<int> runs { 0 };
+        const uint64_t token = service->post_after(5ms, [&] { ++runs; });
+        EXPECT_NE(token, 0U);
+        ASSERT_TRUE(eventually([&] { return runs.load() == 1; }));
+        service->cancel_post(token);
     }
 
     // ------------------------------------------------------------------
