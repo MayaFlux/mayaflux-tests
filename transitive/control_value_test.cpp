@@ -1,6 +1,8 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
+#include "MayaFlux/Kinesis/Spatial/Bounds.hpp"
+#include "MayaFlux/Kinesis/VertexSampler.hpp"
 #include "MayaFlux/Transitive/Facet/ControlValueStore.hpp"
 #include "MayaFlux/Transitive/Facet/ControlValueText.hpp"
 
@@ -44,22 +46,6 @@ namespace {
         EXPECT_FALSE(slot.pending().has_value());
     }
 
-    TEST(ControlValueSlotTest, ANumberIsDueOnceUntilItChanges)
-    {
-        ControlValue slot(0.5);
-
-        EXPECT_TRUE(slot.due());
-        const auto first = slot.pending();
-        ASSERT_TRUE(first.has_value());
-        EXPECT_DOUBLE_EQ(*first, 0.5);
-        EXPECT_FALSE(slot.due());
-        EXPECT_FALSE(slot.pending().has_value());
-
-        slot.assign(ControlValue(0.75));
-        EXPECT_TRUE(slot.due());
-        EXPECT_DOUBLE_EQ(slot.value(), 0.75);
-    }
-
     TEST(ControlValueSlotTest, SettleDropsAPendingValueWithoutChangingIt)
     {
         ControlValue slot(2.0);
@@ -68,50 +54,6 @@ namespace {
 
         EXPECT_FALSE(slot.due());
         EXPECT_DOUBLE_EQ(slot.value(), 2.0);
-    }
-
-    TEST(ControlValueSlotTest, AVectorKeepsItsComponentsAndAnswersOnlyToItsOwnType)
-    {
-        ControlValue slot(glm::vec3(1.F, 2.F, 3.F));
-
-        EXPECT_EQ(slot.width(), 3U);
-        EXPECT_FALSE(slot.pending<glm::vec2>().has_value());
-        const auto read = slot.pending<glm::vec3>();
-        ASSERT_TRUE(read.has_value());
-        EXPECT_FLOAT_EQ(read->x, 1.F);
-        EXPECT_FLOAT_EQ(read->y, 2.F);
-        EXPECT_FLOAT_EQ(read->z, 3.F);
-    }
-
-    TEST(ControlValueSlotTest, EveryFloatVectorWidthRoundTrips)
-    {
-        const ControlValue two(glm::vec2(1.F, 2.F));
-        const ControlValue four(glm::vec4(1.F, 2.F, 3.F, 4.F));
-
-        EXPECT_EQ(two.width(), 2U);
-        EXPECT_EQ(four.width(), 4U);
-        EXPECT_FLOAT_EQ(two.value<glm::vec2>().y, 2.F);
-        EXPECT_FLOAT_EQ(four.value<glm::vec4>().w, 4.F);
-    }
-
-    TEST(ControlValueSlotTest, AnEnumAndABoolRoundTrip)
-    {
-        const ControlValue mode(SlotMode::SOFT);
-        const ControlValue flag(true);
-
-        EXPECT_EQ(mode.value<SlotMode>(), SlotMode::SOFT);
-        EXPECT_TRUE(flag.value<bool>());
-        EXPECT_EQ(flag.width(), 1U);
-    }
-
-    TEST(ControlValueSlotTest, ABoxRoundTripsAsSixComponents)
-    {
-        const ControlValue slot(SlotBox { { -1.F, -2.F, -3.F }, { 4.F, 5.F, 6.F } });
-
-        EXPECT_EQ(slot.width(), 6U);
-        const auto box = slot.value<SlotBox>();
-        EXPECT_FLOAT_EQ(box.min.y, -2.F);
-        EXPECT_FLOAT_EQ(box.max.z, 6.F);
     }
 
     TEST(ControlValueSlotTest, ACopyKeepsTheValueAndWhetherItIsDue)
@@ -129,15 +71,358 @@ namespace {
         EXPECT_FALSE(settled.due());
     }
 
-    TEST(ControlValueSlotTest, ObservingShowsAValueWithoutMakingItDue)
+    TEST(ControlValueSlotTest, ANumberIsDueOnceUntilItChanges)
+    {
+        ControlValue slot(0.5);
+
+        EXPECT_TRUE(slot.has_value());
+        EXPECT_TRUE(slot.due());
+
+        const auto first = slot.pending();
+        ASSERT_TRUE(first.has_value());
+        EXPECT_DOUBLE_EQ(*first, 0.5);
+
+        EXPECT_FALSE(slot.due());
+        EXPECT_FALSE(slot.pending().has_value());
+        EXPECT_DOUBLE_EQ(slot.value(), 0.5);
+        EXPECT_DOUBLE_EQ(static_cast<double>(slot), 0.5);
+    }
+
+    TEST(ControlValueSlotTest, AssigningMakesASettledSlotDueAgain)
+    {
+        ControlValue live(1.0);
+        live.settle();
+        ASSERT_FALSE(live.due());
+
+        const ControlValue given(2.0);
+        live.assign(given);
+
+        EXPECT_TRUE(live.due());
+        EXPECT_DOUBLE_EQ(live.value(), 2.0);
+    }
+
+    TEST(ControlValueSlotTest, AssigningANumberOverANumberIsAppliedOnce)
+    {
+        ControlValue live(1.0);
+        live.settle();
+
+        live.assign(ControlValue(2.0));
+
+        EXPECT_TRUE(live.due());
+        const auto applied = live.pending();
+        ASSERT_TRUE(applied.has_value());
+        EXPECT_DOUBLE_EQ(*applied, 2.0);
+        EXPECT_FALSE(live.pending().has_value());
+    }
+
+    TEST(ControlValueSlotTest, ANumberAssignedFromAnotherThreadIsSeenInOrderAndNeverTorn)
+    {
+        ControlValue live(0.0);
+        live.settle();
+        constexpr int last = 20000;
+        std::atomic<bool> done { false };
+
+        std::thread writer([&] {
+            for (int i = 1; i <= last; ++i) {
+                live.assign(ControlValue(static_cast<double>(i)));
+            }
+            done.store(true, std::memory_order_release);
+        });
+
+        double previous = 0.0;
+        bool ordered = true;
+        for (;;) {
+            const bool finished = done.load(std::memory_order_acquire);
+            if (const auto value = live.pending()) {
+                ordered = ordered && *value >= previous && *value == std::floor(*value);
+                previous = *value;
+            }
+            if (finished) {
+                break;
+            }
+        }
+        writer.join();
+
+        EXPECT_TRUE(ordered);
+        EXPECT_DOUBLE_EQ(previous, static_cast<double>(last));
+    }
+
+    TEST(ControlValueTypeTest, AVectorIsHeldWholeAndReadBackAsItsType)
+    {
+        ControlValue slot(glm::vec3(1.0F, 2.0F, 3.0F));
+
+        EXPECT_TRUE(slot.has_value());
+        EXPECT_EQ(slot.value<glm::vec3>(), glm::vec3(1.0F, 2.0F, 3.0F));
+        const auto taken = slot.pending<glm::vec3>();
+        ASSERT_TRUE(taken.has_value());
+        EXPECT_EQ(*taken, glm::vec3(1.0F, 2.0F, 3.0F));
+        EXPECT_FALSE(slot.pending<glm::vec3>().has_value());
+    }
+
+    TEST(ControlValueTypeTest, EveryGlmVectorWidthRoundTrips)
+    {
+        EXPECT_EQ(ControlValue(glm::vec2(1.0F, 2.0F)).value<glm::vec2>(), glm::vec2(1.0F, 2.0F));
+        EXPECT_EQ(ControlValue(glm::vec3(1.0F, 2.0F, 3.0F)).value<glm::vec3>(), glm::vec3(1.0F, 2.0F, 3.0F));
+        EXPECT_EQ(ControlValue(glm::vec4(1.0F, 2.0F, 3.0F, 4.0F)).value<glm::vec4>(), glm::vec4(1.0F, 2.0F, 3.0F, 4.0F));
+    }
+
+    TEST(ControlValueTypeTest, IntegersBoolsAndEnumsRoundTripExactly)
+    {
+        EXPECT_EQ(ControlValue(7).value<int>(), 7);
+        EXPECT_EQ(ControlValue(size_t { 9007199254740992ULL }).value<size_t>(), size_t { 9007199254740992ULL });
+        EXPECT_TRUE(ControlValue(true).value<bool>());
+        EXPECT_FALSE(ControlValue(false).value<bool>());
+        EXPECT_EQ(ControlValue(SlotMode::HARD).value<SlotMode>(), SlotMode::HARD);
+        EXPECT_FLOAT_EQ(ControlValue(0.25F).value<float>(), 0.25F);
+    }
+
+    TEST(ControlValueTypeTest, ReadingAnotherTypeThanWasSetFindsNothing)
+    {
+        ControlValue scalar(2.0);
+        ControlValue vector(glm::vec3(1.0F));
+
+        EXPECT_FALSE(scalar.pending<glm::vec3>().has_value());
+        EXPECT_FALSE(vector.pending().has_value());
+        EXPECT_FALSE(vector.pending<glm::vec2>().has_value());
+        EXPECT_TRUE(scalar.pending().has_value());
+        EXPECT_TRUE(vector.pending<glm::vec3>().has_value());
+    }
+
+    TEST(ControlValueTypeTest, ADoubleStillReadsAsADoubleWithNoType)
+    {
+        ControlValue slot(0.75);
+
+        const auto taken = slot.pending();
+
+        ASSERT_TRUE(taken.has_value());
+        EXPECT_DOUBLE_EQ(*taken, 0.75);
+        EXPECT_DOUBLE_EQ(slot.value(), 0.75);
+        EXPECT_DOUBLE_EQ(static_cast<double>(slot), 0.75);
+    }
+
+    TEST(ControlValueTypeTest, AssigningAVectorOverANumberChangesTheTypeItReads)
+    {
+        ControlValue live(1.0);
+
+        live.assign(ControlValue(glm::vec3(4.0F, 5.0F, 6.0F)));
+
+        EXPECT_FALSE(live.pending().has_value());
+        EXPECT_EQ(live.value<glm::vec3>(), glm::vec3(4.0F, 5.0F, 6.0F));
+    }
+
+    TEST(ControlValueTypeTest, AVectorMergedWithAnEmptyOneKeepsItsComponents)
+    {
+        ControlValue live(glm::vec3(1.0F, 2.0F, 3.0F));
+
+        if (const ControlValue empty; empty.has_value()) {
+            live.assign(empty);
+        }
+
+        EXPECT_EQ(live.value<glm::vec3>(), glm::vec3(1.0F, 2.0F, 3.0F));
+    }
+
+    TEST(ControlValueTypeTest, ObservingAVectorShowsTheOwnersValueWithoutMakingItDue)
     {
         ControlValue slot;
 
-        slot.observe(0.4);
+        slot.observe(glm::vec3(0.0F, -9.8F, 0.0F));
 
         EXPECT_TRUE(slot.has_value());
-        EXPECT_DOUBLE_EQ(slot.value(), 0.4);
+        EXPECT_EQ(slot.value<glm::vec3>(), glm::vec3(0.0F, -9.8F, 0.0F));
         EXPECT_FALSE(slot.due());
+    }
+
+    TEST(ControlValueTypeTest, ObservingAScalarOfAnyTypeShowsItAsThatType)
+    {
+        ControlValue slot;
+
+        slot.observe(size_t { 12 });
+
+        EXPECT_EQ(slot.value<size_t>(), size_t { 12 });
+        EXPECT_DOUBLE_EQ(slot.value(), 12.0);
+        EXPECT_FALSE(slot.due());
+    }
+
+    TEST(ControlValueTypeTest, ACopyOfAVectorKeepsEveryComponent)
+    {
+        const ControlValue original(glm::vec4(1.0F, 2.0F, 3.0F, 4.0F));
+
+        const ControlValue copy = original;
+
+        EXPECT_EQ(copy.value<glm::vec4>(), glm::vec4(1.0F, 2.0F, 3.0F, 4.0F));
+        EXPECT_TRUE(copy.due());
+    }
+
+    TEST(ControlValueTypeTest, AnEnumPendsOnceAsItsOwnType)
+    {
+        ControlValue slot(SlotMode::SOFT);
+
+        const auto taken = slot.pending<SlotMode>();
+
+        ASSERT_TRUE(taken.has_value());
+        EXPECT_EQ(*taken, SlotMode::SOFT);
+        EXPECT_FALSE(slot.pending<SlotMode>().has_value());
+    }
+
+    TEST(ControlValueTypeTest, AVectorIsDueUntilSettledAndDueAgainWhenAssigned)
+    {
+        ControlValue live(glm::vec3(1.0F));
+
+        EXPECT_TRUE(live.due());
+        live.settle();
+        EXPECT_FALSE(live.due());
+
+        live.assign(ControlValue(glm::vec3(2.0F)));
+
+        EXPECT_TRUE(live.due());
+        EXPECT_EQ(live.value<glm::vec3>(), glm::vec3(2.0F));
+    }
+
+    TEST(ControlValueTypeTest, AnEmptySlotHoldsNoTypeAndPendsNothing)
+    {
+        ControlValue slot;
+
+        EXPECT_FALSE(slot.has_value());
+        EXPECT_FALSE(slot.pending().has_value());
+        EXPECT_FALSE(slot.pending<glm::vec3>().has_value());
+        EXPECT_FALSE(slot.pending<int>().has_value());
+    }
+
+    TEST(ControlValueTypeTest, AVectorSetFromAnotherThreadIsNeverSeenTorn)
+    {
+        ControlValue live(glm::vec3(0.0F));
+        static_cast<void>(live.pending<glm::vec3>());
+        constexpr int last = 20000;
+        std::atomic<bool> done { false };
+
+        std::thread writer([&] {
+            for (int i = 1; i <= last; ++i) {
+                const auto value = static_cast<float>(i);
+                live.assign(ControlValue(glm::vec3(value, value, value)));
+            }
+            done.store(true, std::memory_order_release);
+        });
+
+        bool whole = true;
+        float previous = 0.0F;
+        for (;;) {
+            const bool finished = done.load(std::memory_order_acquire);
+            if (const auto taken = live.pending<glm::vec3>()) {
+                whole = whole && taken->x == taken->y && taken->y == taken->z && taken->x >= previous;
+                previous = taken->x;
+            }
+            if (finished) {
+                break;
+            }
+        }
+        writer.join();
+
+        EXPECT_TRUE(whole);
+        EXPECT_FLOAT_EQ(previous, static_cast<float>(last));
+    }
+
+    TEST(ControlValueBoxTest, ABoxIsHeldWholeAndReadBackAsItsType)
+    {
+        ControlValue slot(Kinesis::AABB3D { .min = { -1.0F, -2.0F, -3.0F }, .max = { 4.0F, 5.0F, 6.0F } });
+
+        EXPECT_TRUE(slot.has_value());
+        EXPECT_EQ(slot.width(), 6U);
+        EXPECT_EQ(slot.value<Kinesis::AABB3D>().min, glm::vec3(-1.0F, -2.0F, -3.0F));
+        EXPECT_EQ(slot.value<Kinesis::AABB3D>().max, glm::vec3(4.0F, 5.0F, 6.0F));
+
+        const auto taken = slot.pending<Kinesis::AABB3D>();
+        ASSERT_TRUE(taken.has_value());
+        EXPECT_EQ(taken->min, glm::vec3(-1.0F, -2.0F, -3.0F));
+        EXPECT_EQ(taken->max, glm::vec3(4.0F, 5.0F, 6.0F));
+        EXPECT_FALSE(slot.pending<Kinesis::AABB3D>().has_value());
+    }
+
+    TEST(ControlValueBoxTest, SamplerBoundsRoundTripAndKeepTheirDerivedValues)
+    {
+        ControlValue slot(Kinesis::SamplerBounds { .min = glm::vec3(-2.0F), .max = glm::vec3(4.0F) });
+
+        const auto bounds = slot.pending<Kinesis::SamplerBounds>();
+
+        ASSERT_TRUE(bounds.has_value());
+        EXPECT_EQ(bounds->center(), glm::vec3(1.0F));
+        EXPECT_EQ(bounds->extent(), glm::vec3(6.0F));
+    }
+
+    TEST(ControlValueBoxTest, ABoxIsNeverReadAsANumberOrAVector)
+    {
+        ControlValue box(Kinesis::AABB3D { .min = glm::vec3(0.0F), .max = glm::vec3(1.0F) });
+        ControlValue wide(glm::vec4(1.0F));
+
+        EXPECT_FALSE(box.pending().has_value());
+        EXPECT_FALSE(box.pending<glm::vec3>().has_value());
+        EXPECT_FALSE(box.pending<glm::vec4>().has_value());
+        EXPECT_FALSE(wide.pending<Kinesis::AABB3D>().has_value());
+        EXPECT_TRUE(box.pending<Kinesis::AABB3D>().has_value());
+    }
+
+    TEST(ControlValueBoxTest, AssigningABoxOverAVectorChangesTheTypeItReads)
+    {
+        ControlValue live(glm::vec3(1.0F));
+
+        live.assign(ControlValue(Kinesis::AABB3D { .min = glm::vec3(-1.0F), .max = glm::vec3(1.0F) }));
+
+        EXPECT_FALSE(live.pending<glm::vec3>().has_value());
+        EXPECT_EQ(live.value<Kinesis::AABB3D>().max, glm::vec3(1.0F));
+    }
+
+    TEST(ControlValueBoxTest, ObservingABoxShowsTheOwnersValueWithoutMakingItDue)
+    {
+        ControlValue slot;
+
+        slot.observe(Kinesis::SamplerBounds { .min = glm::vec3(-10.0F), .max = glm::vec3(10.0F) });
+
+        EXPECT_TRUE(slot.has_value());
+        EXPECT_EQ(slot.value<Kinesis::SamplerBounds>().max, glm::vec3(10.0F));
+        EXPECT_FALSE(slot.due());
+    }
+
+    TEST(ControlValueBoxTest, ACopyOfABoxKeepsBothCorners)
+    {
+        const ControlValue original(Kinesis::AABB3D { .min = { 1.0F, 2.0F, 3.0F }, .max = { 4.0F, 5.0F, 6.0F } });
+
+        const ControlValue copy = original;
+
+        EXPECT_EQ(copy.value<Kinesis::AABB3D>().min, glm::vec3(1.0F, 2.0F, 3.0F));
+        EXPECT_EQ(copy.value<Kinesis::AABB3D>().max, glm::vec3(4.0F, 5.0F, 6.0F));
+        EXPECT_TRUE(copy.due());
+    }
+
+    TEST(ControlValueBoxTest, ABoxSetFromAnotherThreadIsNeverSeenWithMismatchedCorners)
+    {
+        ControlValue live(Kinesis::AABB3D { .min = glm::vec3(0.0F), .max = glm::vec3(0.0F) });
+        static_cast<void>(live.pending<Kinesis::AABB3D>());
+        constexpr int last = 20000;
+        std::atomic<bool> done { false };
+
+        std::thread writer([&] {
+            for (int i = 1; i <= last; ++i) {
+                const auto value = static_cast<float>(i);
+                live.assign(ControlValue(Kinesis::AABB3D { .min = glm::vec3(-value), .max = glm::vec3(value) }));
+            }
+            done.store(true, std::memory_order_release);
+        });
+
+        bool whole = true;
+        float previous = 0.0F;
+        for (;;) {
+            const bool finished = done.load(std::memory_order_acquire);
+            if (const auto taken = live.pending<Kinesis::AABB3D>()) {
+                whole = whole && taken->min == -taken->max && taken->max.x == taken->max.z && taken->max.x >= previous;
+                previous = taken->max.x;
+            }
+            if (finished) {
+                break;
+            }
+        }
+        writer.join();
+
+        EXPECT_TRUE(whole);
+        EXPECT_FLOAT_EQ(previous, static_cast<float>(last));
     }
 
     TEST(ControlValueStoreNestedTest, AFlatStructMergesOnlyWhatTheIncomingHolds)
