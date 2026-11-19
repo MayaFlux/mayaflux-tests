@@ -9,6 +9,7 @@
 #include "MayaFlux/Buffers/Input/InputAudioBuffer.hpp"
 #include "MayaFlux/Buffers/Node/NodeBuffer.hpp"
 #include "MayaFlux/Core/ProcessingArchitecture.hpp"
+#include "MayaFlux/Core/SubsystemManager.hpp"
 #include "MayaFlux/Core/Subsystems/AudioSubsystem.hpp"
 #include "MayaFlux/Kakshya/Source/DynamicSoundStream.hpp"
 #include "MayaFlux/Kinesis/Scalar.hpp"
@@ -51,6 +52,21 @@ namespace {
         return manager.process_sample(Nodes::ProcessingToken::AUDIO_RATE, 0);
     }
 
+    Core::GlobalStreamInfo resolved_stream(uint32_t channels, uint32_t input_channels)
+    {
+        Core::GlobalStreamInfo info;
+        info.sample_rate = k_sample_rate;
+        info.buffer_size = k_buffer_size;
+        info.output.channels = channels;
+        info.input.enabled = false;
+        info.input.channels = input_channels;
+        try {
+            Core::SubsystemManager::resolve_configs(info);
+        } catch (const std::exception&) {
+        }
+        return info;
+    }
+
     /**
      * @brief Owns an AudioSubsystem together with the managers behind its processing handle.
      *
@@ -60,18 +76,15 @@ namespace {
      */
     class SubsystemRig {
     public:
-        explicit SubsystemRig(uint32_t channels = 2, uint32_t input_channels = 2)
-            : nodes(std::make_shared<Nodes::NodeGraphManager>())
-            , buffers(std::make_shared<Buffers::BufferManager>(channels, input_channels, k_sample_rate, k_buffer_size))
-            , tasks(std::make_shared<Vruta::TaskScheduler>(k_sample_rate))
-            , channels(channels)
-            , input_channels(input_channels)
+        explicit SubsystemRig(uint32_t requested_channels = 2, uint32_t requested_input_channels = 2)
+            : stream_info(resolved_stream(requested_channels, requested_input_channels))
+            , nodes(std::make_shared<Nodes::NodeGraphManager>())
+            , buffers(std::make_shared<Buffers::BufferManager>(
+                  stream_info.output.channels, requested_input_channels, stream_info.sample_rate, k_buffer_size))
+            , tasks(std::make_shared<Vruta::TaskScheduler>(stream_info.sample_rate))
+            , channels(stream_info.output.channels)
+            , input_channels(requested_input_channels)
         {
-            stream_info.sample_rate = k_sample_rate;
-            stream_info.buffer_size = k_buffer_size;
-            stream_info.output.channels = channels;
-            stream_info.input.enabled = false;
-            stream_info.input.channels = input_channels;
         }
 
         SubsystemRig(const SubsystemRig&) = delete;
@@ -148,10 +161,10 @@ namespace {
             return Registry::BackendRegistry::instance().get_service<AudioBackendService>();
         }
 
+        Core::GlobalStreamInfo stream_info;
         std::shared_ptr<Nodes::NodeGraphManager> nodes;
         std::shared_ptr<Buffers::BufferManager> buffers;
         std::shared_ptr<Vruta::TaskScheduler> tasks;
-        Core::GlobalStreamInfo stream_info;
         std::unique_ptr<Core::SubsystemProcessingHandle> handle;
         std::unique_ptr<Core::AudioSubsystem> subsystem;
         uint32_t channels;
@@ -360,6 +373,33 @@ namespace {
 
         EXPECT_DOUBLE_EQ(output[0], 0.0);
         EXPECT_DOUBLE_EQ(output[1], 0.0);
+    }
+
+    TEST(AudioSubsystemTest, SharesTheStreamConfigurationInsteadOfCopyingIt)
+    {
+        SubsystemRig rig(2);
+        ASSERT_TRUE(rig.construct());
+
+        EXPECT_EQ(&rig.subsystem->get_stream_info(), &rig.stream_info);
+
+        rig.stream_info.buffer_size = k_buffer_size / 2;
+        EXPECT_EQ(rig.subsystem->get_stream_info().buffer_size, k_buffer_size / 2);
+    }
+
+    TEST(AudioSubsystemTest, ResolvingAConfigIsStableAndKeepsTheBufferSize)
+    {
+        Core::GlobalStreamInfo info = resolved_stream(2, 0);
+        const auto first = info;
+        try {
+            Core::AudioSubsystem::resolve_stream_info(info);
+        } catch (const std::exception&) {
+            GTEST_SKIP() << "Audio backend is unavailable in this environment";
+        }
+
+        EXPECT_EQ(info.output.channels, first.output.channels);
+        EXPECT_EQ(info.sample_rate, first.sample_rate);
+        EXPECT_EQ(info.buffer_size, k_buffer_size);
+        EXPECT_FALSE(info.input.enabled);
     }
 
     TEST(AudioSubsystemTest, ConstructionExposesConfigurationBackendAndTokens)
@@ -599,6 +639,8 @@ namespace {
     {
         const auto& param = GetParam();
         SubsystemRig rig(param.channels, 0);
+        if (rig.channels != param.channels)
+            GTEST_SKIP() << "Device provides " << rig.channels << " output channels, the case needs " << param.channels;
         REQUIRE_AUDIO(rig);
         for (uint32_t channel = 0; channel < param.channels; ++channel)
             rig.add_node(channel, param.value + 0.01 * channel);

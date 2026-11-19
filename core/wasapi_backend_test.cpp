@@ -7,6 +7,7 @@
 #include <stdexcept>
 
 #include "MayaFlux/Core/Backends/Audio/WasapiBackend.hpp"
+#include "MayaFlux/Core/SubsystemManager.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::wasapi>() }))
 
@@ -51,6 +52,14 @@ namespace {
             }
             return 0;
         };
+    }
+
+    std::optional<Core::DeviceInfo> default_info(
+        const std::vector<Core::DeviceInfo>& devices, unsigned int id)
+    {
+        if (id == 0 || id > devices.size())
+            return std::nullopt;
+        return devices[id - 1];
     }
 
     TEST(WasapiBackendTest, CreatesBackendAndReportsVersion)
@@ -243,6 +252,11 @@ namespace {
         auto config = output_config();
         config.input.enabled = true;
         config.input.channels = 1;
+        backend.resolve_stream_info(devices->get_default_output_device(),
+            devices->get_default_input_device(), config);
+        if (!config.input.enabled)
+            GTEST_SKIP() << "WASAPI capture endpoint cannot be negotiated";
+
         auto stream = backend.create_stream(devices->get_default_output_device(),
             devices->get_default_input_device(), config, nullptr);
         ASSERT_NE(stream, nullptr);
@@ -264,6 +278,240 @@ namespace {
         stream->start();
         EXPECT_TRUE(eventually([&] { return input_callbacks->load(std::memory_order_acquire) > 0; }, 4s));
         EXPECT_GT(output_callbacks->load(std::memory_order_acquire), 0U);
+        stream->stop();
+        stream->close();
+    }
+
+    TEST(WasapiBackendTest, ResolveKeepsAConfigTheDefaultOutputAlreadyProvides)
+    {
+        Core::WasapiBackend backend;
+        auto devices = backend.create_device_manager();
+        ASSERT_NE(devices, nullptr);
+        const auto output = default_info(devices->get_output_devices(), devices->get_default_output_device());
+        if (!output)
+            GTEST_SKIP() << "WASAPI has no default render endpoint";
+
+        auto config = output_config(output->output_channels);
+        config.sample_rate = output->preferred_sample_rate;
+        backend.resolve_stream_info(devices->get_default_output_device(),
+            devices->get_default_input_device(), config);
+
+        EXPECT_EQ(config.output.channels, output->output_channels);
+        EXPECT_EQ(config.sample_rate, output->preferred_sample_rate);
+    }
+
+    TEST(WasapiBackendTest, ResolveNeverInventsAnOutputLayoutTheDeviceLacks)
+    {
+        Core::WasapiBackend backend;
+        auto devices = backend.create_device_manager();
+        ASSERT_NE(devices, nullptr);
+        const auto output = default_info(devices->get_output_devices(), devices->get_default_output_device());
+        if (!output)
+            GTEST_SKIP() << "WASAPI has no default render endpoint";
+
+        for (const uint32_t channels : { 1U, 2U, 4U, 8U }) {
+            for (const uint32_t rate : { 44100U, 48000U, 96000U }) {
+                auto config = output_config(channels);
+                config.sample_rate = rate;
+                backend.resolve_stream_info(devices->get_default_output_device(),
+                    devices->get_default_input_device(), config);
+
+                EXPECT_TRUE(config.output.channels == channels || config.output.channels == output->output_channels)
+                    << channels << " channels at " << rate << " Hz resolved to " << config.output.channels;
+                EXPECT_TRUE(config.sample_rate == rate || config.sample_rate == output->preferred_sample_rate)
+                    << channels << " channels at " << rate << " Hz resolved to " << config.sample_rate << " Hz";
+            }
+        }
+    }
+
+    TEST(WasapiBackendTest, ResolveIsStableWhenAppliedTwice)
+    {
+        Core::WasapiBackend backend;
+        auto devices = backend.create_device_manager();
+        ASSERT_NE(devices, nullptr);
+        if (devices->get_output_devices().empty())
+            GTEST_SKIP() << "WASAPI has no active render endpoint";
+
+        auto config = output_config(1);
+        config.sample_rate = 44100;
+        backend.resolve_stream_info(devices->get_default_output_device(),
+            devices->get_default_input_device(), config);
+        const auto first = config;
+        backend.resolve_stream_info(devices->get_default_output_device(),
+            devices->get_default_input_device(), config);
+
+        EXPECT_EQ(config.output.channels, first.output.channels);
+        EXPECT_EQ(config.sample_rate, first.sample_rate);
+    }
+
+    TEST(WasapiBackendTest, ResolveLeavesDisabledInputAlone)
+    {
+        Core::WasapiBackend backend;
+        auto devices = backend.create_device_manager();
+        ASSERT_NE(devices, nullptr);
+
+        auto config = output_config();
+        backend.resolve_stream_info(devices->get_default_output_device(),
+            devices->get_default_input_device(), config);
+
+        EXPECT_FALSE(config.input.enabled);
+        EXPECT_EQ(config.input.channels, 0U);
+    }
+
+    TEST(WasapiBackendTest, ResolveLeavesOutputAloneForADeviceBeyondEnumeratedRange)
+    {
+        Core::WasapiBackend backend;
+        auto devices = backend.create_device_manager();
+        ASSERT_NE(devices, nullptr);
+        const auto beyond = static_cast<unsigned int>(devices->get_output_devices().size() + 1);
+
+        auto config = output_config(4);
+        config.sample_rate = 44100;
+        backend.resolve_stream_info(beyond, 0, config);
+
+        EXPECT_EQ(config.output.channels, 4U);
+        EXPECT_EQ(config.sample_rate, 44100U);
+    }
+
+    TEST(WasapiBackendTest, ResolveDisablesInputForACaptureDeviceBeyondEnumeratedRange)
+    {
+        Core::WasapiBackend backend;
+        auto devices = backend.create_device_manager();
+        ASSERT_NE(devices, nullptr);
+        const auto beyond = static_cast<unsigned int>(devices->get_input_devices().size() + 1);
+
+        auto config = output_config();
+        config.input.enabled = true;
+        config.input.channels = 2;
+        backend.resolve_stream_info(devices->get_default_output_device(), beyond, config);
+
+        EXPECT_FALSE(config.input.enabled);
+        EXPECT_EQ(config.input.channels, 0U);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, WasapiBackendTest, ResolveFitsInputToTheDefaultCaptureDevice, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_input, ::MayaFlux::Test::Meta::Capability::wasapi>() }))
+    {
+        Core::WasapiBackend backend;
+        auto devices = backend.create_device_manager();
+        ASSERT_NE(devices, nullptr);
+        const auto input = default_info(devices->get_input_devices(), devices->get_default_input_device());
+        if (!input)
+            GTEST_SKIP() << "WASAPI has no default capture endpoint";
+
+        auto config = output_config();
+        config.input.enabled = true;
+        config.input.channels = input->input_channels + 1;
+        backend.resolve_stream_info(devices->get_default_output_device(),
+            devices->get_default_input_device(), config);
+
+        EXPECT_TRUE(config.input.enabled);
+        EXPECT_EQ(config.input.channels, input->input_channels);
+    }
+
+    TEST(WasapiBackendTest, SubsystemManagerResolvesTheSameConfigAsTheBackend)
+    {
+        Core::WasapiBackend backend;
+        auto devices = backend.create_device_manager();
+        ASSERT_NE(devices, nullptr);
+        if (devices->get_output_devices().empty())
+            GTEST_SKIP() << "WASAPI has no active render endpoint";
+
+        auto via_backend = output_config(1);
+        via_backend.sample_rate = 44100;
+        auto via_manager = via_backend;
+
+        backend.resolve_stream_info(devices->get_default_output_device(),
+            devices->get_default_input_device(), via_backend);
+        Core::SubsystemManager::resolve_configs(via_manager);
+
+        EXPECT_EQ(via_manager.output.channels, via_backend.output.channels);
+        EXPECT_EQ(via_manager.sample_rate, via_backend.sample_rate);
+        EXPECT_EQ(via_manager.input.enabled, via_backend.input.enabled);
+        EXPECT_EQ(via_manager.input.channels, via_backend.input.channels);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, WasapiBackendTest, ResolvedConfigOpensWithoutFurtherAdjustment, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::wasapi>() }))
+    {
+        Core::WasapiBackend backend;
+        auto devices = backend.create_device_manager();
+        ASSERT_NE(devices, nullptr);
+        if (devices->get_output_devices().empty())
+            GTEST_SKIP() << "WASAPI has no active render endpoint";
+
+        auto config = output_config(1);
+        config.sample_rate = 44100;
+        backend.resolve_stream_info(devices->get_default_output_device(),
+            devices->get_default_input_device(), config);
+        const auto resolved = config;
+
+        auto stream = backend.create_stream(devices->get_default_output_device(),
+            devices->get_default_input_device(), config, nullptr);
+        ASSERT_NE(stream, nullptr);
+        ASSERT_NO_THROW(stream->open());
+
+        EXPECT_EQ(config.output.channels, resolved.output.channels);
+        EXPECT_EQ(config.sample_rate, resolved.sample_rate);
+        stream->close();
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, WasapiBackendTest, OpenAdjustsAnUnresolvedOutputConfigToTheDevice, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::wasapi>() }))
+    {
+        Core::WasapiBackend backend;
+        auto devices = backend.create_device_manager();
+        ASSERT_NE(devices, nullptr);
+        if (devices->get_output_devices().empty())
+            GTEST_SKIP() << "WASAPI has no active render endpoint";
+
+        auto expected = output_config(1);
+        expected.sample_rate = 44100;
+        backend.resolve_stream_info(devices->get_default_output_device(),
+            devices->get_default_input_device(), expected);
+
+        auto config = output_config(1);
+        config.sample_rate = 44100;
+        auto stream = backend.create_stream(devices->get_default_output_device(),
+            devices->get_default_input_device(), config, nullptr);
+        ASSERT_NE(stream, nullptr);
+        ASSERT_NO_THROW(stream->open());
+
+        EXPECT_EQ(config.output.channels, expected.output.channels);
+        EXPECT_EQ(config.sample_rate, expected.sample_rate);
+        stream->close();
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, WasapiBackendTest, DropsInputInsteadOfPaddingWhenTheChannelCountDiffers, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_input, ::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::wasapi>() }))
+    {
+        Core::WasapiBackend backend;
+        auto devices = backend.create_device_manager();
+        ASSERT_NE(devices, nullptr);
+        const auto input = default_info(devices->get_input_devices(), devices->get_default_input_device());
+        if (devices->get_output_devices().empty() || !input)
+            GTEST_SKIP() << "WASAPI full duplex requires both render and capture endpoints";
+
+        auto config = output_config();
+        config.input.enabled = true;
+        config.input.channels = input->input_channels + 1;
+        auto stream = backend.create_stream(devices->get_default_output_device(),
+            devices->get_default_input_device(), config, nullptr);
+        ASSERT_NE(stream, nullptr);
+
+        auto output_callbacks = std::make_shared<std::atomic<uint32_t>>(0);
+        auto input_callbacks = std::make_shared<std::atomic<uint32_t>>(0);
+        stream->set_process_callback([&config, output_callbacks, input_callbacks](void* output, void* input, unsigned int frames) {
+            if (output && frames > 0) {
+                std::memset(output, 0,
+                    static_cast<std::size_t>(frames) * config.output.channels * sizeof(double));
+                output_callbacks->fetch_add(1, std::memory_order_release);
+                if (input)
+                    input_callbacks->fetch_add(1, std::memory_order_release);
+            }
+            return 0;
+        });
+
+        stream->open();
+        stream->start();
+        EXPECT_TRUE(eventually([&] { return output_callbacks->load(std::memory_order_acquire) >= 4; }));
+        EXPECT_EQ(input_callbacks->load(std::memory_order_acquire), 0U);
         stream->stop();
         stream->close();
     }

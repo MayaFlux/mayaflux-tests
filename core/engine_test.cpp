@@ -1,8 +1,8 @@
 #include <chrono>
 #include <future>
 
-#include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Core/Engine.hpp"
@@ -42,6 +42,13 @@ namespace {
         stream.output.channels = test_case.channels;
         stream.input.enabled = test_case.input_channels > 0;
         stream.input.channels = test_case.input_channels;
+        return stream;
+    }
+
+    Core::GlobalStreamInfo resolved_for(const EngineCase& test_case)
+    {
+        auto stream = stream_for(test_case);
+        Core::SubsystemManager::resolve_configs(stream);
         return stream;
     }
 
@@ -131,15 +138,16 @@ namespace {
 
     TEST_P(EngineConfigurationTest, AppliesStreamConfiguration)
     {
-        const auto& expected = GetParam();
+        const auto& requested = GetParam();
+        const auto expected = resolved_for(requested);
         const auto& actual = engine.get_stream_info();
         EXPECT_TRUE(engine.is_configured());
         EXPECT_FALSE(engine.is_running());
         EXPECT_EQ(actual.sample_rate, expected.sample_rate);
         EXPECT_EQ(actual.buffer_size, expected.buffer_size);
-        EXPECT_EQ(actual.output.channels, expected.channels);
-        EXPECT_EQ(actual.input.enabled, expected.input_channels > 0);
-        EXPECT_EQ(actual.input.channels, expected.input_channels);
+        EXPECT_EQ(actual.output.channels, expected.output.channels);
+        EXPECT_EQ(actual.input.enabled, requested.input_channels > 0);
+        EXPECT_EQ(actual.input.channels, requested.input_channels);
     }
 
     TEST_P(EngineConfigurationTest, WiresCoreManagers)
@@ -151,9 +159,10 @@ namespace {
         EXPECT_NE(engine.get_input_manager(), nullptr);
         EXPECT_NE(engine.get_io_manager(), nullptr);
         EXPECT_NE(engine.get_window_manager(), nullptr);
-        EXPECT_EQ(engine.get_scheduler()->get_rate(), GetParam().sample_rate);
-        EXPECT_EQ(engine.get_buffer_manager()->get_buffer_size(Buffers::ProcessingToken::AUDIO_BACKEND), GetParam().buffer_size);
-        EXPECT_EQ(engine.get_buffer_manager()->get_num_channels(Buffers::ProcessingToken::AUDIO_BACKEND), GetParam().channels);
+        const auto expected = resolved_for(GetParam());
+        EXPECT_EQ(engine.get_scheduler()->get_rate(), expected.sample_rate);
+        EXPECT_EQ(engine.get_buffer_manager()->get_buffer_size(Buffers::ProcessingToken::AUDIO_BACKEND), expected.buffer_size);
+        EXPECT_EQ(engine.get_buffer_manager()->get_num_channels(Buffers::ProcessingToken::AUDIO_BACKEND), expected.output.channels);
     }
 
     TEST_P(EngineConfigurationTest, CreatesReadySubsystems)
@@ -176,7 +185,7 @@ namespace {
     {
         auto buffers = engine.get_buffer_manager();
         ASSERT_NE(buffers, nullptr);
-        for (uint32_t channel = 0; channel < GetParam().channels; ++channel) {
+        for (uint32_t channel = 0; channel < resolved_for(GetParam()).output.channels; ++channel) {
             auto buffer = buffers->get_root_audio_buffer(Buffers::ProcessingToken::AUDIO_BACKEND, channel);
             ASSERT_NE(buffer, nullptr);
             EXPECT_EQ(buffer->get_channel_id(), channel);
@@ -231,7 +240,7 @@ namespace {
                             .get_service<Registry::Service::AudioBackendService>();
         ASSERT_NE(service, nullptr);
         auto callbacks = std::make_shared<std::atomic<uint32_t>>(0);
-        const auto channels = GetParam().channels;
+        const auto channels = resolved_for(GetParam()).output.channels;
         const auto observer = service->register_output_observer(
             [callbacks, channels](const double*, uint32_t samples) {
                 if (samples >= channels && samples % channels == 0) {
@@ -384,12 +393,13 @@ namespace {
     TEST(EngineLifecycleTest, MoveTransfersConfiguredEngine)
     {
         Core::Engine source;
-        source.Init(stream_for({ "Mono44k", 44100, 256, 1 }));
+        const EngineCase mono { "Mono44k", 44100, 256, 1 };
+        source.Init(stream_for(mono));
         Core::Engine destination(std::move(source));
         EXPECT_FALSE(source.is_configured());
         EXPECT_TRUE(destination.is_configured());
         ASSERT_NE(destination.get_scheduler(), nullptr);
-        EXPECT_EQ(destination.get_scheduler()->get_rate(), 44100);
+        EXPECT_EQ(destination.get_scheduler()->get_rate(), resolved_for(mono).sample_rate);
         destination.Start();
         destination.End();
     }
