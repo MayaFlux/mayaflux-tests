@@ -13,7 +13,7 @@ TEST(WindowClipboardDefaultTest, ABackendWithoutAClipboardDeliversNothingAtOnce)
     int calls = 0;
     std::optional<std::string> got = "unset";
 
-    window.request_clipboard_text([&](std::optional<std::string> text) {
+    window.Core::Window::request_clipboard_text([&](std::optional<std::string> text) {
         got = std::move(text);
         ++calls;
     });
@@ -26,8 +26,8 @@ TEST(WindowClipboardDefaultTest, CopyingAndAnEmptyCallbackAreIgnored)
 {
     ScriptedWindow window(200U, 100U);
 
-    EXPECT_NO_THROW(window.set_clipboard_text("text"));
-    EXPECT_NO_THROW(window.request_clipboard_text({}));
+    EXPECT_NO_THROW(window.Core::Window::set_clipboard_text("text"));
+    EXPECT_NO_THROW(window.Core::Window::request_clipboard_text({}));
 }
 
 }
