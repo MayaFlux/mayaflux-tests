@@ -463,6 +463,108 @@ namespace {
     }
 
     // ------------------------------------------------------------------
+    // Following devices that come and go
+    // ------------------------------------------------------------------
+
+    InputDeviceInfo pad(uint32_t id, uint16_t product = 0x5678)
+    {
+        return InputDeviceInfo { .id = id, .backend_type = InputType::HID, .vendor_id = 0x1234, .product_id = product };
+    }
+
+    TEST(InputManagerDeviceTest, AVendorProductNodeFollowsItsDeviceToANewId)
+    {
+        FakeInputService service;
+        service.devices = { pad(5) };
+        InputManager manager;
+        auto node = std::make_shared<RecordingNode>();
+        manager.start();
+        manager.register_node(node, InputBinding::hid_by_vid_pid(0x1234, 0x5678));
+
+        manager.enqueue(InputValue::make_bytes({ 1 }, 5, InputType::HID));
+        ASSERT_TRUE(eventually([&] { return node->count() == 1; }));
+
+        manager.on_device_change(pad(5), false);
+        manager.enqueue(InputValue::make_bytes({ 2 }, 5, InputType::HID));
+        manager.on_device_change(pad(7), true);
+        manager.enqueue(InputValue::make_bytes({ 3 }, 7, InputType::HID));
+
+        ASSERT_TRUE(eventually([&] { return node->count() == 2; }));
+        EXPECT_EQ(node->values().back().device_id, 7U);
+        ASSERT_EQ(service.opened.size(), 2U);
+        EXPECT_EQ(service.opened.back().second, 7U);
+    }
+
+    TEST(InputManagerDeviceTest, ANodeReceivesNothingWhileItsDeviceIsAway)
+    {
+        FakeInputService service;
+        service.devices = { pad(5) };
+        InputManager manager;
+        auto node = std::make_shared<RecordingNode>();
+        auto sentinel = std::make_shared<RecordingNode>();
+        manager.start();
+        manager.register_node(node, InputBinding::hid_by_vid_pid(0x1234, 0x5678));
+        manager.register_node(sentinel, wildcard(InputType::HID));
+
+        manager.on_device_change(pad(5), false);
+        manager.enqueue(InputValue::make_bytes({ 1 }, 5, InputType::HID));
+
+        ASSERT_TRUE(eventually([&] { return sentinel->count() == 1; }));
+        EXPECT_EQ(node->count(), 0U);
+    }
+
+    TEST(InputManagerDeviceTest, ADeviceReturningWithItsIdResumesDelivery)
+    {
+        FakeInputService service;
+        service.devices = { pad(5) };
+        InputManager manager;
+        auto node = std::make_shared<RecordingNode>();
+        manager.start();
+        manager.register_node(node, InputBinding::hid_by_vid_pid(0x1234, 0x5678));
+
+        manager.on_device_change(pad(5), false);
+        manager.on_device_change(pad(5), true);
+        manager.enqueue(InputValue::make_bytes({ 1 }, 5, InputType::HID));
+
+        ASSERT_TRUE(eventually([&] { return node->count() == 1; }));
+    }
+
+    TEST(InputManagerDeviceTest, ADeviceOfAnotherModelDoesNotRebindTheNode)
+    {
+        FakeInputService service;
+        service.devices = { pad(5) };
+        InputManager manager;
+        auto node = std::make_shared<RecordingNode>();
+        auto sentinel = std::make_shared<RecordingNode>();
+        manager.start();
+        manager.register_node(node, InputBinding::hid_by_vid_pid(0x1234, 0x5678));
+        manager.register_node(sentinel, wildcard(InputType::HID));
+
+        manager.on_device_change(pad(5), false);
+        manager.on_device_change(pad(8, 0x9999), true);
+        manager.enqueue(InputValue::make_bytes({ 1 }, 8, InputType::HID));
+
+        ASSERT_TRUE(eventually([&] { return sentinel->count() == 1; }));
+        EXPECT_EQ(node->count(), 0U);
+        EXPECT_EQ(service.opened.size(), 1U);
+    }
+
+    TEST(InputManagerDeviceTest, ANodeBoundByIdIsLeftAloneByDeviceEvents)
+    {
+        FakeInputService service;
+        service.devices = { pad(5) };
+        InputManager manager;
+        auto node = std::make_shared<RecordingNode>();
+        manager.start();
+        manager.register_node(node, InputBinding::hid(5));
+
+        manager.on_device_change(pad(5), false);
+        manager.on_device_change(pad(9), true);
+        manager.enqueue(InputValue::make_bytes({ 1 }, 5, InputType::HID));
+
+        ASSERT_TRUE(eventually([&] { return node->count() == 1; }));
+    }
+
+    // ------------------------------------------------------------------
     // Queue and statistics
     // ------------------------------------------------------------------
 
