@@ -977,5 +977,617 @@ namespace {
         }
     }
 
+
+    std::string text_of(const Bytes& data)
+    {
+        return std::string(data.begin(), data.end());
+    }
+
+    Bytes encoded_cobs(const Bytes& payload)
+    {
+        Bytes out;
+        P::encode_cobs(payload, out);
+        return out;
+    }
+
+    Bytes encoded_slip(const Bytes& payload)
+    {
+        Bytes out;
+        P::encode_slip(payload, out);
+        return out;
+    }
+
+    Bytes random_payload(std::mt19937_64& rng, size_t max_size)
+    {
+        Bytes payload(static_cast<size_t>(rng() % (max_size + 1)));
+        for (auto& byte : payload) {
+            byte = static_cast<uint8_t>(rng() % 4 == 0 ? 0 : rng() % 256);
+        }
+        return payload;
+    }
+
+    // ------------------------------------------------------------------
+    // DelimiterFramer
+    // ------------------------------------------------------------------
+
+    TEST(DelimiterFramerTest, SingleByteTerminatorDelivers)
+    {
+        P::DelimiterFramer framer(">");
+        Collector got;
+
+        const auto report = feed(framer, got, "OK>41 00>");
+
+        EXPECT_EQ(report.messages, 2U);
+        EXPECT_TRUE(report.ok());
+        EXPECT_EQ(got.messages(), (Texts { "OK", "41 00" }));
+    }
+
+    TEST(DelimiterFramerTest, MessageAndTerminatorMaySplitAcrossPushes)
+    {
+        P::DelimiterFramer framer("\r\n");
+        Collector got;
+
+        (void)feed(framer, got, "ab");
+        (void)feed(framer, got, "c\r");
+        EXPECT_TRUE(got.messages().empty());
+        (void)feed(framer, got, "\nde\r\n");
+
+        EXPECT_EQ(got.messages(), (Texts { "abc", "de" }));
+        EXPECT_EQ(framer.buffered(), 0U);
+    }
+
+    TEST(DelimiterFramerTest, EmptyMessagesAreDelivered)
+    {
+        P::DelimiterFramer framer("\r\n");
+        Collector got;
+
+        (void)feed(framer, got, "\r\n\r\nx\r\n");
+
+        EXPECT_EQ(got.messages(), (Texts { "", "", "x" }));
+    }
+
+    TEST(DelimiterFramerTest, PartOfTheTerminatorInsideAMessageStaysInIt)
+    {
+        P::DelimiterFramer framer("\r\n");
+        Collector got;
+
+        (void)feed(framer, got, "a\rb\nc\r\n");
+
+        EXPECT_EQ(got.messages(), (Texts { "a\rb\nc" }));
+    }
+
+    TEST(DelimiterFramerTest, OverlappingTerminatorEndsAtTheFirstMatch)
+    {
+        P::DelimiterFramer framer("aa");
+        Collector got;
+
+        (void)feed(framer, got, "xaaayaa");
+
+        EXPECT_EQ(got.messages(), (Texts { "x", "ay" }));
+    }
+
+    TEST(DelimiterFramerTest, MessageOfExactlyTheLimitIsDelivered)
+    {
+        P::DelimiterFramer framer(">", 4);
+        Collector got;
+
+        const auto report = feed(framer, got, "abcd>");
+
+        EXPECT_EQ(got.messages(), (Texts { "abcd" }));
+        EXPECT_EQ(report.discarded, 0U);
+    }
+
+    TEST(DelimiterFramerTest, OversizedMessageIsDroppedAndTheNextOneDelivered)
+    {
+        P::DelimiterFramer framer(">", 4);
+        Collector got;
+
+        const auto report = feed(framer, got, "abcdefgh>ok>");
+
+        EXPECT_EQ(got.messages(), (Texts { "ok" }));
+        EXPECT_EQ(report.discarded, 1U);
+        EXPECT_EQ(report.fault, P::FrameFault::Oversized);
+    }
+
+    TEST(DelimiterFramerTest, OversizedMessageWithAMultiByteTerminatorIsDropped)
+    {
+        P::DelimiterFramer framer("\r\n", 3);
+        Collector got;
+
+        const auto report = feed(framer, got, "abcdef\r\nxy\r\n");
+
+        EXPECT_EQ(got.messages(), (Texts { "xy" }));
+        EXPECT_EQ(report.discarded, 1U);
+    }
+
+    TEST(DelimiterFramerTest, TerminatorSplitAcrossPushesEndsADiscard)
+    {
+        P::DelimiterFramer framer("\r\n", 2);
+        Collector got;
+
+        (void)feed(framer, got, "abcd\r");
+        (void)feed(framer, got, "\nok\r\n");
+
+        EXPECT_EQ(got.messages(), (Texts { "ok" }));
+    }
+
+    TEST(DelimiterFramerTest, ResetDropsAPartialMessageAndADiscard)
+    {
+        P::DelimiterFramer framer(">", 2);
+        Collector got;
+        (void)feed(framer, got, "abcdef");
+
+        framer.reset();
+        (void)feed(framer, got, "x>");
+
+        EXPECT_EQ(got.messages(), (Texts { "x" }));
+        EXPECT_EQ(framer.buffered(), 0U);
+    }
+
+    TEST(DelimiterFramerTest, AnEmptyTerminatorIsTakenAsLf)
+    {
+        P::DelimiterFramer framer(std::string_view {});
+        Collector got;
+
+        (void)feed(framer, got, "a\nb\n");
+
+        EXPECT_EQ(got.messages(), (Texts { "a", "b" }));
+    }
+
+    TEST(DelimiterFramerTest, ASinkThatThrowsLeavesTheFramerUsable)
+    {
+        P::DelimiterFramer framer(">");
+
+        EXPECT_THROW((void)framer.push(bytes_of("a>b>"), [](P::Message) { throw Boom {}; }), Boom);
+
+        Collector got;
+        (void)feed(framer, got, "c>");
+        EXPECT_EQ(got.messages(), (Texts { "c" }));
+    }
+
+    TEST(DelimiterFramerTest, AnyChunkingGivesTheSameMessages)
+    {
+        for (uint64_t seed = 1; seed <= 40; ++seed) {
+            std::mt19937_64 rng(seed);
+            Texts expected;
+            Bytes wire;
+            for (size_t i = 0; i < 30; ++i) {
+                std::string message(static_cast<size_t>(rng() % 12), 'a');
+                for (auto& c : message) {
+                    c = static_cast<char>('a' + rng() % 3);
+                }
+                expected.push_back(message);
+                const auto part = bytes_of(message + "\r\n");
+                wire.insert(wire.end(), part.begin(), part.end());
+            }
+            P::DelimiterFramer framer("\r\n");
+            Collector got;
+
+            (void)feed_random(framer, got, wire, rng, 1 + static_cast<size_t>(rng() % 9));
+
+            ASSERT_EQ(got.messages(), expected) << "seed " << seed;
+            ASSERT_EQ(framer.buffered(), 0U) << "seed " << seed;
+        }
+    }
+
+    TEST(DelimiterFramerTest, EncodeProducesWhatTheFramerReadsBack)
+    {
+        Bytes wire;
+        ASSERT_TRUE(P::encode_delimited(bytes_of("PING"), bytes_of("\r\n"), wire));
+        ASSERT_TRUE(P::encode_delimited(bytes_of(""), bytes_of("\r\n"), wire));
+        EXPECT_EQ(wire, bytes_of("PING\r\n\r\n"));
+
+        P::DelimiterFramer framer("\r\n");
+        Collector got;
+        (void)framer.push(wire, got.sink());
+        EXPECT_EQ(got.messages(), (Texts { "PING", "" }));
+    }
+
+    TEST(DelimiterFramerTest, EncodeRefusesWhatTheFramerCouldNotReturnAndLeavesOutAlone)
+    {
+        Bytes wire = bytes_of("keep");
+
+        EXPECT_FALSE(P::encode_delimited(bytes_of("a\r\nb"), bytes_of("\r\n"), wire));
+        EXPECT_FALSE(P::encode_delimited(bytes_of("a"), bytes_of("aa"), wire));
+        EXPECT_FALSE(P::encode_delimited(bytes_of("a"), Bytes {}, wire));
+        EXPECT_EQ(wire, bytes_of("keep"));
+    }
+
+    // ------------------------------------------------------------------
+    // CobsFramer
+    // ------------------------------------------------------------------
+
+    TEST(CobsFramerTest, EncodesTheReferenceVectors)
+    {
+        EXPECT_EQ(encoded_cobs({}), (Bytes { 0x01, 0x00 }));
+        EXPECT_EQ(encoded_cobs({ 0x00 }), (Bytes { 0x01, 0x01, 0x00 }));
+        EXPECT_EQ(encoded_cobs({ 0x00, 0x00 }), (Bytes { 0x01, 0x01, 0x01, 0x00 }));
+        EXPECT_EQ(encoded_cobs({ 0x11, 0x22, 0x00, 0x33 }), (Bytes { 0x03, 0x11, 0x22, 0x02, 0x33, 0x00 }));
+        EXPECT_EQ(encoded_cobs({ 0x11, 0x22, 0x33, 0x44 }), (Bytes { 0x05, 0x11, 0x22, 0x33, 0x44, 0x00 }));
+        EXPECT_EQ(encoded_cobs({ 0x11, 0x00, 0x00, 0x00 }), (Bytes { 0x02, 0x11, 0x01, 0x01, 0x01, 0x00 }));
+    }
+
+    TEST(CobsFramerTest, EncodesRunsOfTwoHundredFiftyFourAndMore)
+    {
+        Bytes run254;
+        for (uint8_t value = 1; value <= 254; ++value)
+            run254.push_back(value);
+        Bytes expected254 { 0xFF };
+        expected254.insert(expected254.end(), run254.begin(), run254.end());
+        expected254.push_back(0x00);
+        EXPECT_EQ(encoded_cobs(run254), expected254);
+
+        Bytes run255 = run254;
+        run255.push_back(0xFF);
+        Bytes expected255 { 0xFF };
+        expected255.insert(expected255.end(), run254.begin(), run254.end());
+        expected255.push_back(0x02);
+        expected255.push_back(0xFF);
+        expected255.push_back(0x00);
+        EXPECT_EQ(encoded_cobs(run255), expected255);
+    }
+
+    TEST(CobsFramerTest, ReadsBackWhatItEncodesFromTheReferenceVectors)
+    {
+        const std::vector<Bytes> payloads {
+            {}, { 0x00 }, { 0x00, 0x00 }, { 0x11, 0x22, 0x00, 0x33 }, { 0x11, 0x00, 0x00, 0x00 }
+        };
+        P::CobsFramer framer;
+        Collector got;
+        Texts expected;
+        for (const auto& payload : payloads) {
+            expected.push_back(text_of(payload));
+            const auto wire = encoded_cobs(payload);
+            (void)framer.push(wire, got.sink());
+        }
+
+        EXPECT_EQ(got.messages(), expected);
+    }
+
+    TEST(CobsFramerTest, BytesMayArriveOneAtATime)
+    {
+        const Bytes wire = join({ encoded_cobs({ 0x11, 0x00, 0x22 }), encoded_cobs({ 0x33 }) });
+        P::CobsFramer framer;
+        Collector got;
+
+        feed_each_byte(framer, got, wire);
+
+        EXPECT_EQ(got.messages(), (Texts { text_of({ 0x11, 0x00, 0x22 }), text_of({ 0x33 }) }));
+        EXPECT_EQ(framer.buffered(), 0U);
+    }
+
+    TEST(CobsFramerTest, FramesThatAreOnlyADelimiterAreSkipped)
+    {
+        P::CobsFramer framer;
+        Collector got;
+        const Bytes wire = join({ Bytes { 0x00, 0x00 }, encoded_cobs({ 0x41 }), Bytes { 0x00 } });
+
+        const auto report = framer.push(wire, got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { "A" }));
+        EXPECT_TRUE(report.ok());
+        EXPECT_EQ(report.discarded, 0U);
+    }
+
+    TEST(CobsFramerTest, AFrameThatDoesNotDecodeIsDroppedAndTheNextOneDelivered)
+    {
+        P::CobsFramer framer;
+        Collector got;
+        const Bytes wire = join({ Bytes { 0x05, 0x11, 0x00 }, encoded_cobs({ 0x42 }) });
+
+        const auto report = framer.push(wire, got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { "B" }));
+        EXPECT_EQ(report.discarded, 1U);
+        EXPECT_EQ(report.fault, P::FrameFault::Invalid);
+    }
+
+    TEST(CobsFramerTest, AFrameLongerThanTheLimitIsDroppedAndTheNextOneDelivered)
+    {
+        P::CobsFramer framer(4);
+        Collector got;
+        const Bytes wire = join({ Bytes { 0x07, 1, 2, 3, 4, 5, 6, 0x00 }, encoded_cobs({ 0x68 }) });
+
+        const auto report = framer.push(wire, got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { "h" }));
+        EXPECT_EQ(report.discarded, 1U);
+        EXPECT_EQ(report.fault, P::FrameFault::Oversized);
+    }
+
+    TEST(CobsFramerTest, ResetDropsAPartialFrame)
+    {
+        P::CobsFramer framer;
+        Collector got;
+        (void)framer.push(Bytes { 0x05, 0x11 }, got.sink());
+        ASSERT_EQ(framer.buffered(), 2U);
+
+        framer.reset();
+        (void)framer.push(encoded_cobs({ 0x43 }), got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { "C" }));
+    }
+
+    TEST(CobsFramerTest, AnyPayloadSurvivesAnyChunking)
+    {
+        for (uint64_t seed = 1; seed <= 40; ++seed) {
+            std::mt19937_64 rng(seed);
+            Texts expected;
+            Bytes wire;
+            for (size_t i = 0; i < 20; ++i) {
+                const Bytes payload = random_payload(rng, 600);
+                if (payload.empty() && rng() % 2 == 0) {
+                    continue;
+                }
+                expected.push_back(text_of(payload));
+                const auto encoded = encoded_cobs(payload);
+                wire.insert(wire.end(), encoded.begin(), encoded.end());
+            }
+            P::CobsFramer framer;
+            Collector got;
+
+            const auto report = feed_random(framer, got, wire, rng, 1 + static_cast<size_t>(rng() % 17));
+
+            ASSERT_EQ(got.messages(), expected) << "seed " << seed;
+            ASSERT_TRUE(report.ok()) << "seed " << seed;
+            ASSERT_EQ(framer.buffered(), 0U) << "seed " << seed;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // SlipFramer
+    // ------------------------------------------------------------------
+
+    TEST(SlipFramerTest, EncodesEscapesAndTheEnd)
+    {
+        EXPECT_EQ(encoded_slip({}), (Bytes { 0xC0 }));
+        EXPECT_EQ(encoded_slip({ 'a', 'b' }), (Bytes { 'a', 'b', 0xC0 }));
+        EXPECT_EQ(encoded_slip({ 0xC0 }), (Bytes { 0xDB, 0xDC, 0xC0 }));
+        EXPECT_EQ(encoded_slip({ 0xDB }), (Bytes { 0xDB, 0xDD, 0xC0 }));
+        EXPECT_EQ(encoded_slip({ 0x01, 0xC0, 0xDB, 0x02 }), (Bytes { 0x01, 0xDB, 0xDC, 0xDB, 0xDD, 0x02, 0xC0 }));
+    }
+
+    TEST(SlipFramerTest, ReadsBackWhatItEncodes)
+    {
+        const std::vector<Bytes> payloads { { 'a' }, { 0xC0 }, { 0xDB, 0xC0, 0xDB }, { 0x00, 0xFF } };
+        P::SlipFramer framer;
+        Collector got;
+        Texts expected;
+        for (const auto& payload : payloads) {
+            expected.push_back(text_of(payload));
+            (void)framer.push(encoded_slip(payload), got.sink());
+        }
+
+        EXPECT_EQ(got.messages(), expected);
+    }
+
+    TEST(SlipFramerTest, EmptyFramesAndALeadingEndAreSkipped)
+    {
+        P::SlipFramer framer;
+        Collector got;
+
+        const auto report = framer.push(Bytes { 0xC0, 0xC0, 'a', 0xC0, 0xC0 }, got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { "a" }));
+        EXPECT_EQ(report.messages, 1U);
+        EXPECT_TRUE(report.ok());
+    }
+
+    TEST(SlipFramerTest, AnEscapeMaySplitAcrossPushes)
+    {
+        P::SlipFramer framer;
+        Collector got;
+
+        (void)framer.push(Bytes { 'a', 0xDB }, got.sink());
+        (void)framer.push(Bytes { 0xDC, 'b', 0xC0 }, got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { text_of({ 'a', 0xC0, 'b' }) }));
+    }
+
+    TEST(SlipFramerTest, AnEscapeFollowedByAnythingElseDropsTheFrame)
+    {
+        P::SlipFramer framer;
+        Collector got;
+
+        const auto report = framer.push(Bytes { 'a', 0xDB, 0x01, 'b', 0xC0, 'c', 0xC0 }, got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { "c" }));
+        EXPECT_EQ(report.discarded, 1U);
+        EXPECT_EQ(report.fault, P::FrameFault::Invalid);
+    }
+
+    TEST(SlipFramerTest, AnEscapeFollowedByTheEndDropsTheFrame)
+    {
+        P::SlipFramer framer;
+        Collector got;
+
+        const auto report = framer.push(Bytes { 'a', 0xDB, 0xC0, 'x', 0xC0 }, got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { "x" }));
+        EXPECT_EQ(report.discarded, 1U);
+        EXPECT_EQ(report.fault, P::FrameFault::Invalid);
+    }
+
+    TEST(SlipFramerTest, ADecodedMessageLongerThanTheLimitIsDropped)
+    {
+        P::SlipFramer framer(3);
+        Collector got;
+
+        const auto report = framer.push(Bytes { 'a', 'b', 'c', 'd', 0xC0, 'e', 0xC0 }, got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { "e" }));
+        EXPECT_EQ(report.discarded, 1U);
+        EXPECT_EQ(report.fault, P::FrameFault::Oversized);
+    }
+
+    TEST(SlipFramerTest, TheLimitCountsDecodedBytes)
+    {
+        P::SlipFramer framer(3);
+        Collector got;
+
+        const auto report = framer.push(Bytes { 0xDB, 0xDC, 0xDB, 0xDD, 'x', 0xC0 }, got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { text_of({ 0xC0, 0xDB, 'x' }) }));
+        EXPECT_TRUE(report.ok());
+    }
+
+    TEST(SlipFramerTest, ResetDropsAPartialFrameAndAPendingEscape)
+    {
+        P::SlipFramer framer;
+        Collector got;
+        (void)framer.push(Bytes { 'a', 0xDB }, got.sink());
+
+        framer.reset();
+        (void)framer.push(Bytes { 'b', 0xC0 }, got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { "b" }));
+        EXPECT_EQ(framer.buffered(), 0U);
+    }
+
+    TEST(SlipFramerTest, AnyPayloadSurvivesAnyChunking)
+    {
+        for (uint64_t seed = 1; seed <= 40; ++seed) {
+            std::mt19937_64 rng(seed);
+            Texts expected;
+            Bytes wire;
+            for (size_t i = 0; i < 20; ++i) {
+                Bytes payload = random_payload(rng, 300);
+                for (auto& byte : payload) {
+                    if (rng() % 7 == 0) {
+                        byte = rng() % 2 == 0 ? P::SlipFramer::end : P::SlipFramer::escape;
+                    }
+                }
+                if (payload.empty()) {
+                    continue;
+                }
+                expected.push_back(text_of(payload));
+                const auto encoded = encoded_slip(payload);
+                wire.insert(wire.end(), encoded.begin(), encoded.end());
+            }
+            P::SlipFramer framer;
+            Collector got;
+
+            const auto report = feed_random(framer, got, wire, rng, 1 + static_cast<size_t>(rng() % 17));
+
+            ASSERT_EQ(got.messages(), expected) << "seed " << seed;
+            ASSERT_TRUE(report.ok()) << "seed " << seed;
+            ASSERT_EQ(framer.buffered(), 0U) << "seed " << seed;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // IdleGapFramer
+    // ------------------------------------------------------------------
+
+    TEST(IdleGapFramerTest, ReportsItsGap)
+    {
+        P::IdleGapFramer framer(std::chrono::microseconds(3500));
+
+        EXPECT_EQ(framer.gap(), std::chrono::microseconds(3500));
+    }
+
+    TEST(IdleGapFramerTest, PushDeliversNothingAndFlushDeliversEverythingGathered)
+    {
+        P::IdleGapFramer framer(std::chrono::milliseconds(2));
+        Collector got;
+
+        const auto first = feed(framer, got, "ab");
+        const auto second = feed(framer, got, "cd");
+
+        EXPECT_EQ(first.messages, 0U);
+        EXPECT_EQ(second.messages, 0U);
+        EXPECT_TRUE(got.messages().empty());
+        EXPECT_EQ(framer.buffered(), 4U);
+
+        const auto flushed = framer.flush(got.sink());
+
+        EXPECT_EQ(flushed.messages, 1U);
+        EXPECT_EQ(got.messages(), (Texts { "abcd" }));
+        EXPECT_EQ(framer.buffered(), 0U);
+    }
+
+    TEST(IdleGapFramerTest, FlushWithNothingGatheredDeliversNothing)
+    {
+        P::IdleGapFramer framer(std::chrono::milliseconds(2));
+        Collector got;
+
+        const auto report = framer.flush(got.sink());
+
+        EXPECT_EQ(report.messages, 0U);
+        EXPECT_TRUE(got.messages().empty());
+    }
+
+    TEST(IdleGapFramerTest, ASecondFlushDeliversNothingMore)
+    {
+        P::IdleGapFramer framer(std::chrono::milliseconds(2));
+        Collector got;
+        (void)feed(framer, got, "ab");
+
+        (void)framer.flush(got.sink());
+        (void)framer.flush(got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { "ab" }));
+    }
+
+    TEST(IdleGapFramerTest, AMessageOfExactlyTheLimitIsDelivered)
+    {
+        P::IdleGapFramer framer(std::chrono::milliseconds(2), 4);
+        Collector got;
+
+        const auto pushed = feed(framer, got, "abcd");
+        (void)framer.flush(got.sink());
+
+        EXPECT_TRUE(pushed.ok());
+        EXPECT_EQ(got.messages(), (Texts { "abcd" }));
+    }
+
+    TEST(IdleGapFramerTest, AnOversizedBurstIsDroppedUntilTheNextFlush)
+    {
+        P::IdleGapFramer framer(std::chrono::milliseconds(2), 4);
+        Collector got;
+
+        (void)feed(framer, got, "abc");
+        const auto over = feed(framer, got, "def");
+        const auto more = feed(framer, got, "gh");
+        const auto flushed = framer.flush(got.sink());
+
+        EXPECT_EQ(over.discarded, 1U);
+        EXPECT_EQ(over.fault, P::FrameFault::Oversized);
+        EXPECT_TRUE(more.ok());
+        EXPECT_EQ(flushed.messages, 0U);
+        EXPECT_TRUE(got.messages().empty());
+
+        (void)feed(framer, got, "ok");
+        (void)framer.flush(got.sink());
+        EXPECT_EQ(got.messages(), (Texts { "ok" }));
+    }
+
+    TEST(IdleGapFramerTest, ResetDropsWhatWasGatheredAndADiscard)
+    {
+        P::IdleGapFramer framer(std::chrono::milliseconds(2), 2);
+        Collector got;
+        (void)feed(framer, got, "abc");
+
+        framer.reset();
+        (void)feed(framer, got, "x");
+        (void)framer.flush(got.sink());
+
+        EXPECT_EQ(got.messages(), (Texts { "x" }));
+    }
+
+    TEST(IdleGapFramerTest, ASinkThatThrowsOnFlushLeavesTheFramerUsable)
+    {
+        P::IdleGapFramer framer(std::chrono::milliseconds(2));
+        Collector got;
+        (void)feed(framer, got, "a");
+
+        EXPECT_THROW((void)framer.flush([](P::Message) { throw Boom {}; }), Boom);
+        EXPECT_EQ(framer.buffered(), 0U);
+
+        (void)feed(framer, got, "b");
+        (void)framer.flush(got.sink());
+        EXPECT_EQ(got.messages(), (Texts { "b" }));
+    }
+
 }
 }
