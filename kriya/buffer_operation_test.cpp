@@ -471,7 +471,7 @@ namespace {
     {
         const auto manager = std::make_shared<Buffers::BufferManager>();
 
-        auto builder = BufferOperation::capture_input_from(manager, 1);
+        auto builder = BufferOperation::capture_input_from(manager, 1, 1);
 
         const BufferOperation op = builder;
         expect_operation(op, OpType::CAPTURE, ProcessingToken::AUDIO_BACKEND, true, false);

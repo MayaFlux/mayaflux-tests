@@ -348,6 +348,49 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(0.004, 0.01, 0.025),
     [](const ::testing::TestParamInfo<double>& info) { return milliseconds(info.param); });
 
+class MetroInvalidIntervalTest : public TasksParamTest<double> { };
+
+TEST_P(MetroInvalidIntervalTest, RunsAtTheShortestInterval)
+{
+    int shortest = 0;
+    int invalid = 0;
+
+    auto reference = Kriya::metro(1.0 / SAMPLE_RATE, [&shortest]() { ++shortest; });
+    auto routine = Kriya::metro(GetParam(), [&invalid]() { ++invalid; });
+    scheduler->add_task(reference);
+    scheduler->add_task(routine);
+
+    run_samples(8);
+
+    EXPECT_GT(invalid, 1);
+    EXPECT_EQ(invalid, shortest);
+
+    EXPECT_TRUE(scheduler->cancel_task(reference));
+    EXPECT_TRUE(scheduler->cancel_task(routine));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Intervals,
+    MetroInvalidIntervalTest,
+    ::testing::Values(0.0, -1.0, std::numeric_limits<double>::quiet_NaN()),
+    [](const ::testing::TestParamInfo<double>& info) {
+        return info.param == 0.0 ? std::string("Zero") : info.param < 0.0 ? std::string("Negative")
+                                                                          : std::string("NaN");
+    });
+
+TEST_F(TasksTest, MetroWithAnInfiniteIntervalFiresOnce)
+{
+    int count = 0;
+
+    auto routine = Kriya::metro(std::numeric_limits<double>::infinity(), [&count]() { ++count; });
+    scheduler->add_task(routine);
+
+    run_seconds(1.0);
+    EXPECT_EQ(count, 1);
+
+    EXPECT_TRUE(scheduler->cancel_task(routine));
+}
+
 //-----------------------------------------------------------------------------
 // line
 //-----------------------------------------------------------------------------
@@ -491,7 +534,9 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
         SequenceCase { "FirstAtOnce", { 0.0, 0.01, 0.01 }, 1, { { 0.015, 2 }, { 0.01, 3 } } },
         SequenceCase { "AllAtOnce", { 0.0, 0.0, 0.0 }, 3, {} },
-        SequenceCase { "Spaced", { 0.02, 0.02 }, 0, { { 0.01, 0 }, { 0.015, 1 }, { 0.02, 2 } } }),
+        SequenceCase { "Spaced", { 0.02, 0.02 }, 0, { { 0.01, 0 }, { 0.015, 1 }, { 0.02, 2 } } },
+        SequenceCase { "NegativeIsImmediate", { -1.0 }, 1, {} },
+        SequenceCase { "InfiniteNeverFires", { std::numeric_limits<double>::infinity() }, 0, { { 1.0, 0 } } }),
     [](const ::testing::TestParamInfo<SequenceCase>& info) { return std::string(info.param.name); });
 
 //-----------------------------------------------------------------------------
@@ -578,8 +623,33 @@ INSTANTIATE_TEST_SUITE_P(
                     .times(2);
             },
             0,
-            { { 0.015, 0 }, { 0.03, 3 }, { 0.015, 3 }, { 0.03, 6 } } }),
+            { { 0.015, 0 }, { 0.03, 3 }, { 0.015, 3 }, { 0.03, 6 } } },
+        ChainCase {
+            "NegativeDelayIsImmediate",
+            [](Kriya::EventChain& chain, int& count) {
+                chain.then([&count]() { ++count; }, -1.0);
+            },
+            1,
+            {} },
+        ChainCase {
+            "InfiniteDelayNeverFires",
+            [](Kriya::EventChain& chain, int& count) {
+                chain.then([&count]() { ++count; }, std::numeric_limits<double>::infinity());
+            },
+            0,
+            { { 1.0, 0 } } }),
     [](const ::testing::TestParamInfo<ChainCase>& info) { return std::string(info.param.name); });
+
+TEST_F(TasksTest, EventChainWithoutASchedulerDoesNothing)
+{
+    int count = 0;
+
+    Kriya::EventChain chain(std::shared_ptr<Vruta::TaskScheduler> {});
+    chain.then([&count]() { ++count; }).start();
+
+    EXPECT_FALSE(chain.is_active());
+    EXPECT_EQ(count, 0);
+}
 
 TEST_F(TasksTest, EventChainFiresOnCompleteAfterTheLastEvent)
 {

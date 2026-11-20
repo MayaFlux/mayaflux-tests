@@ -304,6 +304,41 @@ INSTANTIATE_TEST_SUITE_P(
         ClampCase { "NaN", std::numeric_limits<double>::quiet_NaN() }),
     [](const ::testing::TestParamInfo<ClampCase>& info) { return std::string(info.param.name); });
 
+struct LimitCase {
+    const char* name;
+    SchedToken token;
+    double value;
+};
+
+class DurationLimitTest : public PatternParamTest<LimitCase> { };
+
+TEST_P(DurationLimitTest, ADurationBeyondTheLimitHoldsTheNextStep)
+{
+    const auto& param = GetParam();
+    auto seen = std::make_shared<Log<uint64_t>>();
+
+    auto routine = Kriya::pattern(
+        [](uint64_t index) { return index; },
+        [seen](uint64_t index) { seen->add(index); },
+        std::vector<double> { param.value },
+        param.token);
+
+    ASSERT_NE(routine, nullptr);
+    advance(routine, param.token, 1000);
+
+    EXPECT_EQ(seen->items(), first_n(1));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Values,
+    DurationLimitTest,
+    ::testing::Values(
+        LimitCase { "SampleInfinite", SchedToken::SAMPLE_ACCURATE, std::numeric_limits<double>::infinity() },
+        LimitCase { "SampleHuge", SchedToken::SAMPLE_ACCURATE, 1.0e300 },
+        LimitCase { "FrameInfinite", SchedToken::FRAME_ACCURATE, std::numeric_limits<double>::infinity() },
+        LimitCase { "FrameHuge", SchedToken::FRAME_ACCURATE, 1.0e300 }),
+    [](const ::testing::TestParamInfo<LimitCase>& info) { return std::string(info.param.name); });
+
 TEST_F(PatternTest, BracedDurationsBindDirectly)
 {
     auto one = std::make_shared<Log<uint64_t>>();
