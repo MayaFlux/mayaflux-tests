@@ -91,7 +91,7 @@ namespace {
 
         std::shared_ptr<BufferPipeline> make_pipeline()
         {
-            auto pipeline = BufferPipeline::create(*frames->scheduler, manager);
+            auto pipeline = BufferPipeline::create(frames->scheduler, manager);
             pipelines.push_back(pipeline);
             return pipeline;
         }
@@ -780,7 +780,7 @@ namespace {
 
         ChimeraBuilder builder()
         {
-            auto pipeline = BufferPipeline::create(*frames->scheduler, manager);
+            auto pipeline = BufferPipeline::create(frames->scheduler, manager);
             pipelines.push_back(pipeline);
             return { array, pipeline };
         }
@@ -892,7 +892,7 @@ namespace {
 
         ChimeraBuilder builder()
         {
-            auto pipeline = BufferPipeline::create(*frames->scheduler, manager);
+            auto pipeline = BufferPipeline::create(frames->scheduler, manager);
             pipelines.push_back(pipeline);
             return { array, pipeline };
         }
@@ -1013,7 +1013,7 @@ namespace {
         const auto image = make_image(0);
         const auto source = std::make_shared<Buffers::TextureBuffer>(VideoSupport::k_width, VideoSupport::k_height, Portal::Graphics::ImageFormat::RGBA8);
         source->set_gpu_texture(image);
-        auto pipeline = BufferPipeline::create(*frames->scheduler, manager);
+        auto pipeline = BufferPipeline::create(frames->scheduler, manager);
         pipelines.push_back(pipeline);
         uint32_t cycles = 0;
         *pipeline
@@ -1040,7 +1040,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST_F, ChimeraImageTest, ARingWhoseSourceHasNoTextureStaysEmpty, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto source = std::make_shared<Buffers::TextureBuffer>(VideoSupport::k_width, VideoSupport::k_height, Portal::Graphics::ImageFormat::RGBA8);
-        auto pipeline = BufferPipeline::create(*frames->scheduler, manager);
+        auto pipeline = BufferPipeline::create(frames->scheduler, manager);
         pipelines.push_back(pipeline);
         *pipeline >> BufferOperation::capture_to_ring(source, array);
         pipeline->execute_frame_rate();

@@ -123,7 +123,7 @@ namespace {
 
         [[nodiscard]] TapSetBuilder builder(const std::shared_ptr<DynamicSoundStream>& source) const
         {
-            return TapSetBuilder(source, *manager, *scheduler, static_cast<uint32_t>(block));
+            return TapSetBuilder(source, *manager, scheduler, static_cast<uint32_t>(block));
         }
 
         [[nodiscard]] TapSetBuilder builder() const

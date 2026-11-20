@@ -98,7 +98,7 @@ namespace {
 
         std::shared_ptr<BufferPipeline> make_pipeline()
         {
-            auto pipeline = BufferPipeline::create(*scheduler, manager);
+            auto pipeline = BufferPipeline::create(scheduler, manager);
             pipelines.push_back(pipeline);
             return pipeline;
         }

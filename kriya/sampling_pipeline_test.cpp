@@ -108,7 +108,7 @@ namespace {
         {
             auto rig = std::make_unique<Rig>();
             rig->sampler = std::make_unique<SamplingPipeline>(
-                source, *manager, *scheduler, channel, static_cast<uint32_t>(block));
+                source, *manager, scheduler, channel, static_cast<uint32_t>(block));
             Rig* raw = rig.get();
             rig->sampler->capture().on_data_ready([raw](DataVariant& data, uint32_t) {
                 raw->blocks.push_back(values_of(data));

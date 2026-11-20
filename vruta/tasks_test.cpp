@@ -512,7 +512,7 @@ TEST_P(ChainScheduleTest, FiresAtTheScheduledMoments)
     const auto& param = GetParam();
     int count = 0;
 
-    Kriya::EventChain chain(*scheduler);
+    Kriya::EventChain chain(scheduler);
     param.build(chain, count);
     chain.start();
 
@@ -588,7 +588,7 @@ TEST_F(TasksTest, EventChainFiresOnCompleteAfterTheLastEvent)
     bool event3 = false;
     bool cleanup_called = false;
 
-    Kriya::EventChain(*scheduler, "basic_test")
+    Kriya::EventChain(scheduler, "basic_test")
         .then([&event1]() { event1 = true; })
         .then([&event2]() { event2 = true; }, 0.01)
         .then([&event3]() { event3 = true; }, 0.01)
@@ -614,7 +614,7 @@ TEST_F(TasksTest, EventChainCancelStopsItAndFiresOnComplete)
     bool event2 = false;
     bool cleanup_called = false;
 
-    Kriya::EventChain chain(*scheduler);
+    Kriya::EventChain chain(scheduler);
     chain.then([&event1]() { event1 = true; })
         .then([&event2]() { event2 = true; }, 0.01)
         .on_complete([&cleanup_called]() { cleanup_called = true; })
@@ -639,7 +639,7 @@ TEST_F(TasksTest, EventChainCancelBeforeTheFirstSampleStopsIt)
     bool event2 = false;
     bool cleanup_called = false;
 
-    Kriya::EventChain chain(*scheduler);
+    Kriya::EventChain chain(scheduler);
     chain.then([]() { })
         .then([&event2]() { event2 = true; }, 0.01)
         .on_complete([&cleanup_called]() { cleanup_called = true; })
@@ -660,7 +660,7 @@ TEST_F(TasksTest, EventChainCompletionFiresOnceAcrossCancelAndDrain)
 {
     int completions = 0;
 
-    Kriya::EventChain chain(*scheduler);
+    Kriya::EventChain chain(scheduler);
     chain.then([]() { })
         .then([]() { }, 0.01)
         .on_complete([&completions]() { ++completions; })
@@ -679,14 +679,14 @@ TEST_F(TasksTest, EventChainReplacedByNameNotifiesTheOldChainOnce)
     int old_completions = 0;
     int new_completions = 0;
 
-    Kriya::EventChain old_chain(*scheduler, "slot");
+    Kriya::EventChain old_chain(scheduler, "slot");
     old_chain.then([]() { })
         .then([]() { }, 0.05)
         .on_complete([&old_completions]() { ++old_completions; })
         .start();
     run_samples(1);
 
-    Kriya::EventChain new_chain(*scheduler, "slot");
+    Kriya::EventChain new_chain(scheduler, "slot");
     new_chain.then([]() { })
         .on_complete([&new_completions]() { ++new_completions; })
         .start();
