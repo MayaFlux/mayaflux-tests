@@ -160,6 +160,143 @@ namespace {
         EXPECT_TRUE(listed("/dev/ttyMF_B"));
     }
 
+    struct EnumeratedRig {
+        EnumeratedRig()
+        {
+            auto config = two_ports(network);
+            config.ports.clear();
+            config.enumerate_ports = true;
+            config.enumerator = [this] { return ports; };
+            backend = std::make_unique<SerialInputBackend>(std::move(config));
+            backend->set_device_callback([this](const InputDeviceInfo& info, bool connected) {
+                events.emplace_back(info.id, connected);
+            });
+        }
+
+        [[nodiscard]] uint32_t id_of(const std::string& path) const
+        {
+            for (const auto& device : backend->get_devices()) {
+                if (device.port_name == path) {
+                    return device.id;
+                }
+            }
+            return 0;
+        }
+
+        FakeNetworkService network;
+        std::vector<Platform::SerialPortEntry> ports;
+        std::unique_ptr<SerialInputBackend> backend;
+        std::vector<std::pair<uint32_t, bool>> events;
+    };
+
+    TEST(SerialInputBackendTest, EnumeratedPortsWithTheSameNameStayApartByPath)
+    {
+        EnumeratedRig rig;
+        rig.ports = { { "/dev/mf_a", "usb-same" }, { "/dev/mf_b", "usb-same" } };
+        ASSERT_TRUE(rig.backend->initialize());
+
+        const auto devices = rig.backend->get_devices();
+
+        ASSERT_EQ(devices.size(), 2U);
+        EXPECT_NE(devices[0].id, devices[1].id);
+        EXPECT_NE(rig.id_of("/dev/mf_a"), 0U);
+        EXPECT_NE(rig.id_of("/dev/mf_b"), 0U);
+    }
+
+    TEST(SerialInputBackendTest, AnEnumeratedPortKeepsItsIdWhenItComesBackAndLeavesWhileUnopened)
+    {
+        EnumeratedRig rig;
+        rig.ports = { { "/dev/mf_a", "usb-a" } };
+        ASSERT_TRUE(rig.backend->initialize());
+        const auto id = rig.id_of("/dev/mf_a");
+        ASSERT_NE(id, 0U);
+
+        rig.ports.clear();
+        rig.backend->refresh_devices();
+        EXPECT_TRUE(rig.backend->get_devices().empty());
+        EXPECT_EQ(rig.events.back(), std::make_pair(id, false));
+
+        rig.ports = { { "/dev/mf_a", "usb-a" } };
+        rig.backend->refresh_devices();
+        EXPECT_EQ(rig.id_of("/dev/mf_a"), id);
+        EXPECT_EQ(rig.events.back(), std::make_pair(id, true));
+    }
+
+    TEST(SerialInputBackendTest, AnOpenEnumeratedPortStaysListedWhenItVanishes)
+    {
+        EnumeratedRig rig;
+        rig.ports = { { "/dev/mf_a", "usb-a" } };
+        ASSERT_TRUE(rig.backend->initialize());
+        const auto id = rig.id_of("/dev/mf_a");
+        ASSERT_TRUE(rig.backend->open_device(id));
+
+        rig.ports.clear();
+        rig.backend->refresh_devices();
+
+        EXPECT_EQ(rig.id_of("/dev/mf_a"), id);
+        EXPECT_TRUE(rig.backend->is_device_open(id));
+    }
+
+    TEST(SerialInputBackendTest, AnEnumeratedPortThatMovesIsOpenedAtItsNewPathNotTheOldOne)
+    {
+        EnumeratedRig rig;
+        rig.ports = { { "/dev/mf_old", "usb-moving" } };
+        ASSERT_TRUE(rig.backend->initialize());
+
+        rig.ports = { { "/dev/mf_new", "usb-moving" } };
+        rig.backend->refresh_devices();
+
+        EXPECT_EQ(rig.id_of("/dev/mf_old"), 0U);
+        const auto id = rig.id_of("/dev/mf_new");
+        ASSERT_NE(id, 0U);
+        ASSERT_TRUE(rig.backend->open_device(id));
+        EXPECT_EQ(rig.network.opened.back().remote_path, "/dev/mf_new");
+    }
+
+    TEST(SerialInputBackendTest, OpeningFailsWhenTheDeviceLeavesTheListWhileItIsOpening)
+    {
+        EnumeratedRig rig;
+        rig.ports = { { "/dev/mf_a", "usb-a" } };
+        ASSERT_TRUE(rig.backend->initialize());
+        const auto id = rig.id_of("/dev/mf_a");
+        const auto original = rig.network.service.open_endpoint;
+        rig.network.service.open_endpoint = [&](const Core::EndpointInfo& info) {
+            const auto endpoint = original(info);
+            rig.ports.clear();
+            rig.backend->refresh_devices();
+            return endpoint;
+        };
+
+        EXPECT_FALSE(rig.backend->open_device(id));
+
+        EXPECT_FALSE(rig.backend->is_device_open(id));
+        EXPECT_EQ(rig.network.closed.size(), 1U);
+        EXPECT_TRUE(rig.backend->get_devices().empty());
+    }
+
+    TEST(SerialInputBackendTest, OpeningSucceedsWhenAnotherCallRegisteredTheDeviceFirstAndKeepsOnlyThatOne)
+    {
+        EnumeratedRig rig;
+        rig.ports = { { "/dev/mf_a", "usb-a" } };
+        ASSERT_TRUE(rig.backend->initialize());
+        const auto id = rig.id_of("/dev/mf_a");
+        const auto original = rig.network.service.open_endpoint;
+        bool nested = false;
+        rig.network.service.open_endpoint = [&](const Core::EndpointInfo& info) {
+            const auto endpoint = original(info);
+            if (!std::exchange(nested, true)) {
+                EXPECT_TRUE(rig.backend->open_device(id));
+            }
+            return endpoint;
+        };
+
+        EXPECT_TRUE(rig.backend->open_device(id));
+
+        EXPECT_TRUE(rig.backend->is_device_open(id));
+        EXPECT_EQ(rig.network.opened.size(), 2U);
+        EXPECT_EQ(rig.network.closed.size(), 1U);
+    }
+
     // ------------------------------------------------------------------
     // Opening and closing
     // ------------------------------------------------------------------
@@ -297,6 +434,71 @@ namespace {
         ASSERT_EQ(rig.values.size(), 1U);
         EXPECT_EQ(rig.values[0].type, InputValue::Type::BYTES);
         EXPECT_EQ(rig.values[0].as_bytes(), (Bytes { 'O', 'K' }));
+    }
+
+    TEST(SerialInputBackendTest, AConfiguredPortIsReadTheWayItsProtocolSays)
+    {
+        FakeNetworkService network;
+        auto config = two_ports(network);
+        config.ports[1].protocol.framing = Core::SerialFraming::DELIMITED;
+        config.ports[1].protocol.terminator = ">";
+        config.ports[1].protocol.parse = Core::SerialParse::BYTES;
+        SerialInputBackend backend(config);
+        std::vector<InputValue> values;
+        backend.set_input_callback([&](const InputValue& value) { values.push_back(value); });
+        ASSERT_TRUE(backend.initialize());
+        backend.start();
+        uint32_t id = 0;
+        for (const auto& device : backend.get_devices()) {
+            if (device.port_name == "/dev/ttyMF_B") {
+                id = device.id;
+            }
+        }
+        ASSERT_TRUE(backend.open_device(id));
+
+        network.deliver(k_endpoint, Bytes { 'A', 'B', '>' });
+
+        ASSERT_EQ(values.size(), 1U);
+        EXPECT_EQ(values[0].type, InputValue::Type::BYTES);
+        EXPECT_EQ(values[0].as_bytes(), (Bytes { 'A', 'B' }));
+    }
+
+    TEST(SerialInputBackendTest, AddPortListsANewPortAndUpdatesAnUnopenedOne)
+    {
+        BackendRig rig;
+        Core::SerialPortConfig port;
+        port.port_name = "/dev/ttyMF_C";
+        port.line.baud_rate = 31250;
+
+        EXPECT_EQ(rig.backend.add_port(port), 0U);
+        ASSERT_TRUE(rig.backend.initialize());
+        const auto id = rig.backend.add_port(port);
+
+        EXPECT_NE(id, 0U);
+        EXPECT_EQ(rig.backend.get_devices().size(), 3U);
+        EXPECT_EQ(rig.id_of("/dev/ttyMF_C"), id);
+
+        port.line.baud_rate = 250000;
+        EXPECT_EQ(rig.backend.add_port(port), id);
+        EXPECT_EQ(rig.backend.get_devices().size(), 3U);
+        ASSERT_TRUE(rig.backend.open_device(id));
+        EXPECT_EQ(rig.network.opened.back().serial.baud_rate, 250000U);
+    }
+
+    TEST(SerialInputBackendTest, AddPortLeavesAnOpenDeviceAlone)
+    {
+        BackendRig rig;
+        ASSERT_TRUE(rig.backend.initialize());
+        const auto id = rig.id_of("/dev/ttyMF_A");
+        ASSERT_TRUE(rig.backend.open_device(id));
+        Core::SerialPortConfig port;
+        port.port_name = "/dev/ttyMF_A";
+        port.line.baud_rate = 4800;
+
+        EXPECT_EQ(rig.backend.add_port(port), id);
+
+        EXPECT_EQ(rig.backend.get_devices().front().baud_rate, 9600U);
+        EXPECT_TRUE(rig.backend.is_device_open(id));
     }
 
     TEST(SerialInputBackendTest, WriteSendsBytesAsTheyAreAndReportsRefusals)

@@ -4,7 +4,8 @@
 #include <random>
 
 #include "../support/serial_test_support.hpp"
-#include "MayaFlux/Core/Backends/Input/SerialDevice.hpp"
+#include "MayaFlux/Core/Input/SerialDevice.hpp"
+#include "MayaFlux/Transitive/IO/JSONSerializer.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
@@ -142,6 +143,78 @@ namespace {
 
         EXPECT_EQ(spec.parse, SerialParse::CUSTOM);
         EXPECT_TRUE(static_cast<bool>(spec.parser));
+    }
+
+    TEST(SerialSpecTest, FromTakesTheLineAndTheProtocolOfAConfiguredPort)
+    {
+        Core::SerialLineSettings line;
+        line.baud_rate = 250000;
+        line.settle_ms = 1500;
+        Core::SerialProtocolSettings protocol;
+        protocol.framing = SerialFraming::DELIMITED;
+        protocol.terminator = "\r\n";
+        protocol.gap_ms = 9;
+        protocol.message_limit = 77;
+        protocol.parse = SerialParse::BYTES;
+
+        const auto spec = SerialSpec::from(line, protocol);
+
+        EXPECT_EQ(spec.line.baud_rate, 250000U);
+        EXPECT_EQ(spec.line.settle_ms, 1500U);
+        EXPECT_EQ(spec.framing, SerialFraming::DELIMITED);
+        EXPECT_EQ(spec.delimiter(), (Bytes { '\r', '\n' }));
+        EXPECT_EQ(spec.gap, 9ms);
+        EXPECT_EQ(spec.message_limit, 77U);
+        EXPECT_EQ(spec.parse, SerialParse::BYTES);
+        EXPECT_FALSE(static_cast<bool>(spec.parser));
+    }
+
+    TEST(SerialSpecTest, DefaultProtocolSettingsAreTheDefaultSpec)
+    {
+        const auto spec = SerialSpec::from({}, {});
+
+        EXPECT_EQ(spec.framing, SerialFraming::LINES);
+        EXPECT_EQ(spec.parse, SerialParse::NUMBERS);
+        EXPECT_EQ(spec.message_limit, 4096U);
+        EXPECT_EQ(spec.gap, 2ms);
+        EXPECT_EQ(spec.delimiter(), (Bytes { '\n' }));
+    }
+
+    TEST(SerialSpecTest, APortConfigSurvivesAJsonRoundTrip)
+    {
+        Core::SerialPortConfig port;
+        port.port_name = "/dev/ttyACM0";
+        port.line.baud_rate = 31250;
+        port.line.data_bits = 7;
+        port.line.parity = Core::SerialParity::ODD;
+        port.line.stop_bits = Core::SerialStopBits::TWO;
+        port.line.flow_control = Core::SerialFlowControl::HARDWARE;
+        port.line.dtr_on_open = false;
+        port.line.settle_ms = 1500;
+        port.protocol.framing = SerialFraming::DELIMITED;
+        port.protocol.terminator = "\r\n";
+        port.protocol.gap_ms = 7;
+        port.protocol.message_limit = 99;
+        port.protocol.parse = SerialParse::BYTES;
+
+        IO::JSONSerializer json;
+        const auto text = json.encode(port);
+        const auto back = json.decode<Core::SerialPortConfig>(text);
+
+        ASSERT_TRUE(back.has_value());
+        EXPECT_EQ(back->port_name, "/dev/ttyACM0");
+        EXPECT_EQ(back->line.baud_rate, 31250U);
+        EXPECT_EQ(back->line.data_bits, 7);
+        EXPECT_EQ(back->line.parity, Core::SerialParity::ODD);
+        EXPECT_EQ(back->line.stop_bits, Core::SerialStopBits::TWO);
+        EXPECT_EQ(back->line.flow_control, Core::SerialFlowControl::HARDWARE);
+        EXPECT_FALSE(back->line.dtr_on_open);
+        EXPECT_EQ(back->line.settle_ms, 1500U);
+        EXPECT_EQ(back->protocol.framing, SerialFraming::DELIMITED);
+        EXPECT_EQ(back->protocol.terminator, "\r\n");
+        EXPECT_EQ(back->protocol.gap_ms, 7U);
+        EXPECT_EQ(back->protocol.message_limit, 99U);
+        EXPECT_EQ(back->protocol.parse, SerialParse::BYTES);
     }
 
     // ------------------------------------------------------------------
@@ -450,6 +523,18 @@ namespace {
         ASSERT_EQ(rig.values.size(), 1U);
         EXPECT_EQ(rig.values[0].as_midi().status, 0x80);
         EXPECT_EQ(rig.values[0].as_midi().data1, 60);
+    }
+
+    TEST(SerialDeviceTest, MidiSystemCommonMessagesAreSkippedWhileRealtimeStillPassesThrough)
+    {
+        Rig rig(SerialSpec::midi());
+
+        rig.link->feed(Bytes { 0xF1, 0x20, 0xF2, 1, 2, 0xF3, 5, 0xF6, 0xF8, 0x33, 0x80, 60, 0 });
+
+        ASSERT_EQ(rig.values.size(), 2U);
+        EXPECT_EQ(rig.values[0].as_midi().status, 0xF8);
+        EXPECT_EQ(rig.values[1].as_midi().status, 0x80);
+        EXPECT_EQ(rig.values[1].as_midi().data1, 60);
     }
 
     TEST(SerialDeviceTest, MidiMessageMaySplitAcrossChunksAndANewStatusInterruptsOne)
@@ -855,6 +940,86 @@ namespace {
         }
 
         EXPECT_TRUE(replies.seen.empty());
+    }
+
+    TEST(SerialDeviceRequestTest, AReplyThatBeatsTheTimerTokenLeavesNoStaleTimer)
+    {
+        Rig rig;
+        Replies replies;
+        rig.link->on_post_after = [&] { rig.link->feed("ok\n"); };
+
+        const bool accepted = rig.device->request(bytes_of("?\n"), starts_with_ok, 100ms, replies.callback());
+        rig.link->on_post_after = nullptr;
+
+        EXPECT_TRUE(accepted);
+        ASSERT_EQ(replies.seen.size(), 1U);
+        EXPECT_EQ(replies.seen[0].first, SerialReply::REPLIED);
+        EXPECT_TRUE(rig.link->timers.empty());
+        EXPECT_EQ(rig.link->writes.back(), bytes_of("?\n"));
+    }
+
+    TEST(SerialDeviceRequestTest, ATimeoutThatBeatsAFailedSendStillCompletesTheRequestExactlyOnce)
+    {
+        Rig rig;
+        Replies replies;
+        rig.link->write_result = false;
+        rig.link->on_write = [&] { rig.link->fire(rig.link->timers.begin()->first); };
+
+        const bool accepted = rig.device->request(bytes_of("?\n"), starts_with_ok, 100ms, replies.callback());
+
+        ASSERT_EQ(replies.seen.size(), 1U);
+        EXPECT_EQ(replies.seen[0].first, SerialReply::TIMED_OUT);
+        EXPECT_TRUE(accepted);
+        EXPECT_TRUE(rig.link->timers.empty());
+    }
+
+    TEST(SerialDeviceRequestTest, ARequestThatIsRefusedNeverCallsBack)
+    {
+        Rig rig;
+        Replies replies;
+
+        rig.link->write_result = false;
+        EXPECT_FALSE(rig.device->request(bytes_of("a\n"), starts_with_ok, 100ms, replies.callback()));
+        rig.link->write_result = true;
+        rig.link->current = EndpointState::RECONNECTING;
+        EXPECT_FALSE(rig.device->request(bytes_of("a\n"), starts_with_ok, 100ms, replies.callback()));
+        rig.link->current = EndpointState::OPEN;
+        ASSERT_TRUE(rig.device->request(bytes_of("a\n"), starts_with_ok, 100ms, replies.callback()));
+        EXPECT_FALSE(rig.device->request(bytes_of("b\n"), starts_with_ok, 100ms, replies.callback()));
+        rig.link->feed("ok\n");
+
+        ASSERT_EQ(replies.seen.size(), 1U);
+        EXPECT_EQ(replies.seen[0].first, SerialReply::REPLIED);
+    }
+
+    TEST(SerialDeviceRequestTest, AChunkCallbackIsAnExclusiveRawModeInWhichARequestCanOnlyTimeOut)
+    {
+        Rig rig;
+        Replies replies;
+        std::vector<std::string> chunks;
+        rig.device->set_chunk_callback([&](std::span<const uint8_t> chunk) { chunks.emplace_back(chunk.begin(), chunk.end()); });
+        ASSERT_TRUE(rig.device->request(bytes_of("?\n"), starts_with_ok, 100ms, replies.callback()));
+
+        rig.link->feed("ok\n");
+        ASSERT_TRUE(rig.link->fire(rig.link->timers.begin()->first));
+
+        EXPECT_EQ(chunks, (std::vector<std::string> { "ok\n" }));
+        ASSERT_EQ(replies.seen.size(), 1U);
+        EXPECT_EQ(replies.seen[0].first, SerialReply::TIMED_OUT);
+        EXPECT_TRUE(rig.values.empty());
+    }
+
+    TEST(SerialDeviceRequestTest, AnEmptyChunkCallbackReturnsToFramedDelivery)
+    {
+        Rig rig;
+        rig.device->set_chunk_callback([](std::span<const uint8_t>) { });
+        rig.link->feed("1\n");
+        ASSERT_TRUE(rig.values.empty());
+
+        rig.device->set_chunk_callback({});
+        rig.link->feed("2\n");
+
+        EXPECT_EQ(rig.vectors(), (std::vector<Numbers> { { 2 } }));
     }
 
     TEST(SerialDeviceRequestTest, AReplyAndAStaleTimeoutCompleteTheRequestOnce)

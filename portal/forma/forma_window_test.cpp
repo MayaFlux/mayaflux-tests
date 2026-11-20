@@ -253,6 +253,48 @@ TEST_F(FormaWindowApiTest, PickingFromALongListShowsTenRowsAndScrolls)
     EXPECT_EQ(window->get_create_info().height, row_px() * 10U + row_px() / 2U);
 }
 
+TEST_F(FormaWindowApiTest, PickingGrowsTheWindowToFitALabelWiderThanTheDefault)
+{
+    Forma::pick("medium-pick", { "short", std::string(70, 'W') }, [](std::optional<size_t>) { });
+    Forma::pick("wide-pick", { "short", std::string(200, 'W') }, [](std::optional<size_t>) { });
+    auto medium = expect_window("medium-pick");
+    auto wide = expect_window("wide-pick");
+
+    ASSERT_NE(medium, nullptr);
+    ASSERT_NE(wide, nullptr);
+    EXPECT_GT(medium->get_create_info().width, 520U);
+    EXPECT_GT(wide->get_create_info().width, medium->get_create_info().width);
+    EXPECT_LE(wide->get_create_info().width, 1400U);
+    EXPECT_EQ(medium->get_create_info().height, row_px() * 2U);
+}
+
+TEST_F(FormaWindowApiTest, PickingSizesTheWindowToTheWidestLabelWhateverItsPosition)
+{
+    const std::string long_label(70, 'W');
+
+    Forma::pick("alone-pick", { long_label }, [](std::optional<size_t>) { });
+    Forma::pick("first-pick", { long_label, "a", "b" }, [](std::optional<size_t>) { });
+    Forma::pick("last-pick", { "a", "b", long_label }, [](std::optional<size_t>) { });
+    auto alone = expect_window("alone-pick");
+    auto first = expect_window("first-pick");
+    auto last = expect_window("last-pick");
+
+    ASSERT_NE(alone, nullptr);
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(last, nullptr);
+    EXPECT_EQ(first->get_create_info().width, alone->get_create_info().width);
+    EXPECT_EQ(last->get_create_info().width, alone->get_create_info().width);
+}
+
+TEST_F(FormaWindowApiTest, PickingNeverGrowsTheWindowPastItsCap)
+{
+    Forma::pick("huge-pick", { std::string(600, 'W') }, [](std::optional<size_t>) { });
+    auto window = expect_window("huge-pick");
+
+    ASSERT_NE(window, nullptr);
+    EXPECT_EQ(window->get_create_info().width, 1400U);
+}
+
 // =============================================================================
 // Prompt
 // =============================================================================

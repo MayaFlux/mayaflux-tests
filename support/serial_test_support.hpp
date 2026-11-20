@@ -1,6 +1,6 @@
 #pragma once
 
-#include "MayaFlux/Core/Backends/Input/SerialLink.hpp"
+#include "MayaFlux/Core/Input/SerialLink.hpp"
 
 #if !defined(MAYAFLUX_PLATFORM_WINDOWS)
 #include <fcntl.h>
@@ -39,6 +39,9 @@ public:
 
     bool write(std::span<const uint8_t> bytes) override
     {
+        if (on_write) {
+            on_write();
+        }
         if (!write_result) {
             return false;
         }
@@ -64,6 +67,9 @@ public:
     {
         const TimerToken token = next_token++;
         timers[token] = { delay, std::move(callback) };
+        if (on_post_after) {
+            on_post_after();
+        }
         return token;
     }
 
@@ -122,6 +128,9 @@ public:
 
     ChunkCallback chunk;
     StateCallback state_callback;
+
+    std::function<void()> on_write;
+    std::function<void()> on_post_after;
 };
 
 #if !defined(MAYAFLUX_PLATFORM_WINDOWS)
