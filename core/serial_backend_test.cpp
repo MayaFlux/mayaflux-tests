@@ -6,7 +6,7 @@
 
 #include "MayaFlux/Core/Backends/Network/SerialBackend.hpp"
 
-MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::pseudo_terminal>() }))
 
 #if !defined(MAYAFLUX_PLATFORM_WINDOWS)
 
@@ -162,7 +162,7 @@ namespace {
     // Identity and refusals
     // ------------------------------------------------------------------
 
-    TEST(SerialBackendTest, ReportsItsIdentity)
+    MAYAFLUX_TEST_WITH(TEST, SerialBackendTest, ReportsItsIdentity, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SerialRig rig;
 
@@ -171,7 +171,7 @@ namespace {
         EXPECT_TRUE(rig.backend.is_running());
     }
 
-    TEST(SerialBackendTest, ADeviceThatIsNotThereIsRefusedWithoutReconnect)
+    MAYAFLUX_TEST_WITH(TEST, SerialBackendTest, ADeviceThatIsNotThereIsRefusedWithoutReconnect, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SerialRig rig(false);
 
@@ -179,7 +179,7 @@ namespace {
         EXPECT_TRUE(rig.backend.get_endpoints().empty());
     }
 
-    TEST(SerialBackendTest, ADeviceThatIsNotThereWaitsWhenReconnectIsOn)
+    MAYAFLUX_TEST_WITH(TEST, SerialBackendTest, ADeviceThatIsNotThereWaitsWhenReconnectIsOn, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SerialRig rig(true);
 
@@ -205,7 +205,7 @@ namespace {
         EXPECT_EQ(rig.backend.open_endpoint(many), 0U);
     }
 
-    TEST(SerialBackendTest, LineControlOfAnUnknownEndpointIsRefused)
+    MAYAFLUX_TEST_WITH(TEST, SerialBackendTest, LineControlOfAnUnknownEndpointIsRefused, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         SerialRig rig;
 

@@ -10,7 +10,7 @@ using MayaFlux::Test::Meta::Annotation;
 using MayaFlux::Test::Meta::Capability;
 using MayaFlux::Test::Meta::Kind;
 
-constexpr std::array<std::string_view, 31> capability_names {
+constexpr std::array<std::string_view, 32> capability_names {
     "writable_temp", "host_toolchain", "repo_assets", "system_font",
     "loopback_tcp", "loopback_udp", "dbus_daemon", "desktop_dialog",
     "display", "vulkan", "vulkan_present", "vulkan_validation",
@@ -18,9 +18,9 @@ constexpr std::array<std::string_view, 31> capability_names {
     "wasapi", "audio_output", "audio_input", "coremidi",
     "alsa_sequencer", "winmm_input", "loopmidi", "hid_enumeration",
     "hid_open", "tablet_enumeration", "tablet_open", "silero_weights",
-    "hubert_weights", "process_exec", "homebrew_paths"
+    "hubert_weights", "process_exec", "homebrew_paths", "pseudo_terminal"
 };
-static_assert(capability_names.size() == static_cast<unsigned>(Capability::homebrew_paths) + 1);
+static_assert(capability_names.size() == static_cast<unsigned>(Capability::pseudo_terminal) + 1);
 
 struct CaseMetadata {
     std::string name;

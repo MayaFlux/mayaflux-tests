@@ -102,6 +102,11 @@ public:
             state_callbacks[id] = callback;
         };
         service.get_write_backlog = [this](uint64_t) { return backlog; };
+        service.send = [this](uint64_t, const uint8_t* data, size_t size) {
+            sent.emplace_back(data, data + size);
+            return send_result;
+        };
+        service.get_endpoint_state = [this](uint64_t) { return endpoint_state; };
         service.set_control_lines = [this](uint64_t id, std::optional<bool> dtr, std::optional<bool> rts) {
             control_calls.push_back({ id, dtr, rts });
             return true;
@@ -154,6 +159,9 @@ public:
     Registry::Service::NetworkService service;
     uint64_t next_endpoint_id { 42 };
     size_t backlog {};
+    bool send_result { true };
+    Core::EndpointState endpoint_state { Core::EndpointState::OPEN };
+    std::vector<std::vector<uint8_t>> sent;
     uint64_t next_timer_token { 1 };
     std::map<uint64_t, StateCallback> state_callbacks;
     std::vector<ControlCall> control_calls;

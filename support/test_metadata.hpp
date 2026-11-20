@@ -38,7 +38,8 @@ enum class Capability : std::uint8_t {
     silero_weights,
     hubert_weights,
     process_exec,
-    homebrew_paths
+    homebrew_paths,
+    pseudo_terminal
 };
 
 template <Capability... Values>
