@@ -612,20 +612,105 @@ namespace {
         EXPECT_EQ(rig.device->stats().unparsed, 2U);
     }
 
-    TEST(SerialDeviceTest, AChunkCallbackBypassesFramingAndParsing)
+    struct Readings {
+        std::vector<InputValue> values;
+
+        auto callback()
+        {
+            return [this](const InputValue& value) { values.push_back(value); };
+        }
+
+        [[nodiscard]] std::vector<std::string> texts() const
+        {
+            std::vector<std::string> out;
+            for (const auto& value : values) {
+                const auto& bytes = value.as_bytes();
+                out.emplace_back(bytes.begin(), bytes.end());
+            }
+            return out;
+        }
+    };
+
+    SerialSpec as_bytes(SerialSpec spec)
+    {
+        spec.parse = SerialParse::BYTES;
+        return spec;
+    }
+
+    TEST(SerialDeviceTest, AReaderSeesTheSameBytesWithItsOwnFramingAndIdWhileTheDeviceReadsOnAsBefore)
     {
         Rig rig;
-        std::vector<std::string> chunks;
-        rig.device->set_chunk_callback([&](std::span<const uint8_t> chunk) {
-            chunks.emplace_back(chunk.begin(), chunk.end());
-        });
+        Readings raw;
+        const auto token = rig.device->add_reader(as_bytes(SerialSpec::raw()), 99, raw.callback());
 
         rig.link->feed("1 2\n3");
         rig.link->feed("\n");
 
-        EXPECT_EQ(chunks, (std::vector<std::string> { "1 2\n3", "\n" }));
+        EXPECT_NE(token, 0U);
+        EXPECT_EQ(raw.texts(), (std::vector<std::string> { "1 2\n3", "\n" }));
+        EXPECT_EQ(raw.values[0].device_id, 99U);
+        EXPECT_EQ(rig.vectors(), (std::vector<Numbers> { { 1, 2 }, { 3 } }));
+        EXPECT_EQ(rig.device->stats().frames, 2U);
+    }
+
+    TEST(SerialDeviceTest, ReadersCutTheSameBytesIndependently)
+    {
+        Rig rig;
+        Readings semicolons;
+        Readings tabs;
+        rig.device->add_reader(as_bytes(SerialSpec::delimited(";")), 11, semicolons.callback());
+        rig.device->add_reader(as_bytes(SerialSpec::delimited("\t")), 12, tabs.callback());
+
+        rig.link->feed("a;b\tc;d\t");
+
+        EXPECT_EQ(semicolons.texts(), (std::vector<std::string> { "a", "b\tc" }));
+        EXPECT_EQ(tabs.texts(), (std::vector<std::string> { "a;b", "c;d" }));
         EXPECT_TRUE(rig.values.empty());
-        EXPECT_EQ(rig.device->stats().frames, 0U);
+    }
+
+    TEST(SerialDeviceTest, ARemovedReaderStopsReceivingAndTheOthersDoNot)
+    {
+        Rig rig;
+        Readings first;
+        Readings second;
+        const auto gone = rig.device->add_reader(as_bytes(SerialSpec::raw()), 11, first.callback());
+        rig.device->add_reader(as_bytes(SerialSpec::raw()), 12, second.callback());
+
+        rig.link->feed("x");
+        rig.device->remove_reader(gone);
+        rig.device->remove_reader(gone);
+        rig.link->feed("y");
+
+        EXPECT_EQ(first.texts(), (std::vector<std::string> { "x" }));
+        EXPECT_EQ(second.texts(), (std::vector<std::string> { "x", "y" }));
+    }
+
+    TEST(SerialDeviceTest, ALinkStateChangeDropsThePartialMessageOfEveryReader)
+    {
+        Rig rig;
+        Readings readings;
+        rig.device->add_reader(as_bytes(SerialSpec::delimited(";")), 11, readings.callback());
+
+        rig.link->feed("ab");
+        rig.link->transition(EndpointState::OPEN, EndpointState::RECONNECTING);
+        rig.link->transition(EndpointState::RECONNECTING, EndpointState::OPEN);
+        rig.link->feed("c;");
+
+        EXPECT_EQ(readings.texts(), (std::vector<std::string> { "c" }));
+    }
+
+    TEST(SerialDeviceTest, AnIdleGapReaderFlushesOnItsOwnTimer)
+    {
+        Rig rig;
+        Readings readings;
+        auto spec = as_bytes(SerialSpec::idle_gap(5ms));
+        rig.device->add_reader(spec, 11, readings.callback());
+
+        rig.link->feed("abc");
+        ASSERT_FALSE(rig.link->timers.empty());
+        rig.link->fire(rig.link->timers.begin()->first);
+
+        EXPECT_EQ(readings.texts(), (std::vector<std::string> { "abc" }));
     }
 
     TEST(SerialDeviceTest, WithoutAValueCallbackFramesAreStillCounted)
@@ -992,34 +1077,20 @@ namespace {
         EXPECT_EQ(replies.seen[0].first, SerialReply::REPLIED);
     }
 
-    TEST(SerialDeviceRequestTest, AChunkCallbackIsAnExclusiveRawModeInWhichARequestCanOnlyTimeOut)
+    TEST(SerialDeviceRequestTest, ARequestStillCompletesWhileAReaderSeesTheReplyToo)
     {
         Rig rig;
         Replies replies;
-        std::vector<std::string> chunks;
-        rig.device->set_chunk_callback([&](std::span<const uint8_t> chunk) { chunks.emplace_back(chunk.begin(), chunk.end()); });
+        Readings raw;
+        rig.device->add_reader(as_bytes(SerialSpec::raw()), 99, raw.callback());
         ASSERT_TRUE(rig.device->request(bytes_of("?\n"), starts_with_ok, 100ms, replies.callback()));
 
         rig.link->feed("ok\n");
-        ASSERT_TRUE(rig.link->fire(rig.link->timers.begin()->first));
 
-        EXPECT_EQ(chunks, (std::vector<std::string> { "ok\n" }));
         ASSERT_EQ(replies.seen.size(), 1U);
-        EXPECT_EQ(replies.seen[0].first, SerialReply::TIMED_OUT);
+        EXPECT_EQ(replies.seen[0].first, SerialReply::REPLIED);
+        EXPECT_EQ(raw.texts(), (std::vector<std::string> { "ok\n" }));
         EXPECT_TRUE(rig.values.empty());
-    }
-
-    TEST(SerialDeviceRequestTest, AnEmptyChunkCallbackReturnsToFramedDelivery)
-    {
-        Rig rig;
-        rig.device->set_chunk_callback([](std::span<const uint8_t>) { });
-        rig.link->feed("1\n");
-        ASSERT_TRUE(rig.values.empty());
-
-        rig.device->set_chunk_callback({});
-        rig.link->feed("2\n");
-
-        EXPECT_EQ(rig.vectors(), (std::vector<Numbers> { { 2 } }));
     }
 
     TEST(SerialDeviceRequestTest, AReplyAndAStaleTimeoutCompleteTheRequestOnce)

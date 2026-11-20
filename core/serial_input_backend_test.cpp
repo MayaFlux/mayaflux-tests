@@ -298,6 +298,169 @@ namespace {
     }
 
     // ------------------------------------------------------------------
+    // Readings
+    // ------------------------------------------------------------------
+
+    SerialSpec bytes_between(std::string_view terminator)
+    {
+        auto spec = SerialSpec::delimited(terminator);
+        spec.parse = Core::SerialParse::BYTES;
+        return spec;
+    }
+
+    std::string text_of(const InputValue& value)
+    {
+        const auto& bytes = value.as_bytes();
+        return { bytes.begin(), bytes.end() };
+    }
+
+    TEST(SerialInputBackendTest, AViewIsListedAsADeviceOfItsOwnThatReadsTheSamePort)
+    {
+        BackendRig rig;
+        ASSERT_TRUE(rig.backend.initialize());
+        const auto port = rig.id_of("/dev/ttyMF_A");
+
+        const auto view = rig.backend.add_view(port, bytes_between(";"));
+
+        ASSERT_NE(view, 0U);
+        EXPECT_NE(view, port);
+        EXPECT_EQ(rig.backend.get_devices().size(), 3U);
+        EXPECT_EQ(rig.backend.add_view(view, bytes_between(";")), 0U);
+        EXPECT_EQ(rig.backend.add_view(9999, bytes_between(";")), 0U);
+        EXPECT_FALSE(rig.backend.is_device_open(view));
+    }
+
+    TEST(SerialInputBackendTest, OpeningAViewOpensItsPortAndEachReadingGetsItsOwnValues)
+    {
+        BackendRig rig;
+        ASSERT_TRUE(rig.backend.initialize());
+        rig.backend.start();
+        const auto port = rig.id_of("/dev/ttyMF_A");
+        const auto view = rig.backend.add_view(port, bytes_between(";"));
+
+        ASSERT_TRUE(rig.backend.open_device(view));
+        rig.network.deliver(k_endpoint, Bytes { '1', ';', '2', '\n' });
+
+        EXPECT_TRUE(rig.backend.is_device_open(view));
+        EXPECT_TRUE(rig.backend.is_device_open(port));
+        EXPECT_EQ(rig.network.opened.size(), 1U);
+        ASSERT_EQ(rig.values.size(), 2U);
+        EXPECT_EQ(rig.values[0].device_id, port);
+        EXPECT_EQ(rig.values[0].as_vector(), (std::vector<double> { 1, 2 }));
+        EXPECT_EQ(rig.values[1].device_id, view);
+        EXPECT_EQ(text_of(rig.values[1]), "1");
+    }
+
+    TEST(SerialInputBackendTest, ClosingAViewStopsOnlyThatReadingAndItCanBeOpenedAgain)
+    {
+        BackendRig rig;
+        ASSERT_TRUE(rig.backend.initialize());
+        rig.backend.start();
+        const auto port = rig.id_of("/dev/ttyMF_A");
+        const auto view = rig.backend.add_view(port, bytes_between(";"));
+        ASSERT_TRUE(rig.backend.open_device(view));
+
+        rig.backend.close_device(view);
+        rig.network.deliver(k_endpoint, Bytes { '1', ';', '\n' });
+
+        EXPECT_FALSE(rig.backend.is_device_open(view));
+        EXPECT_TRUE(rig.backend.is_device_open(port));
+        ASSERT_EQ(rig.values.size(), 1U);
+        EXPECT_EQ(rig.values[0].device_id, port);
+
+        rig.values.clear();
+        ASSERT_TRUE(rig.backend.open_device(view));
+        rig.network.deliver(k_endpoint, Bytes { '2', ';', '\n' });
+        ASSERT_EQ(rig.values.size(), 2U);
+        EXPECT_EQ(rig.values[1].device_id, view);
+    }
+
+    TEST(SerialInputBackendTest, AViewResumesWhenItsPortIsClosedAndOpenedAgain)
+    {
+        BackendRig rig;
+        ASSERT_TRUE(rig.backend.initialize());
+        rig.backend.start();
+        const auto port = rig.id_of("/dev/ttyMF_A");
+        const auto view = rig.backend.add_view(port, bytes_between(";"));
+        ASSERT_TRUE(rig.backend.open_device(view));
+
+        rig.backend.close_device(port);
+        ASSERT_TRUE(rig.backend.open_device(port));
+        rig.network.deliver(k_endpoint, Bytes { '5', ';', '\n' });
+
+        ASSERT_EQ(rig.values.size(), 2U);
+        EXPECT_EQ(rig.values[1].device_id, view);
+        EXPECT_EQ(text_of(rig.values[1]), "5");
+    }
+
+    TEST(SerialInputBackendTest, WritesToAViewGoToItsPort)
+    {
+        BackendRig rig;
+        ASSERT_TRUE(rig.backend.initialize());
+        const auto port = rig.id_of("/dev/ttyMF_A");
+        const auto view = rig.backend.add_view(port, bytes_between(";"));
+        ASSERT_TRUE(rig.backend.open_device(view));
+
+        EXPECT_EQ(rig.backend.write(view, Bytes { 'h', 'i' }), 2);
+
+        ASSERT_EQ(rig.network.sent.size(), 1U);
+        EXPECT_EQ(rig.network.sent[0], (Bytes { 'h', 'i' }));
+        EXPECT_EQ(rig.backend.get_device(view), rig.backend.get_device(port));
+    }
+
+    TEST(SerialInputBackendTest, AReaderIsNotListedAndKeepsReadingAcrossAReopen)
+    {
+        BackendRig rig;
+        ASSERT_TRUE(rig.backend.initialize());
+        rig.backend.start();
+        const auto port = rig.id_of("/dev/ttyMF_A");
+        std::vector<std::string> seen;
+        const auto token = rig.backend.add_reader(port, bytes_between(";"),
+            [&](const InputValue& value) { seen.push_back(text_of(value)); });
+        ASSERT_NE(token, 0U);
+        ASSERT_TRUE(rig.backend.open_device(port));
+
+        rig.network.deliver(k_endpoint, Bytes { 'a', ';' });
+        rig.backend.close_device(port);
+        ASSERT_TRUE(rig.backend.open_device(port));
+        rig.network.deliver(k_endpoint, Bytes { 'b', ';' });
+        rig.backend.remove_reader(token);
+        rig.network.deliver(k_endpoint, Bytes { 'c', ';' });
+
+        EXPECT_EQ(seen, (std::vector<std::string> { "a", "b" }));
+        EXPECT_EQ(rig.backend.get_devices().size(), 2U);
+        EXPECT_TRUE(rig.values.empty());
+    }
+
+    TEST(SerialInputBackendTest, AReaderOfAnUnknownDeviceOrAViewIsRefused)
+    {
+        BackendRig rig;
+        ASSERT_TRUE(rig.backend.initialize());
+        const auto port = rig.id_of("/dev/ttyMF_A");
+        const auto view = rig.backend.add_view(port, bytes_between(";"));
+        const auto callback = [](const InputValue&) { };
+
+        EXPECT_EQ(rig.backend.add_reader(9999, bytes_between(";"), callback), 0U);
+        EXPECT_EQ(rig.backend.add_reader(view, bytes_between(";"), callback), 0U);
+        EXPECT_EQ(rig.backend.add_reader(port, bytes_between(";"), nullptr), 0U);
+    }
+
+    TEST(SerialInputBackendTest, AViewOfAnUnopenedEnumeratedPortLeavesWithIt)
+    {
+        EnumeratedRig rig;
+        rig.ports = { { "/dev/mf_a", "usb-a" } };
+        ASSERT_TRUE(rig.backend->initialize());
+        const auto port = rig.id_of("/dev/mf_a");
+        ASSERT_NE(rig.backend->add_view(port, bytes_between(";")), 0U);
+        ASSERT_EQ(rig.backend->get_devices().size(), 2U);
+
+        rig.ports.clear();
+        rig.backend->refresh_devices();
+
+        EXPECT_TRUE(rig.backend->get_devices().empty());
+    }
+
+    // ------------------------------------------------------------------
     // Opening and closing
     // ------------------------------------------------------------------
 
