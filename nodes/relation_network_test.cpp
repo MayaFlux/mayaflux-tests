@@ -1268,6 +1268,146 @@ INSTANTIATE_TEST_SUITE_P(
         OperatorCase { "Combine", [] { return std::make_shared<CombineOperator>(1); }, "Combine", true }),
     [](const ::testing::TestParamInfo<OperatorCase>& info) { return std::string(info.param.name); });
 
+
+TEST(RelationRewriteGrowTest, GrowRewritesAndSubmitsInOneCall)
+{
+    RelationNetwork network;
+    auto rewrite = network.add<RewriteOperator>(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 } },
+        .max_word_length = 8,
+        .max_generations = 3 });
+    rewrite->replace(1, [](const auto&, auto, const auto& emit) {
+        emit(RewriteOperator::Symbol { 1 });
+        emit(RewriteOperator::Symbol { 2 });
+    });
+
+    EXPECT_TRUE(rewrite->published());
+    ASSERT_EQ(rewrite->grow(), RewriteOperator::GrowResult::GROWN);
+    EXPECT_EQ(rewrite->draft_generation(), 1U);
+    EXPECT_FALSE(rewrite->published());
+
+    network.process_batch(FRAMES);
+
+    EXPECT_TRUE(rewrite->published());
+    EXPECT_EQ(rewrite->active_generation(), 1U);
+    EXPECT_EQ(rewrite->active_symbols().size(), 2U);
+}
+
+TEST(RelationRewriteGrowTest, GrowBuildsTheRequestedNumberOfGenerations)
+{
+    RelationNetwork network;
+    auto rewrite = network.add<RewriteOperator>(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 } },
+        .max_word_length = 8,
+        .max_generations = 3 });
+    rewrite->replace(1, [](const auto&, auto, const auto& emit) {
+        emit(RewriteOperator::Symbol { 1 });
+        emit(RewriteOperator::Symbol { 2 });
+    });
+
+    ASSERT_EQ(rewrite->grow(2), RewriteOperator::GrowResult::GROWN);
+    network.process_batch(FRAMES);
+
+    EXPECT_EQ(rewrite->active_generation(), 2U);
+    EXPECT_EQ(rewrite->active_symbols().size(), 3U);
+}
+
+TEST(RelationRewriteGrowTest, GrowIsBusyWhileASubmissionIsPendingAndLeavesTheDraftAlone)
+{
+    RelationNetwork network;
+    auto rewrite = network.add<RewriteOperator>(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 } },
+        .max_word_length = 8,
+        .max_generations = 3 });
+    rewrite->replace(1, [](const auto&, auto, const auto& emit) {
+        emit(RewriteOperator::Symbol { 1 });
+        emit(RewriteOperator::Symbol { 2 });
+    });
+
+    ASSERT_EQ(rewrite->grow(), RewriteOperator::GrowResult::GROWN);
+    EXPECT_EQ(rewrite->grow(), RewriteOperator::GrowResult::BUSY);
+    EXPECT_EQ(rewrite->draft_generation(), 1U);
+
+    network.process_batch(FRAMES);
+
+    ASSERT_EQ(rewrite->grow(), RewriteOperator::GrowResult::GROWN);
+    EXPECT_EQ(rewrite->draft_generation(), 2U);
+}
+
+TEST(RelationRewriteGrowTest, GrowReportsTheFirstFailureAndChangesNothing)
+{
+    RelationNetwork network;
+    auto rewrite = network.add<RewriteOperator>(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 } },
+        .max_word_length = 2,
+        .max_generations = 1 });
+    rewrite->replace(1, [](const auto&, auto, const auto& emit) {
+        emit(RewriteOperator::Symbol { 1 });
+        emit(RewriteOperator::Symbol { 2 });
+    });
+
+    ASSERT_EQ(rewrite->grow(), RewriteOperator::GrowResult::GROWN);
+    network.process_batch(FRAMES);
+
+    EXPECT_EQ(rewrite->grow(), RewriteOperator::GrowResult::GENERATION_LIMIT);
+    EXPECT_EQ(rewrite->draft_generation(), 1U);
+    EXPECT_TRUE(rewrite->published());
+}
+
+TEST(RelationRewriteGrowTest, GrowBeyondTheWordLimitLeavesTheDraftUnpublished)
+{
+    RelationNetwork network;
+    auto rewrite = network.add<RewriteOperator>(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 } },
+        .max_word_length = 1,
+        .max_generations = 3 });
+    rewrite->replace(1, [](const auto&, auto, const auto& emit) {
+        emit(RewriteOperator::Symbol { 1 });
+        emit(RewriteOperator::Symbol { 2 });
+    });
+
+    EXPECT_EQ(rewrite->grow(), RewriteOperator::GrowResult::WORD_LIMIT);
+    EXPECT_EQ(rewrite->draft_generation(), 0U);
+    EXPECT_TRUE(rewrite->published());
+}
+
+TEST(RelationRewriteGrowTest, GrowOnAnInvalidOperatorReportsIt)
+{
+    RewriteOperator rewrite(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 }, RewriteOperator::Symbol { 2 } },
+        .max_word_length = 1,
+        .max_generations = 2 });
+
+    EXPECT_EQ(rewrite.grow(), RewriteOperator::GrowResult::INVALID_CONFIG);
+}
+
+TEST(RelationRewriteGrowTest, PublishedFollowsTheDraftThroughRestoreAndSubmit)
+{
+    RelationNetwork network;
+    auto rewrite = network.add<RewriteOperator>(RewriteOperator::Config {
+        .axiom = { RewriteOperator::Symbol { 1 } },
+        .max_word_length = 8,
+        .max_generations = 3 });
+    rewrite->replace(1, [](const auto&, auto, const auto& emit) {
+        emit(RewriteOperator::Symbol { 1 });
+        emit(RewriteOperator::Symbol { 2 });
+    });
+
+    ASSERT_EQ(rewrite->grow(), RewriteOperator::GrowResult::GROWN);
+    network.process_batch(FRAMES);
+    ASSERT_TRUE(rewrite->published());
+
+    ASSERT_TRUE(rewrite->restore_axiom());
+    EXPECT_FALSE(rewrite->published());
+
+    ASSERT_EQ(rewrite->submit(), RewriteOperator::SubmitResult::SUBMITTED);
+    EXPECT_FALSE(rewrite->published());
+
+    network.process_batch(FRAMES);
+    EXPECT_TRUE(rewrite->published());
+    EXPECT_EQ(rewrite->active_generation(), 0U);
+}
+
 }
 
 }
