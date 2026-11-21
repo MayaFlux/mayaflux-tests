@@ -1,6 +1,8 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include "../support/io_roundtrip_support.hpp"
 #include "../support/scoped_working_dir.hpp"
 
@@ -752,12 +754,12 @@ namespace {
         }
     }
 
-    std::string two_node_gltf(bool shared_mesh)
+    std::string two_node_gltf(bool shared_mesh, const std::string& parent_transform = R"("translation":[0,5,0])")
     {
         const std::array<float, 9> triangle { 0, 0, 0, 1, 0, 0, 0, 1, 0 };
         const std::string payload(reinterpret_cast<const char*>(triangle.data()), sizeof(float) * triangle.size());
 
-        std::string nodes = R"([{"name":"parent","translation":[0,5,0],"children":[1)";
+        std::string nodes = R"([{"name":"parent",)" + parent_transform + R"(,"children":[1)";
         nodes += shared_mesh ? ",2]}," : "]},";
         nodes += R"({"name":"wheel_fl","mesh":0,"translation":[1,0,0]})";
         if (shared_mesh) {
@@ -785,7 +787,7 @@ namespace {
         EXPECT_EQ(triangles_in(loaded), 1U);
     }
 
-    TEST_F(ModelFileTest, CurrentBehaviourExtractsVerticesWithoutTheNodeTransforms)
+    TEST_F(ModelFileTest, ExtractedMeshVerticesStayInTheirOwnLocalSpace)
     {
         const auto path = path_in_cwd("graph_vertices.gltf");
         RoundTrip::write_bytes(path, two_node_gltf(false));
@@ -799,7 +801,7 @@ namespace {
         EXPECT_TRUE(near(hi, glm::vec3(1.0F, 1.0F, 0.0F)));
     }
 
-    TEST_F(ModelFileTest, CurrentBehaviourBuildsOneIdentityRootSlotIgnoringTheNodeTree)
+    TEST_F(ModelFileTest, NetworkFollowsTheNodeTreeWithAJointForAMeshlessParent)
     {
         const auto path = path_in_cwd("graph_slots.gltf");
         RoundTrip::write_bytes(path, two_node_gltf(false));
@@ -809,14 +811,37 @@ namespace {
         const auto network = reader.create_mesh_network();
 
         ASSERT_NE(network, nullptr);
-        ASSERT_EQ(network->slot_count(), 1U);
-        const auto& slot = network->get_slot(0);
-        EXPECT_FALSE(slot.parent_index.has_value());
-        EXPECT_EQ(slot.local_transform, glm::mat4(1.0F));
-        EXPECT_EQ(slot.world_transform, glm::mat4(1.0F));
+        ASSERT_EQ(network->slot_count(), 2U);
+
+        const auto* parent = network->find_slot("parent");
+        const auto* wheel = network->find_slot("wheel_fl");
+        ASSERT_NE(parent, nullptr);
+        ASSERT_NE(wheel, nullptr);
+        EXPECT_EQ(parent->node, nullptr);
+        EXPECT_FALSE(parent->parent_index.has_value());
+        EXPECT_EQ(wheel->parent_index, parent->index);
+        EXPECT_NE(wheel->node, nullptr);
+        EXPECT_TRUE(near(glm::vec3(parent->local_transform[3]), glm::vec3(0.0F, 5.0F, 0.0F)));
+        EXPECT_TRUE(near(glm::vec3(wheel->local_transform[3]), glm::vec3(1.0F, 0.0F, 0.0F)));
+        EXPECT_TRUE(near(glm::vec3(wheel->world_transform[3]), glm::vec3(1.0F, 5.0F, 0.0F)));
     }
 
-    TEST_F(ModelFileTest, CurrentBehaviourBuildsOneSlotForAMeshUsedByTwoNodes)
+    TEST_F(ModelFileTest, ARotatedParentPlacesTheChildThroughTheComposedWorldTransform)
+    {
+        const auto path = path_in_cwd("graph_rotated.gltf");
+        RoundTrip::write_bytes(path, two_node_gltf(false, R"("rotation":[0,0.70710678,0,0.70710678])"));
+
+        IO::ModelReader reader;
+        ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+        const auto network = reader.create_mesh_network();
+
+        ASSERT_NE(network, nullptr);
+        const auto* wheel = network->find_slot("wheel_fl");
+        ASSERT_NE(wheel, nullptr);
+        EXPECT_TRUE(near(glm::vec3(wheel->world_transform[3]), glm::vec3(0.0F, 0.0F, -1.0F), 1e-5F));
+    }
+
+    TEST_F(ModelFileTest, AMeshUsedByTwoNodesBecomesTwoSlotsWithTheirOwnPlacement)
     {
         const auto path = path_in_cwd("graph_shared.gltf");
         RoundTrip::write_bytes(path, two_node_gltf(true));
@@ -826,7 +851,14 @@ namespace {
         const auto network = reader.create_mesh_network();
 
         ASSERT_NE(network, nullptr);
-        EXPECT_EQ(network->slot_count(), 1U);
+        ASSERT_EQ(network->slot_count(), 3U);
+        const auto* front_left = network->find_slot("wheel_fl");
+        const auto* front_right = network->find_slot("wheel_fr");
+        ASSERT_NE(front_left, nullptr);
+        ASSERT_NE(front_right, nullptr);
+        EXPECT_NE(front_left->node, front_right->node);
+        EXPECT_TRUE(near(glm::vec3(front_left->world_transform[3]), glm::vec3(1.0F, 5.0F, 0.0F)));
+        EXPECT_TRUE(near(glm::vec3(front_right->world_transform[3]), glm::vec3(-1.0F, 5.0F, 0.0F)));
         EXPECT_EQ(reader.extract_meshes().size(), 1U);
     }
 
@@ -895,88 +927,680 @@ namespace {
         EXPECT_TRUE(RoundTrip::exists(path_in_cwd("node.obj")));
     }
 
-    struct AssetCase {
-        const char* relative;
+    struct SceneNode {
+        std::string name;
+        std::optional<glm::mat4> matrix;
+        glm::vec3 translation { 0.0F };
+        float yaw { 0.0F };
+        glm::vec3 scale { 1.0F };
+        int mesh { -1 };
+        std::vector<size_t> children;
     };
 
-    class ModelAssetTest : public ::testing::TestWithParam<AssetCase> { };
+    struct MeshSpec {
+        size_t triangles { 1 };
+        bool points { false };
+    };
 
-    MAYAFLUX_TEST_WITH(TEST_P, ModelAssetTest, RealFilesLoadAsValidCanonicalMeshes,
-        (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    struct SceneSpec {
+        std::vector<SceneNode> nodes;
+        std::vector<size_t> roots;
+        std::vector<MeshSpec> meshes;
+    };
+
+    size_t add_node(SceneSpec& scene, SceneNode node)
     {
-        const auto path = RoundTrip::repo_asset(GetParam().relative);
-        if (!path) {
-            GTEST_SKIP() << GetParam().relative << " is not present";
+        scene.nodes.push_back(std::move(node));
+        return scene.nodes.size() - 1;
+    }
+
+    std::string number(float value)
+    {
+        return std::format("{:.9g}", value);
+    }
+
+    glm::mat4 local_of(const SceneNode& node)
+    {
+        if (node.matrix) {
+            return *node.matrix;
+        }
+        return glm::translate(glm::mat4(1.0F), node.translation)
+            * glm::rotate(glm::mat4(1.0F), node.yaw, glm::vec3(0.0F, 1.0F, 0.0F))
+            * glm::scale(glm::mat4(1.0F), node.scale);
+    }
+
+    std::string scene_json(const SceneSpec& spec)
+    {
+        std::string payload;
+        std::string accessors;
+        std::string views;
+        std::string meshes;
+        size_t primitive = 0;
+
+        for (size_t m = 0; m < spec.meshes.size(); ++m) {
+            std::string primitives;
+            const auto add_primitive = [&](int mode) {
+                const float base = static_cast<float>(m * 10 + primitive);
+                const std::array<float, 9> triangle { base, 0.0F, 0.0F, base + 1.0F, 0.0F, 0.0F, base, 1.0F, 0.0F };
+                payload.append(reinterpret_cast<const char*>(triangle.data()), sizeof(triangle));
+                if (primitive > 0) {
+                    accessors += ',';
+                    views += ',';
+                }
+                if (!primitives.empty()) {
+                    primitives += ',';
+                }
+                accessors += std::format(R"({{"bufferView":{},"componentType":5126,"count":3,"type":"VEC3","min":[{},0,0],"max":[{},1,0]}})",
+                    primitive, number(base), number(base + 1.0F));
+                views += std::format(R"({{"buffer":0,"byteOffset":{},"byteLength":36,"target":34962}})", primitive * 36);
+                primitives += std::format(R"({{"attributes":{{"POSITION":{}}},"mode":{}}})", primitive, mode);
+                ++primitive;
+            };
+            for (size_t t = 0; t < spec.meshes[m].triangles; ++t) {
+                add_primitive(4);
+            }
+            if (spec.meshes[m].points) {
+                add_primitive(0);
+            }
+            if (m > 0) {
+                meshes += ',';
+            }
+            meshes += std::format(R"({{"name":"mesh_{}","primitives":[{}]}})", m, primitives);
         }
 
-        IO::ModelReader reader;
-        const auto meshes = reader.load(*path);
+        std::string nodes;
+        for (size_t i = 0; i < spec.nodes.size(); ++i) {
+            const auto& node = spec.nodes[i];
+            std::string json = "{";
+            if (!node.name.empty()) {
+                json += "\"name\":\"" + node.name + "\",";
+            }
+            if (node.matrix) {
+                json += "\"matrix\":[";
+                for (int c = 0; c < 4; ++c) {
+                    for (int r = 0; r < 4; ++r) {
+                        json += number((*node.matrix)[c][r]);
+                        json += (c == 3 && r == 3) ? "]," : ",";
+                    }
+                }
+            } else {
+                json += std::format(R"("translation":[{},{},{}],)", number(node.translation.x), number(node.translation.y), number(node.translation.z));
+                json += std::format(R"("rotation":[0,{},0,{}],)", number(std::sin(node.yaw * 0.5F)), number(std::cos(node.yaw * 0.5F)));
+                json += std::format(R"("scale":[{},{},{}],)", number(node.scale.x), number(node.scale.y), number(node.scale.z));
+            }
+            if (node.mesh >= 0) {
+                json += std::format("\"mesh\":{},", node.mesh);
+            }
+            if (!node.children.empty()) {
+                json += "\"children\":[";
+                for (size_t c = 0; c < node.children.size(); ++c) {
+                    json += (c ? "," : "") + std::to_string(node.children[c]);
+                }
+                json += "],";
+            }
+            json.pop_back();
+            json += "}";
+            nodes += (i ? "," : "") + json;
+        }
 
-        ASSERT_FALSE(meshes.empty()) << reader.get_last_error();
-        for (const auto& mesh : meshes) {
-            EXPECT_TRUE(mesh.is_valid());
-            EXPECT_EQ(mesh.layout.stride_bytes, sizeof(MeshVertex));
-            EXPECT_EQ(indices_of(mesh).size() % 3, 0U);
-            const auto count = static_cast<uint32_t>(vertices_of(mesh).size());
-            EXPECT_TRUE(std::ranges::all_of(indices_of(mesh), [count](uint32_t i) { return i < count; }));
-            EXPECT_TRUE(std::ranges::all_of(vertices_of(mesh), [](const MeshVertex& v) {
-                return std::isfinite(v.position.x) && std::isfinite(v.position.y) && std::isfinite(v.position.z);
-            }));
+        std::string roots;
+        for (size_t r = 0; r < spec.roots.size(); ++r) {
+            roots += (r ? "," : "") + std::to_string(spec.roots[r]);
+        }
+
+        return R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[)" + roots + R"(]}],"nodes":[)" + nodes
+            + R"(],"meshes":[)" + meshes + R"(],"accessors":[)" + accessors + R"(],"bufferViews":[)" + views
+            + R"(],"buffers":[{"byteLength":)" + std::to_string(payload.size())
+            + R"(,"uri":"data:application/octet-stream;base64,)" + RoundTrip::base64(payload) + R"("}]})";
+    }
+
+    struct ExpectedSlot {
+        std::string name;
+        bool name_known { false };
+        std::optional<size_t> parent;
+        bool geometry { false };
+        glm::mat4 world { 1.0F };
+    };
+
+    void expect_walk(
+        const SceneSpec& spec,
+        size_t index,
+        std::optional<size_t> parent,
+        const glm::mat4& parent_world,
+        std::vector<ExpectedSlot>& out)
+    {
+        const auto& node = spec.nodes[index];
+        const glm::mat4 world = parent_world * local_of(node);
+        const size_t triangles = node.mesh >= 0 ? spec.meshes[static_cast<size_t>(node.mesh)].triangles : 0;
+
+        const size_t own = out.size();
+        out.push_back({ .name = node.name,
+            .name_known = !node.name.empty() && node.name.size() < 1024,
+            .parent = parent,
+            .geometry = triangles > 0,
+            .world = world });
+        for (size_t extra = 1; extra < triangles; ++extra) {
+            out.push_back({ .name = {}, .name_known = false, .parent = own, .geometry = true, .world = world });
+        }
+        for (const size_t child : node.children) {
+            expect_walk(spec, child, own, world, out);
         }
     }
 
-    MAYAFLUX_TEST_WITH(TEST_P, ModelAssetTest, RealFilesBuildOneSlotPerExtractedMesh,
-        (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    std::vector<ExpectedSlot> expected_slots(const SceneSpec& spec)
     {
-        const auto path = RoundTrip::repo_asset(GetParam().relative);
-        if (!path) {
-            GTEST_SKIP() << GetParam().relative << " is not present";
+        std::vector<ExpectedSlot> out;
+        for (const size_t root : spec.roots) {
+            expect_walk(spec, root, std::nullopt, glm::mat4(1.0F), out);
+        }
+        return out;
+    }
+
+    bool matrices_near(const glm::mat4& a, const glm::mat4& b, float tolerance)
+    {
+        for (int c = 0; c < 4; ++c) {
+            for (int r = 0; r < 4; ++r) {
+                if (!(std::abs(a[c][r] - b[c][r]) <= tolerance)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    SceneSpec hostile_rig()
+    {
+        SceneSpec spec;
+        spec.meshes = { { 1, false }, { 1, false }, { 2, false }, { 0, true }, { 1, true } };
+
+        size_t previous = 0;
+        for (int i = 0; i < 600; ++i) {
+            SceneNode bone;
+            bone.name = "bone_" + std::to_string(i);
+            bone.translation = { 0.01F, 0.02F, 0.0F };
+            bone.yaw = 0.01F;
+            if (i % 50 == 0) {
+                bone.mesh = (i / 50) % 2;
+            }
+            const size_t index = add_node(spec, bone);
+            if (i == 0) {
+                spec.roots.push_back(index);
+            } else {
+                spec.nodes[previous].children.push_back(index);
+            }
+            previous = index;
         }
 
-        IO::ModelReader reader;
-        ASSERT_TRUE(reader.open(*path)) << reader.get_last_error();
-        const auto meshes = reader.extract_meshes();
-        const auto network = reader.create_mesh_network();
+        SceneNode hand;
+        hand.name = "hand";
+        hand.translation = { 0.0F, 0.0F, 1.0F };
+        hand.mesh = 0;
+        const size_t hand_index = add_node(spec, hand);
+        SceneNode forearm;
+        forearm.name = "forearm";
+        forearm.translation = { 0.0F, 1.0F, 0.0F };
+        forearm.yaw = 0.5F;
+        forearm.children = { hand_index };
+        const size_t forearm_index = add_node(spec, forearm);
+        SceneNode upper;
+        upper.name = "upper_arm";
+        upper.translation = { 2.0F, 0.0F, 0.0F };
+        upper.children = { forearm_index };
+        spec.roots.push_back(add_node(spec, upper));
 
+        SceneNode hub;
+        hub.name = "hub";
+        hub.translation = { 3.0F, 0.0F, 0.0F };
+        hub.scale = { 2.0F, 2.0F, 2.0F };
+        const size_t hub_index = add_node(spec, hub);
+        spec.roots.push_back(hub_index);
+        for (int k = 0; k < 300; ++k) {
+            SceneNode spoke;
+            spoke.name = "spoke_" + std::to_string(k);
+            spoke.translation = { static_cast<float>(k) * 0.01F, 0.0F, 0.0F };
+            if (k % 100 == 0) {
+                spoke.mesh = 2;
+            }
+            const size_t spoke_index = add_node(spec, spoke);
+            spec.nodes[hub_index].children.push_back(spoke_index);
+        }
+
+        SceneNode mirror;
+        mirror.name = "mirror";
+        mirror.scale = { -1.0F, 1.0F, 1.0F };
+        SceneNode mirrored;
+        mirrored.name = "mirrored";
+        mirrored.translation = { 1.0F, 0.0F, 0.0F };
+        mirrored.mesh = 0;
+        mirror.children = { add_node(spec, mirrored) };
+        spec.roots.push_back(add_node(spec, mirror));
+
+        glm::mat4 shear(1.0F);
+        shear[1][0] = 0.5F;
+        shear[3] = glm::vec4(0.0F, 0.0F, 4.0F, 1.0F);
+        SceneNode skew;
+        skew.name = "skew";
+        skew.matrix = shear;
+        SceneNode skewed;
+        skewed.name = "skewed";
+        skewed.translation = { 0.0F, 2.0F, 0.0F };
+        skewed.mesh = 0;
+        skew.children = { add_node(spec, skewed) };
+        spec.roots.push_back(add_node(spec, skew));
+
+        SceneNode dup_a;
+        dup_a.name = "dup";
+        dup_a.translation = { 1.0F, 0.0F, 0.0F };
+        dup_a.mesh = 0;
+        SceneNode dup_b = dup_a;
+        dup_b.translation = { 2.0F, 0.0F, 0.0F };
+        SceneNode dupes;
+        dupes.name = "dupes";
+        dupes.children = { add_node(spec, dup_a), add_node(spec, dup_b) };
+        spec.roots.push_back(add_node(spec, dupes));
+
+        SceneNode after;
+        after.name = "after_unnamed";
+        after.translation = { 0.0F, 0.0F, 3.0F };
+        after.mesh = 0;
+        SceneNode unnamed_joint;
+        unnamed_joint.translation = { 0.0F, 1.0F, 0.0F };
+        unnamed_joint.children = { add_node(spec, after) };
+        SceneNode unnamed;
+        unnamed.mesh = 1;
+        unnamed.children = { add_node(spec, unnamed_joint) };
+        spec.roots.push_back(add_node(spec, unnamed));
+
+        SceneNode long_name;
+        long_name.name = std::string(3000, 'L');
+        long_name.mesh = 0;
+        spec.roots.push_back(add_node(spec, long_name));
+
+        SceneNode unicode;
+        unicode.name = "joint_\xC3\xA9\xE2\x82\xAC";
+        unicode.mesh = 1;
+        spec.roots.push_back(add_node(spec, unicode));
+
+        SceneNode cloud;
+        cloud.name = "cloud_node";
+        cloud.mesh = 3;
+        spec.roots.push_back(add_node(spec, cloud));
+
+        SceneNode mixed;
+        mixed.name = "mixed";
+        mixed.mesh = 4;
+        spec.roots.push_back(add_node(spec, mixed));
+
+        SceneNode under;
+        under.name = "under_collapsed";
+        under.translation = { 1.0F, 0.0F, 0.0F };
+        under.mesh = 0;
+        SceneNode collapsed;
+        collapsed.name = "collapsed";
+        collapsed.translation = { 7.0F, 0.0F, 0.0F };
+        collapsed.scale = { 0.0F, 0.0F, 0.0F };
+        collapsed.children = { add_node(spec, under) };
+        spec.roots.push_back(add_node(spec, collapsed));
+
+        return spec;
+    }
+
+    std::shared_ptr<Nodes::Network::MeshNetwork> network_from(IO::ModelReader& reader, const std::string& path)
+    {
+        EXPECT_TRUE(reader.open(path)) << reader.get_last_error();
+        return reader.create_mesh_network();
+    }
+
+    TEST_F(ModelFileTest, HostileRigFollowsTheSpecSlotForSlotInDepthFirstOrder)
+    {
+        const auto spec = hostile_rig();
+        const auto path = path_in_cwd("rig.gltf");
+        RoundTrip::write_bytes(path, scene_json(spec));
+
+        IO::ModelReader reader;
+        const auto network = network_from(reader, path);
         ASSERT_NE(network, nullptr);
-        EXPECT_EQ(network->slot_count(), meshes.size());
+
+        const auto expected = expected_slots(spec);
+        ASSERT_EQ(network->slot_count(), expected.size());
+        for (size_t i = 0; i < expected.size(); ++i) {
+            const auto& slot = network->get_slot(static_cast<uint32_t>(i));
+            EXPECT_EQ(slot.index, i);
+            EXPECT_EQ(slot.parent_index.has_value(), expected[i].parent.has_value()) << i;
+            if (slot.parent_index && expected[i].parent) {
+                EXPECT_EQ(*slot.parent_index, *expected[i].parent) << i;
+            }
+            EXPECT_EQ(slot.node != nullptr, expected[i].geometry) << i << ' ' << slot.name;
+            EXPECT_FALSE(slot.name.empty()) << i;
+            if (expected[i].name_known) {
+                EXPECT_EQ(slot.name, expected[i].name) << i;
+            }
+            EXPECT_TRUE(matrices_near(slot.world_transform, expected[i].world, 2e-3F)) << i << ' ' << slot.name;
+        }
     }
 
-    MAYAFLUX_TEST_WITH(TEST_P, ModelAssetTest, RealFilesReexportToObjWithTheSameTriangleCount,
-        (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    TEST_F(ModelFileTest, HostileRigParentsAlwaysPrecedeTheirChildren)
     {
-        const auto path = RoundTrip::repo_asset(GetParam().relative);
-        if (!path) {
-            GTEST_SKIP() << GetParam().relative << " is not present";
-        }
+        const auto path = path_in_cwd("rig_order.gltf");
+        RoundTrip::write_bytes(path, scene_json(hostile_rig()));
 
-        ScopedWorkingDir files;
         IO::ModelReader reader;
-        const auto meshes = reader.load(*path);
-        ASSERT_FALSE(meshes.empty());
+        const auto network = network_from(reader, path);
+        ASSERT_NE(network, nullptr);
 
-        IO::AssimpModelWriter writer;
-        const auto out = path_in_cwd("reexport.obj");
-        ASSERT_TRUE(writer.write(out, meshes)) << writer.get_last_error();
+        for (const auto& slot : network->slots()) {
+            if (slot.parent_index) {
+                EXPECT_LT(*slot.parent_index, slot.index) << slot.name;
+                const auto& children = network->get_slot(*slot.parent_index).child_indices;
+                EXPECT_NE(std::ranges::find(children, slot.index), children.end()) << slot.name;
+            }
+        }
+    }
+
+    TEST_F(ModelFileTest, HostileRigGivesEveryGeometrySlotItsOwnNodeAndTheSharedMeshesSameVertices)
+    {
+        const auto path = path_in_cwd("rig_nodes.gltf");
+        RoundTrip::write_bytes(path, scene_json(hostile_rig()));
+
+        IO::ModelReader reader;
+        const auto network = network_from(reader, path);
+        ASSERT_NE(network, nullptr);
+
+        std::set<const void*> nodes;
+        size_t geometry = 0;
+        for (const auto& slot : network->slots()) {
+            if (slot.node) {
+                ++geometry;
+                nodes.insert(slot.node.get());
+                EXPECT_EQ(slot.node->get_mesh_vertex_count(), 3U) << slot.name;
+            }
+        }
+        EXPECT_GT(geometry, 20U);
+        EXPECT_EQ(nodes.size(), geometry);
+    }
+
+    TEST_F(ModelFileTest, HostileRigUnrenderableMeshesLeaveJointsAndMixedMeshesKeepTheirTriangle)
+    {
+        const auto path = path_in_cwd("rig_points.gltf");
+        RoundTrip::write_bytes(path, scene_json(hostile_rig()));
+
+        IO::ModelReader reader;
+        const auto network = network_from(reader, path);
+        ASSERT_NE(network, nullptr);
+
+        const auto* cloud = network->find_slot("cloud_node");
+        const auto* mixed = network->find_slot("mixed");
+        ASSERT_NE(cloud, nullptr);
+        ASSERT_NE(mixed, nullptr);
+        EXPECT_EQ(cloud->node, nullptr);
+        ASSERT_NE(mixed->node, nullptr);
+        EXPECT_EQ(mixed->node->get_mesh_indices().size(), 3U);
+        EXPECT_TRUE(mixed->child_indices.empty());
+    }
+
+    TEST_F(ModelFileTest, HostileRigWorldTransformsSurviveANetworkBatch)
+    {
+        const auto spec = hostile_rig();
+        const auto path = path_in_cwd("rig_batch.gltf");
+        RoundTrip::write_bytes(path, scene_json(spec));
+
+        IO::ModelReader reader;
+        const auto network = network_from(reader, path);
+        ASSERT_NE(network, nullptr);
+        network->process_batch(1);
+
+        const auto expected = expected_slots(spec);
+        ASSERT_EQ(network->slot_count(), expected.size());
+        for (size_t i = 0; i < expected.size(); ++i) {
+            EXPECT_TRUE(matrices_near(network->get_slot(static_cast<uint32_t>(i)).world_transform, expected[i].world, 2e-3F)) << i;
+        }
+    }
+
+    TEST_F(ModelFileTest, HostileRigDuplicateNamesKeepEveryPlacement)
+    {
+        const auto path = path_in_cwd("rig_dup.gltf");
+        RoundTrip::write_bytes(path, scene_json(hostile_rig()));
+
+        IO::ModelReader reader;
+        const auto network = network_from(reader, path);
+        ASSERT_NE(network, nullptr);
+
+        std::vector<float> placements;
+        for (const auto& slot : network->slots()) {
+            if (slot.name == "dup") {
+                placements.push_back(slot.world_transform[3].x);
+            }
+        }
+        std::ranges::sort(placements);
+        ASSERT_EQ(placements.size(), 2U);
+        EXPECT_NEAR(placements[0], 1.0F, 1e-4F);
+        EXPECT_NEAR(placements[1], 2.0F, 1e-4F);
+    }
+
+    TEST_F(ModelFileTest, HostileRigMirroredAndShearedAndCollapsedParentsStayFinite)
+    {
+        const auto path = path_in_cwd("rig_degenerate.gltf");
+        RoundTrip::write_bytes(path, scene_json(hostile_rig()));
+
+        IO::ModelReader reader;
+        const auto network = network_from(reader, path);
+        ASSERT_NE(network, nullptr);
+
+        const auto* mirrored = network->find_slot("mirrored");
+        const auto* skewed = network->find_slot("skewed");
+        const auto* under = network->find_slot("under_collapsed");
+        ASSERT_NE(mirrored, nullptr);
+        ASSERT_NE(skewed, nullptr);
+        ASSERT_NE(under, nullptr);
+        EXPECT_NEAR(mirrored->world_transform[3].x, -1.0F, 1e-5F);
+        EXPECT_NEAR(skewed->world_transform[3].x, 1.0F, 1e-5F);
+        EXPECT_NEAR(skewed->world_transform[3].z, 4.0F, 1e-5F);
+        EXPECT_NEAR(under->world_transform[3].x, 7.0F, 1e-5F);
+        for (const auto& slot : network->slots()) {
+            for (int c = 0; c < 4; ++c) {
+                for (int r = 0; r < 4; ++r) {
+                    ASSERT_TRUE(std::isfinite(slot.world_transform[c][r])) << slot.name;
+                }
+            }
+        }
+    }
+
+    TEST_F(ModelFileTest, HostileRigExportBakesEveryGeometrySlotsWorldPositions)
+    {
+        const auto spec = hostile_rig();
+        const auto path = path_in_cwd("rig.gltf");
+        RoundTrip::write_bytes(path, scene_json(spec));
+
+        IO::ModelReader reader;
+        const auto network = network_from(reader, path);
+        ASSERT_NE(network, nullptr);
+
+        const auto exported = path_in_cwd("rig_baked.obj");
+        ASSERT_TRUE(IO::save_mesh(network, exported, {}));
 
         IO::ModelReader again;
-        const auto reloaded = again.load(out);
-        ASSERT_FALSE(reloaded.empty()) << again.get_last_error();
-        EXPECT_EQ(triangles_in(reloaded), triangles_in(meshes));
+        const auto loaded = again.load(exported);
+        ASSERT_FALSE(loaded.empty()) << again.get_last_error();
+
+        std::vector<MeshVertex> baked;
+        for (const auto& mesh : loaded) {
+            const auto vertices = vertices_of(mesh);
+            baked.insert(baked.end(), vertices.begin(), vertices.end());
+        }
+
+        size_t geometry = 0;
+        for (const auto& slot : network->slots()) {
+            if (!slot.node) {
+                continue;
+            }
+            ++geometry;
+            for (const auto& vertex : slot.node->get_mesh_vertices()) {
+                const glm::vec3 world = glm::vec3(slot.world_transform * glm::vec4(vertex.position, 1.0F));
+                bool found = false;
+                for (const auto& candidate : baked) {
+                    if (near(candidate.position, world, 5e-3F)) {
+                        found = true;
+                        break;
+                    }
+                }
+                EXPECT_TRUE(found) << slot.name;
+            }
+        }
+        EXPECT_EQ(triangles_in(loaded), geometry);
+    }
+
+    TEST_F(ModelFileTest, ADeepChainOfNodesKeepsItsOrderWithoutOverflowingTheStack)
+    {
+        SceneSpec spec;
+        spec.meshes = { { 1, false } };
+        constexpr int depth = 2000;
+        size_t previous = 0;
+        for (int i = 0; i < depth; ++i) {
+            SceneNode bone;
+            bone.name = "link_" + std::to_string(i);
+            bone.translation = { 0.001F, 0.0F, 0.0F };
+            if (i == depth - 1) {
+                bone.mesh = 0;
+            }
+            const size_t index = add_node(spec, bone);
+            if (i == 0) {
+                spec.roots.push_back(index);
+            } else {
+                spec.nodes[previous].children.push_back(index);
+            }
+            previous = index;
+        }
+        const auto path = path_in_cwd("deep.gltf");
+        RoundTrip::write_bytes(path, scene_json(spec));
+
+        IO::ModelReader reader;
+        const auto network = network_from(reader, path);
+
+        ASSERT_NE(network, nullptr);
+        ASSERT_EQ(network->slot_count(), static_cast<size_t>(depth));
+        const auto& leaf = network->get_slot(depth - 1);
+        EXPECT_NE(leaf.node, nullptr);
+        EXPECT_EQ(leaf.parent_index, static_cast<uint32_t>(depth - 2));
+        EXPECT_NEAR(leaf.world_transform[3].x, 2.0F, 1e-2F);
+    }
+
+    TEST_F(ModelFileTest, AWideFanOfNodesKeepsEveryChild)
+    {
+        SceneSpec spec;
+        spec.meshes = { { 1, false } };
+        SceneNode root;
+        root.name = "root";
+        root.translation = { 1.0F, 0.0F, 0.0F };
+        const size_t root_index = add_node(spec, root);
+        spec.roots.push_back(root_index);
+        for (int k = 0; k < 5000; ++k) {
+            SceneNode leaf;
+            leaf.name = "leaf_" + std::to_string(k);
+            leaf.translation = { 0.0F, static_cast<float>(k), 0.0F };
+            leaf.mesh = 0;
+            const size_t leaf_index = add_node(spec, leaf);
+            spec.nodes[root_index].children.push_back(leaf_index);
+        }
+        const auto path = path_in_cwd("wide.gltf");
+        RoundTrip::write_bytes(path, scene_json(spec));
+
+        IO::ModelReader reader;
+        const auto network = network_from(reader, path);
+
+        ASSERT_NE(network, nullptr);
+        ASSERT_EQ(network->slot_count(), 5001U);
+        EXPECT_EQ(network->get_slot(0).child_indices.size(), 5000U);
+        EXPECT_NEAR(network->get_slot(5000).world_transform[3].y, 4999.0F, 1e-2F);
+    }
+
+    TEST_F(ModelFileTest, AMeshNoNodeReferencesStillGetsASlot)
+    {
+        SceneSpec spec;
+        spec.meshes = { { 1, false }, { 1, false } };
+        SceneNode used;
+        used.name = "used";
+        used.mesh = 0;
+        spec.roots.push_back(add_node(spec, used));
+        const auto path = path_in_cwd("orphan.gltf");
+        RoundTrip::write_bytes(path, scene_json(spec));
+
+        IO::ModelReader reader;
+        const auto network = network_from(reader, path);
+        const auto meshes = reader.extract_meshes();
+
+        ASSERT_NE(network, nullptr);
+        size_t geometry = 0;
+        for (const auto& slot : network->slots()) {
+            geometry += slot.node ? 1U : 0U;
+        }
+        EXPECT_EQ(geometry, meshes.size());
+    }
+
+    struct CorruptCase {
+        const char* name;
+        std::function<void(SceneSpec&, std::string&)> corrupt;
+    };
+
+    class CorruptSceneTest
+        : public ModelFileTest,
+          public ::testing::WithParamInterface<CorruptCase> { };
+
+    TEST_P(CorruptSceneTest, FailsToOpenOrYieldsAFiniteNetwork)
+    {
+        SceneSpec spec;
+        spec.meshes = { { 1, false } };
+        SceneNode parent;
+        parent.name = "parent";
+        SceneNode child;
+        child.name = "child";
+        child.mesh = 0;
+        parent.children = { add_node(spec, child) };
+        spec.roots.push_back(add_node(spec, parent));
+
+        std::string json;
+        GetParam().corrupt(spec, json);
+        if (json.empty()) {
+            json = scene_json(spec);
+        }
+        const auto path = path_in_cwd("corrupt.gltf");
+        RoundTrip::write_bytes(path, json);
+
+        IO::ModelReader reader;
+        if (!reader.open(path)) {
+            EXPECT_FALSE(reader.get_last_error().empty());
+            return;
+        }
+        const auto network = reader.create_mesh_network();
+        ASSERT_NE(network, nullptr);
+        for (const auto& slot : network->slots()) {
+            for (int c = 0; c < 4; ++c) {
+                for (int r = 0; r < 4; ++r) {
+                    EXPECT_TRUE(std::isfinite(slot.world_transform[c][r])) << slot.name;
+                }
+            }
+            if (slot.parent_index) {
+                EXPECT_LT(*slot.parent_index, slot.index);
+            }
+        }
     }
 
     INSTANTIATE_TEST_SUITE_P(
-        Assets,
-        ModelAssetTest,
+        Corruption,
+        CorruptSceneTest,
         ::testing::Values(
-            AssetCase { "res/fbx/Wolf.fbx" },
-            AssetCase { "res/car.fbx" },
-            AssetCase { "res/2.fbx" }),
-        [](const ::testing::TestParamInfo<AssetCase>& info) {
-            std::string name = info.param.relative;
-            std::ranges::replace_if(name, [](char c) { return !std::isalnum(static_cast<unsigned char>(c)); }, '_');
-            return name;
-        });
+            CorruptCase { "ChildIndexOutOfRange", [](SceneSpec& spec, std::string&) { spec.nodes[1].children.push_back(9999); } },
+            CorruptCase { "MeshIndexOutOfRange", [](SceneSpec& spec, std::string&) { spec.nodes[0].mesh = 42; } },
+            CorruptCase { "BufferShorterThanItsAccessor", [](SceneSpec& spec, std::string& json) {
+                              json = scene_json(spec);
+                              const auto at = json.rfind("\"}]}");
+                              json.erase(at - 24, 24);
+                          } },
+            CorruptCase { "RootListIsEmpty", [](SceneSpec& spec, std::string&) { spec.roots.clear(); } },
+            CorruptCase { "EmptyNodeArray", [](SceneSpec& spec, std::string&) {
+                              spec.nodes.clear();
+                              spec.roots.clear();
+                          } }),
+        [](const ::testing::TestParamInfo<CorruptCase>& info) { return std::string(info.param.name); });
 
 }
 }

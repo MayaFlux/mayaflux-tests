@@ -106,27 +106,6 @@ namespace RoundTrip {
         return glm::all(glm::lessThanEqual(glm::abs(a - b), glm::vec4(tolerance)));
     }
 
-    /**
-     * @brief Locate a file under the repository's gitignored res/ folder.
-     * @return The path, or nullopt when the asset is not present on this machine.
-     */
-    inline std::optional<std::string> repo_asset(const std::string& relative)
-    {
-        namespace fs = std::filesystem;
-        std::error_code ec;
-        const std::array<fs::path, 3> candidates {
-            fs::current_path() / relative,
-            fs::path(Config::project_root()) / relative,
-            fs::path(relative)
-        };
-        for (const auto& candidate : candidates) {
-            if (fs::is_regular_file(candidate, ec)) {
-                return fs::absolute(candidate).string();
-            }
-        }
-        return std::nullopt;
-    }
-
 }
 
 }

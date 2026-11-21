@@ -132,40 +132,55 @@ namespace {
         std::function<void(tvdb_transform_t&)> transform;
     };
 
-    bool write_foreign_grid(const std::string& path, const ForeignGrid& spec)
+    bool write_foreign_grids(const std::string& path, const std::vector<ForeignGrid>& specs)
     {
-        tvdb_grid_t tmpl;
-        std::memset(&tmpl, 0, sizeof(tmpl));
+        std::vector<std::string> grid_types;
+        grid_types.reserve(specs.size());
+        std::vector<tvdb_grid_t> grids;
+        grids.reserve(specs.size());
 
-        std::string grid_type = spec.grid_type;
-        tmpl.descriptor.grid_type = grid_type.data();
+        const auto destroy_all = [&grids] {
+            for (auto& grid : grids) {
+                tvdb_grid_destroy_owned(&grid);
+            }
+        };
 
-        tmpl.tree.layout.num_levels = 4;
-        tmpl.tree.layout.levels[0].node_type = TVDB_NODE_ROOT;
-        tmpl.tree.layout.levels[1].node_type = TVDB_NODE_INTERNAL;
-        tmpl.tree.layout.levels[2].node_type = TVDB_NODE_INTERNAL;
-        tmpl.tree.layout.levels[3].node_type = TVDB_NODE_LEAF;
-        tmpl.tree.layout.levels[0].log2dim = 0;
-        tmpl.tree.layout.levels[1].log2dim = 5;
-        tmpl.tree.layout.levels[2].log2dim = 4;
-        tmpl.tree.layout.levels[3].log2dim = 3;
-        for (int level = 0; level < 4; ++level) {
-            tmpl.tree.layout.levels[level].value_type = spec.value_type;
-        }
-        spec.transform(tmpl.transform);
+        for (const auto& spec : specs) {
+            tvdb_grid_t tmpl;
+            std::memset(&tmpl, 0, sizeof(tmpl));
 
-        tvdb_grid_t grid;
-        const bool built = tvdb_grid_from_sparse_typed_using_template(
-            &tmpl,
-            reinterpret_cast<const tvdb_vec3i*>(spec.coords.data()),
-            spec.values,
-            spec.coords.size(),
-            spec.value_type,
-            spec.background,
-            spec.name.c_str(),
-            &grid);
-        if (!built) {
-            return false;
+            grid_types.push_back(spec.grid_type);
+            tmpl.descriptor.grid_type = grid_types.back().data();
+
+            tmpl.tree.layout.num_levels = 4;
+            tmpl.tree.layout.levels[0].node_type = TVDB_NODE_ROOT;
+            tmpl.tree.layout.levels[1].node_type = TVDB_NODE_INTERNAL;
+            tmpl.tree.layout.levels[2].node_type = TVDB_NODE_INTERNAL;
+            tmpl.tree.layout.levels[3].node_type = TVDB_NODE_LEAF;
+            tmpl.tree.layout.levels[0].log2dim = 0;
+            tmpl.tree.layout.levels[1].log2dim = 5;
+            tmpl.tree.layout.levels[2].log2dim = 4;
+            tmpl.tree.layout.levels[3].log2dim = 3;
+            for (int level = 0; level < 4; ++level) {
+                tmpl.tree.layout.levels[level].value_type = spec.value_type;
+            }
+            spec.transform(tmpl.transform);
+
+            tvdb_grid_t grid;
+            const bool built = tvdb_grid_from_sparse_typed_using_template(
+                &tmpl,
+                reinterpret_cast<const tvdb_vec3i*>(spec.coords.data()),
+                spec.values,
+                spec.coords.size(),
+                spec.value_type,
+                spec.background,
+                spec.name.c_str(),
+                &grid);
+            if (!built) {
+                destroy_all();
+                return false;
+            }
+            grids.push_back(grid);
         }
 
         tvdb_file_t out;
@@ -173,14 +188,19 @@ namespace {
         out.alloc.malloc_fn = &test_malloc;
         out.alloc.realloc_fn = &test_realloc;
         out.alloc.free_fn = &test_free;
-        out.num_grids = 1;
-        out.grids = &grid;
+        out.num_grids = grids.size();
+        out.grids = grids.data();
 
         tvdb_error_t err;
         std::memset(&err, 0, sizeof(err));
         const bool saved = tvdb_file_save(&out, path.c_str(), TVDB_COMPRESS_NONE, 0, 0, &err) == TVDB_OK;
-        tvdb_grid_destroy_owned(&grid);
+        destroy_all();
         return saved;
+    }
+
+    bool write_foreign_grid(const std::string& path, const ForeignGrid& spec)
+    {
+        return write_foreign_grids(path, { spec });
     }
 
     void unit_scale_transform(tvdb_transform_t& transform)
@@ -846,58 +866,331 @@ namespace {
         EXPECT_TRUE(near(loaded->lattice.bounds.max, glm::vec3(6.75F, -2.125F, 20.0F)));
     }
 
-    MAYAFLUX_TEST_WITH(TEST, VolumeAssetTest, RealFireVdbLoadsAsAConsistentVolumeAndRewritesLosslessly,
-        (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    struct FireVolume {
+        Lattice3D lattice;
+        VolumeData data;
+        size_t active_cells { 0 };
+        double density_sum { 0.0 };
+    };
+
+    FireVolume generated_fire()
     {
-        const auto asset = RoundTrip::repo_asset("res/fire.vdb");
-        if (!asset) {
-            GTEST_SKIP() << "res/fire.vdb is not present";
+        FireVolume fire;
+        constexpr uint32_t side = 96;
+        fire.lattice = make_lattice({ side, side, side }, glm::vec3(0.0F), glm::vec3(static_cast<float>(side)));
+
+        const size_t cells = fire.lattice.cell_count();
+        std::vector<float> density(cells, 0.0F);
+        std::vector<float> temperature(cells, 0.0F);
+        std::vector<glm::vec3> velocity(cells, glm::vec3(0.0F));
+
+        const glm::vec3 center(48.0F, 40.0F, 48.0F);
+        constexpr float radius = 30.0F;
+        for (uint32_t z = 0; z < side; ++z) {
+            for (uint32_t y = 0; y < side; ++y) {
+                for (uint32_t x = 0; x < side; ++x) {
+                    const float r = glm::length(glm::vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)) - center);
+                    if (r >= radius) {
+                        continue;
+                    }
+                    const float quantized = std::floor((1.0F - r / radius) * 64.0F) / 64.0F;
+                    if (quantized < 0.05F) {
+                        continue;
+                    }
+                    const size_t i = fire.lattice.index({ x, y, z });
+                    density[i] = quantized;
+                    temperature[i] = quantized * 2048.0F;
+                    velocity[i] = { 0.0F, 4.0F * quantized, 0.5F };
+                }
+            }
         }
-        IO::VDBWriter::register_with_registry();
+
+        uint32_t state = 12345U;
+        for (int spark = 0; spark < 200; ++spark) {
+            state = state * 1664525U + 1013904223U;
+            const uint32_t x = (state >> 8U) % side;
+            state = state * 1664525U + 1013904223U;
+            const uint32_t y = (state >> 8U) % side;
+            state = state * 1664525U + 1013904223U;
+            const uint32_t z = (state >> 8U) % side;
+            const size_t i = fire.lattice.index({ x, y, z });
+            if (density[i] == 0.0F) {
+                density[i] = 1.0F;
+                temperature[i] = 4096.0F;
+                velocity[i] = { 1.0F, 1.0F, 1.0F };
+            }
+        }
+
+        for (size_t i = 0; i < cells; ++i) {
+            if (density[i] != 0.0F) {
+                ++fire.active_cells;
+                fire.density_sum += static_cast<double>(density[i]);
+            }
+        }
+
+        fire.data.lattice = fire.lattice;
+        VolumeField d;
+        d.name = "density";
+        d.semantics.value_class = LatticeValueClass::FogVolume;
+        d.values = std::move(density);
+        VolumeField t;
+        t.name = "temperature";
+        t.values = std::move(temperature);
+        VolumeField v;
+        v.name = "velocity";
+        v.semantics.variance = VectorVariance::ContravariantRelative;
+        v.values = std::move(velocity);
+        fire.data.fields = { std::move(d), std::move(t), std::move(v) };
+        return fire;
+    }
+
+    TEST_F(VolumeFileTest, AGeneratedFireVolumeRoundTripsExactlyAndStaysSparseOnDisk)
+    {
+        const auto fire = generated_fire();
+        IO::VDBWriter writer;
+        const auto path = path_in_cwd("fire.vdb");
+        ASSERT_TRUE(writer.write(path, fire.data)) << writer.get_last_error();
+
+        const size_t dense_bytes = fire.lattice.cell_count() * (sizeof(float) + sizeof(float) + sizeof(glm::vec3));
+        EXPECT_LT(std::filesystem::file_size(path), dense_bytes / 2);
 
         IO::VolumeReader reader;
-        ASSERT_TRUE(reader.open(*asset)) << reader.get_last_error();
-        const auto metadata = reader.get_metadata();
-        ASSERT_TRUE(metadata.has_value());
-        const auto* info = metadata->get<IO::VolumeInfo>();
-        ASSERT_NE(info, nullptr);
-        EXPECT_GT(info->grid_count, 0U);
-
-        auto loaded = reader.extract();
+        const auto loaded = reader.load(path, fire.lattice);
         ASSERT_TRUE(loaded.has_value()) << reader.get_last_error();
-        EXPECT_TRUE(loaded->is_consistent());
-        EXPECT_EQ(loaded->fields.size(), info->grid_count);
-        for (const auto& field : loaded->fields) {
-            EXPECT_EQ(field.element_count(), loaded->cell_count()) << field.name;
-        }
+        ASSERT_EQ(loaded->fields.size(), 3U);
+        EXPECT_EQ(*loaded->find("density")->as_scalar(), *fire.data.find("density")->as_scalar());
+        EXPECT_EQ(*loaded->find("temperature")->as_scalar(), *fire.data.find("temperature")->as_scalar());
+        EXPECT_EQ(*loaded->find("velocity")->as_vector(), *fire.data.find("velocity")->as_vector());
+        EXPECT_EQ(loaded->find("density")->semantics.value_class, LatticeValueClass::FogVolume);
+        EXPECT_EQ(loaded->find("velocity")->semantics.variance, VectorVariance::ContravariantRelative);
+    }
 
-        loaded->fields.resize(1);
-        const auto& first = loaded->fields.front();
-
-        ScopedWorkingDir files;
+    TEST_F(VolumeFileTest, AGeneratedFireVolumeReadWithoutALatticeKeepsEveryActiveCell)
+    {
+        const auto fire = generated_fire();
         IO::VDBWriter writer;
-        const auto path = path_in_cwd("fire_copy.vdb");
-        ASSERT_TRUE(writer.write(path, *loaded)) << writer.get_last_error();
+        const auto path = path_in_cwd("fire_hull.vdb");
+        ASSERT_TRUE(writer.write(path, fire.data)) << writer.get_last_error();
 
-        IO::VolumeReader again;
-        const auto reread = again.load(path, loaded->lattice);
-        ASSERT_TRUE(reread.has_value()) << again.get_last_error();
-        ASSERT_EQ(reread->fields.size(), 1U);
+        IO::VolumeReader reader;
+        const auto loaded = reader.load(path);
+        ASSERT_TRUE(loaded.has_value()) << reader.get_last_error();
 
-        if (const auto* scalars = first.as_scalar()) {
-            const auto& copy = *reread->fields.front().as_scalar();
-            ASSERT_EQ(copy.size(), scalars->size());
-            for (size_t i = 0; i < copy.size(); ++i) {
-                ASSERT_NEAR(copy[i], (*scalars)[i], 1e-6F) << i;
-            }
-        } else {
-            const auto& vectors = *first.as_vector();
-            const auto& copy = *reread->fields.front().as_vector();
-            ASSERT_EQ(copy.size(), vectors.size());
-            for (size_t i = 0; i < copy.size(); ++i) {
-                ASSERT_TRUE(near(copy[i], vectors[i], 1e-6F)) << i;
+        EXPECT_EQ(loaded->lattice.resolution.x % 8U, 0U);
+        EXPECT_EQ(loaded->lattice.resolution.y % 8U, 0U);
+        EXPECT_EQ(loaded->lattice.resolution.z % 8U, 0U);
+        const auto& density = *loaded->find("density")->as_scalar();
+        size_t active = 0;
+        double sum = 0.0;
+        for (const float v : density) {
+            active += v != 0.0F ? 1U : 0U;
+            sum += static_cast<double>(v);
+        }
+        EXPECT_EQ(active, fire.active_cells);
+        EXPECT_DOUBLE_EQ(sum, fire.density_sum);
+    }
+
+    TEST_F(VolumeFileTest, ValuesExactlyAtTheThresholdAreActiveAndOneUlpBelowAreNot)
+    {
+        const auto lattice = make_lattice({ 8, 1, 1 }, glm::vec3(0.0F), glm::vec3(8.0F, 1.0F, 1.0F));
+        constexpr float threshold = 0.25F;
+        const float below = std::nextafter(threshold, 0.0F);
+        const std::array<float, 8> pattern { threshold, below, -threshold, -below, 0.0F, 1.0F, -1.0F, below };
+        const auto source = volume_of(lattice, { scalar_field("edge", lattice, [&](size_t i) { return pattern[i]; }),
+            vector_field("edge_vec", lattice, [&](size_t i) {
+                return i % 2 == 0 ? glm::vec3(threshold, 0.0F, 0.0F) : glm::vec3(0.249F, 0.0F, 0.0F);
+            }) });
+        IO::VolumeWriteOptions options;
+        options.activity_threshold = threshold;
+        options.background = -7.0F;
+
+        const auto loaded = round_trip(source, options);
+
+        ASSERT_TRUE(loaded.has_value());
+        const auto& scalars = *loaded->find("edge")->as_scalar();
+        for (size_t i = 0; i < pattern.size(); ++i) {
+            const bool active = std::abs(pattern[i]) >= threshold;
+            EXPECT_EQ(scalars[i], active ? pattern[i] : -7.0F) << i;
+        }
+        const auto& vectors = *loaded->find("edge_vec")->as_vector();
+        for (size_t i = 0; i < vectors.size(); ++i) {
+            EXPECT_EQ(vectors[i], i % 2 == 0 ? glm::vec3(threshold, 0.0F, 0.0F) : glm::vec3(-7.0F)) << i;
+        }
+    }
+
+    TEST_F(VolumeFileTest, NonFiniteValuesNeverCorruptTheFile)
+    {
+        const auto lattice = make_lattice({ 8, 1, 1 }, glm::vec3(0.0F), glm::vec3(8.0F, 1.0F, 1.0F));
+        const float inf = std::numeric_limits<float>::infinity();
+        const float nan = std::numeric_limits<float>::quiet_NaN();
+        const std::array<float, 8> pattern { 1.0F, nan, 2.0F, inf, 3.0F, -inf, 4.0F, nan };
+        IO::VolumeWriteOptions options;
+        options.background = -5.0F;
+
+        const auto loaded = round_trip(volume_of(lattice, { scalar_field("wild", lattice, [&](size_t i) { return pattern[i]; }) }), options);
+
+        ASSERT_TRUE(loaded.has_value());
+        const auto& values = *loaded->fields.front().as_scalar();
+        for (size_t i = 0; i < pattern.size(); ++i) {
+            if (std::isfinite(pattern[i])) {
+                EXPECT_EQ(values[i], pattern[i]) << i;
+            } else if (std::isnan(pattern[i])) {
+                EXPECT_EQ(values[i], -5.0F) << i;
+            } else {
+                EXPECT_TRUE(std::isinf(values[i]) || values[i] == -5.0F) << i;
             }
         }
+    }
+
+    struct LatticeCase {
+        const char* name;
+        glm::uvec3 resolution;
+        glm::vec3 min;
+        float cell;
+    };
+
+    class AwkwardLatticeTest
+        : public VolumeFileTest,
+          public ::testing::WithParamInterface<LatticeCase> { };
+
+    TEST_P(AwkwardLatticeTest, ScalarAndVectorFieldsRoundTripExactly)
+    {
+        const auto& param = GetParam();
+        const auto lattice = make_lattice(param.resolution, param.min, param.min + param.cell * glm::vec3(param.resolution));
+        const auto source = volume_of(lattice, { ramp("density", lattice), flow("velocity", lattice) });
+
+        const auto loaded = round_trip(source);
+
+        ASSERT_TRUE(loaded.has_value());
+        EXPECT_TRUE(same_lattice(loaded->lattice, lattice));
+        EXPECT_EQ(*loaded->fields[0].as_scalar(), *source.fields[0].as_scalar());
+        EXPECT_EQ(*loaded->fields[1].as_vector(), *source.fields[1].as_vector());
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Lattices,
+        AwkwardLatticeTest,
+        ::testing::Values(
+            LatticeCase { "SingleCell", { 1, 1, 1 }, { 0.0F, 0.0F, 0.0F }, 1.0F },
+            LatticeCase { "NotMultiplesOfEight", { 9, 17, 33 }, { -3.5F, 2.0F, 0.0F }, 0.125F },
+            LatticeCase { "LongThinX", { 513, 1, 2 }, { 0.0F, 0.0F, 0.0F }, 0.5F },
+            LatticeCase { "LongThinZ", { 1, 1, 1025 }, { 0.0F, 0.0F, -512.0F }, 1.0F },
+            LatticeCase { "FarFromTheOrigin", { 10, 10, 10 }, { 1.0e6F, -1.0e6F, 1.0e5F }, 0.5F }),
+        [](const ::testing::TestParamInfo<LatticeCase>& info) { return std::string(info.param.name); });
+
+    TEST_F(VolumeFileTest, NegativeVoxelIndicesAlignToTheirOwnEightCellBlock)
+    {
+        const std::vector<glm::ivec3> coords { { -1, -1, -1 }, { -8, -8, -8 }, { 0, 0, 0 } };
+        const std::array<float, 3> values { 3.0F, 4.0F, 5.0F };
+        const float background = 0.0F;
+        const auto path = path_in_cwd("negative.vdb");
+        ASSERT_TRUE(write_foreign_grid(path,
+            { .grid_type = "Tree_float_5_4_3",
+                .value_type = TVDB_VALUE_FLOAT,
+                .name = "negative",
+                .coords = coords,
+                .values = values.data(),
+                .background = &background,
+                .transform = unit_scale_transform }));
+
+        IO::VolumeReader reader;
+        const auto loaded = reader.load(path);
+
+        ASSERT_TRUE(loaded.has_value()) << reader.get_last_error();
+        EXPECT_EQ(loaded->lattice.resolution, glm::uvec3(16, 16, 16));
+        EXPECT_TRUE(near(loaded->lattice.bounds.min, glm::vec3(-8.5F)));
+        EXPECT_TRUE(near(loaded->lattice.bounds.max, glm::vec3(7.5F)));
+        const auto& cells = *loaded->fields.front().as_scalar();
+        EXPECT_EQ(cells[loaded->lattice.index({ 7, 7, 7 })], 3.0F);
+        EXPECT_EQ(cells[loaded->lattice.index({ 0, 0, 0 })], 4.0F);
+        EXPECT_EQ(cells[loaded->lattice.index({ 8, 8, 8 })], 5.0F);
+    }
+
+    TEST_F(VolumeFileTest, IslandsOnOppositeSidesOfTheOriginWidenToTheirWholeHull)
+    {
+        const std::vector<glm::ivec3> coords { { -20, -20, -20 }, { 20, 20, 20 } };
+        const std::array<float, 2> values { 1.0F, 2.0F };
+        const float background = 0.0F;
+        const auto path = path_in_cwd("islands.vdb");
+        ASSERT_TRUE(write_foreign_grid(path,
+            { .grid_type = "Tree_float_5_4_3",
+                .value_type = TVDB_VALUE_FLOAT,
+                .name = "islands",
+                .coords = coords,
+                .values = values.data(),
+                .background = &background,
+                .transform = unit_scale_transform }));
+
+        IO::VolumeReader reader;
+        const auto loaded = reader.load(path);
+
+        ASSERT_TRUE(loaded.has_value()) << reader.get_last_error();
+        EXPECT_EQ(loaded->lattice.resolution, glm::uvec3(48, 48, 48));
+        const auto& cells = *loaded->fields.front().as_scalar();
+        EXPECT_EQ(cells[loaded->lattice.index({ 4, 4, 4 })], 1.0F);
+        EXPECT_EQ(cells[loaded->lattice.index({ 44, 44, 44 })], 2.0F);
+        EXPECT_EQ(std::count_if(cells.begin(), cells.end(), [](float v) { return v != 0.0F; }), 2);
+    }
+
+    TEST_F(VolumeFileTest, GridsWithDifferentVoxelSizesInOneFileWarnAndStillLoad)
+    {
+        const std::vector<glm::ivec3> coords { { 1, 1, 1 }, { 2, 2, 2 } };
+        const std::array<float, 2> values { 1.0F, 2.0F };
+        const float background = 0.0F;
+        const auto scaled = [](double voxel) {
+            return [voxel](tvdb_transform_t& transform) {
+                transform.type = TVDB_TRANSFORM_SCALE_TRANSLATE;
+                for (int axis = 0; axis < 3; ++axis) {
+                    transform.scale_values[axis] = voxel;
+                    transform.voxel_size[axis] = voxel;
+                    transform.translation[axis] = 0.0;
+                }
+            };
+        };
+        const auto path = path_in_cwd("mismatch.vdb");
+        ASSERT_TRUE(write_foreign_grids(path,
+            { { .grid_type = "Tree_float_5_4_3", .value_type = TVDB_VALUE_FLOAT, .name = "fine", .coords = coords, .values = values.data(), .background = &background, .transform = scaled(1.0) },
+                { .grid_type = "Tree_float_5_4_3", .value_type = TVDB_VALUE_FLOAT, .name = "coarse", .coords = coords, .values = values.data(), .background = &background, .transform = scaled(2.0) } }));
+        LogCapture::clear();
+
+        IO::VolumeReader reader;
+        const auto loaded = reader.load(path);
+
+        ASSERT_TRUE(loaded.has_value()) << reader.get_last_error();
+        EXPECT_EQ(loaded->fields.size(), 2U);
+        EXPECT_TRUE(LogCapture::contains("not be aligned"));
+    }
+
+    TEST_F(VolumeFileTest, DoubleGridValuesBeyondFloatRangeCurrentlyOverflowToSignedInfinity)
+    {
+        const std::vector<glm::ivec3> coords { { 0, 0, 0 }, { 1, 0, 0 }, { 2, 0, 0 }, { 3, 0, 0 }, { 4, 0, 0 } };
+        const std::array<double, 5> values { 0.1, 1.0e300, -1.0e300, 1.0e-300, 1152921504606846976.0 };
+        const double background = 0.0;
+        const auto path = path_in_cwd("double.vdb");
+        ASSERT_TRUE(write_foreign_grid(path,
+            { .grid_type = "Tree_double_5_4_3",
+                .value_type = TVDB_VALUE_DOUBLE,
+                .name = "wide",
+                .coords = coords,
+                .values = values.data(),
+                .background = &background,
+                .transform = unit_scale_transform }));
+        LogCapture::clear();
+
+        IO::VolumeReader reader;
+        const auto loaded = reader.load(path);
+
+        ASSERT_TRUE(loaded.has_value()) << reader.get_last_error();
+        const auto& cells = *loaded->fields.front().as_scalar();
+        const float inf = std::numeric_limits<float>::infinity();
+        EXPECT_EQ(cells[loaded->lattice.index({ 1, 0, 0 })], inf);
+        EXPECT_EQ(cells[loaded->lattice.index({ 2, 0, 0 })], -inf);
+        EXPECT_TRUE(std::isfinite(cells[loaded->lattice.index({ 0, 0, 0 })]));
+        EXPECT_TRUE(std::isfinite(cells[loaded->lattice.index({ 3, 0, 0 })]));
+        EXPECT_TRUE(std::isfinite(cells[loaded->lattice.index({ 4, 0, 0 })]));
+        EXPECT_NEAR(cells[loaded->lattice.index({ 0, 0, 0 })], 0.1F, 1e-7F);
+        EXPECT_NEAR(cells[loaded->lattice.index({ 4, 0, 0 })], 1152921504606846976.0F, 1.0e10F);
+        EXPECT_TRUE(LogCapture::contains("lost precision"));
     }
 
 }

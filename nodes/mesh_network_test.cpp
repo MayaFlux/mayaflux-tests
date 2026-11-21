@@ -95,15 +95,30 @@ namespace {
         EXPECT_TRUE(net.get_slot(1).dirty);
     }
 
-    TEST(MeshNetworkTest, NullNodeAndMissingParentAreRejected)
+    TEST(MeshNetworkTest, MissingParentIsRejected)
     {
         MeshNetwork net;
         net.add_slot("body", quad_node());
 
-        EXPECT_THROW(net.add_slot("x", nullptr), std::invalid_argument);
         EXPECT_THROW(net.add_slot("x", quad_node(), 7U), std::out_of_range);
         EXPECT_EQ(net.slot_count(), 1U);
         EXPECT_TRUE(net.get_slot(0).child_indices.empty());
+    }
+
+    TEST(MeshNetworkTest, ANullNodeMakesAJointThatStillCarriesItsChildrenTransform)
+    {
+        MeshNetwork net;
+        net.add_slot("joint", nullptr);
+        net.add_slot("part", quad_node(), 0U);
+        net.get_slot(0).local_transform = translation(3.0F, 0.0F, 0.0F);
+        net.get_slot(1).local_transform = translation(0.0F, 4.0F, 0.0F);
+
+        net.process_batch(1);
+
+        EXPECT_EQ(net.slot_count(), 2U);
+        EXPECT_EQ(net.get_slot(0).node, nullptr);
+        EXPECT_EQ(net.get_slot(0).child_indices, std::vector<uint32_t> { 1U });
+        EXPECT_EQ(origin(net.get_slot(1).world_transform), glm::vec3(3.0F, 4.0F, 0.0F));
     }
 
     TEST(MeshNetworkTest, SlotLookup)

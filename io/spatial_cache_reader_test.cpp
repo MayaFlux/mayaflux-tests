@@ -14,6 +14,24 @@
 #include "MayaFlux/Nodes/Network/Operators/TopologyOperator.hpp"
 #include "MayaFlux/Portal/Graphics/GraphicsUtils.hpp"
 
+#ifdef MAYAFLUX_PLATFORM_WINDOWS
+#include <windows.h>
+#endif
+
+#include <Alembic/Abc/All.h>
+#include <Alembic/AbcCoreOgawa/All.h>
+#include <Alembic/AbcGeom/All.h>
+#if __has_include(<Alembic/AbcCoreHDF5/All.h>)
+#include <Alembic/AbcCoreHDF5/All.h>
+#define MAYAFLUX_TEST_HAS_ALEMBIC_HDF5 1
+#endif
+
+#ifdef MAYAFLUX_PLATFORM_WINDOWS
+#ifdef ERROR
+#undef ERROR
+#endif
+#endif
+
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 
 namespace MayaFlux::Test {
@@ -860,64 +878,321 @@ namespace {
         EXPECT_EQ(to_vector(sample->positions), operator_positions(*op));
     }
 
-    MAYAFLUX_TEST_WITH(TEST, SpatialAssetTest, RealHdf5ArchiveOpensAndEveryStreamReadsItsFirstSamples,
-        (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets>() }))
+    enum class ArchiveCore : uint8_t {
+        Ogawa,
+        Hdf5,
+    };
+
+    std::vector<ArchiveCore> available_cores()
     {
-        const auto asset = RoundTrip::repo_asset("res/spatial_hdf5_sample.abc");
-        if (!asset) {
-            GTEST_SKIP() << "res/spatial_hdf5_sample.abc is not present";
+        std::vector<ArchiveCore> cores { ArchiveCore::Ogawa };
+#ifdef MAYAFLUX_TEST_HAS_ALEMBIC_HDF5
+        cores.push_back(ArchiveCore::Hdf5);
+#endif
+        return cores;
+    }
+
+    constexpr std::array<size_t, 5> cloud_sizes { 4, 7, 1, 100000, 33 };
+
+    glm::vec3 cloud_point(size_t sample, size_t i)
+    {
+        return { static_cast<float>(i) * 0.25F + static_cast<float>(sample), static_cast<float>(i % 7), -static_cast<float>(sample) };
+    }
+
+    uint64_t cloud_id(size_t sample, size_t i)
+    {
+        return 1000000ULL * sample + i;
+    }
+
+    float cloud_mass(size_t sample, size_t i)
+    {
+        return static_cast<float>(i % 13) * 0.5F + static_cast<float>(sample);
+    }
+
+    constexpr std::array<float, 4> weight_table { 0.0F, 0.5F, 1.5F, -2.0F };
+
+    template <class CoreT>
+    void write_hostile_archive_with(const CoreT& core, const std::string& path)
+    {
+        using namespace Alembic::AbcGeom;
+        OArchive archive(core, path);
+        const uint32_t uneven = archive.addTimeSampling(Alembic::AbcCoreAbstract::TimeSampling(
+            Alembic::AbcCoreAbstract::TimeSamplingType(3, 1.0),
+            std::vector<Alembic::AbcCoreAbstract::chrono_t> { 0.0, 0.1, 0.9 }));
+
+        OXform rig(archive.getTop(), "rig");
+        OPoints nested(rig, "nested");
+        {
+            const std::vector<V3f> pos { V3f(0, 0, 0), V3f(1, 1, 1), V3f(2, 2, 2) };
+            nested.getSchema().set(OPointsSchema::Sample(P3fArraySample(pos.data(), pos.size()), UInt64ArraySample(std::vector<uint64_t> { 1, 2, 3 }.data(), 3)));
         }
 
-        IO::SpatialReader reader;
-        ASSERT_TRUE(reader.open(*asset)) << reader.get_last_error();
-        ASSERT_FALSE(reader.get_stream_names().empty());
+        OPolyMesh surface(archive.getTop(), "surface");
+        {
+            const std::vector<V3f> pos { V3f(0, 0, 0), V3f(1, 0, 0), V3f(0, 1, 0) };
+            const std::vector<int32_t> indices { 0, 1, 2 };
+            const std::vector<int32_t> counts { 3 };
+            surface.getSchema().set(OPolyMeshSchema::Sample(
+                P3fArraySample(pos.data(), pos.size()), Int32ArraySample(indices.data(), indices.size()), Int32ArraySample(counts.data(), counts.size())));
+        }
 
-        for (const auto& name : reader.get_stream_names()) {
-            const auto count = reader.get_sample_count(name);
-            ASSERT_GT(count, 0U) << name;
-            ASSERT_TRUE(reader.get_topology(name).has_value()) << name;
-            for (size_t i = 0; i < std::min<size_t>(count, 5); ++i) {
-                const auto sample = reader.read_sample(name, i);
-                ASSERT_TRUE(sample.has_value()) << name << ' ' << i << ' ' << reader.get_last_error();
-                EXPECT_FALSE(sample->positions.empty()) << name << ' ' << i;
-                EXPECT_TRUE(reader.sample_time(name, i).has_value()) << name << ' ' << i;
-                for (const auto& position : sample->positions) {
-                    ASSERT_TRUE(std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z));
+        OPoints cloud(archive.getTop(), "cloud");
+        {
+            auto& schema = cloud.getSchema();
+            schema.setTimeSampling(uneven);
+            OFloatGeomParam mass(schema.getArbGeomParams(), "mass", false, kVaryingScope, 1);
+            OFloatGeomParam weights(schema.getArbGeomParams(), "weights", true, kVaryingScope, 1);
+            OInt32GeomParam ints(schema.getArbGeomParams(), "ints", false, kVaryingScope, 1);
+            OFloatGeomParam facev(schema.getArbGeomParams(), "facev", false, kFacevaryingScope, 1);
+
+            for (size_t s = 0; s < cloud_sizes.size(); ++s) {
+                const size_t n = cloud_sizes[s];
+                std::vector<V3f> pos(n);
+                std::vector<uint64_t> ids(n);
+                std::vector<float> masses(n);
+                std::vector<uint32_t> index(n);
+                std::vector<int32_t> counts(n, 7);
+                for (size_t i = 0; i < n; ++i) {
+                    const auto p = cloud_point(s, i);
+                    pos[i] = V3f(p.x, p.y, p.z);
+                    ids[i] = cloud_id(s, i);
+                    masses[i] = cloud_mass(s, i);
+                    index[i] = static_cast<uint32_t>(i % weight_table.size());
                 }
+                schema.set(OPointsSchema::Sample(P3fArraySample(pos.data(), pos.size()), UInt64ArraySample(ids.data(), ids.size())));
+                mass.set(OFloatGeomParam::Sample(FloatArraySample(masses.data(), masses.size()), kVaryingScope));
+                weights.set(OFloatGeomParam::Sample(
+                    FloatArraySample(weight_table.data(), weight_table.size()), UInt32ArraySample(index.data(), index.size()), kVaryingScope));
+                ints.set(OInt32GeomParam::Sample(Int32ArraySample(counts.data(), counts.size()), kVaryingScope));
+                facev.set(OFloatGeomParam::Sample(FloatArraySample(masses.data(), masses.size()), kFacevaryingScope));
+            }
+        }
+
+        OCurves hair(archive.getTop(), "hair");
+        {
+            auto& schema = hair.getSchema();
+            const std::vector<V3f> first {
+                V3f(0, 0, 0), V3f(1, 0, 0), V3f(2, 1, 0), V3f(3, 1, 0),
+                V3f(0, 1, 1), V3f(1, 1, 1), V3f(2, 2, 1), V3f(3, 2, 1), V3f(4, 2, 1) };
+            const std::vector<int32_t> first_counts { 4, 5 };
+            schema.set(OCurvesSchema::Sample(
+                P3fArraySample(first.data(), first.size()), Int32ArraySample(first_counts.data(), first_counts.size()), kCubic, kNonPeriodic));
+            const std::vector<V3f> second { V3f(0, 0, 0), V3f(1, 0, 0), V3f(5, 5, 5), V3f(6, 6, 6), V3f(7, 7, 7) };
+            const std::vector<int32_t> second_counts { 2, 1, 2 };
+            schema.set(OCurvesSchema::Sample(
+                P3fArraySample(second.data(), second.size()), Int32ArraySample(second_counts.data(), second_counts.size()), kLinear, kNonPeriodic));
+        }
+    }
+
+    void write_hostile_archive(ArchiveCore core, const std::string& path)
+    {
+        if (core == ArchiveCore::Ogawa) {
+            write_hostile_archive_with(Alembic::AbcCoreOgawa::WriteArchive(), path);
+            return;
+        }
+#ifdef MAYAFLUX_TEST_HAS_ALEMBIC_HDF5
+        write_hostile_archive_with(Alembic::AbcCoreHDF5::WriteArchive(), path);
+#endif
+    }
+
+    template <class CoreT>
+    void write_sparse_samples_with(const CoreT& core, const std::string& path)
+    {
+        using namespace Alembic::AbcGeom;
+        OArchive archive(core, path);
+        OPoints points(archive.getTop(), "sparse");
+        auto& schema = points.getSchema();
+        OFloatGeomParam mass(schema.getArbGeomParams(), "mass", false, kVaryingScope, 1);
+        constexpr std::array<size_t, 3> sizes { 3, 0, 2 };
+        for (size_t s = 0; s < sizes.size(); ++s) {
+            std::vector<V3f> pos(sizes[s], V3f(1.0F, 2.0F, 3.0F));
+            std::vector<uint64_t> ids(sizes[s], 9);
+            std::vector<float> masses(sizes[s], 4.0F);
+            schema.set(OPointsSchema::Sample(P3fArraySample(pos.data(), pos.size()), UInt64ArraySample(ids.data(), ids.size())));
+            mass.set(OFloatGeomParam::Sample(FloatArraySample(masses.data(), masses.size()), kVaryingScope));
+        }
+    }
+
+    void write_sparse_archive(ArchiveCore core, const std::string& path)
+    {
+        if (core == ArchiveCore::Ogawa) {
+            write_sparse_samples_with(Alembic::AbcCoreOgawa::WriteArchive(), path);
+            return;
+        }
+#ifdef MAYAFLUX_TEST_HAS_ALEMBIC_HDF5
+        write_sparse_samples_with(Alembic::AbcCoreHDF5::WriteArchive(), path);
+#endif
+    }
+
+    class HostileArchiveTest
+        : public SpatialFileTest,
+          public ::testing::WithParamInterface<ArchiveCore> {
+    protected:
+        std::string archive_path()
+        {
+            const auto path = path_in_cwd("hostile.abc");
+            write_hostile_archive(GetParam(), path);
+            return path;
+        }
+    };
+
+    TEST_P(HostileArchiveTest, OnlyTopLevelPointsAndCurvesAreStreams)
+    {
+        const auto path = archive_path();
+        LogCapture::clear();
+
+        IO::SpatialReader reader;
+        ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+        EXPECT_EQ(reader.get_stream_names(), (std::vector<std::string> { "cloud", "hair" }));
+        EXPECT_TRUE(LogCapture::contains("neither points nor curves"));
+    }
+
+    TEST_P(HostileArchiveTest, PointsWithUnevenTimeSamplingAndMixedSizesReadBackExactly)
+    {
+        const auto path = archive_path();
+        IO::SpatialReader reader;
+        ASSERT_TRUE(reader.open(path));
+        ASSERT_EQ(reader.get_sample_count("cloud"), cloud_sizes.size());
+
+        for (size_t s = 0; s < cloud_sizes.size(); ++s) {
+            const auto sample = reader.read_sample("cloud", s);
+            ASSERT_TRUE(sample.has_value()) << s << ' ' << reader.get_last_error();
+            ASSERT_EQ(sample->positions.size(), cloud_sizes[s]) << s;
+            ASSERT_EQ(sample->ids.size(), cloud_sizes[s]) << s;
+            for (size_t i = 0; i < cloud_sizes[s]; i += std::max<size_t>(1, cloud_sizes[s] / 97)) {
+                ASSERT_EQ(sample->positions[i], cloud_point(s, i)) << s << ' ' << i;
+                ASSERT_EQ(sample->ids[i], cloud_id(s, i)) << s << ' ' << i;
             }
         }
     }
 
-    MAYAFLUX_TEST_WITH(TEST, SpatialAssetTest, RealHdf5ArchiveRewritesToOgawaWithTheSameFirstSample,
-        (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    TEST_P(HostileArchiveTest, SampleTimesFollowTheCyclicAcyclicPattern)
     {
-        const auto asset = RoundTrip::repo_asset("res/spatial_hdf5_sample.abc");
-        if (!asset) {
-            GTEST_SKIP() << "res/spatial_hdf5_sample.abc is not present";
+        const auto path = archive_path();
+        IO::SpatialReader reader;
+        ASSERT_TRUE(reader.open(path));
+
+        constexpr std::array<double, 5> expected { 0.0, 0.1, 0.9, 1.0, 1.1 };
+        for (size_t s = 0; s < expected.size(); ++s) {
+            const auto time = reader.sample_time("cloud", s);
+            ASSERT_TRUE(time.has_value()) << s;
+            EXPECT_NEAR(*time, expected[s], 1e-9) << s;
         }
+    }
 
-        IO::SpatialReader source;
-        ASSERT_TRUE(source.open(*asset)) << source.get_last_error();
-        const auto name = source.get_stream_names().front();
-        const auto original = source.read_sample(name, 0);
-        ASSERT_TRUE(original.has_value());
+    TEST_P(HostileArchiveTest, IndexedAttributesAreExpandedPerPoint)
+    {
+        const auto path = archive_path();
+        IO::SpatialReader reader;
+        ASSERT_TRUE(reader.open(path));
 
-        ScopedWorkingDir files;
-        const auto path = path_in_cwd("copy.abc");
+        for (const size_t s : { size_t { 0 }, size_t { 3 } }) {
+            const auto sample = reader.read_sample("cloud", s);
+            ASSERT_TRUE(sample.has_value()) << reader.get_last_error();
+
+            const auto* mass = find_attribute(*sample, "mass");
+            const auto* weights = find_attribute(*sample, "weights");
+            ASSERT_NE(mass, nullptr);
+            ASSERT_NE(weights, nullptr);
+            const auto* mass_values = std::get_if<std::vector<float>>(&mass->values);
+            const auto* weight_values = std::get_if<std::vector<float>>(&weights->values);
+            ASSERT_NE(mass_values, nullptr);
+            ASSERT_NE(weight_values, nullptr);
+            ASSERT_EQ(mass_values->size(), cloud_sizes[s]);
+            ASSERT_EQ(weight_values->size(), cloud_sizes[s]);
+            for (size_t i = 0; i < cloud_sizes[s]; i += std::max<size_t>(1, cloud_sizes[s] / 97)) {
+                ASSERT_EQ((*mass_values)[i], cloud_mass(s, i)) << s << ' ' << i;
+                ASSERT_EQ((*weight_values)[i], weight_table[i % weight_table.size()]) << s << ' ' << i;
+            }
+        }
+    }
+
+    TEST_P(HostileArchiveTest, UnreadableAttributeTypesAndScopesAreSkippedWithAWarning)
+    {
+        const auto path = archive_path();
+        LogCapture::clear();
+
+        IO::SpatialReader reader;
+        ASSERT_TRUE(reader.open(path));
+        EXPECT_TRUE(LogCapture::contains("does not read"));
+
+        LogCapture::clear();
+        const auto sample = reader.read_sample("cloud", 0);
+        ASSERT_TRUE(sample.has_value()) << reader.get_last_error();
+        EXPECT_EQ(find_attribute(*sample, "ints"), nullptr);
+        EXPECT_EQ(find_attribute(*sample, "facev"), nullptr);
+        EXPECT_TRUE(LogCapture::contains("unsupported scope"));
+    }
+
+    TEST_P(HostileArchiveTest, CubicCurvesComeBackAsPolylinesWithTheirOwnCountsPerSample)
+    {
+        const auto path = archive_path();
+        IO::SpatialReader reader;
+        ASSERT_TRUE(reader.open(path));
+        ASSERT_EQ(reader.get_sample_count("hair"), 2U);
+        LogCapture::clear();
+
+        const auto first = reader.read_sample("hair", 0);
+        ASSERT_TRUE(first.has_value()) << reader.get_last_error();
+        EXPECT_EQ(to_vector(first->vertex_counts_per_curve), (std::vector<int32_t> { 4, 5 }));
+        EXPECT_EQ(first->positions.size(), 9U);
+        EXPECT_TRUE(LogCapture::contains("not linear"));
+
+        const auto second = reader.read_sample("hair", 1);
+        ASSERT_TRUE(second.has_value());
+        EXPECT_EQ(to_vector(second->vertex_counts_per_curve), (std::vector<int32_t> { 2, 1, 2 }));
+        EXPECT_EQ(second->positions.size(), 5U);
+    }
+
+    TEST_P(HostileArchiveTest, TheLargestSampleConvertsLosslesslyThroughTheCache)
+    {
+        const auto path = archive_path();
+        IO::SpatialReader reader;
+        ASSERT_TRUE(reader.open(path));
+        const auto sample = reader.read_sample("cloud", 3);
+        ASSERT_TRUE(sample.has_value()) << reader.get_last_error();
+
+        const auto copy_path = path_in_cwd("converted.abc");
         {
             IO::SpatialCache cache;
-            ASSERT_TRUE(cache.open(path));
-            ASSERT_TRUE(cache.write(name, *original)) << cache.get_last_error();
+            ASSERT_TRUE(cache.open(copy_path));
+            ASSERT_TRUE(cache.write("cloud", *sample)) << cache.get_last_error();
         }
 
         IO::SpatialReader copy;
-        ASSERT_TRUE(copy.open(path)) << copy.get_last_error();
-        const auto reread = copy.read_sample(name, 0);
-        ASSERT_TRUE(reread.has_value());
-        EXPECT_EQ(to_vector(reread->positions), to_vector(original->positions));
-        EXPECT_EQ(to_vector(reread->vertex_counts_per_curve), to_vector(original->vertex_counts_per_curve));
-        EXPECT_EQ(to_vector(reread->ids), to_vector(original->ids));
+        ASSERT_TRUE(copy.open(copy_path)) << copy.get_last_error();
+        const auto reread = copy.read_sample("cloud", 0);
+        ASSERT_TRUE(reread.has_value()) << copy.get_last_error();
+        EXPECT_EQ(to_vector(reread->positions), to_vector(sample->positions));
+        EXPECT_EQ(to_vector(reread->ids), to_vector(sample->ids));
+        const auto* mass = find_attribute(*reread, "mass");
+        ASSERT_NE(mass, nullptr);
+        EXPECT_EQ(*std::get_if<std::vector<float>>(&mass->values), *std::get_if<std::vector<float>>(&find_attribute(*sample, "mass")->values));
     }
+
+    TEST_P(HostileArchiveTest, AnEmptySampleBetweenPopulatedOnesIsReadable)
+    {
+        const auto path = path_in_cwd("sparse.abc");
+        write_sparse_archive(GetParam(), path);
+
+        IO::SpatialReader reader;
+        ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+        ASSERT_EQ(reader.get_sample_count("sparse"), 3U);
+
+        constexpr std::array<size_t, 3> sizes { 3, 0, 2 };
+        for (size_t s = 0; s < sizes.size(); ++s) {
+            const auto sample = reader.read_sample("sparse", s);
+            ASSERT_TRUE(sample.has_value()) << s << ' ' << reader.get_last_error();
+            EXPECT_EQ(sample->positions.size(), sizes[s]) << s;
+        }
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        Cores,
+        HostileArchiveTest,
+        ::testing::ValuesIn(available_cores()),
+        [](const ::testing::TestParamInfo<ArchiveCore>& info) { return info.param == ArchiveCore::Ogawa ? std::string("Ogawa") : std::string("Hdf5"); });
 
 }
 }
