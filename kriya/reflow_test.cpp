@@ -307,11 +307,11 @@ namespace {
                           .operation(FrameOperation<int>::transform([](const FrameContext&, const std::shared_ptr<const int>& frame) {
                               return std::make_shared<const int>(*frame + 1);
                           }))
-                          .operation(FrameOperation<int>::derive([&derived](const FrameContext&, const int& frame) {
-                              derived.push_back(frame);
+                          .operation(FrameOperation<int>::derive([&derived](const FrameContext&, const std::shared_ptr<const int>& frame) {
+                              derived.push_back(*frame);
                           }))
-                          .operation(FrameOperation<int>::condition([](const FrameContext&, const int& frame) {
-                              return frame != 21;
+                          .operation(FrameOperation<int>::condition([](const FrameContext&, const std::shared_ptr<const int>& frame) {
+                              return *frame != 21;
                           }))
                           .build();
 
@@ -404,7 +404,7 @@ namespace {
         {
             Written written;
             auto reflow = builder(numbers(3), written)
-                              .operation(FrameOperation<int>::derive([](const FrameContext& context, const int&) {
+                              .operation(FrameOperation<int>::derive([](const FrameContext& context, const std::shared_ptr<const int>&) {
                                   if (context.cycle == 1) {
                                       throw std::runtime_error("operation");
                                   }
@@ -422,8 +422,8 @@ namespace {
     {
         Written written;
         auto reflow = builder(numbers(8), written)
-                          .operation(FrameOperation<int>::derive([](const FrameContext& context, const int& frame) {
-                              if (frame == 20) {
+                          .operation(FrameOperation<int>::derive([](const FrameContext& context, const std::shared_ptr<const int>& frame) {
+                              if (*frame == 20) {
                                   (void)context.courses.front()->pause();
                               }
                           }))
@@ -547,8 +547,8 @@ namespace {
 
         FrameScheduler clock;
         Written written;
-        auto reflow = ReflowBuilder<int>(numbers(40, 1.0 / rate), written.sink(), rate)
-                          .start(clock.scheduler);
+        auto reflow = ReflowBuilder<int>(numbers(40, 1.0 / rate), written.sink(), rate, clock.scheduler)
+                          .start();
         ASSERT_NE(reflow, nullptr);
 
         clock.tick(10);
