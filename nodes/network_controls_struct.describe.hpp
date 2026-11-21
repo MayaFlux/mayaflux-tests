@@ -34,6 +34,18 @@ struct Description<::MayaFlux::Test::ControlsProbeOperatorControls> {
     }
 };
 
+template <>
+struct Description<::MayaFlux::Test::RewriteProbeControls> {
+    static constexpr std::string_view name = "MayaFlux::Test::RewriteProbeControls";
+
+    static constexpr auto members()
+    {
+        return std::tuple {
+            Member<&::MayaFlux::Test::RewriteProbeControls::gain> { "gain" },
+        };
+    }
+};
+
 }
 
 #endif

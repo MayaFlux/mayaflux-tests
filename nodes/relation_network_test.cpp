@@ -5,6 +5,8 @@
 #include "MayaFlux/Nodes/Generators/Polynomial.hpp"
 #include "MayaFlux/Nodes/Network/RelationNetwork.hpp"
 
+#include "network_controls_struct.hpp"
+
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
@@ -861,24 +863,23 @@ TEST(RelationRewriteTest, TheFirstMatchingReplacementWinsAndOtherSymbolsPassThro
     EXPECT_EQ(rewrite->active_symbols()[1].id, untouched);
 }
 
-TEST(RelationRewriteTest, MappedCoefficientsAndInputsReachTheReplacement)
+TEST(RelationRewriteTest, MappedControlsAndInputsReachTheReplacement)
 {
     RelationNetwork network;
     auto rewrite = network.add<RewriteOperator>(RewriteOperator::Config {
         .axiom = { RewriteOperator::Symbol { 1, 1.0 } },
         .max_word_length = 1,
-        .max_generations = 1,
-        .coefficient_count = 1 });
+        .max_generations = 1 });
+    rewrite->declare<RewriteProbeControls>();
     rewrite->replace(1, [](const auto& symbol, RewriteOperator::Environment environment, const auto& emit) {
-        emit(RewriteOperator::Symbol { 1, symbol.parameters[0] * environment.coefficients[0] + environment.inputs[0] });
+        emit(RewriteOperator::Symbol { 1, symbol.parameters[0] * environment.controls<RewriteProbeControls>().gain.value() + environment.inputs[0] });
     });
-    rewrite->map("c0", Source(2.0));
+    rewrite->map("gain", Source(2.0));
     network.process_batch(FRAMES);
 
-    EXPECT_DOUBLE_EQ(rewrite->coefficient(0).value(), 2.0);
-    EXPECT_DOUBLE_EQ(rewrite->query_state("c0").value(), 2.0);
+    EXPECT_DOUBLE_EQ(rewrite->get<RewriteProbeControls>().gain.value(), 2.0);
+    EXPECT_DOUBLE_EQ(rewrite->query_state("gain").value(), 2.0);
     EXPECT_FALSE(rewrite->query_state("other").has_value());
-    EXPECT_FALSE(rewrite->set_coefficient(1, 8.0));
 
     const std::array input { 3.0 };
     ASSERT_EQ(rewrite->rewrite(1, input), RewriteOperator::RewriteResult::REWRITTEN);

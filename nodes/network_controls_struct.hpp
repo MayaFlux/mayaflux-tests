@@ -21,5 +21,11 @@ struct ControlsProbeOperatorControls {
 
 MF_DESCRIBE(ControlsProbeOperatorControls)
 
+struct RewriteProbeControls {
+    Nodes::Network::Control gain;
+};
+
+MF_DESCRIBE(RewriteProbeControls)
+
 }
 #include "network_controls_struct.describe.hpp"
