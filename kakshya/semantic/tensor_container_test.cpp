@@ -2,7 +2,7 @@
 #include "../../support/test_metadata.hpp"
 
 #include "MayaFlux/Kakshya/Region/RegionSegment.hpp"
-#include "MayaFlux/Kakshya/Source/TensorContainer.hpp"
+#include "MayaFlux/Kakshya/Semantic/TensorContainer.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 

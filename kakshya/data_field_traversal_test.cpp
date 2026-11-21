@@ -4,7 +4,7 @@
 #include "MayaFlux/Kakshya/DataFieldTraversal.hpp"
 #include "MayaFlux/Kakshya/NDData/CompositeAccess.hpp"
 #include "MayaFlux/Kakshya/NDData/CompositeInsertion.hpp"
-#include "MayaFlux/Kakshya/Source/CompositeContainer.hpp"
+#include "MayaFlux/Kakshya/Semantic/CompositeContainer.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 

@@ -1,6 +1,6 @@
 #include "MayaFlux/Yantra/Data/DataIO.hpp"
 #include "MayaFlux/Yantra/Data/StructureIntrospection.hpp"
-#include "MayaFlux/Kakshya/Source/CompositeContainer.hpp"
+#include "MayaFlux/Kakshya/Semantic/CompositeContainer.hpp"
 #include "../support/audio_container.hpp"
 #include "../support/log_capture.hpp"
 
