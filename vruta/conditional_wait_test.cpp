@@ -1,9 +1,11 @@
-#include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
+#include "gtest/gtest.h"
 
 #include "MayaFlux/Kriya/Awaiters/ConditionAwaiter.hpp"
 #include "MayaFlux/Vruta/Routine.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
+
+#include "future"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
@@ -16,6 +18,8 @@ using Count = std::shared_ptr<std::atomic<int>>;
 namespace {
 
     constexpr unsigned int SAMPLE_RATE = 48000;
+    constexpr bool polled = false;
+    constexpr bool wake_only = true;
 
     Flag make_flag()
     {
@@ -27,9 +31,9 @@ namespace {
         return std::make_shared<std::atomic<int>>(0);
     }
 
-    Vruta::FreeRoutine resume_on_flag(Flag flag, Count resumed, Vruta::ConditionRecheck recheck)
+    Vruta::FreeRoutine resume_on_flag(Flag flag, Count resumed, bool only_on_wake)
     {
-        co_await Kriya::ConditionAwaiter { [flag]() { return flag->load(); }, recheck };
+        co_await Kriya::ConditionAwaiter { [flag]() { return flag->load(); }, only_on_wake };
         resumed->fetch_add(1);
     }
 
@@ -102,7 +106,7 @@ TEST_F(ConditionalWaitTest, APolledConditionResumesOnceItIsTrue)
     auto resumed = make_count();
 
     auto routine = std::make_shared<Vruta::FreeRoutine>(
-        resume_on_flag(flag, resumed, Vruta::ConditionRecheck::POLL));
+        resume_on_flag(flag, resumed, polled));
     scheduler->add_task(routine, "polled");
 
     std::this_thread::sleep_for(20ms);
@@ -120,7 +124,7 @@ TEST_F(ConditionalWaitTest, APolledConditionWaitsForTheIntervalUnlessWoken)
     auto resumed = make_count();
 
     auto routine = std::make_shared<Vruta::FreeRoutine>(
-        resume_on_flag(flag, resumed, Vruta::ConditionRecheck::POLL));
+        resume_on_flag(flag, resumed, polled));
     scheduler->add_task(routine, "slow_poll");
     std::this_thread::sleep_for(20ms);
 
@@ -139,7 +143,7 @@ TEST_F(ConditionalWaitTest, AWakeConditionResumesAfterTheWakeNotAfterTheInterval
     auto resumed = make_count();
 
     auto routine = std::make_shared<Vruta::FreeRoutine>(
-        resume_on_flag(flag, resumed, Vruta::ConditionRecheck::ON_WAKE));
+        resume_on_flag(flag, resumed, wake_only));
     scheduler->add_task(routine, "on_wake");
     std::this_thread::sleep_for(20ms);
 
@@ -155,7 +159,7 @@ TEST_F(ConditionalWaitTest, AWakeConditionIsNotPolled)
     auto resumed = make_count();
 
     auto routine = std::make_shared<Vruta::FreeRoutine>(
-        resume_on_flag(flag, resumed, Vruta::ConditionRecheck::ON_WAKE));
+        resume_on_flag(flag, resumed, wake_only));
     scheduler->add_task(routine, "unpolled");
     std::this_thread::sleep_for(20ms);
 
@@ -217,7 +221,7 @@ TEST_F(ConditionalWaitTest, CancellingATaskReachesAThreadThatIsAsleep)
     auto completed = std::make_shared<std::atomic<bool>>(false);
 
     auto routine = std::make_shared<Vruta::FreeRoutine>(
-        resume_on_flag(flag, resumed, Vruta::ConditionRecheck::ON_WAKE));
+        resume_on_flag(flag, resumed, wake_only));
     routine->on_complete([completed]() { completed->store(true); });
     scheduler->add_task(routine, "cancel_me");
     std::this_thread::sleep_for(20ms);
@@ -234,7 +238,7 @@ TEST_F(ConditionalWaitTest, AddingATaskReachesAThreadThatIsAsleep)
     auto second = make_count();
 
     auto idle = std::make_shared<Vruta::FreeRoutine>(
-        resume_on_flag(first_flag, first, Vruta::ConditionRecheck::ON_WAKE));
+        resume_on_flag(first_flag, first, wake_only));
     scheduler->add_task(idle, "idle");
     std::this_thread::sleep_for(20ms);
 
@@ -250,7 +254,7 @@ TEST_F(ConditionalWaitTest, ShutdownReleasesAThreadThatIsAsleep)
     auto resumed = make_count();
 
     auto routine = std::make_shared<Vruta::FreeRoutine>(
-        resume_on_flag(flag, resumed, Vruta::ConditionRecheck::ON_WAKE));
+        resume_on_flag(flag, resumed, wake_only));
     scheduler->add_task(routine, "asleep");
     std::this_thread::sleep_for(20ms);
 
