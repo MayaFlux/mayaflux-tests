@@ -1,7 +1,7 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
-#include "MayaFlux/Kriya/RoutineDomain.hpp"
+#include "MayaFlux/Kriya/RoutineTraits.hpp"
 #include "MayaFlux/Vruta/ChronUtils.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
 #include "MayaFlux/Vruta/TokenTraits.hpp"
@@ -17,9 +17,9 @@ namespace {
     constexpr unsigned int SAMPLE_RATE = 48000;
     constexpr unsigned int FRAME_RATE = 60;
 
-    using SampleDomain = Kriya::RoutineDomain<SchedToken::SAMPLE_ACCURATE>;
-    using FrameDomain = Kriya::RoutineDomain<SchedToken::FRAME_ACCURATE>;
-    using CrossDomain = Kriya::RoutineDomain<SchedToken::MULTI_RATE>;
+    using SampleTraits = Kriya::RoutineTraits<SchedToken::SAMPLE_ACCURATE>;
+    using FrameTraits = Kriya::RoutineTraits<SchedToken::FRAME_ACCURATE>;
+    using CrossTraits = Kriya::RoutineTraits<SchedToken::MULTI_RATE>;
 
     static_assert(std::same_as<Vruta::TokenTraits<SchedToken::SAMPLE_ACCURATE>::routine_type, Vruta::SoundRoutine>);
     static_assert(std::same_as<Vruta::TokenTraits<SchedToken::FRAME_ACCURATE>::routine_type, Vruta::GraphicsRoutine>);
@@ -37,17 +37,17 @@ namespace {
     static_assert(std::same_as<Vruta::TokenTraits<SchedToken::CUSTOM>::clock_type, Vruta::SampleClock>);
     static_assert(std::same_as<Vruta::TokenTraits<SchedToken::EVENT_DRIVEN>::clock_type, Vruta::SampleClock>);
 
-    static_assert(std::same_as<SampleDomain::Routine, Vruta::SoundRoutine>);
-    static_assert(std::same_as<FrameDomain::Routine, Vruta::GraphicsRoutine>);
-    static_assert(std::same_as<CrossDomain::Routine, Vruta::CrossRoutine>);
+    static_assert(std::same_as<SampleTraits::Routine, Vruta::SoundRoutine>);
+    static_assert(std::same_as<FrameTraits::Routine, Vruta::GraphicsRoutine>);
+    static_assert(std::same_as<CrossTraits::Routine, Vruta::CrossRoutine>);
 
-    static_assert(std::same_as<SampleDomain::GetPromise, Kriya::GetAudioPromise>);
-    static_assert(std::same_as<FrameDomain::GetPromise, Kriya::GetGraphicsPromise>);
-    static_assert(std::same_as<CrossDomain::GetPromise, Kriya::GetCrossPromise>);
+    static_assert(std::same_as<SampleTraits::GetPromise, Kriya::GetAudioPromise>);
+    static_assert(std::same_as<FrameTraits::GetPromise, Kriya::GetGraphicsPromise>);
+    static_assert(std::same_as<CrossTraits::GetPromise, Kriya::GetCrossPromise>);
 
-    static_assert(std::same_as<decltype(SampleDomain::delay(1)), Kriya::SampleDelay>);
-    static_assert(std::same_as<decltype(FrameDomain::delay(1)), Kriya::FrameDelay>);
-    static_assert(std::same_as<decltype(CrossDomain::delay(1)), Kriya::MultiRateDelay>);
+    static_assert(std::same_as<decltype(SampleTraits::delay(1)), Kriya::SampleDelay>);
+    static_assert(std::same_as<decltype(FrameTraits::delay(1)), Kriya::FrameDelay>);
+    static_assert(std::same_as<decltype(CrossTraits::delay(1)), Kriya::MultiRateDelay>);
 
 } // namespace
 
@@ -143,36 +143,36 @@ INSTANTIATE_TEST_SUITE_P(
         VisitCase { "EventDriven", SchedToken::EVENT_DRIVEN, SchedToken::ON_DEMAND }),
     [](const ::testing::TestParamInfo<VisitCase>& info) { return std::string(info.param.name); });
 
-TEST_F(TokenTraitsTest, DomainUnitsFollowTheTokenClock)
+TEST_F(TokenTraitsTest, RoutineTraitsUnitsFollowTheTokenClock)
 {
-    EXPECT_EQ(SampleDomain::units(0.5), Vruta::seconds_to_samples(0.5));
-    EXPECT_EQ(SampleDomain::units(0.5), SAMPLE_RATE / 2);
-    EXPECT_EQ(FrameDomain::units(1.0), Vruta::seconds_to_frames(1.0));
-    EXPECT_EQ(FrameDomain::units(1.0), FRAME_RATE);
-    EXPECT_EQ(CrossDomain::units(0.5), Vruta::seconds_to_samples(0.5));
+    EXPECT_EQ(SampleTraits::units(0.5), Vruta::seconds_to_samples(0.5));
+    EXPECT_EQ(SampleTraits::units(0.5), SAMPLE_RATE / 2);
+    EXPECT_EQ(FrameTraits::units(1.0), Vruta::seconds_to_frames(1.0));
+    EXPECT_EQ(FrameTraits::units(1.0), FRAME_RATE);
+    EXPECT_EQ(CrossTraits::units(0.5), Vruta::seconds_to_samples(0.5));
 }
 
-TEST_F(TokenTraitsTest, DomainUnitsAreLimited)
+TEST_F(TokenTraitsTest, RoutineTraitsUnitsAreLimited)
 {
     constexpr double infinite = std::numeric_limits<double>::infinity();
 
-    EXPECT_EQ(SampleDomain::units(infinite), Vruta::max_duration_units);
-    EXPECT_EQ(FrameDomain::units(infinite), Vruta::max_duration_units);
-    EXPECT_EQ(CrossDomain::units(infinite), Vruta::max_duration_units);
-    EXPECT_EQ(SampleDomain::units(-1.0), 0U);
-    EXPECT_EQ(FrameDomain::units(std::numeric_limits<double>::quiet_NaN()), 0U);
+    EXPECT_EQ(SampleTraits::units(infinite), Vruta::max_duration_units);
+    EXPECT_EQ(FrameTraits::units(infinite), Vruta::max_duration_units);
+    EXPECT_EQ(CrossTraits::units(infinite), Vruta::max_duration_units);
+    EXPECT_EQ(SampleTraits::units(-1.0), 0U);
+    EXPECT_EQ(FrameTraits::units(std::numeric_limits<double>::quiet_NaN()), 0U);
 }
 
-TEST_F(TokenTraitsTest, DomainDelaysCarryTheirUnitCount)
+TEST_F(TokenTraitsTest, RoutineTraitsDelaysCarryTheirUnitCount)
 {
-    EXPECT_EQ(SampleDomain::delay(7).samples_to_wait, 7U);
-    EXPECT_EQ(FrameDomain::delay(7).frames_to_wait, 7U);
-    EXPECT_EQ(CrossDomain::delay(7).samples_to_wait, 7U);
-    EXPECT_EQ(CrossDomain::delay(7).frames_to_wait, 0U);
+    EXPECT_EQ(SampleTraits::delay(7).samples_to_wait, 7U);
+    EXPECT_EQ(FrameTraits::delay(7).frames_to_wait, 7U);
+    EXPECT_EQ(CrossTraits::delay(7).samples_to_wait, 7U);
+    EXPECT_EQ(CrossTraits::delay(7).frames_to_wait, 0U);
 
-    EXPECT_EQ(SampleDomain::pause().samples_to_wait, 1U);
-    EXPECT_EQ(FrameDomain::pause().frames_to_wait, 1U);
-    EXPECT_EQ(CrossDomain::pause().samples_to_wait, 1U);
+    EXPECT_EQ(SampleTraits::pause().samples_to_wait, 1U);
+    EXPECT_EQ(FrameTraits::pause().frames_to_wait, 1U);
+    EXPECT_EQ(CrossTraits::pause().samples_to_wait, 1U);
 }
 
 }
