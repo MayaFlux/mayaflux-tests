@@ -51,13 +51,13 @@ namespace {
         return ResidentFrames<int>::create(every(step), std::move(frames));
     }
 
-    CourseSetting over(double in, double out, CourseEdge edge = CourseEdge::Once, double rate = 1.0)
+    CourseSetting over(double in, double out, CourseEdge edge = CourseEdge::Once, double speed = 1.0)
     {
         CourseSetting setting;
         setting.in = in;
         setting.out = out;
         setting.edge = edge;
-        setting.rate = rate;
+        setting.speed = speed;
         return setting;
     }
 
@@ -519,22 +519,22 @@ namespace {
         const TimeLocation exact { .lower = 5, .upper = 5, .fraction = 0.0, .placement = TimePlacement::Within };
         const TimeLocation late { .lower = 2, .upper = 3, .fraction = 1.0, .placement = TimePlacement::Within };
 
-        const auto blend = Kriya::select_frames(between, FrameSelection::Blend, 2.0);
+        const auto blend = Kriya::Detail::select_frames(between, FrameSelection::Blend, 2.0);
         ASSERT_EQ(blend.count, 2U);
         EXPECT_EQ(blend.items[0].index, 2U);
         EXPECT_DOUBLE_EQ(blend.items[0].weight, 1.5);
         EXPECT_EQ(blend.items[1].index, 3U);
         EXPECT_DOUBLE_EQ(blend.items[1].weight, 0.5);
 
-        EXPECT_EQ(Kriya::select_frames(exact, FrameSelection::Blend, 1.0).count, 1U);
-        EXPECT_EQ(Kriya::select_frames(late, FrameSelection::Blend, 1.0).items[0].index, 3U);
-        EXPECT_EQ(Kriya::select_frames(between, FrameSelection::Floor, 1.0).items[0].index, 2U);
-        EXPECT_EQ(Kriya::select_frames(between, FrameSelection::Nearest, 1.0).items[0].index, 2U);
-        EXPECT_EQ(Kriya::nearest_frame({ .lower = 2, .upper = 3, .fraction = 0.5 }), 3U);
+        EXPECT_EQ(Kriya::Detail::select_frames(exact, FrameSelection::Blend, 1.0).count, 1U);
+        EXPECT_EQ(Kriya::Detail::select_frames(late, FrameSelection::Blend, 1.0).items[0].index, 3U);
+        EXPECT_EQ(Kriya::Detail::select_frames(between, FrameSelection::Floor, 1.0).items[0].index, 2U);
+        EXPECT_EQ(Kriya::Detail::select_frames(between, FrameSelection::Nearest, 1.0).items[0].index, 2U);
+        EXPECT_EQ(Kriya::Detail::nearest_frame({ .lower = 2, .upper = 3, .fraction = 0.5 }), 3U);
 
         for (const double weight : { 0.0, -1.0, std::numeric_limits<double>::quiet_NaN(),
                  std::numeric_limits<double>::infinity() }) {
-            EXPECT_EQ(Kriya::select_frames(between, FrameSelection::Blend, weight).count, 0U) << weight;
+            EXPECT_EQ(Kriya::Detail::select_frames(between, FrameSelection::Blend, weight).count, 0U) << weight;
         }
     }
 

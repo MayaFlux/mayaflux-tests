@@ -13,8 +13,7 @@ MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta:
 namespace MayaFlux::Test {
 namespace {
 
-    using IO::FirstFrameLattice;
-    using IO::UnionLattice;
+    using IO::LatticeSource;
     using IO::VolumeFileSequence;
     using IO::VolumeSequenceOptions;
     using Kakshya::DataModality;
@@ -117,19 +116,19 @@ namespace {
 
         auto none = options();
         none.count = 0;
-        EXPECT_EQ(VolumeFileSequence::create(none, uniform(1.0), UnionLattice {}), nullptr);
+        EXPECT_EQ(VolumeFileSequence::create(none, uniform(1.0), LatticeSource::Union), nullptr);
 
         auto still = options();
         still.stride = 0;
-        EXPECT_EQ(VolumeFileSequence::create(still, uniform(1.0), UnionLattice {}), nullptr);
+        EXPECT_EQ(VolumeFileSequence::create(still, uniform(1.0), LatticeSource::Union), nullptr);
 
         auto two_fields = options();
         two_fields.pattern = path_in_cwd("spark.{}.{}.vdb");
-        EXPECT_EQ(VolumeFileSequence::create(two_fields, uniform(1.0), UnionLattice {}), nullptr);
+        EXPECT_EQ(VolumeFileSequence::create(two_fields, uniform(1.0), LatticeSource::Union), nullptr);
 
         auto bad_field = options();
         bad_field.pattern = path_in_cwd("spark.{:q}.vdb");
-        EXPECT_EQ(VolumeFileSequence::create(bad_field, uniform(1.0), UnionLattice {}), nullptr);
+        EXPECT_EQ(VolumeFileSequence::create(bad_field, uniform(1.0), LatticeSource::Union), nullptr);
 
         auto flat = Lattice3D {};
         flat.resolution = glm::uvec3(4, 0, 4);
@@ -137,9 +136,9 @@ namespace {
 
         auto wrapping = options();
         wrapping.first_number = std::numeric_limits<uint64_t>::max() - 1;
-        EXPECT_EQ(VolumeFileSequence::create(wrapping, uniform(1.0), UnionLattice {}), nullptr);
+        EXPECT_EQ(VolumeFileSequence::create(wrapping, uniform(1.0), LatticeSource::Union), nullptr);
 
-        EXPECT_NE(VolumeFileSequence::create(options(), uniform(1.0), UnionLattice {}), nullptr);
+        EXPECT_NE(VolumeFileSequence::create(options(), uniform(1.0), LatticeSource::Union), nullptr);
     }
 
     TEST_F(VolumeSequenceTest, TheTimeSamplingMustTimeEveryFrame)
@@ -151,10 +150,10 @@ namespace {
         const auto four = TimeSampling::acyclic({ 0.0, 1.0, 5.0, 6.0 });
         ASSERT_TRUE(two && three && four);
 
-        EXPECT_EQ(VolumeFileSequence::create(options(), *two, UnionLattice {}), nullptr);
-        EXPECT_EQ(VolumeFileSequence::create(options(), *four, UnionLattice {}), nullptr);
+        EXPECT_EQ(VolumeFileSequence::create(options(), *two, LatticeSource::Union), nullptr);
+        EXPECT_EQ(VolumeFileSequence::create(options(), *four, LatticeSource::Union), nullptr);
 
-        const auto sequence = VolumeFileSequence::create(options(), *three, UnionLattice {});
+        const auto sequence = VolumeFileSequence::create(options(), *three, LatticeSource::Union);
         ASSERT_NE(sequence, nullptr);
         EXPECT_EQ(*sequence->time_sampling().time(2), 5.0);
         EXPECT_EQ(sequence->locate(4.0)->lower, 1U);
@@ -162,7 +161,7 @@ namespace {
 
     TEST_F(VolumeSequenceTest, AFirstFileThatCannotBeReadMakesNoSequence)
     {
-        EXPECT_EQ(VolumeFileSequence::create(options(), uniform(1.0), UnionLattice {}), nullptr);
+        EXPECT_EQ(VolumeFileSequence::create(options(), uniform(1.0), LatticeSource::Union), nullptr);
         EXPECT_TRUE(LogCapture::contains("frame 0"));
     }
 
@@ -170,7 +169,7 @@ namespace {
     {
         write_travelling_spark();
 
-        const auto sequence = VolumeFileSequence::create(options(), uniform(0.5), UnionLattice {});
+        const auto sequence = VolumeFileSequence::create(options(), uniform(0.5), LatticeSource::Union);
 
         ASSERT_NE(sequence, nullptr);
         EXPECT_EQ(sequence->count(), 3U);
@@ -193,7 +192,7 @@ namespace {
     {
         write_travelling_spark();
 
-        const auto sequence = VolumeFileSequence::create(options(), uniform(1.0), FirstFrameLattice {});
+        const auto sequence = VolumeFileSequence::create(options(), uniform(1.0), LatticeSource::FirstFrame);
 
         ASSERT_NE(sequence, nullptr);
         EXPECT_EQ(sequence->lattice().resolution, glm::uvec3(8));
@@ -226,7 +225,7 @@ namespace {
         const auto big = cube(k_side, 2.0F);
         write("coarse.0001.vdb", frame_of(big, { spark("density", big, { 1, 1, 1 }, 1.0F) }));
 
-        EXPECT_EQ(VolumeFileSequence::create(options("coarse", 2), uniform(1.0), UnionLattice {}), nullptr);
+        EXPECT_EQ(VolumeFileSequence::create(options("coarse", 2), uniform(1.0), LatticeSource::Union), nullptr);
         EXPECT_TRUE(LogCapture::contains("voxel size"));
     }
 
@@ -236,10 +235,10 @@ namespace {
         write("mixed.0000.vdb", frame_of(lattice, { spark("density", lattice, { 1, 1, 1 }, 1.0F) }));
         write("mixed.0001.vdb", frame_of(lattice, { spark("temperature", lattice, { 1, 1, 1 }, 1.0F) }));
 
-        EXPECT_EQ(VolumeFileSequence::create(options("mixed", 2), uniform(1.0), UnionLattice {}), nullptr);
+        EXPECT_EQ(VolumeFileSequence::create(options("mixed", 2), uniform(1.0), LatticeSource::Union), nullptr);
 
         LogCapture::clear();
-        const auto sequence = VolumeFileSequence::create(options("mixed", 2), uniform(1.0), FirstFrameLattice {});
+        const auto sequence = VolumeFileSequence::create(options("mixed", 2), uniform(1.0), LatticeSource::FirstFrame);
         ASSERT_NE(sequence, nullptr);
         EXPECT_NE(sequence->read(0), nullptr);
         EXPECT_EQ(sequence->read(1), nullptr);
@@ -249,7 +248,7 @@ namespace {
     TEST_F(VolumeSequenceTest, AMissingFileLosesOnlyItsOwnFrame)
     {
         write_travelling_spark();
-        const auto sequence = VolumeFileSequence::create(options(), uniform(1.0), UnionLattice {});
+        const auto sequence = VolumeFileSequence::create(options(), uniform(1.0), LatticeSource::Union);
         ASSERT_NE(sequence, nullptr);
 
         std::filesystem::remove(sequence->path(1));
@@ -264,7 +263,7 @@ namespace {
     TEST_F(VolumeSequenceTest, ACorruptFileLosesOnlyItsOwnFrame)
     {
         write_travelling_spark();
-        const auto sequence = VolumeFileSequence::create(options(), uniform(1.0), UnionLattice {});
+        const auto sequence = VolumeFileSequence::create(options(), uniform(1.0), LatticeSource::Union);
         ASSERT_NE(sequence, nullptr);
 
         {
@@ -279,7 +278,7 @@ namespace {
     TEST_F(VolumeSequenceTest, IndicesPastTheEndReadNothingAndNameNoPath)
     {
         write_travelling_spark();
-        const auto sequence = VolumeFileSequence::create(options(), uniform(1.0), UnionLattice {});
+        const auto sequence = VolumeFileSequence::create(options(), uniform(1.0), LatticeSource::Union);
         ASSERT_NE(sequence, nullptr);
 
         EXPECT_EQ(sequence->read(3), nullptr);
@@ -294,7 +293,7 @@ namespace {
         spec.first_number = 10;
         spec.stride = 5;
 
-        const auto sequence = VolumeFileSequence::create(spec, uniform(1.0), UnionLattice {});
+        const auto sequence = VolumeFileSequence::create(spec, uniform(1.0), LatticeSource::Union);
 
         ASSERT_NE(sequence, nullptr);
         EXPECT_TRUE(sequence->path(2).ends_with("skip.0020.vdb"));
@@ -304,7 +303,7 @@ namespace {
     TEST_F(VolumeSequenceTest, AHeldFrameIsSharedAndAReleasedOneIsReadAgainEqual)
     {
         write_travelling_spark();
-        const auto sequence = VolumeFileSequence::create(options(), uniform(1.0), UnionLattice {});
+        const auto sequence = VolumeFileSequence::create(options(), uniform(1.0), LatticeSource::Union);
         ASSERT_NE(sequence, nullptr);
 
         auto first = sequence->read(1);
@@ -330,7 +329,7 @@ namespace {
         auto spec = options("pair", 2);
         spec.read.field_names = { "heat" };
 
-        const auto sequence = VolumeFileSequence::create(spec, uniform(1.0), UnionLattice {});
+        const auto sequence = VolumeFileSequence::create(spec, uniform(1.0), LatticeSource::Union);
 
         ASSERT_NE(sequence, nullptr);
         const auto frame = sequence->read(1);
@@ -342,7 +341,7 @@ namespace {
     TEST_F(VolumeSequenceTest, ManyThreadsReadEveryFrameAndAgree)
     {
         write_travelling_spark();
-        const auto sequence = VolumeFileSequence::create(options(), uniform(1.0), UnionLattice {});
+        const auto sequence = VolumeFileSequence::create(options(), uniform(1.0), LatticeSource::Union);
         ASSERT_NE(sequence, nullptr);
 
         std::atomic<int> wrong { 0 };
@@ -370,7 +369,7 @@ namespace {
     {
         write_travelling_spark();
 
-        const auto container = IO::open_volume_sequence(options(), uniform(1.0), UnionLattice {});
+        const auto container = IO::open_volume_sequence(options(), uniform(1.0), LatticeSource::Union);
 
         ASSERT_NE(container, nullptr);
         EXPECT_EQ(container->get_structure().modality, DataModality::VOLUMETRIC_3D);
@@ -389,7 +388,7 @@ namespace {
     TEST_F(VolumeSequenceTest, ARegionOverAMissingFrameCopiesNothing)
     {
         write_travelling_spark();
-        const auto container = IO::open_volume_sequence(options(), uniform(1.0), UnionLattice {});
+        const auto container = IO::open_volume_sequence(options(), uniform(1.0), LatticeSource::Union);
         ASSERT_NE(container, nullptr);
 
         std::filesystem::remove(path_in_cwd("spark.0001.vdb"));

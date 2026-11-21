@@ -147,14 +147,14 @@ namespace {
         EXPECT_TRUE(course->paused());
     }
 
-    TEST(CourseTest, ARateChangeNeverJumps)
+    TEST(CourseTest, ASpeedChangeNeverJumps)
     {
         const auto course = make(over(0.0, 100.0, CourseEdge::Hold));
         run(*course, 4);
 
-        ASSERT_TRUE(course->rate(4.0));
+        ASSERT_TRUE(course->speed(4.0));
         EXPECT_DOUBLE_EQ(run(*course, 1), 0.5 + 4.0 * k_step);
-        ASSERT_TRUE(course->rate(-2.0));
+        ASSERT_TRUE(course->speed(-2.0));
         EXPECT_DOUBLE_EQ(run(*course, 1), 1.0 - 2.0 * k_step);
     }
 
@@ -163,7 +163,7 @@ namespace {
         const auto course = make(over(0.0, 10.0));
         const double nan = std::numeric_limits<double>::quiet_NaN();
 
-        EXPECT_FALSE(course->rate(nan));
+        EXPECT_FALSE(course->speed(nan));
         EXPECT_FALSE(course->offset(std::numeric_limits<double>::infinity()));
         EXPECT_FALSE(course->range(1.0, 1.0));
         EXPECT_FALSE(course->range(2.0, 1.0));
@@ -176,7 +176,7 @@ namespace {
         EXPECT_FALSE(course->nudge(nan));
 
         const auto setting = course->setting();
-        EXPECT_EQ(setting.rate, 1.0);
+        EXPECT_EQ(setting.speed, 1.0);
         EXPECT_EQ(setting.offset, 0.0);
         EXPECT_EQ(setting.in, 0.0);
         EXPECT_EQ(setting.out, 10.0);
@@ -194,22 +194,22 @@ namespace {
         EXPECT_DOUBLE_EQ(run(*course, 1), 0.25);
     }
 
-    TEST(CourseTest, AWarpAndARepeatCanBeSetAndClearedWhileRunning)
+    TEST(CourseTest, ATimeMapAndARepeatCanBeSetAndClearedWhileRunning)
     {
         const auto course = make(over(0.0, 100.0, CourseEdge::Hold));
         run(*course, 2);
 
-        course->warp(map([](double x) { return 10.0 + x; }));
+        course->time_map(map([](double x) { return 10.0 + x; }));
         EXPECT_DOUBLE_EQ(run(*course, 1), 10.375);
 
-        course->clear_warp();
+        course->clear_time_map();
         EXPECT_DOUBLE_EQ(run(*course, 1), 0.5);
     }
 
-    TEST(CourseTest, ASeekUnderAWarpIsRefusedAndCounted)
+    TEST(CourseTest, ASeekUnderATimeMapIsRefusedAndCounted)
     {
         const auto course = make(over(0.0, 100.0, CourseEdge::Hold));
-        course->warp(map([](double x) { return x; }));
+        course->time_map(map([](double x) { return x; }));
         run(*course, 2);
 
         ASSERT_TRUE(course->seek(50.0));
@@ -220,12 +220,12 @@ namespace {
         EXPECT_DOUBLE_EQ(run(*course, 1), 2.125);
     }
 
-    TEST(CourseTest, AWarpThatThrowsRefusesTheAdvanceAndCarriesOnWhenFixed)
+    TEST(CourseTest, ATimeMapThatThrowsRefusesTheAdvanceAndCarriesOnWhenFixed)
     {
         const auto course = make(over(0.0, 100.0, CourseEdge::Hold));
         run(*course, 2);
 
-        course->warp(map([](double x) -> double {
+        course->time_map(map([](double x) -> double {
             if (x > 0.3) {
                 throw std::runtime_error("no");
             }
@@ -237,14 +237,14 @@ namespace {
         EXPECT_EQ(course->refusals(), 2U);
         EXPECT_EQ(course->steps(), 2U);
 
-        course->clear_warp();
+        course->clear_time_map();
         EXPECT_DOUBLE_EQ(run(*course, 1), 0.375);
     }
 
-    TEST(CourseTest, AWarpAnsweringNothingFiniteRefusesTheAdvance)
+    TEST(CourseTest, ATimeMapAnsweringNothingFiniteRefusesTheAdvance)
     {
         const auto course = make(over(0.0, 100.0, CourseEdge::Hold));
-        course->warp(map([](double) { return std::numeric_limits<double>::quiet_NaN(); }));
+        course->time_map(map([](double) { return std::numeric_limits<double>::quiet_NaN(); }));
 
         EXPECT_FALSE(course->advance().has_value());
         EXPECT_EQ(course->time(), 0.0);
@@ -274,7 +274,7 @@ namespace {
         const auto course = make(over(0.0, 1.0, CourseEdge::Loop));
         const auto crossings = course->subscribe(CourseEventKind::Repeated);
         const auto edges = course->subscribe(CourseEventKind::Crossed);
-        course->warp(map([](double x) { return x; }));
+        course->time_map(map([](double x) { return x; }));
         course->repeat(map([](double) { return 0.5; }));
 
         run(*course, 4);
@@ -341,7 +341,7 @@ namespace {
     TEST(CourseTest, AnAdvanceThatCrossesAndFinishesTellsBothKinds)
     {
         auto setting = over(0.0, 1.0, CourseEdge::Loop);
-        setting.edge_count = 1;
+        setting.loop_count = 1;
         const auto course = make(setting);
         const auto crossed = course->subscribe(CourseEventKind::Crossed);
         const auto finished = course->subscribe(CourseEventKind::Finished);
@@ -401,7 +401,7 @@ namespace {
                 while (!done.load()) {
                     switch (i++ % 8) {
                     case 0:
-                        course->rate(static_cast<double>(i % 7) - 3.0);
+                        course->speed(static_cast<double>(i % 7) - 3.0);
                         break;
                     case 1:
                         course->range(0.0, 1.0 + static_cast<double>(i % 5));
