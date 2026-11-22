@@ -2,6 +2,7 @@
 #include "../support/test_metadata.hpp"
 
 #include "MayaFlux/Kriya/Course.hpp"
+#include "MayaFlux/Transitive/Facet/ControlBind.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
@@ -182,6 +183,27 @@ namespace {
         EXPECT_EQ(setting.out, 10.0);
         EXPECT_EQ(course->weight(), 1.0);
         EXPECT_DOUBLE_EQ(run(*course, 1), k_step);
+    }
+
+    TEST(CourseTest, AControlReaderReadsANumberAndASnapshotMember)
+    {
+        const auto course = make(over(2.0, 6.0));
+        const auto speed = control_reader<&Kriya::CourseControls::speed, double>(course);
+        const auto range = control_reader<&Kriya::CourseControls::range, Kriya::CourseRange>(course);
+        const auto time_map = control_reader<&Kriya::CourseControls::time_map, Kinesis::TimeMap>(course);
+
+        ASSERT_TRUE(speed().has_value());
+        EXPECT_DOUBLE_EQ(*speed(), 1.0);
+        ASSERT_TRUE(range().has_value());
+        EXPECT_EQ(range()->in, 2.0);
+        EXPECT_EQ(range()->out, 6.0);
+        EXPECT_FALSE(time_map().has_value());
+
+        ASSERT_TRUE(course->range(0.0, 3.0));
+        course->time_map(map([](double t) { return t; }));
+
+        EXPECT_EQ(range()->out, 3.0);
+        EXPECT_TRUE(time_map().has_value());
     }
 
     TEST(CourseTest, ARangeChangeAppliesOnTheNextAdvance)
