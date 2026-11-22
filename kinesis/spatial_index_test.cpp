@@ -1,6 +1,8 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
+#include <chrono>
+#include <condition_variable>
 
 #include "MayaFlux/Kinesis/Spatial/SpatialIndex.hpp"
 
@@ -220,6 +222,164 @@ namespace {
 
         EXPECT_EQ(ids_of(index->within_radius(point({ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 }), 1.0F)),
             (std::set<uint32_t> { near }));
+    }
+
+    TEST(KinesisSpatialIndexSnapshotTest, ConcurrentReadersKeepEarlierGenerationsAlive)
+    {
+        using namespace std::chrono_literals;
+
+        constexpr size_t readers_per_generation = 20;
+        std::mutex mutex;
+        std::condition_variable changed;
+        size_t old_readers = 0;
+        size_t new_readers = 0;
+        bool release_readers = false;
+
+        Kinesis::SpatialIndex3D index(1.0F, [&](const glm::vec3&, const glm::vec3& candidate) {
+            std::unique_lock lock(mutex);
+            if (candidate.x == 1.0F)
+                ++old_readers;
+            if (candidate.x == 2.0F)
+                ++new_readers;
+            changed.notify_all();
+            changed.wait_for(lock, 30s, [&] { return release_readers; });
+            return candidate.x * candidate.x;
+        });
+
+        const uint32_t id = index.insert({ 1.0F, 0.0F, 0.0F });
+        index.publish();
+
+        std::array<std::vector<QueryResult>, readers_per_generation * 2> answers;
+        std::vector<std::jthread> readers;
+        readers.reserve(answers.size());
+
+        for (size_t i = 0; i < readers_per_generation; ++i) {
+            readers.emplace_back([&, i] {
+                answers[i] = index.k_nearest({ 0.0F, 0.0F, 0.0F }, 1);
+            });
+        }
+
+        bool old_ready = false;
+        {
+            std::unique_lock lock(mutex);
+            old_ready = changed.wait_for(lock, 10s, [&] { return old_readers == readers_per_generation; });
+        }
+
+        bool new_ready = false;
+        if (old_ready) {
+            index.update(id, { 2.0F, 0.0F, 0.0F });
+            index.publish();
+
+            for (size_t i = readers_per_generation; i < answers.size(); ++i) {
+                readers.emplace_back([&, i] {
+                    answers[i] = index.k_nearest({ 0.0F, 0.0F, 0.0F }, 1);
+                });
+            }
+
+            std::unique_lock lock(mutex);
+            new_ready = changed.wait_for(lock, 10s, [&] { return new_readers == readers_per_generation; });
+        }
+
+        if (new_ready) {
+            index.update(id, { 3.0F, 0.0F, 0.0F });
+            index.publish();
+        }
+
+        {
+            std::lock_guard lock(mutex);
+            release_readers = true;
+        }
+        changed.notify_all();
+        for (auto& reader : readers)
+            reader.join();
+
+        ASSERT_TRUE(old_ready);
+        ASSERT_TRUE(new_ready);
+        for (size_t i = 0; i < readers_per_generation; ++i) {
+            ASSERT_EQ(answers[i].size(), 1U);
+            EXPECT_EQ(answers[i][0].id, id);
+            EXPECT_FLOAT_EQ(answers[i][0].distance_sq, 1.0F);
+        }
+        for (size_t i = readers_per_generation; i < answers.size(); ++i) {
+            ASSERT_EQ(answers[i].size(), 1U);
+            EXPECT_EQ(answers[i][0].id, id);
+            EXPECT_FLOAT_EQ(answers[i][0].distance_sq, 4.0F);
+        }
+    }
+
+    TEST(KinesisSpatialIndexSnapshotTest, ConcurrentPublicationExposesOnlyCompleteGenerations)
+    {
+        Kinesis::SpatialIndex3D index(1.0F, [](const glm::vec3& a, const glm::vec3& b) {
+            const glm::vec3 delta = a - b;
+            return glm::dot(delta, delta);
+        });
+        const uint32_t first = index.insert({ 1.0F, 0.0F, 0.0F });
+        const uint32_t second = index.insert({ 1.0F, 1.0F, 0.0F });
+        index.publish();
+
+        std::atomic<bool> start { false };
+        std::atomic<int> failure { 0 };
+        std::vector<std::jthread> readers;
+        readers.reserve(6);
+
+        for (int reader = 0; reader < 6; ++reader) {
+            readers.emplace_back([&] {
+                while (!start.load(std::memory_order_acquire))
+                    std::this_thread::yield();
+
+                for (int turn = 0; turn < 400 && failure.load() == 0; ++turn) {
+                    const auto entries = index.all();
+                    if (entries.size() != 2 || entries[0].second.x != entries[1].second.x
+                        || (entries[0].second.x != 1.0F && entries[0].second.x != 100.0F)) {
+                        failure.store(1);
+                        return;
+                    }
+
+                    const auto radius = index.within_radius({ 0.0F, 0.0F, 0.0F }, 3.0F);
+                    if (!radius.empty() && (radius.size() != 2 || ids_of(radius) != std::set<uint32_t> { first, second })) {
+                        failure.store(2);
+                        return;
+                    }
+
+                    const auto nearest = index.k_nearest({ 0.0F, 0.0F, 0.0F }, 2);
+                    if (nearest.size() != 2 || nearest[0].id != first || nearest[1].id != second
+                        || (nearest[0].distance_sq != 1.0F && nearest[0].distance_sq != 10000.0F)) {
+                        failure.store(3);
+                        return;
+                    }
+
+                    const auto position = index.position_of(first);
+                    if (!position || (position->x != 1.0F && position->x != 100.0F)) {
+                        failure.store(4);
+                        return;
+                    }
+
+                    if (index.count() != 2U) {
+                        failure.store(5);
+                        return;
+                    }
+                }
+            });
+        }
+
+        std::jthread writer([&] {
+            while (!start.load(std::memory_order_acquire))
+                std::this_thread::yield();
+
+            for (int turn = 0; turn < 400; ++turn) {
+                const float x = turn % 2 == 0 ? 100.0F : 1.0F;
+                index.update(first, { x, 0.0F, 0.0F });
+                index.update(second, { x, 1.0F, 0.0F });
+                index.publish();
+            }
+        });
+
+        start.store(true, std::memory_order_release);
+        writer.join();
+        for (auto& reader : readers)
+            reader.join();
+
+        EXPECT_EQ(failure.load(), 0);
     }
 
 }
