@@ -312,6 +312,19 @@ namespace {
             return values;
         }
 
+        template <typename T>
+        void probe_write(const std::string& name, const std::vector<T>& values)
+        {
+            std::shared_ptr<Buffers::VKBuffer> staging;
+            Buffers::upload_back_buffer(
+                probe->write_state_slot(name), values.data(), values.size() * sizeof(T), staging);
+        }
+
+        void wire_live_gated(const std::shared_ptr<GpuFieldOperator>& op)
+        {
+            Buffers::wire_field_stages(probe, op, probe_hash(), {}, nullptr, true);
+        }
+
         void run_stages()
         {
             probe->get_processing_chain()->process_complete(probe);
@@ -521,6 +534,57 @@ namespace {
         std::vector<uint32_t> alive(k_records + k_records / 2, 0U);
         std::fill_n(alive.begin(), k_records, 1U);
         EXPECT_EQ(probe_read<uint32_t>("mutation_alive"), alive);
+    }
+
+    // Liveness kept by the caller
+
+    TEST_F(SpatialFieldWiringProbeTest, CallerKeptLivenessWiresNoPopulationStagesAndDeclaresTheAliveField)
+    {
+        make_probe();
+
+        wire_live_gated(make_op(SpatialFieldConfig {
+            .cell_size = 0.5F,
+            .absorb_radius = 0.1F,
+            .density_color = true }));
+
+        EXPECT_EQ(stages(), (Names {
+                                "HashClear", "HashCount", "HashScan", "HashScatter", "HashDensityColor",
+                                "ClaimInit", "Claim", "ClaimFlatten", "ClaimAccumulate", "ClaimSwallow",
+                                "VertexField" }));
+        EXPECT_EQ(probe->get_state_bytes("mutation_alive"), k_records * sizeof(uint32_t));
+        EXPECT_EQ(probe->get_size_bytes(), k_records * k_stride_words * 4);
+    }
+
+    TEST_F(SpatialFieldWiringProbeTest, AReserveIsRefusedWhenTheCallerKeepsLiveness)
+    {
+        make_probe();
+
+        wire_live_gated(make_op(SpatialFieldConfig { .cell_size = 0.5F, .absorb_radius = 0.1F, .reserve_fraction = 0.5F }));
+
+        const auto names = stages();
+        EXPECT_EQ(std::ranges::count(names, "PopulationInit"), 0);
+        EXPECT_EQ(std::ranges::count(names, "PopulationSpawn"), 0);
+        EXPECT_EQ(probe->get_size_bytes(), k_records * k_stride_words * 4);
+        EXPECT_EQ(probe->get_state_bytes("mutation_alive"), k_records * sizeof(uint32_t));
+    }
+
+    TEST_F(SpatialFieldWiringProbeTest, TheHashSkipsTheRecordsTheCallerMarkedDead)
+    {
+        make_probe();
+        wire_live_gated(make_op(SpatialFieldConfig { .cell_size = 0.5F, .density_color = true }, false));
+        fill(scattered(k_records));
+        std::vector<uint32_t> alive(k_records, 0U);
+        std::fill_n(alive.begin(), 10, 1U);
+        probe_write("mutation_alive", alive);
+
+        run_stages();
+
+        const auto counts = probe_read<uint32_t>("hash_cell_count");
+        std::vector<uint32_t> expected(64, 0U);
+        for (size_t i = 0; i < 10; ++i) {
+            ++expected[cell_of(positions_in_use[i])];
+        }
+        EXPECT_EQ(counts, expected);
     }
 
     // The same config derived by hand and by the network
