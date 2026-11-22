@@ -57,6 +57,17 @@ namespace {
             : StateFieldBuffer(byte_count, Usage::VERTEX, Kakshya::DataModality::VERTICES_3D)
         {
         }
+
+        /** @brief What a buffer owes its manager: a chain that takes the token's processors. */
+        void setup_processors(Buffers::ProcessingToken token) override
+        {
+            auto chain = get_processing_chain();
+            if (!chain) {
+                chain = std::make_shared<BufferProcessingChain>();
+                set_processing_chain(chain);
+            }
+            chain->set_preferred_token(token);
+        }
     };
 
     glm::uvec3 cell_dims() { return glm::uvec3(4U); }
@@ -135,13 +146,8 @@ namespace {
             probe = std::make_shared<ProbeBuffer>(static_cast<size_t>(records) * k_stride_words * 4);
             service->initialize_buffer(probe);
             ASSERT_TRUE(probe->is_initialized());
-            auto chain = probe->get_processing_chain();
-            if (!chain) {
-                chain = std::make_shared<BufferProcessingChain>();
-                probe->set_processing_chain(chain);
-            }
-            chain->set_preferred_token(Buffers::ProcessingToken::GRAPHICS_BACKEND);
-            ASSERT_EQ(probe->get_processing_chain(), chain);
+            probe->setup_processors(Buffers::ProcessingToken::GRAPHICS_BACKEND);
+            ASSERT_NE(probe->get_processing_chain(), nullptr);
         }
 
         /** @brief One vertex record per position: position in the first three words, the rest zero. */
