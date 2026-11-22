@@ -29,7 +29,7 @@ namespace {
         {
             auto emitter = std::make_shared<Emitter>(std::move(fn));
             if (at) {
-                emitter->set_position(*at);
+                emitter->set({ .position = *at });
             }
             fabric.wire(emitter).finalise();
             return emitter;
@@ -42,7 +42,7 @@ namespace {
         {
             auto sensor = std::make_shared<Sensor>(radius, std::move(fn));
             if (at) {
-                sensor->set_position(*at);
+                sensor->set({ .position = *at });
             }
             fabric.wire(sensor).finalise();
             return sensor;
@@ -56,7 +56,7 @@ namespace {
         {
             auto agent = std::make_shared<Agent>(radius, std::move(perception), std::move(influence));
             if (at) {
-                agent->set_position(*at);
+                agent->set({ .position = *at });
             }
             fabric.wire(agent).finalise();
             return agent;
@@ -327,7 +327,7 @@ namespace {
         fabric.commit();
         ASSERT_TRUE(fabric.within_radius(glm::vec3(0.0F), 10.0F).empty());
 
-        emitter->set_position(glm::vec3(1.0F, 0.0F, 0.0F));
+        emitter->set({ .position = glm::vec3(1.0F, 0.0F, 0.0F) });
         fabric.commit();
 
         EXPECT_EQ(fabric.within_radius(glm::vec3(0.0F), 5.0F).size(), 1U);
@@ -338,7 +338,7 @@ namespace {
         const auto emitter = add_emitter(glm::vec3(0.0F));
         fabric.commit();
 
-        emitter->set_position(glm::vec3(50.0F, 0.0F, 0.0F));
+        emitter->set({ .position = glm::vec3(50.0F, 0.0F, 0.0F) });
         fabric.commit();
 
         EXPECT_TRUE(fabric.within_radius(glm::vec3(0.0F), 5.0F).empty());
@@ -351,7 +351,7 @@ namespace {
         fabric.commit();
         ASSERT_EQ(fabric.within_radius(glm::vec3(0.0F), 1.0F).size(), 1U);
 
-        emitter->clear_position();
+        emitter->set({ .position = Nexus::Quantity::unset() });
         fabric.commit();
 
         EXPECT_TRUE(fabric.within_radius(glm::vec3(0.0F), 1.0F).empty());
@@ -386,10 +386,10 @@ namespace {
         InfluenceContext seen;
         const auto emitter = add_emitter(glm::vec3(1.0F, 2.0F, 3.0F),
             [&seen](const InfluenceContext& ctx) { seen = ctx; });
-        emitter->set_intensity(0.5F);
-        emitter->set_radius(3.0F);
-        emitter->set_color(glm::vec3(0.1F, 0.2F, 0.3F));
-        emitter->set_size(7.0F);
+        emitter->set({ .intensity = 0.5F });
+        emitter->set({ .radius = 3.0F });
+        emitter->set({ .color = glm::vec3(0.1F, 0.2F, 0.3F) });
+        emitter->set({ .size = 7.0F });
 
         fabric.commit();
 
@@ -498,8 +498,8 @@ namespace {
             glm::vec3(1.0F, 2.0F, 3.0F), 4.0F,
             [&perceived](const PerceptionContext& ctx) { perceived = ctx; },
             [&influenced](const InfluenceContext& ctx) { influenced = ctx; });
-        agent->set_orientation(glm::angleAxis(glm::radians(90.0F), glm::vec3(0.0F, 1.0F, 0.0F)));
-        agent->set_intensity(0.25F);
+        agent->set({ .orientation = glm::angleAxis(glm::radians(90.0F), glm::vec3(0.0F, 1.0F, 0.0F)) });
+        agent->set({ .intensity = 0.25F });
 
         fabric.commit();
 
@@ -584,12 +584,12 @@ namespace {
         fabric.commit();
         EXPECT_TRUE(entered.empty());
 
-        emitter->set_position(glm::vec3(0.0F));
+        emitter->set({ .position = glm::vec3(0.0F) });
         fabric.commit();
         fabric.commit();
         EXPECT_EQ(entered, (std::vector<uint32_t> { emitter->id() }));
 
-        emitter->set_position(glm::vec3(5.0F, 0.0F, 0.0F));
+        emitter->set({ .position = glm::vec3(5.0F, 0.0F, 0.0F) });
         fabric.commit();
         EXPECT_EQ(exited, (std::vector<uint32_t> { emitter->id() }));
     }
@@ -656,7 +656,7 @@ namespace {
         const auto emitter = add_emitter(glm::vec3(5.0F, 0.0F, 0.0F));
         fabric.remove_expanse(expanse->id());
 
-        emitter->set_position(glm::vec3(0.0F));
+        emitter->set({ .position = glm::vec3(0.0F) });
         fabric.commit();
 
         EXPECT_TRUE(entered.empty());
@@ -673,7 +673,7 @@ namespace {
             Fabric local(scheduler, events, buffers, 1.0F);
             local.add_expanse(expanse);
             auto emitter = std::make_shared<Emitter>();
-            emitter->set_position(glm::vec3(0.0F));
+            emitter->set({ .position = glm::vec3(0.0F) });
             local.wire(emitter).finalise();
             entity = emitter->id();
             local.commit();
@@ -709,7 +709,7 @@ namespace {
 
         add_emitter(glm::vec3(0.0F));
         auto outside = std::make_shared<Emitter>();
-        outside->set_position(glm::vec3(9.0F, 0.0F, 0.0F));
+        outside->set({ .position = glm::vec3(9.0F, 0.0F, 0.0F) });
         other.wire(outside).finalise();
 
         fabric.commit();

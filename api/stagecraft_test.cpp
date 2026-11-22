@@ -46,7 +46,7 @@ TEST_F(ApiStagecraftTest, CreateFabricTakesACellSize)
 {
     const auto fabric = MayaFlux::create_fabric("grid", 4.0F);
     auto emitter = std::make_shared<Nexus::Emitter>();
-    emitter->set_position({ 1.0F, 0.0F, 0.0F });
+    emitter->set({ .position = glm::vec3 { 1.0F, 0.0F, 0.0F } });
     fabric->wire(emitter).finalise();
     fabric->commit();
 

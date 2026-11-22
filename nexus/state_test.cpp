@@ -58,7 +58,7 @@ namespace {
         {
             auto emitter = std::make_shared<Emitter>();
             if (at) {
-                emitter->set_position(*at);
+                emitter->set({ .position = *at });
             }
             fabric.wire(emitter).finalise();
             return emitter;
@@ -309,7 +309,7 @@ namespace {
 
         auto presence = std::make_shared<Presence>(4.0F, "see", [](const PerceptionContext&) { }, "act", [](const InfluenceContext&) { }, "spread", [](uint32_t, float) { });
         presence->set_falloff_curve(Presence::FalloffCurve::Cosine);
-        presence->set_falloff_radius(2.0F);
+        presence->set(Nexus::PresenceControls { .falloff_radius = 2.0F });
         source.wire(presence).finalise();
 
         ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
@@ -366,24 +366,24 @@ namespace {
     TEST_F(NexusStateTest, ReconstructRebuildsPositionsAndParameters)
     {
         auto full = add_emitter(source, glm::vec3(1.0F, 2.0F, 3.0F));
-        full->set_intensity(0.5F);
-        full->set_radius(2.0F);
-        full->set_color(glm::vec3(0.1F, 0.2F, 0.3F));
-        full->set_size(4.0F);
+        full->set({ .intensity = 0.5F });
+        full->set({ .radius = 2.0F });
+        full->set({ .color = glm::vec3(0.1F, 0.2F, 0.3F) });
+        full->set({ .size = 4.0F });
         auto plain = add_emitter(source, glm::vec3(-4.0F, 5.0F, 6.0F));
-        plain->set_intensity(2.0F);
-        plain->set_radius(1.0F);
+        plain->set({ .intensity = 2.0F });
+        plain->set({ .radius = 1.0F });
         auto sensor = std::make_shared<Sensor>(3.0F);
-        sensor->set_position(glm::vec3(7.0F, 8.0F, 9.0F));
+        sensor->set({ .position = glm::vec3(7.0F, 8.0F, 9.0F) });
         source.wire(sensor).finalise();
         auto agent = std::make_shared<Agent>(5.0F);
-        agent->set_position(glm::vec3(9.0F, -9.0F, 0.5F));
+        agent->set({ .position = glm::vec3(9.0F, -9.0F, 0.5F) });
         const glm::quat spin = glm::angleAxis(glm::radians(90.0F), glm::vec3(0.0F, 1.0F, 0.0F));
-        agent->set_orientation(spin);
-        agent->set_intensity(0.25F);
-        agent->set_radius(7.0F);
-        agent->set_color(glm::vec3(1.0F, 0.0F, 0.5F));
-        agent->set_size(2.0F);
+        agent->set({ .orientation = spin });
+        agent->set({ .intensity = 0.25F });
+        agent->set({ .radius = 7.0F });
+        agent->set({ .color = glm::vec3(1.0F, 0.0F, 0.5F) });
+        agent->set({ .size = 2.0F });
         source.wire(agent).finalise();
         ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
 
@@ -571,15 +571,15 @@ namespace {
     TEST_F(NexusStateTest, ReconstructPatchesEntitiesThatAlreadyExistById)
     {
         auto saved = add_emitter(source, glm::vec3(1.0F, 2.0F, 3.0F));
-        saved->set_intensity(0.75F);
+        saved->set({ .intensity = 0.75F });
         auto sensor = std::make_shared<Sensor>(4.0F);
-        sensor->set_position(glm::vec3(5.0F));
+        sensor->set({ .position = glm::vec3(5.0F) });
         source.wire(sensor).finalise();
         ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
 
         auto live_emitter = add_emitter(target, glm::vec3(50.0F));
         auto live_sensor = std::make_shared<Sensor>(1.0F);
-        live_sensor->set_position(glm::vec3(60.0F));
+        live_sensor->set({ .position = glm::vec3(60.0F) });
         target.wire(live_sensor).finalise();
 
         const auto result = decoder.reconstruct(target, snap_base);
@@ -624,7 +624,7 @@ namespace {
         config.fov_radians = 1.0F;
         config.move_speed = 7.0F;
         auto locus = std::make_shared<Locus>(config, 2.0F, [](const PerceptionContext&) { }, [](const InfluenceContext&) { });
-        locus->set_aspect(2.0F);
+        locus->set(Nexus::LocusControls { .aspect = 2.0F });
         source.wire(locus).finalise();
         ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
 
@@ -646,7 +646,7 @@ namespace {
     {
         auto presence = std::make_shared<Presence>(4.0F, "see", [](const PerceptionContext&) { }, "act", [](const InfluenceContext&) { }, "spread", [](uint32_t, float) { });
         presence->set_falloff_curve(Presence::FalloffCurve::Exponential);
-        presence->set_falloff_radius(2.0F);
+        presence->set(Nexus::PresenceControls { .falloff_radius = 2.0F });
         source.wire(presence).finalise();
         ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
 
@@ -850,7 +850,7 @@ namespace {
     TEST_F(NexusStateTest, DecodePatchesExistingEntitiesAndCountsTheMissing)
     {
         auto first = add_emitter(source, glm::vec3(1.0F));
-        first->set_intensity(0.5F);
+        first->set({ .intensity = 0.5F });
         add_emitter(source, glm::vec3(2.0F));
         ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
         auto live = add_emitter(target, glm::vec3(50.0F));

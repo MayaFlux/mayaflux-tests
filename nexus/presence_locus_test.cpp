@@ -63,13 +63,13 @@ namespace {
     {
         EXPECT_FLOAT_EQ(presence->falloff_radius(), 4.0F);
 
-        presence->set_query_radius(6.0F);
+        presence->set({ .query_radius = 6.0F });
         EXPECT_FLOAT_EQ(presence->falloff_radius(), 6.0F);
 
-        presence->set_falloff_radius(2.0F);
+        presence->set(Nexus::PresenceControls { .falloff_radius = 2.0F });
         EXPECT_FLOAT_EQ(presence->falloff_radius(), 2.0F);
 
-        presence->set_query_radius(9.0F);
+        presence->set({ .query_radius = 9.0F });
         EXPECT_FLOAT_EQ(presence->falloff_radius(), 2.0F);
     }
 
@@ -92,7 +92,7 @@ namespace {
 
     TEST_F(NexusPresenceTest, NarrowerFalloffRadiusDropsNeighboursTheQueryFound)
     {
-        presence->set_falloff_radius(2.0F);
+        presence->set(Nexus::PresenceControls { .falloff_radius = 2.0F });
 
         perceive({ { 1, 1.0F }, { 2, 9.0F } });
 
@@ -126,7 +126,7 @@ namespace {
 
     TEST_F(NexusPresenceTest, ZeroFalloffRadiusKeepsOnlyCoincidentNeighboursAtFullWeight)
     {
-        presence->set_query_radius(0.0F);
+        presence->set({ .query_radius = 0.0F });
 
         perceive({ { 1, 0.0F }, { 2, 0.25F } });
 
@@ -303,7 +303,7 @@ namespace {
     TEST_F(NexusLocusTest, AspectDefaultsToOneAndMutates)
     {
         EXPECT_FLOAT_EQ(locus.aspect(), 1.0F);
-        locus.set_aspect(16.0F / 9.0F);
+        locus.set(Nexus::LocusControls { .aspect = 16.0F / 9.0F });
         EXPECT_FLOAT_EQ(locus.aspect(), 16.0F / 9.0F);
     }
 
@@ -337,7 +337,7 @@ namespace {
     TEST_F(NexusLocusTest, AFixedTimestepMovesTheEyeByExactlyThatDistance)
     {
         locus.nav().forward_held = true;
-        locus.set_timestep(0.01F);
+        locus.set(Nexus::LocusControls { .timestep = 0.01F });
 
         locus.invoke_perception({});
 
@@ -348,7 +348,7 @@ namespace {
     TEST_F(NexusLocusTest, AFixedTimestepIgnoresTheWallClock)
     {
         locus.nav().forward_held = true;
-        locus.set_timestep(0.01F);
+        locus.set(Nexus::LocusControls { .timestep = 0.01F });
         age_the_clock();
 
         locus.invoke_perception({});
@@ -359,7 +359,7 @@ namespace {
     TEST_F(NexusLocusTest, EachPerceptionAdvancesByTheTimestep)
     {
         locus.nav().forward_held = true;
-        locus.set_timestep(0.01F);
+        locus.set(Nexus::LocusControls { .timestep = 0.01F });
 
         for (int i = 0; i < 5; ++i) {
             locus.invoke_perception({});
@@ -374,7 +374,7 @@ namespace {
         for (auto* l : { &locus, &other }) {
             l->nav().forward_held = true;
             l->nav().right_held = true;
-            l->set_timestep(1.0F / 60.0F);
+            l->set(Nexus::LocusControls { .timestep = 1.0F / 60.0F });
         }
         other.nav().last_tick = std::chrono::steady_clock::now() - std::chrono::seconds(30);
 
@@ -390,7 +390,7 @@ namespace {
     TEST_F(NexusLocusTest, AZeroTimestepLeavesTheEyeWhereItIs)
     {
         locus.nav().forward_held = true;
-        locus.set_timestep(0.0F);
+        locus.set(Nexus::LocusControls { .timestep = 0.0F });
         age_the_clock();
 
         locus.invoke_perception({});
@@ -401,8 +401,8 @@ namespace {
     TEST_F(NexusLocusTest, ClearingTheTimestepReturnsToWallTime)
     {
         locus.nav().forward_held = true;
-        locus.set_timestep(0.01F);
-        locus.clear_timestep();
+        locus.set(Nexus::LocusControls { .timestep = 0.01F });
+        locus.set(Nexus::LocusControls { .timestep = Nexus::Quantity::unset() });
         age_the_clock();
 
         locus.invoke_perception({});
