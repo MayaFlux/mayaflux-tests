@@ -6,6 +6,7 @@
 #include "../support/scripted_window.hpp"
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
+#include "MayaFlux/Kriya/Course.hpp"
 #include "MayaFlux/Nexus/Fabric.hpp"
 #include "MayaFlux/Nexus/Principals/Locus.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
@@ -773,6 +774,51 @@ namespace {
 
         EXPECT_EQ(fired, 2);
         EXPECT_EQ(other, 5);
+    }
+
+    TEST_F(NexusWiringTriggerTest, ABroadcastTriggerFiresOnEverySignalAndStopsWhenCancelled)
+    {
+        const auto source = std::make_shared<Vruta::BroadcastSource<int>>();
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).on(source).finalise();
+
+        source->signal(1);
+        source->signal(2);
+        EXPECT_EQ(fired, 2);
+
+        fabric.cancel_wiring(emitter->id());
+        source->signal(3);
+        EXPECT_EQ(fired, 2);
+    }
+
+    TEST_F(NexusWiringTriggerTest, ABroadcastTriggerFiresExactlyTimesThenStops)
+    {
+        const auto source = std::make_shared<Vruta::BroadcastSource<int>>();
+        fabric.wire(make_counting_emitter()).on(source).times(2).finalise();
+
+        for (int i = 0; i < 5; ++i) {
+            source->signal(i);
+        }
+
+        EXPECT_EQ(fired, 2);
+    }
+
+    TEST_F(NexusWiringTriggerTest, ACourseEventFiresTheEntityWhenTheCourseFinishes)
+    {
+        Kriya::CourseSetting setting;
+        setting.in = 0.0;
+        setting.out = 0.1;
+        setting.edge = Kriya::CourseEdge::Once;
+        const auto course = Kriya::Course::create(10.0, setting);
+        ASSERT_NE(course, nullptr);
+        fabric.wire(make_counting_emitter()).on(course->subscribe(Kriya::CourseEventKind::Finished)).finalise();
+
+        for (int i = 0; i < 20; ++i) {
+            (void)course->advance();
+        }
+
+        EXPECT_TRUE(course->finished());
+        EXPECT_EQ(fired, 1);
     }
 
     TEST_F(NexusWiringTriggerTest, TimesOfOneIsNotALimitOnATrigger)
