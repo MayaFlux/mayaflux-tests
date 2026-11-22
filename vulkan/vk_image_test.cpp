@@ -68,6 +68,8 @@ INSTANTIATE_TEST_SUITE_P(Formats, VkFormatBytesPerPixelTest,
         FormatBytes { vk::Format::eR32G32Sfloat, 8 },
         FormatBytes { vk::Format::eR32G32B32Sfloat, 12 },
         FormatBytes { vk::Format::eR32G32B32A32Sfloat, 16 },
+        FormatBytes { vk::Format::eD16Unorm, 2 },
+        FormatBytes { vk::Format::eD32Sfloat, 4 },
         FormatBytes { vk::Format::eUndefined, 4 }));
 
 TEST(VKImageTest, ConstructorStoresDescription)
@@ -181,10 +183,12 @@ TEST(VKImageTest, ColorUsagesUseColorAspect)
     EXPECT_EQ(image.get_aspect_flags(), vk::ImageAspectFlagBits::eColor);
 }
 
-TEST(VKImageTest, DepthFormatOnNonDepthUsageStillUsesColorAspect)
+TEST(VKImageTest, DepthOnlyFormatsUseDepthAspectWhenSampled)
 {
-    VKImage image(4, 4, 1, vk::Format::eD32Sfloat, VKImage::Usage::TEXTURE_2D);
-    EXPECT_EQ(image.get_aspect_flags(), vk::ImageAspectFlagBits::eColor);
+    for (auto format : { vk::Format::eD16Unorm, vk::Format::eD32Sfloat, vk::Format::eX8D24UnormPack32 }) {
+        VKImage image(4, 4, 1, format, VKImage::Usage::TEXTURE_2D);
+        EXPECT_EQ(image.get_aspect_flags(), vk::ImageAspectFlagBits::eDepth) << vk::to_string(format);
+    }
 }
 
 TEST(VKImageTest, DepthOnlyFormatsUseDepthAspect)

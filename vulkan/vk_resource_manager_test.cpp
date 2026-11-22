@@ -592,7 +592,8 @@ INSTANTIATE_TEST_SUITE_P(UsagesAndFormats, ImageRoundTripTest,
         RoundTripCase { VKImage::Usage::STORAGE, vk::Format::eR8G8B8A8Unorm },
         RoundTripCase { VKImage::Usage::RENDER_TARGET, vk::Format::eR8G8B8A8Unorm },
         RoundTripCase { VKImage::Usage::TEXTURE_2D, vk::Format::eR8Unorm },
-        RoundTripCase { VKImage::Usage::TEXTURE_2D, vk::Format::eR32G32B32A32Sfloat }));
+        RoundTripCase { VKImage::Usage::TEXTURE_2D, vk::Format::eR32G32B32A32Sfloat },
+        RoundTripCase { VKImage::Usage::TEXTURE_2D, vk::Format::eD16Unorm }));
 
 TEST_F(BackendResourceManagerTest, UploadWithNullArgumentsIsRejected)
 {
