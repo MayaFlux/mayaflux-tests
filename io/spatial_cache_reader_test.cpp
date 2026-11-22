@@ -338,6 +338,44 @@ namespace {
         }
     }
 
+    TEST_F(SpatialFileTest, AVertexCountIsReadFromTheSizeOfEverySampleOfPointsAndCurves)
+    {
+        const auto path = path_in_cwd("counts.abc");
+        const std::array<size_t, 3> sizes { 4, 9, 5 };
+        ASSERT_TRUE(write_all(path, [&](IO::SpatialCache& cache) {
+            for (const size_t n : sizes) {
+                Owned sample;
+                sample.positions = points(n);
+                if (!cache.write("cloud", sample.view())) {
+                    return false;
+                }
+            }
+            return cache.write("web", strips({ 3, 4 }).view()) && cache.write("web", strips({ 2, 2, 2 }).view());
+        }));
+
+        IO::SpatialReader reader;
+        ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+        for (size_t i = 0; i < sizes.size(); ++i) {
+            EXPECT_EQ(reader.get_vertex_count("cloud", i), std::optional<size_t> { sizes[i] }) << i;
+        }
+        EXPECT_EQ(reader.get_vertex_count("web", 0), std::optional<size_t> { 7 });
+        EXPECT_EQ(reader.get_vertex_count("web", 1), std::optional<size_t> { 6 });
+    }
+
+    TEST_F(SpatialFileTest, AVertexCountOfAnUnknownStreamOrAnIndexOutOfRangeIsNothing)
+    {
+        const auto path = path_in_cwd("none.abc");
+        ASSERT_TRUE(write_all(path, [&](IO::SpatialCache& cache) { return cache.write("p", point_cloud(3).view()); }));
+
+        IO::SpatialReader reader;
+        ASSERT_TRUE(reader.open(path));
+
+        EXPECT_FALSE(reader.get_vertex_count("p", 1).has_value());
+        EXPECT_FALSE(reader.get_vertex_count("missing", 0).has_value());
+        EXPECT_FALSE(IO::SpatialReader {}.get_vertex_count("p", 0).has_value());
+    }
+
     TEST_F(SpatialFileTest, RereadingASampleGivesTheSameValues)
     {
         auto source = point_cloud(5);

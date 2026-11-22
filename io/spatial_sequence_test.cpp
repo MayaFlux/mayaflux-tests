@@ -212,6 +212,29 @@ namespace {
         EXPECT_TRUE(frame->velocities.empty());
     }
 
+    TEST_F(SpatialSequenceTest, TheLargestFrameOfAStreamIsFoundWithoutReadingAny)
+    {
+        const auto frames = IO::SpatialFileFrames::create(write_growing_cloud("swarm.abc"));
+        ASSERT_NE(frames, nullptr);
+
+        EXPECT_EQ(frames->max_vertex_count(), std::optional<uint32_t> { 6 });
+        EXPECT_EQ(frames->max_vertex_count(), std::optional<uint32_t> { 6 });
+    }
+
+    TEST_F(SpatialSequenceTest, TheLargestFrameOfACurvesStreamCountsEveryCurve)
+    {
+        const auto path = path_in_cwd("curves_max.abc");
+        ASSERT_TRUE(write_all(path, [&](IO::SpatialCache& cache) {
+            return cache.write("web", strips({ 3, 4 }).view()) && cache.write("web", strips({ 5, 5, 5 }).view())
+                && cache.write("web", strips({ 2 }).view());
+        }));
+
+        const auto frames = IO::SpatialFileFrames::create(path);
+
+        ASSERT_NE(frames, nullptr);
+        EXPECT_EQ(frames->max_vertex_count(), std::optional<uint32_t> { 15 });
+    }
+
     TEST_F(SpatialSequenceTest, AStreamWithNoAttributesGivesFramesWithNone)
     {
         const auto path = path_in_cwd("bare.abc");
