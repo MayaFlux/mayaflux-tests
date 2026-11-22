@@ -46,7 +46,7 @@ namespace {
         std::vector<int32_t> counts;
         std::vector<uint64_t> ids;
         std::vector<glm::vec3> velocities;
-        std::vector<IO::SpatialAttribute> attributes;
+        std::vector<Kakshya::SpatialAttribute> attributes;
 
         [[nodiscard]] IO::SpatialSample view() const
         {
@@ -78,7 +78,7 @@ namespace {
     }
 
     template <class T>
-    IO::SpatialAttribute attribute(const std::string& name, IO::SpatialScope scope, std::vector<T> values)
+    Kakshya::SpatialAttribute attribute(const std::string& name, Kakshya::SpatialScope scope, std::vector<T> values)
     {
         return { .name = name, .scope = scope, .values = Kakshya::DataVariant { std::move(values) } };
     }
@@ -92,7 +92,7 @@ namespace {
         return out;
     }
 
-    const IO::SpatialAttribute* find_attribute(const IO::SpatialSample& sample, const std::string& name)
+    const Kakshya::SpatialAttribute* find_attribute(const IO::SpatialSample& sample, const std::string& name)
     {
         for (const auto& attribute : sample.attributes) {
             if (attribute.name == name) {
@@ -106,7 +106,7 @@ namespace {
     void expect_attribute(
         const IO::SpatialSample& sample,
         const std::string& name,
-        IO::SpatialScope scope,
+        Kakshya::SpatialScope scope,
         const std::vector<T>& expected)
     {
         const auto* found = find_attribute(sample, name);
@@ -168,7 +168,7 @@ namespace {
     TEST_F(SpatialFileTest, PointsRoundTripEveryAttributeKindAndScope)
     {
         auto source = point_cloud(6);
-        using Scope = IO::SpatialScope;
+        using Scope = Kakshya::SpatialScope;
         source.attributes = {
             attribute<float>("mass", Scope::Varying, floats(6)),
             attribute<glm::vec2>("uv", Scope::Varying, std::vector<glm::vec2>(6, glm::vec2(0.25F, 0.75F))),
@@ -210,7 +210,7 @@ namespace {
     {
         Owned source;
         source.positions = points(4);
-        source.attributes = { attribute<glm::vec4>("color", IO::SpatialScope::Varying,
+        source.attributes = { attribute<glm::vec4>("color", Kakshya::SpatialScope::Varying,
             std::vector<glm::vec4> { { 1, 0, 0, 1 }, { 0, 1, 0, 0.5F }, { 0, 0, 1, 0.25F }, { 1, 1, 1, 0 } }) };
         const auto path = path_in_cwd("rgba.abc");
         ASSERT_TRUE(write_all(path, [&](IO::SpatialCache& cache) { return cache.write("tinted", source.view()); }));
@@ -220,7 +220,7 @@ namespace {
         const auto sample = reader.read_sample("tinted", 0);
 
         ASSERT_TRUE(sample.has_value()) << reader.get_last_error();
-        expect_attribute<glm::vec4>(*sample, "color", IO::SpatialScope::Varying,
+        expect_attribute<glm::vec4>(*sample, "color", Kakshya::SpatialScope::Varying,
             std::vector<glm::vec4> { { 1, 0, 0, 1 }, { 0, 1, 0, 0.5F }, { 0, 0, 1, 0.25F }, { 1, 1, 1, 0 } });
     }
 
@@ -245,7 +245,7 @@ namespace {
     TEST_F(SpatialFileTest, AUniformAttributeOnPointsReadsBackAsUniform)
     {
         auto source = point_cloud(4);
-        source.attributes = { attribute<float>("group", IO::SpatialScope::Uniform, { 3.0F }) };
+        source.attributes = { attribute<float>("group", Kakshya::SpatialScope::Uniform, { 3.0F }) };
         const auto path = path_in_cwd("uniform_points.abc");
         ASSERT_TRUE(write_all(path, [&](IO::SpatialCache& cache) { return cache.write("p", source.view()); }));
 
@@ -256,13 +256,13 @@ namespace {
         ASSERT_TRUE(sample.has_value()) << reader.get_last_error();
         const auto* found = find_attribute(*sample, "group");
         ASSERT_NE(found, nullptr);
-        EXPECT_EQ(found->scope, IO::SpatialScope::Uniform);
+        EXPECT_EQ(found->scope, Kakshya::SpatialScope::Uniform);
     }
 
     TEST_F(SpatialFileTest, CurvesRoundTripCountsAndPerCurveAttributes)
     {
         auto source = strips({ 3, 4 });
-        using Scope = IO::SpatialScope;
+        using Scope = Kakshya::SpatialScope;
         source.attributes = {
             attribute<float>("width", Scope::Uniform, { 0.5F, 1.5F }),
             attribute<glm::vec3>("color", Scope::Varying, points(7, 1.0F)),
@@ -312,7 +312,7 @@ namespace {
             for (size_t n = 0; n < sizes.size(); ++n) {
                 Owned sample;
                 sample.positions = points(sizes[n], static_cast<float>(n) * 10.0F);
-                sample.attributes = { attribute<float>("mass", IO::SpatialScope::Varying, floats(sizes[n], static_cast<float>(n + 1))) };
+                sample.attributes = { attribute<float>("mass", Kakshya::SpatialScope::Varying, floats(sizes[n], static_cast<float>(n + 1))) };
                 if (!cache.write("grow", sample.view())) {
                     return false;
                 }
@@ -329,7 +329,7 @@ namespace {
             const auto sample = reader.read_sample("grow", n);
             ASSERT_TRUE(sample.has_value()) << n;
             EXPECT_EQ(to_vector(sample->positions), points(sizes[n], static_cast<float>(n) * 10.0F)) << n;
-            expect_attribute<float>(*sample, "mass", IO::SpatialScope::Varying, floats(sizes[n], static_cast<float>(n + 1)));
+            expect_attribute<float>(*sample, "mass", Kakshya::SpatialScope::Varying, floats(sizes[n], static_cast<float>(n + 1)));
 
             const auto time = reader.sample_time("grow", n);
             ASSERT_TRUE(time.has_value()) << n;
@@ -579,23 +579,23 @@ namespace {
         ASSERT_TRUE(cache.open(path_in_cwd("attributes.abc")));
 
         auto short_attribute = point_cloud(4);
-        short_attribute.attributes = { attribute<float>("mass", IO::SpatialScope::Varying, floats(3)) };
+        short_attribute.attributes = { attribute<float>("mass", Kakshya::SpatialScope::Varying, floats(3)) };
         EXPECT_FALSE(cache.write("short", short_attribute.view()));
         EXPECT_NE(cache.get_last_error().find("element count"), std::string::npos);
 
         auto wide_constant = point_cloud(4);
-        wide_constant.attributes = { attribute<float>("g", IO::SpatialScope::Constant, floats(2)) };
+        wide_constant.attributes = { attribute<float>("g", Kakshya::SpatialScope::Constant, floats(2)) };
         EXPECT_FALSE(cache.write("wide", wide_constant.view()));
 
         auto doubles = point_cloud(4);
-        doubles.attributes = { attribute<double>("precise", IO::SpatialScope::Varying, std::vector<double>(4, 1.0)) };
+        doubles.attributes = { attribute<double>("precise", Kakshya::SpatialScope::Varying, std::vector<double>(4, 1.0)) };
         EXPECT_FALSE(cache.write("doubles", doubles.view()));
 
         auto first = point_cloud(4);
-        first.attributes = { attribute<float>("m", IO::SpatialScope::Varying, floats(4)) };
+        first.attributes = { attribute<float>("m", Kakshya::SpatialScope::Varying, floats(4)) };
         ASSERT_TRUE(cache.write("redeclared", first.view()));
         auto second = point_cloud(4);
-        second.attributes = { attribute<glm::vec3>("m", IO::SpatialScope::Varying, points(4)) };
+        second.attributes = { attribute<glm::vec3>("m", Kakshya::SpatialScope::Varying, points(4)) };
         EXPECT_FALSE(cache.write("redeclared", second.view()));
     }
 
@@ -767,7 +767,7 @@ namespace {
         for (const auto* name : { "color", "scalar", "uv", "normal", "tangent", "cluster" }) {
             const auto* found = find_attribute(sample, name);
             ASSERT_NE(found, nullptr) << name;
-            EXPECT_EQ(found->scope, IO::SpatialScope::Varying) << name;
+            EXPECT_EQ(found->scope, Kakshya::SpatialScope::Varying) << name;
         }
     }
 
