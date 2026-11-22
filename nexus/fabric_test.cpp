@@ -71,9 +71,9 @@ namespace {
             return emitter;
         }
 
-        Vruta::TaskScheduler scheduler { 48000 };
-        Vruta::EventManager events;
-        Buffers::BufferManager buffers;
+        std::shared_ptr<Vruta::TaskScheduler> scheduler = std::make_shared<Vruta::TaskScheduler>(48000);
+        std::shared_ptr<Vruta::EventManager> events = std::make_shared<Vruta::EventManager>();
+        std::shared_ptr<Buffers::BufferManager> buffers = std::make_shared<Buffers::BufferManager>();
         Fabric fabric { scheduler, events, buffers, 1.0F };
     };
 

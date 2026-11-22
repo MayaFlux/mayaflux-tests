@@ -126,8 +126,8 @@ namespace {
         FrameScheduler frames;
         std::shared_ptr<Vruta::EventManager> events = std::make_shared<Vruta::EventManager>();
         std::shared_ptr<Buffers::BufferManager> buffers = std::make_shared<Buffers::BufferManager>();
-        Fabric source { *frames.scheduler, *events, *buffers, 1.0F };
-        Fabric target { *frames.scheduler, *events, *buffers, 1.0F };
+        Fabric source { frames.scheduler, events, buffers, 1.0F };
+        Fabric target { frames.scheduler, events, buffers, 1.0F };
         StateEncoder encoder;
         StateDecoder decoder;
         int target_pulse {};
@@ -147,7 +147,7 @@ namespace {
 
     TEST_F(NexusStateTest, SchemaListsEntitiesInIdOrderWithTheirKinds)
     {
-        Fabric local(*frames.scheduler, *events, *buffers, 2.0F);
+        Fabric local(frames.scheduler, events, buffers, 2.0F);
         local.set_name("stage");
         add_emitter(local);
         add_emitter(local);

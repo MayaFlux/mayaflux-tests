@@ -61,9 +61,9 @@ namespace {
         }
 
         FrameScheduler frames;
-        Vruta::EventManager events;
-        Buffers::BufferManager buffers;
-        Fabric fabric { *frames.scheduler, events, buffers, 1.0F };
+        std::shared_ptr<Vruta::EventManager> events = std::make_shared<Vruta::EventManager>();
+        std::shared_ptr<Buffers::BufferManager> buffers = std::make_shared<Buffers::BufferManager>();
+        Fabric fabric { frames.scheduler, events, buffers, 1.0F };
         int fired {};
         InfluenceContext last;
     };
@@ -92,6 +92,80 @@ namespace {
         fabric.commit();
 
         EXPECT_EQ(fired, 0);
+    }
+
+    TEST_F(NexusWiringTest, EveryTokenOnTheSampleTokenFiresOncePerSample)
+    {
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).every(Vruta::ProcessingToken::SAMPLE_ACCURATE).finalise();
+
+        run_samples(5);
+        EXPECT_EQ(fired, 5);
+    }
+
+    TEST_F(NexusWiringTest, EveryTokenStopsAfterTheRequestedCount)
+    {
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).every(Vruta::ProcessingToken::SAMPLE_ACCURATE).times(3).finalise();
+
+        run_samples(10);
+        EXPECT_EQ(fired, 3);
+    }
+
+    TEST_F(NexusWiringTest, WindowEventWiringFiresForMatchingEventsOnly)
+    {
+        const auto window = std::make_shared<ScriptedWindow>(400U, 300U);
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter)
+            .on(window, Vruta::WindowEventFilter { Core::WindowEventType::MOUSE_MOTION })
+            .finalise();
+
+        window->key_down(IO::Keys::A);
+        EXPECT_EQ(fired, 0);
+
+        window->move_to_pixel(10.0, 20.0);
+        EXPECT_EQ(fired, 1);
+    }
+
+    TEST_F(NexusWiringTest, FiringsFromDifferentThreadsKeepTheirOwnCursor)
+    {
+        constexpr int k_rounds = 4000;
+        const auto window = std::make_shared<ScriptedWindow>(400U, 300U);
+
+        std::atomic<int> aimed { 0 };
+        std::atomic<int> unaimed { 0 };
+        std::atomic<int> leaked { 0 };
+        const auto main_thread = std::this_thread::get_id();
+
+        const auto emitter = std::make_shared<Emitter>([&](const InfluenceContext& ctx) {
+            if (std::this_thread::get_id() != main_thread) {
+                ++(ctx.cursor_pos.has_value() ? leaked : unaimed);
+            } else if (ctx.cursor_pos.has_value()) {
+                ++aimed;
+            }
+        });
+        fabric.wire(emitter)
+            .on(window, Vruta::WindowEventFilter { Core::WindowEventType::MOUSE_MOTION })
+            .finalise();
+
+        const uint32_t id = emitter->id();
+        std::atomic<bool> go { false };
+        std::thread worker([&] {
+            while (!go.load()) { }
+            for (int i = 0; i < k_rounds; ++i) {
+                fabric.fire(id);
+            }
+        });
+
+        go.store(true);
+        for (int i = 0; i < k_rounds; ++i) {
+            window->move_to_pixel(static_cast<double>(i % 400), static_cast<double>(i % 300));
+        }
+        worker.join();
+
+        EXPECT_EQ(leaked.load(), 0);
+        EXPECT_EQ(aimed.load(), k_rounds);
+        EXPECT_EQ(unaimed.load(), k_rounds);
     }
 
     TEST_F(NexusWiringTest, FinalisedWiringReportsItsConfiguration)
@@ -143,7 +217,7 @@ namespace {
     {
         int local_fired {};
         {
-            Fabric local(*frames.scheduler, events, buffers, 1.0F);
+            Fabric local(frames.scheduler, events, buffers, 1.0F);
             auto emitter = std::make_shared<Emitter>([&local_fired](const InfluenceContext&) { ++local_fired; });
             local.wire(emitter).every(0.001).finalise();
             run_samples(1);
@@ -492,7 +566,7 @@ namespace {
         int detached {};
         const auto emitter = make_counting_emitter();
         {
-            Fabric local(*frames.scheduler, events, buffers, 1.0F);
+            Fabric local(frames.scheduler, events, buffers, 1.0F);
             local.wire(emitter).bind([] { }, [&detached] { ++detached; }).finalise();
         }
 
@@ -503,6 +577,49 @@ namespace {
     protected:
         std::shared_ptr<ScriptedWindow> window = std::make_shared<ScriptedWindow>(400U, 300U);
     };
+
+    TEST_F(NexusWiringTriggerTest, SeveralTriggersOnOneWiringReportWhichFired)
+    {
+        std::vector<int> seen;
+        const auto emitter = std::make_shared<Emitter>([&seen](const InfluenceContext& ctx) {
+            const auto* key = ctx.input ? std::get_if<Core::WindowEvent::KeyData>(&ctx.input->data) : nullptr;
+            if (key) {
+                seen.push_back(key->key);
+            }
+        });
+        fabric.wire(emitter).on(window, IO::Keys::A).on(window, IO::Keys::D).finalise();
+
+        window->key_down(IO::Keys::A);
+        window->key_down(IO::Keys::S);
+        window->key_down(IO::Keys::D);
+
+        EXPECT_EQ(seen, (std::vector<int> { static_cast<int>(IO::Keys::A), static_cast<int>(IO::Keys::D) }));
+    }
+
+    TEST_F(NexusWiringTriggerTest, TimesIsSharedAcrossTheTriggersOfOneWiring)
+    {
+        fabric.wire(make_counting_emitter()).on(window, IO::Keys::A).on(window, IO::Keys::D).times(3).finalise();
+
+        window->key_down(IO::Keys::A);
+        window->key_down(IO::Keys::D);
+        window->key_down(IO::Keys::A);
+        window->key_down(IO::Keys::D);
+        window->key_down(IO::Keys::A);
+
+        EXPECT_EQ(fired, 3);
+    }
+
+    TEST_F(NexusWiringTriggerTest, CancellingAWiringRemovesEveryTrigger)
+    {
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).on(window, IO::Keys::A).on(window, IO::Keys::D).finalise();
+
+        fabric.cancel_wiring(emitter->id());
+        window->key_down(IO::Keys::A);
+        window->key_down(IO::Keys::D);
+
+        EXPECT_EQ(fired, 0);
+    }
 
     TEST_F(NexusWiringTriggerTest, AKeyTriggerFiresOnEveryPressWithoutTimes)
     {
@@ -593,7 +710,7 @@ namespace {
     {
         Vruta::WindowEventFilter filter;
         filter.event_type = Core::WindowEventType::MOUSE_SCROLLED;
-        fabric.wire(make_counting_emitter()).on(window->get_event_source(), filter).times(2).finalise();
+        fabric.wire(make_counting_emitter()).on(window, filter).times(2).finalise();
 
         for (int i = 0; i < 5; ++i) {
             window->scroll(0.0, 1.0);
@@ -632,7 +749,7 @@ namespace {
     {
         Vruta::WindowEventFilter filter { IO::Keys::S | IO::Modifiers::Alt };
         filter.event_type = Core::WindowEventType::KEY_PRESSED;
-        fabric.wire(make_counting_emitter()).on(window->get_event_source(), filter).finalise();
+        fabric.wire(make_counting_emitter()).on(window, filter).finalise();
 
         window->key_down(IO::Keys::S);
         window->key_down(IO::Keys::S, IO::Modifiers::Ctrl);

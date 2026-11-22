@@ -132,7 +132,8 @@ protected:
         return contains(manager.get_graphics_buffers(Buffers::ProcessingToken::GRAPHICS_BACKEND), buffer);
     }
 
-    Buffers::BufferManager manager;
+    std::shared_ptr<Buffers::BufferManager> manager_handle = std::make_shared<Buffers::BufferManager>();
+    Buffers::BufferManager& manager = *manager_handle;
     std::shared_ptr<ScriptedWindow> window = std::make_shared<ScriptedWindow>(400U, 300U);
 
 private:

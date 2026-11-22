@@ -52,9 +52,10 @@ namespace {
             return contains(manager.get_buffers(Buffers::ProcessingToken::AUDIO_BACKEND, channel), buffer);
         }
 
-        Buffers::BufferManager manager;
-        Vruta::TaskScheduler scheduler { 48000 };
-        Vruta::EventManager events;
+        std::shared_ptr<Buffers::BufferManager> manager_handle = std::make_shared<Buffers::BufferManager>();
+        Buffers::BufferManager& manager = *manager_handle;
+        std::shared_ptr<Vruta::TaskScheduler> scheduler = std::make_shared<Vruta::TaskScheduler>(48000);
+        std::shared_ptr<Vruta::EventManager> events = std::make_shared<Vruta::EventManager>();
         std::vector<Nexus::AudioSink> sinks;
     };
 
@@ -194,7 +195,7 @@ namespace {
 
     TEST_F(NexusAudioSinkTest, RemovingAnAgentFromItsFabricUnregistersItsAudioSink)
     {
-        Nexus::Fabric fabric(scheduler, events, manager, 1.0F);
+        Nexus::Fabric fabric(scheduler, events, manager_handle, 1.0F);
         const size_t before = count(1);
         auto agent = std::make_shared<Nexus::Agent>(1.0F);
         agent->sink_audio(manager, 1);
@@ -209,7 +210,7 @@ namespace {
 
     TEST_F(NexusAudioSinkTest, RemovingAnEmitterFromItsFabricUnregistersItsAudioSink)
     {
-        Nexus::Fabric fabric(scheduler, events, manager, 1.0F);
+        Nexus::Fabric fabric(scheduler, events, manager_handle, 1.0F);
         const size_t before = count(0);
         auto emitter = std::make_shared<Nexus::Emitter>();
         emitter->sink_audio(manager, 0);
@@ -227,7 +228,7 @@ namespace {
         auto agent = std::make_shared<Nexus::Agent>(1.0F);
         agent->sink_audio(manager, 1);
         {
-            Nexus::Fabric fabric(scheduler, events, manager, 1.0F);
+            Nexus::Fabric fabric(scheduler, events, manager_handle, 1.0F);
             fabric.wire(agent).finalise();
         }
 
@@ -258,8 +259,8 @@ namespace {
 
     class NexusRenderSinkTest : public NexusDeviceTest {
     protected:
-        Vruta::TaskScheduler scheduler { 48000 };
-        Vruta::EventManager events;
+        std::shared_ptr<Vruta::TaskScheduler> scheduler = std::make_shared<Vruta::TaskScheduler>(48000);
+        std::shared_ptr<Vruta::EventManager> events = std::make_shared<Vruta::EventManager>();
         std::vector<Nexus::RenderSink> sinks;
     };
 
@@ -375,7 +376,7 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, RemovingAnAgentFromItsFabricUnregistersItsRenderSink, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        Nexus::Fabric fabric(scheduler, events, manager, 1.0F);
+        Nexus::Fabric fabric(scheduler, events, manager_handle, 1.0F);
         auto agent = std::make_shared<Nexus::Agent>(1.0F);
         agent->render(manager, render_config());
         const auto buffer = agent->render_sinks().front().buf;
@@ -390,7 +391,7 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, RemovingAnEmitterFromItsFabricUnregistersItsRenderSink, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        Nexus::Fabric fabric(scheduler, events, manager, 1.0F);
+        Nexus::Fabric fabric(scheduler, events, manager_handle, 1.0F);
         auto emitter = std::make_shared<Nexus::Emitter>();
         emitter->render(manager, render_config());
         const auto buffer = emitter->render_sinks().front().buf;
@@ -408,7 +409,7 @@ namespace {
         agent->render(manager, render_config());
         const auto buffer = agent->render_sinks().front().buf;
         {
-            Nexus::Fabric fabric(scheduler, events, manager, 1.0F);
+            Nexus::Fabric fabric(scheduler, events, manager_handle, 1.0F);
             fabric.wire(agent).finalise();
         }
 
@@ -505,8 +506,8 @@ namespace {
             return Nexus::make_attachment(buffer, config, std::nullopt);
         }
 
-        Vruta::TaskScheduler scheduler { 48000 };
-        Vruta::EventManager events;
+        std::shared_ptr<Vruta::TaskScheduler> scheduler = std::make_shared<Vruta::TaskScheduler>(48000);
+        std::shared_ptr<Vruta::EventManager> events = std::make_shared<Vruta::EventManager>();
         std::shared_ptr<Buffers::MeshBuffer> buffer;
         std::shared_ptr<Buffers::RenderProcessor> renderer;
     };
@@ -819,7 +820,7 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST_F, NexusAttachmentTest, RemovingAnAgentFromItsFabricGivesTheBufferItsPlacementBack, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        Nexus::Fabric fabric(scheduler, events, manager, 1.0F);
+        Nexus::Fabric fabric(scheduler, events, manager_handle, 1.0F);
         auto agent = std::make_shared<Nexus::Agent>(1.0F);
         agent->attach(buffer);
         fabric.wire(agent).finalise();
@@ -837,7 +838,7 @@ namespace {
         auto agent = std::make_shared<Nexus::Agent>(1.0F);
         agent->attach(buffer);
         {
-            Nexus::Fabric fabric(scheduler, events, manager, 1.0F);
+            Nexus::Fabric fabric(scheduler, events, manager_handle, 1.0F);
             fabric.wire(agent).finalise();
             fabric.commit();
             ASSERT_TRUE(static_cast<bool>(renderer->get_geometry_transform_source()));
