@@ -41,7 +41,7 @@ TEST_F(TimerLifetimeTest, DestroyedBeforeItFiresRunsNothing)
     bool triggered = false;
 
     {
-        Kriya::Timer timer(*scheduler);
+        Kriya::Timer timer(scheduler);
         timer.schedule(0.01, [&triggered]() { triggered = true; });
     }
 
@@ -51,7 +51,7 @@ TEST_F(TimerLifetimeTest, DestroyedBeforeItFiresRunsNothing)
 
 TEST_F(TimerLifetimeTest, CallbackMayScheduleItsTimerAgain)
 {
-    Kriya::Timer timer(*scheduler);
+    Kriya::Timer timer(scheduler);
     int fired = 0;
 
     timer.schedule(0.01, [&timer, &fired]() {
@@ -73,7 +73,7 @@ TEST_F(TimerLifetimeTest, ReleasesItsCallbackAfterFiring)
 {
     auto token = std::make_shared<int>(0);
     const std::weak_ptr<int> watch = token;
-    Kriya::Timer timer(*scheduler);
+    Kriya::Timer timer(scheduler);
 
     timer.schedule(0.01, [token]() { });
     token.reset();
@@ -85,7 +85,7 @@ TEST_F(TimerLifetimeTest, ReleasesItsCallbackAfterFiring)
 
 TEST_F(TimerLifetimeTest, HeldOnlyByItsOwnCallbackFiresAndIsReleased)
 {
-    auto timer = std::make_shared<Kriya::Timer>(*scheduler);
+    auto timer = std::make_shared<Kriya::Timer>(scheduler);
     const std::weak_ptr<Kriya::Timer> watch = timer;
     bool triggered = false;
 
@@ -106,7 +106,7 @@ TEST_F(TimerLifetimeTest, CancelledThenDestroyedRunsNothing)
     bool triggered = false;
 
     {
-        Kriya::Timer timer(*scheduler);
+        Kriya::Timer timer(scheduler);
         timer.schedule(0.01, [&triggered]() { triggered = true; });
         timer.cancel();
     }
@@ -120,7 +120,7 @@ TEST_F(TimerLifetimeTest, RescheduledThenDestroyedRunsNothing)
     int fired = 0;
 
     {
-        Kriya::Timer timer(*scheduler);
+        Kriya::Timer timer(scheduler);
         timer.schedule(0.01, [&fired]() { ++fired; });
         timer.schedule(0.02, [&fired]() { ++fired; });
     }
@@ -135,7 +135,7 @@ TEST_F(TimerLifetimeTest, TimedActionDestroyedBeforeTheEndRunsNoEnd)
     bool ended = false;
 
     {
-        Kriya::TimedAction action(*scheduler);
+        Kriya::TimedAction action(scheduler);
         action.execute([&started]() { started = true; }, [&ended]() { ended = true; }, 0.01);
     }
 

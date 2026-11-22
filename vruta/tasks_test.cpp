@@ -74,7 +74,7 @@ class TimerTest : public TasksParamTest<double> { };
 TEST_P(TimerTest, FiresOnlyAfterItsDuration)
 {
     const double duration = GetParam();
-    Kriya::Timer timer(*scheduler);
+    Kriya::Timer timer(scheduler);
     bool triggered = false;
 
     timer.schedule(duration, [&triggered]() { triggered = true; });
@@ -96,7 +96,7 @@ TEST_P(TimerTest, FiresOnlyAfterItsDuration)
 TEST_P(TimerTest, CancelSuppressesTheCallback)
 {
     const double duration = GetParam();
-    Kriya::Timer timer(*scheduler);
+    Kriya::Timer timer(scheduler);
     bool triggered = false;
 
     timer.schedule(duration, [&triggered]() { triggered = true; });
@@ -112,7 +112,7 @@ TEST_P(TimerTest, CancelSuppressesTheCallback)
 TEST_P(TimerTest, CanBeScheduledAgainAfterFiring)
 {
     const double duration = GetParam();
-    Kriya::Timer timer(*scheduler);
+    Kriya::Timer timer(scheduler);
     int fired = 0;
 
     timer.schedule(duration, [&fired]() { ++fired; });
@@ -133,7 +133,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(TasksTest, ZeroDurationTimerFiresOnTheFirstSample)
 {
-    Kriya::Timer timer(*scheduler);
+    Kriya::Timer timer(scheduler);
     bool called = false;
 
     timer.schedule(0.0, [&called]() { called = true; });
@@ -151,7 +151,7 @@ class TimedActionTest : public TasksParamTest<double> { };
 TEST_P(TimedActionTest, StartsAtOnceAndEndsAfterTheDuration)
 {
     const double duration = GetParam();
-    Kriya::TimedAction action(*scheduler);
+    Kriya::TimedAction action(scheduler);
     bool start_executed = false;
     bool end_executed = false;
 
@@ -173,7 +173,7 @@ TEST_P(TimedActionTest, StartsAtOnceAndEndsAfterTheDuration)
 TEST_P(TimedActionTest, CancelSuppressesTheEnd)
 {
     const double duration = GetParam();
-    Kriya::TimedAction action(*scheduler);
+    Kriya::TimedAction action(scheduler);
     bool start_executed = false;
     bool end_executed = false;
 
@@ -195,7 +195,7 @@ TEST_P(TimedActionTest, CancelSuppressesTheEnd)
 TEST_P(TimedActionTest, CanBeExecutedAgainAfterEnding)
 {
     const double duration = GetParam();
-    Kriya::TimedAction action(*scheduler);
+    Kriya::TimedAction action(scheduler);
     int started = 0;
     int ended = 0;
 
