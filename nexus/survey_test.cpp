@@ -224,6 +224,56 @@ namespace {
         expect_near(*anchor, { 5.0F, 0.0F, 0.0F });
     }
 
+    TEST(NexusSurveyMeshNetworkTest, ASlotIsReadWhereItsTransformPutsIt)
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("moved", quad_node({ 0.0F, 0.0F, 0.0F }));
+        network->get_slot(0).local_transform = glm::translate(glm::mat4(1.0F), { 10.0F, 0.0F, 0.0F });
+        const auto buffer = std::make_shared<Buffers::MeshNetworkBuffer>(network);
+
+        const auto bounds = Nexus::read_bounds(buffer);
+        const auto anchor = Nexus::read_anchor(buffer, std::nullopt);
+
+        ASSERT_TRUE(bounds.has_value());
+        ASSERT_TRUE(anchor.has_value());
+        expect_near(bounds->min, { 9.8F, -0.2F, 0.0F });
+        expect_near(bounds->max, { 10.2F, 0.2F, 0.0F });
+        expect_near(*anchor, { 10.0F, 0.0F, 0.0F });
+    }
+
+    TEST(NexusSurveyMeshNetworkTest, AChildSlotIsReadThroughItsParentsTransform)
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("parent", quad_node({ 0.0F, 0.0F, 0.0F }));
+        network->add_slot("child", quad_node({ 0.0F, 0.0F, 0.0F }), 0U);
+        network->get_slot(0).local_transform = glm::translate(glm::mat4(1.0F), { 5.0F, 0.0F, 0.0F });
+        network->get_slot(1).local_transform = glm::translate(glm::mat4(1.0F), { 0.0F, 3.0F, 0.0F });
+        const auto buffer = std::make_shared<Buffers::MeshNetworkBuffer>(network);
+
+        const auto bounds = Nexus::read_bounds(buffer);
+        const auto anchor = Nexus::read_anchor(buffer, std::nullopt);
+
+        ASSERT_TRUE(bounds.has_value());
+        ASSERT_TRUE(anchor.has_value());
+        expect_near(bounds->min, { 4.8F, -0.2F, 0.0F });
+        expect_near(bounds->max, { 5.2F, 3.2F, 0.0F });
+        expect_near(*anchor, { 5.0F, 1.5F, 0.0F });
+    }
+
+    TEST(NexusSurveyMeshNetworkTest, ARotatedSlotIsBoundedByItsRotatedGeometry)
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("turned", quad_node({ 4.0F, 0.0F, 0.0F }));
+        network->get_slot(0).local_transform = glm::rotate(glm::mat4(1.0F), glm::radians(90.0F), glm::vec3(0.0F, 0.0F, 1.0F));
+        const auto buffer = std::make_shared<Buffers::MeshNetworkBuffer>(network);
+
+        const auto bounds = Nexus::read_bounds(buffer);
+
+        ASSERT_TRUE(bounds.has_value());
+        expect_near(bounds->min, { -0.2F, 3.8F, 0.0F });
+        expect_near(bounds->max, { 0.2F, 4.2F, 0.0F });
+    }
+
     // =========================================================================
     // Instance network
     // =========================================================================

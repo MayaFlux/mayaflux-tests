@@ -6,6 +6,8 @@
 #include "MayaFlux/Nodes/Network/Operators/MeshTransformOperator.hpp"
 #include "MayaFlux/Nodes/Network/Operators/OperatorChain.hpp"
 
+#include <glm/gtc/matrix_transform.hpp>
+
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
@@ -426,6 +428,126 @@ namespace {
         MeshNetwork net;
 
         EXPECT_NO_THROW((void)net.get_mesh_data());
+    }
+
+    std::vector<MeshVertex> vertices_of(const Kakshya::MeshData& mesh)
+    {
+        const auto& bytes = std::get<std::vector<uint8_t>>(mesh.vertex_variant);
+        std::vector<MeshVertex> vertices(bytes.size() / sizeof(MeshVertex));
+        std::memcpy(vertices.data(), bytes.data(), vertices.size() * sizeof(MeshVertex));
+        return vertices;
+    }
+
+    std::shared_ptr<MeshWriterNode> facing_node()
+    {
+        auto node = std::make_shared<MeshWriterNode>(16);
+        std::vector<MeshVertex> v(3);
+        for (size_t i = 0; i < v.size(); ++i) {
+            v[i].position = { static_cast<float>(i), 0.0F, 0.0F };
+            v[i].normal = { 0.0F, 0.0F, 1.0F };
+        }
+        node->set_mesh(v, std::vector<uint32_t> { 0, 1, 2 });
+        node->compute_frame();
+        return node;
+    }
+
+    TEST(MeshNetworkTest, WorldMeshDataPlacesEachSlotThroughItsParents)
+    {
+        MeshNetwork net;
+        net.add_slot("root", quad_node());
+        net.add_slot("child", quad_node(), 0U);
+        net.get_slot(0).local_transform = translation(1.0F, 0.0F, 0.0F);
+        net.get_slot(1).local_transform = translation(0.0F, 2.0F, 0.0F);
+
+        const auto mesh = net.get_world_mesh_data();
+
+        ASSERT_TRUE(mesh.has_value());
+        const auto vertices = vertices_of(*mesh);
+        ASSERT_EQ(vertices.size(), 8U);
+        for (size_t i = 0; i < 4; ++i) {
+            const float x = static_cast<float>(i) + 1.0F;
+            EXPECT_EQ(vertices[i].position, glm::vec3(x, 0.0F, 0.0F));
+            EXPECT_EQ(vertices[4 + i].position, glm::vec3(x, 2.0F, 0.0F));
+        }
+    }
+
+    TEST(MeshNetworkTest, WorldMeshDataDoesNotNeedAProcessedBatch)
+    {
+        MeshNetwork net;
+        net.add_slot("part", quad_node());
+        net.get_slot(0).local_transform = translation(5.0F, 0.0F, 0.0F);
+
+        const auto mesh = net.get_world_mesh_data();
+
+        ASSERT_TRUE(mesh.has_value());
+        EXPECT_EQ(origin(net.get_slot(0).world_transform), glm::vec3(0.0F));
+        EXPECT_EQ(vertices_of(*mesh).front().position, glm::vec3(5.0F, 0.0F, 0.0F));
+    }
+
+    TEST(MeshNetworkTest, WorldMeshDataCarriesAJointsTransformToItsChildren)
+    {
+        MeshNetwork net;
+        net.add_slot("joint", nullptr);
+        net.add_slot("part", quad_node(), 0U);
+        net.get_slot(0).local_transform = translation(3.0F, 0.0F, 0.0F);
+        net.get_slot(1).local_transform = translation(0.0F, 4.0F, 0.0F);
+
+        const auto mesh = net.get_world_mesh_data();
+
+        ASSERT_TRUE(mesh.has_value());
+        const auto vertices = vertices_of(*mesh);
+        ASSERT_EQ(vertices.size(), 4U);
+        EXPECT_EQ(vertices.front().position, glm::vec3(3.0F, 4.0F, 0.0F));
+        EXPECT_EQ(vertices.back().position, glm::vec3(6.0F, 4.0F, 0.0F));
+    }
+
+    TEST(MeshNetworkTest, WorldMeshDataTurnsNormalsWithTheSlot)
+    {
+        MeshNetwork net;
+        net.add_slot("part", facing_node());
+        net.get_slot(0).local_transform = glm::rotate(glm::mat4(1.0F), glm::radians(90.0F), glm::vec3(1.0F, 0.0F, 0.0F));
+
+        const auto mesh = net.get_world_mesh_data();
+
+        ASSERT_TRUE(mesh.has_value());
+        const glm::vec3 normal = vertices_of(*mesh).front().normal;
+        EXPECT_NEAR(normal.x, 0.0F, 1e-5F);
+        EXPECT_NEAR(normal.y, -1.0F, 1e-5F);
+        EXPECT_NEAR(normal.z, 0.0F, 1e-5F);
+    }
+
+    TEST(MeshNetworkTest, MeshDataStaysInSlotSpaceWhateverTheTransforms)
+    {
+        MeshNetwork net;
+        net.add_slot("part", quad_node());
+        net.get_slot(0).local_transform = translation(5.0F, 0.0F, 0.0F);
+
+        const auto mesh = net.get_mesh_data();
+
+        ASSERT_TRUE(mesh.has_value());
+        EXPECT_EQ(vertices_of(*mesh).front().position, glm::vec3(0.0F));
+    }
+
+    TEST(MeshNetworkTest, WorldMeshDataOfIdentitySlotsIsTheLocalMeshData)
+    {
+        MeshNetwork net;
+        net.add_slot("a", quad_node());
+        net.add_slot("b", quad_node());
+
+        const auto local = net.get_mesh_data();
+        const auto world = net.get_world_mesh_data();
+
+        ASSERT_TRUE(local.has_value());
+        ASSERT_TRUE(world.has_value());
+        EXPECT_EQ(std::get<std::vector<uint8_t>>(world->vertex_variant), std::get<std::vector<uint8_t>>(local->vertex_variant));
+        EXPECT_EQ(std::get<std::vector<uint32_t>>(world->index_variant), std::get<std::vector<uint32_t>>(local->index_variant));
+    }
+
+    TEST(MeshNetworkTest, WorldMeshDataOfAnEmptyNetworkIsNothing)
+    {
+        MeshNetwork net;
+
+        EXPECT_FALSE(net.get_world_mesh_data().has_value());
     }
 
     class MeshTransformOperatorTest : public ::testing::Test {

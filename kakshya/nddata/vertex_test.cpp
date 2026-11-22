@@ -4,6 +4,9 @@
 #include "MayaFlux/Kakshya/NDData/VertexAccess.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexInsertion.hpp"
+#include "MayaFlux/Kakshya/NDData/VertexPlacement.hpp"
+
+#include <glm/gtc/matrix_transform.hpp>
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
@@ -836,6 +839,129 @@ namespace {
         ASSERT_TRUE(insertion.insert_interleaved(std::vector<uint8_t>(k_record, 0), VertexLayout::for_raw()));
 
         EXPECT_EQ(channels.size(), 6U);
+    }
+
+    // ---------------------------------------------------------------------
+    // place_vertices
+    // ---------------------------------------------------------------------
+
+    constexpr size_t k_position = 0;
+    constexpr size_t k_color = 12;
+    constexpr size_t k_normal = 40;
+    constexpr size_t k_tangent = 52;
+
+    template <typename Vec>
+    void expect_vec_near(const Vec& actual, const Vec& expected)
+    {
+        for (glm::length_t i = 0; i < Vec::length(); ++i) {
+            EXPECT_NEAR(actual[i], expected[i], 1e-5F) << "component " << i;
+        }
+    }
+
+    TEST(VertexPlacementTest, ATranslationMovesPositionsAndNothingElse)
+    {
+        const auto before = sample_vertices();
+        auto bytes = bytes_of(before);
+
+        ASSERT_TRUE(Kakshya::place_vertices(bytes, VertexLayout::for_meshes(),
+            glm::translate(glm::mat4(1.0F), { 10.0F, 0.0F, -1.0F })));
+
+        for (size_t i = 0; i < before.size(); ++i) {
+            const size_t base = i * k_record;
+            expect_vec_near(read_vec<glm::vec3>(bytes.data(), base + k_position), before[i].position + glm::vec3(10.0F, 0.0F, -1.0F));
+            EXPECT_EQ(read_vec<glm::vec4>(bytes.data(), base + k_color), before[i].color);
+            EXPECT_EQ(read_vec<glm::vec3>(bytes.data(), base + k_normal), before[i].normal);
+            EXPECT_EQ(read_vec<glm::vec4>(bytes.data(), base + k_tangent), before[i].tangent);
+        }
+    }
+
+    TEST(VertexPlacementTest, ARotationTurnsPositionsNormalsAndTangentsAndKeepsTheHandedness)
+    {
+        auto bytes = bytes_of(sample_vertices());
+
+        ASSERT_TRUE(Kakshya::place_vertices(bytes, VertexLayout::for_meshes(),
+            glm::rotate(glm::mat4(1.0F), glm::radians(90.0F), { 0.0F, 0.0F, 1.0F })));
+
+        const size_t second = k_record;
+        expect_vec_near(read_vec<glm::vec3>(bytes.data(), second + k_position), { -5.0F, 4.0F, 6.0F });
+        expect_vec_near(read_vec<glm::vec3>(bytes.data(), second + k_normal), { 0.0F, 1.0F, 0.0F });
+        expect_vec_near(read_vec<glm::vec4>(bytes.data(), second + k_tangent), { -1.0F, 0.0F, 0.0F, 1.0F });
+        EXPECT_EQ(read_vec<glm::vec4>(bytes.data(), k_tangent).w, -1.0F);
+    }
+
+    TEST(VertexPlacementTest, ANonUniformScaleKeepsNormalsPerpendicularToTheSurface)
+    {
+        const std::vector<MeshVertex> vertices { { .position = { 1, 1, 0 }, .normal = glm::normalize(glm::vec3(1.0F, 1.0F, 0.0F)), .tangent = { 1, 0, 0, 1 } } };
+        auto bytes = bytes_of(vertices);
+
+        ASSERT_TRUE(Kakshya::place_vertices(bytes, VertexLayout::for_meshes(),
+            glm::scale(glm::mat4(1.0F), { 2.0F, 1.0F, 1.0F })));
+
+        expect_vec_near(read_vec<glm::vec3>(bytes.data(), k_position), { 2.0F, 1.0F, 0.0F });
+        expect_vec_near(read_vec<glm::vec3>(bytes.data(), k_normal), glm::normalize(glm::vec3(0.5F, 1.0F, 0.0F)));
+        expect_vec_near(read_vec<glm::vec4>(bytes.data(), k_tangent), { 1.0F, 0.0F, 0.0F, 1.0F });
+    }
+
+    TEST(VertexPlacementTest, AMatrixWithNoInversePlacesPositionsAndLeavesNormalsAlone)
+    {
+        const auto before = sample_vertices();
+        auto bytes = bytes_of(before);
+
+        ASSERT_TRUE(Kakshya::place_vertices(bytes, VertexLayout::for_meshes(),
+            glm::scale(glm::mat4(1.0F), { 0.0F, 1.0F, 1.0F })));
+
+        for (size_t i = 0; i < before.size(); ++i) {
+            const size_t base = i * k_record;
+            expect_vec_near(read_vec<glm::vec3>(bytes.data(), base + k_position), { 0.0F, before[i].position.y, before[i].position.z });
+            EXPECT_EQ(read_vec<glm::vec3>(bytes.data(), base + k_normal), before[i].normal);
+            EXPECT_EQ(read_vec<glm::vec4>(bytes.data(), base + k_tangent), before[i].tangent);
+        }
+    }
+
+    TEST(VertexPlacementTest, ABadByteCountLeavesTheBytesUntouched)
+    {
+        auto bytes = bytes_of(sample_vertices());
+        bytes.push_back(0);
+        const auto before = bytes;
+
+        EXPECT_FALSE(Kakshya::place_vertices(bytes, VertexLayout::for_meshes(), glm::translate(glm::mat4(1.0F), { 1.0F, 0.0F, 0.0F })));
+        EXPECT_EQ(bytes, before);
+    }
+
+    TEST(VertexPlacementTest, NoBytesAndNoStrideAreRefused)
+    {
+        std::vector<uint8_t> none;
+        std::vector<uint8_t> some(k_record, 0);
+        VertexLayout no_stride = VertexLayout::for_meshes();
+        no_stride.stride_bytes = 0;
+
+        EXPECT_FALSE(Kakshya::place_vertices(none, VertexLayout::for_meshes(), glm::mat4(1.0F)));
+        EXPECT_FALSE(Kakshya::place_vertices(some, no_stride, glm::mat4(1.0F)));
+    }
+
+    TEST(VertexPlacementTest, ALayoutWithoutAPositionIsRefused)
+    {
+        VertexLayout normals_only;
+        normals_only.stride_bytes = 12;
+        normals_only.attributes.push_back({ .component_modality = DataModality::VERTEX_NORMALS_3D, .offset_in_vertex = 0, .name = "normal" });
+        std::vector<uint8_t> bytes(12, 0);
+
+        EXPECT_FALSE(Kakshya::place_vertices(bytes, normals_only, glm::translate(glm::mat4(1.0F), { 1.0F, 0.0F, 0.0F })));
+    }
+
+    TEST(VertexPlacementTest, AnAttributeThatDoesNotFitItsStrideIsSkipped)
+    {
+        constexpr size_t short_stride = 60;
+        std::vector<uint8_t> bytes(short_stride, 0);
+        const glm::vec3 position { 1.0F, 2.0F, 3.0F };
+        std::memcpy(bytes.data(), &position, sizeof(position));
+
+        ASSERT_TRUE(Kakshya::place_vertices(bytes, VertexLayout::for_meshes(short_stride),
+            glm::translate(glm::mat4(1.0F), { 10.0F, 0.0F, 0.0F })));
+
+        expect_vec_near(read_vec<glm::vec3>(bytes.data(), 0), { 11.0F, 2.0F, 3.0F });
+        EXPECT_TRUE(std::all_of(bytes.begin() + static_cast<std::ptrdiff_t>(k_tangent), bytes.end(),
+            [](uint8_t byte) { return byte == 0; }));
     }
 
 } // namespace
