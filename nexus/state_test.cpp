@@ -7,6 +7,7 @@
 
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/IO/Image/EXRWriter.hpp"
+#include "MayaFlux/IO/Image/ImageReader.hpp"
 #include "MayaFlux/Nexus/Principals/Locus.hpp"
 #include "MayaFlux/Nexus/Principals/Presence.hpp"
 #include "MayaFlux/Nexus/State/Decoder.hpp"
@@ -179,10 +180,55 @@ namespace {
         const auto schema = read_schema(snap_base);
 
         ASSERT_TRUE(schema.has_value());
-        EXPECT_FALSE(schema->entities[0].position.has_value());
-        EXPECT_FALSE(schema->entities[0].color.has_value());
-        EXPECT_FALSE(schema->entities[0].size.has_value());
-        EXPECT_FALSE(schema->entities[0].orientation.has_value());
+        const auto& controls = schema->entities[0].controls;
+        EXPECT_FALSE(controls.contains("position"));
+        EXPECT_FALSE(controls.contains("color"));
+        EXPECT_FALSE(controls.contains("size"));
+        EXPECT_TRUE(controls.contains("intensity"));
+        EXPECT_TRUE(controls.contains("radius"));
+    }
+
+    TEST_F(NexusStateTest, EveryControlAnEntityHoldsIsWrittenByNameAndPicturedInTheImage)
+    {
+        auto agent = std::make_shared<Agent>(3.0F);
+        agent->set({ .position = glm::vec3(1.0F, 2.0F, 3.0F), .orientation = glm::quat(1.0F, 0.0F, 0.0F, 0.0F) });
+        source.wire(agent).finalise();
+        add_emitter(source, glm::vec3(5.0F, 6.0F, 7.0F));
+
+        ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
+        const auto schema = read_schema(snap_base);
+
+        ASSERT_TRUE(schema.has_value());
+        EXPECT_EQ(schema->entities[0].controls.at("position"), "1 2 3");
+        EXPECT_EQ(schema->entities[0].controls.at("query_radius"), "3");
+        EXPECT_EQ(schema->entities[1].controls.at("position"), "5 6 7");
+
+        const auto image = IO::ImageReader::load(snap_base + ".exr", 0);
+        ASSERT_TRUE(image.has_value());
+        EXPECT_EQ(image->width, 2U);
+        EXPECT_EQ(image->height, (schema->components.size() + 3U) / 4U);
+        EXPECT_TRUE(std::ranges::any_of(schema->components, [](const auto& component) {
+            return component.name == "orientation" && component.component == 3U;
+        }));
+    }
+
+    TEST_F(NexusStateTest, AnOrientationAndEveryOtherControlRoundTripExactly)
+    {
+        auto agent = std::make_shared<Agent>(3.0F);
+        const glm::quat turn = glm::normalize(glm::quat(0.9F, 0.1F, 0.2F, 0.3F));
+        agent->set({ .position = glm::vec3(0.123456F, -4.5F, 7.0F), .orientation = turn, .color = glm::vec3(0.25F, 0.5F, 0.75F) });
+        source.wire(agent).finalise();
+        ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
+
+        static_cast<void>(decoder.reconstruct(target, snap_base));
+
+        const auto restored = target.get_agent(first_id(target));
+        ASSERT_NE(restored, nullptr);
+        EXPECT_EQ(restored->position(), glm::vec3(0.123456F, -4.5F, 7.0F));
+        ASSERT_TRUE(restored->orientation().has_value());
+        EXPECT_EQ(*restored->orientation(), turn);
+        EXPECT_EQ(restored->color(), glm::vec3(0.25F, 0.5F, 0.75F));
+        EXPECT_FLOAT_EQ(restored->query_radius(), 3.0F);
     }
 
     TEST_F(NexusStateTest, AFabricWithNoEntitiesEncodesTheSchemaOnly)
@@ -321,9 +367,9 @@ namespace {
         EXPECT_EQ(schema->entities[0].locus_nav->eye, glm::vec3(1.0F, 2.0F, 3.0F));
         EXPECT_EQ(schema->entities[1].subkind, "presence");
         EXPECT_EQ(schema->entities[1].radiate_fn_name, "spread");
-        EXPECT_EQ(schema->entities[1].falloff_curve_name, "cosine");
-        ASSERT_TRUE(schema->entities[1].falloff_radius.has_value());
-        EXPECT_FLOAT_EQ(*schema->entities[1].falloff_radius, 2.0F);
+        EXPECT_EQ(schema->entities[1].controls.at("PresenceControls.falloff_curve"),
+            std::to_string(static_cast<int>(Presence::FalloffCurve::Cosine)));
+        EXPECT_EQ(schema->entities[1].controls.at("PresenceControls.falloff_radius"), "2");
     }
 
     TEST_F(NexusStateTest, ACustomFalloffIsNotEncodedAndRestoresAsLinear)
@@ -335,7 +381,7 @@ namespace {
 
         const auto schema = read_schema(snap_base);
         ASSERT_TRUE(schema.has_value());
-        EXPECT_TRUE(schema->entities[0].falloff_curve_name.empty());
+        EXPECT_FALSE(schema->entities[0].controls.contains("PresenceControls.falloff_curve"));
 
         const auto result = decoder.reconstruct(target, snap_base);
         const auto restored = std::dynamic_pointer_cast<Presence>(target.get_agent(first_id(target)));
@@ -869,14 +915,27 @@ namespace {
         EXPECT_NE(decoder.last_error().find("Failed to load schema"), std::string::npos);
     }
 
-    TEST_F(NexusStateTest, DecodeFailsWhenTheImageIsMissing)
+    TEST_F(NexusStateTest, DecodeReadsTheValuesFromTheSchemaAndNeedsNoImage)
     {
-        add_emitter(source);
+        const auto emitter = add_emitter(source, glm::vec3(1.0F, 2.0F, 3.0F));
         ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
         std::filesystem::remove(snap_base + ".exr");
+        emitter->set({ .position = glm::vec3(9.0F) });
 
-        EXPECT_FALSE(decoder.decode(target, snap_base));
-        EXPECT_NE(decoder.last_error().find("Failed to load EXR"), std::string::npos);
+        EXPECT_TRUE(decoder.decode(source, snap_base));
+
+        EXPECT_EQ(emitter->position(), glm::vec3(1.0F, 2.0F, 3.0F));
+    }
+
+    TEST_F(NexusStateTest, AControlTheEntityDoesNotHoldIsReportedAndSkipped)
+    {
+        add_emitter(source, glm::vec3(1.0F));
+        ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
+        edit_schema(snap_base, [](nlohmann::json& json) { json["entities"][0]["controls"]["no_such_control"] = "4"; });
+
+        const auto result = decoder.reconstruct(target, snap_base);
+
+        EXPECT_TRUE(has_warning(result.warnings, "control 'no_such_control' is not held"));
     }
 
     TEST_F(NexusStateTest, AnUnsupportedSchemaVersionIsRejected)

@@ -187,6 +187,17 @@ namespace {
         EXPECT_FALSE(second.contains({ 1.0F, 0.0F, 0.0F }));
     }
 
+    TEST_F(NexusHullTest, TheLocalBoxIsAControlThatCanBeSetDirectly)
+    {
+        Hull hull(buffer);
+        ASSERT_TRUE(hull.contains({ 2.0F, 2.0F, 2.0F }));
+
+        hull.set(Nexus::HullControls { .local = AABB3D { .min = { 100.0F, 0.0F, 0.0F }, .max = { 104.0F, 4.0F, 4.0F } } });
+
+        EXPECT_FALSE(hull.contains({ 2.0F, 2.0F, 2.0F }));
+        EXPECT_TRUE(hull.contains({ 102.0F, 2.0F, 2.0F }));
+    }
+
     TEST_F(NexusHullTest, CrossingsFollowTheBufferWhenItMoves)
     {
         std::vector<uint32_t> entered;
@@ -265,17 +276,44 @@ namespace {
         expect_near(high(), { 20.0F, 5.0F, 5.0F });
     }
 
-    TEST_F(NexusMantleTest, SettingTheBoundsPlacesTheBufferAgain)
+    TEST_F(NexusMantleTest, TheBoundsControlPlacesTheBufferAtTheNextEvaluation)
     {
         Mantle mantle(box({ 0.0F, 0.0F, 0.0F }, { 4.0F, 4.0F, 4.0F }), buffer);
 
-        mantle.set_bounds(box({ 100.0F, 0.0F, 0.0F }, { 108.0F, 8.0F, 8.0F }));
+        mantle.set({ .bounds = box({ 100.0F, 0.0F, 0.0F }, { 108.0F, 8.0F, 8.0F }) });
+        expect_near(low(), { 0.0F, 0.0F, 0.0F });
+
+        mantle.evaluate(1U, {});
 
         expect_near(low(), { 100.0F, 0.0F, 0.0F });
         expect_near(high(), { 108.0F, 8.0F, 8.0F });
     }
 
-    TEST_F(NexusMantleTest, RefitPlacesTheGeometryTheBufferHasNow)
+    TEST_F(NexusMantleTest, ABoxSetOnceIsPlacedOnceAndTheLookStaysAttachedAfter)
+    {
+        Mantle mantle(box({ 0.0F, 0.0F, 0.0F }, { 4.0F, 4.0F, 4.0F }), buffer);
+        mantle.set({ .bounds = box({ 10.0F, 0.0F, 0.0F }, { 14.0F, 4.0F, 4.0F }) });
+
+        mantle.evaluate(1U, {});
+        mantle.evaluate(1U, {});
+
+        expect_near(low(), { 10.0F, 0.0F, 0.0F });
+        expect_near(high(), { 14.0F, 4.0F, 4.0F });
+    }
+
+    TEST_F(NexusMantleTest, TheFitControlChangesHowTheGeometryFillsTheBox)
+    {
+        Mantle mantle(box({ 0.0F, 0.0F, 0.0F }, { 10.0F, 10.0F, 10.0F }), buffer, FitMode::STRETCH);
+        expect_near(high() - low(), { 10.0F, 10.0F, 10.0F });
+
+        mantle.set(Nexus::MantleControls { .fit = FitMode::CENTER });
+        mantle.evaluate(1U, {});
+
+        expect_near(high() - low(), { 4.0F, 4.0F, 4.0F });
+        expect_near((high() + low()) * 0.5F, { 5.0F, 5.0F, 5.0F });
+    }
+
+    TEST_F(NexusMantleTest, RefitPlacesTheGeometryTheBufferHasNowAtTheNextEvaluation)
     {
         Mantle mantle(box({ 0.0F, 0.0F, 0.0F }, { 8.0F, 8.0F, 8.0F }), buffer);
         buffer->set_mesh_data(make_mesh(
@@ -283,6 +321,7 @@ namespace {
             { 0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3 }));
 
         mantle.refit();
+        mantle.evaluate(1U, {});
 
         expect_near(placed(buffer, { 8.0F, 8.0F, 8.0F }), { 8.0F, 8.0F, 8.0F });
         expect_near(placed(buffer, { 0.0F, 0.0F, 0.0F }), { 0.0F, 0.0F, 0.0F });

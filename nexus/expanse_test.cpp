@@ -3,6 +3,8 @@
 
 #include "MayaFlux/Nexus/Expanse.hpp"
 
+#include "../transitive/control_store_fixtures.hpp"
+
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
 namespace MayaFlux::Test {
@@ -82,7 +84,7 @@ namespace {
     TEST(NexusExpanseContainsTest, BoxAndPredicateMustBothPass)
     {
         Expanse both([](const glm::vec3& p) { return p.x > 0.0F; });
-        both.set_bounds(unit_box());
+        both.set({ .bounds = unit_box() });
 
         EXPECT_TRUE(both.contains({ 0.5F, 0.0F, 0.0F }));
         EXPECT_FALSE(both.contains({ -0.5F, 0.0F, 0.0F }));
@@ -95,18 +97,48 @@ namespace {
         EXPECT_FALSE(empty.contains({ 0.0F, 0.0F, 0.0F }));
     }
 
-    TEST(NexusExpanseContainsTest, SetBoundsMovesTheRegionAndClearBoundsRemovesIt)
+    TEST(NexusExpanseContainsTest, TheBoundsControlMovesTheRegionAndUnsettingItRemovesIt)
     {
         Expanse region(unit_box());
         ASSERT_TRUE(region.bounds().has_value());
 
-        region.set_bounds(unit_box().translated({ 10.0F, 0.0F, 0.0F }));
+        region.set({ .bounds = unit_box().translated({ 10.0F, 0.0F, 0.0F }) });
         EXPECT_FALSE(region.contains({ 0.0F, 0.0F, 0.0F }));
         EXPECT_TRUE(region.contains({ 10.0F, 0.0F, 0.0F }));
 
-        region.clear_bounds();
+        region.set({ .bounds = Nexus::Quantity::unset() });
         EXPECT_FALSE(region.bounds().has_value());
         EXPECT_FALSE(region.contains({ 10.0F, 0.0F, 0.0F }));
+    }
+
+    TEST(NexusExpanseContainsTest, AnEmptyControlsStructLeavesTheBoundsAlone)
+    {
+        Expanse region(unit_box());
+
+        region.set(Nexus::ExpanseControls {});
+
+        ASSERT_TRUE(region.bounds().has_value());
+        EXPECT_EQ(region.get().bounds.value<AABB3D>().max, glm::vec3(1.0F));
+    }
+
+    TEST(NexusExpanseContainsTest, TheBoundsAreReachableByNameForTools)
+    {
+        Expanse region(unit_box());
+
+        ASSERT_NE(region.store().find("bounds"), nullptr);
+        EXPECT_TRUE(region.store().find("bounds")->has_value());
+        EXPECT_EQ(region.store().find("bounds")->width(), 6U);
+    }
+
+    TEST(NexusExpanseContainsTest, ExtendHoldsAStructOfTheUsersOwnBesideTheBounds)
+    {
+        Expanse region(unit_box());
+
+        auto& bloom = region.extend<StoreBloomTuning>();
+        region.set(StoreBloomTuning { .rate = ControlValue(0.4) });
+
+        EXPECT_DOUBLE_EQ(bloom.rate.value(), 0.4);
+        EXPECT_TRUE(region.bounds().has_value());
     }
 
     TEST(NexusExpanseIdentityTest, IdsAreNonZeroAndUnique)
