@@ -3,6 +3,7 @@
 
 #include "MayaFlux/Transitive/Facet/ControlBind.hpp"
 #include "MayaFlux/Transitive/Facet/ControlValueStore.hpp"
+#include "MayaFlux/Transitive/Facet/ControlValueText.hpp"
 
 #include <glm/gtc/quaternion.hpp>
 
@@ -15,6 +16,11 @@ namespace MayaFlux::Test {
 namespace {
 
     using NumericStore = ControlValueStore<ControlValue>;
+
+    struct StoreBox {
+        glm::vec3 min;
+        glm::vec3 max;
+    };
 
     class UnsettableSlot : public ControlValue {
     public:
@@ -558,6 +564,64 @@ namespace {
         const auto found = read();
         ASSERT_TRUE(found.has_value());
         EXPECT_EQ(*found, glm::vec3(1.0F, 2.0F, 3.0F));
+    }
+
+    TEST(ControlValueTextEncodeTest, AnEmptySlotHasNoText)
+    {
+        EXPECT_TRUE(Reflect::control_text(ControlValue()).empty());
+    }
+
+    TEST(ControlValueTextEncodeTest, ANumberIsItsShortestText)
+    {
+        EXPECT_EQ(Reflect::control_text(ControlValue(0.5)), "0.5");
+        EXPECT_EQ(Reflect::control_text(ControlValue(3.0)), "3");
+        EXPECT_EQ(Reflect::control_text(ControlValue(true)), "1");
+    }
+
+    TEST(ControlValueTextEncodeTest, AVectorIsOneNumberPerComponent)
+    {
+        EXPECT_EQ(Reflect::control_text(ControlValue(glm::vec2(1.0F, 2.0F))), "1 2");
+        EXPECT_EQ(Reflect::control_text(ControlValue(glm::vec3(1.0F, 2.5F, -3.0F))), "1 2.5 -3");
+        EXPECT_EQ(Reflect::control_text(ControlValue(glm::vec4(1.0F, 2.0F, 3.0F, 4.0F))), "1 2 3 4");
+    }
+
+    TEST(ControlValueTextEncodeTest, AQuaternionIsFourNumbersInXyzwOrder)
+    {
+        EXPECT_EQ(Reflect::control_text(ControlValue(glm::quat(0.5F, 0.25F, 0.125F, 0.0625F))),
+            "0.25 0.125 0.0625 0.5");
+    }
+
+    TEST(ControlValueTextEncodeTest, ABoxIsItsMinThenItsMax)
+    {
+        const ControlValue box(StoreBox { .min = glm::vec3(-1.0F, -2.0F, -3.0F), .max = glm::vec3(4.0F, 5.0F, 6.0F) });
+
+        EXPECT_EQ(Reflect::control_text(box), "-1 -2 -3 4 5 6");
+    }
+
+    TEST(ControlValueTextEncodeTest, EveryWidthReadsBackThroughItsCodec)
+    {
+        const std::vector<ControlValue> slots {
+            ControlValue(0.1),
+            ControlValue(glm::vec2(0.1F, 0.7F)),
+            ControlValue(glm::vec3(0.1F, 0.7F, 1.0F / 3.0F)),
+            ControlValue(glm::quat(0.9F, 0.1F, 0.2F, 0.3F)),
+            ControlValue(StoreBox { .min = glm::vec3(-0.1F), .max = glm::vec3(0.3F) })
+        };
+
+        for (const ControlValue& slot : slots) {
+            ControlValue decoded;
+            Reflect::TextError error = Reflect::TextError::Invalid;
+            ASSERT_TRUE(Reflect::TextCodec<ControlValue>::decode(Reflect::control_text(slot), decoded, error));
+            EXPECT_EQ(decoded.width(), slot.width());
+            if (slot.width() == 1) {
+                EXPECT_DOUBLE_EQ(decoded.value(), slot.value());
+            } else if (slot.width() == 6) {
+                EXPECT_EQ(decoded.value<StoreBox>().min, slot.value<StoreBox>().min);
+                EXPECT_EQ(decoded.value<StoreBox>().max, slot.value<StoreBox>().max);
+            } else {
+                EXPECT_EQ(decoded.value<glm::vec4>().x, slot.value<glm::vec4>().x);
+            }
+        }
     }
 
 }
