@@ -57,6 +57,23 @@ namespace {
             resources().initialize_image(image);
             return image;
         }
+
+        static void record_deferred_copy(const std::shared_ptr<VKBuffer>& source, RawVulkanBuffer& destination, size_t size)
+        {
+            const auto old_handle = source->get_buffer();
+            resources().record_deferred_commands([old_handle, &destination, size](vk::CommandBuffer cmd) {
+                const vk::BufferCopy region { 0, 0, size };
+                cmd.copyBuffer(old_handle, destination.buffer(), 1, &region);
+                const vk::MemoryBarrier2 to_host {
+                    vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+                    vk::PipelineStageFlagBits2::eHost, vk::AccessFlagBits2::eHostRead
+                };
+                vk::DependencyInfo dependency {};
+                dependency.memoryBarrierCount = 1;
+                dependency.pMemoryBarriers = &to_host;
+                cmd.pipelineBarrier2(dependency);
+            }, { source });
+        }
     };
 
     struct RoundTripCase {
@@ -145,6 +162,51 @@ TEST_F(BackendResourceManagerTest, RetiredBufferIsDetachedAtOnceAndCanBeInitiali
     resources().cleanup_buffer(buffer);
 }
 
+MAYAFLUX_TEST_WITH(TEST_F, BackendResourceManagerTest, DeferredCopyCanReadABufferRetiredBeforeFlush, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
+{
+    backend().wait_idle();
+    auto source = staging_buffer(128);
+    RawVulkanBuffer destination(backend(), 128, k_transfer_usage, true);
+    const auto expected = pattern(128, 19);
+    std::memcpy(source->get_mapped_ptr(), expected.data(), expected.size());
+    std::memset(destination.mapped(), 0, expected.size());
+
+    record_deferred_copy(source, destination, expected.size());
+
+    resources().retire_buffer(source);
+    EXPECT_FALSE(source->is_initialized());
+
+    auto& commands = backend().get_command_manager();
+    EXPECT_TRUE(commands.has_deferred_commands());
+    resources().flush_deferred_commands();
+    commands.wait(commands.submitted());
+    commands.collect();
+
+    EXPECT_EQ(std::memcmp(destination.mapped(), expected.data(), expected.size()), 0);
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, BackendResourceManagerTest, CleanupKeepsADeferredBufferReadAlive, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
+{
+    backend().wait_idle();
+    auto source = staging_buffer(128);
+    RawVulkanBuffer destination(backend(), 128, k_transfer_usage, true);
+    const auto expected = pattern(128, 71);
+    std::memcpy(source->get_mapped_ptr(), expected.data(), expected.size());
+    std::memset(destination.mapped(), 0, expected.size());
+
+    record_deferred_copy(source, destination, expected.size());
+    resources().cleanup_buffer(source);
+
+    auto& commands = backend().get_command_manager();
+    EXPECT_TRUE(commands.has_deferred_commands());
+    resources().flush_deferred_commands();
+    commands.wait(commands.submitted());
+    commands.collect();
+
+    EXPECT_FALSE(source->is_initialized());
+    EXPECT_EQ(std::memcmp(destination.mapped(), expected.data(), expected.size()), 0);
+}
+
 TEST_F(BackendResourceManagerTest, RetiringNullOrUnmanagedBuffersIsNoOp)
 {
     auto buffer = std::make_shared<VKBuffer>(64, VKBuffer::Usage::STAGING, Kakshya::DataModality::IMAGE_COLOR);
@@ -181,6 +243,57 @@ TEST_F(BackendResourceManagerTest, ResizingAManagedBufferPreservesItsBytesAndKee
     EXPECT_TRUE(buffer->is_initialized());
 
     resources().cleanup_buffer(buffer);
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, BackendResourceManagerTest, ResizeKeepsADeferredReadersOldBufferAlive, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
+{
+    backend().wait_idle();
+    auto source = staging_buffer(128);
+    RawVulkanBuffer destination(backend(), 128, k_transfer_usage, true);
+    const auto expected = pattern(128, 43);
+    std::memcpy(source->get_mapped_ptr(), expected.data(), expected.size());
+    std::memset(destination.mapped(), 0, expected.size());
+
+    record_deferred_copy(source, destination, expected.size());
+
+    source->resize(256, false);
+    EXPECT_TRUE(source->is_initialized());
+    EXPECT_EQ(source->get_size_bytes(), 256U);
+
+    auto& commands = backend().get_command_manager();
+    EXPECT_TRUE(commands.has_deferred_commands());
+    resources().flush_deferred_commands();
+    commands.wait(commands.submitted());
+    commands.collect();
+
+    EXPECT_EQ(std::memcmp(destination.mapped(), expected.data(), expected.size()), 0);
+    resources().cleanup_buffer(source);
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, BackendResourceManagerTest, ResizingOneBufferLeavesAnotherBuffersDeferredCopyPending, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
+{
+    backend().wait_idle();
+    auto resized = staging_buffer(64);
+    auto source = staging_buffer(128);
+    RawVulkanBuffer destination(backend(), 128, k_transfer_usage, true);
+    const auto expected = pattern(128, 97);
+    std::memcpy(source->get_mapped_ptr(), expected.data(), expected.size());
+    std::memset(destination.mapped(), 0, expected.size());
+
+    record_deferred_copy(source, destination, expected.size());
+    resized->resize(256, false);
+
+    auto& commands = backend().get_command_manager();
+    EXPECT_TRUE(commands.has_deferred_commands());
+    EXPECT_NE(std::memcmp(destination.mapped(), expected.data(), expected.size()), 0);
+
+    resources().flush_deferred_commands();
+    commands.wait(commands.submitted());
+    commands.collect();
+
+    EXPECT_EQ(std::memcmp(destination.mapped(), expected.data(), expected.size()), 0);
+    resources().cleanup_buffer(resized);
+    resources().cleanup_buffer(source);
 }
 
 TEST_F(BackendResourceManagerTest, DeviceAddressIsNonZeroForAddressableBuffers)

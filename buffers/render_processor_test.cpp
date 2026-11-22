@@ -1,10 +1,8 @@
 #include "gtest/gtest.h"
-#include "../../support/test_metadata.hpp"
+#include "../support/test_metadata.hpp"
 
-
-#include "../../support/native_window_test_support.hpp"
-
-#if defined(MAYAFLUX_TEST_NATIVE_WINDOWS)
+#include "../support/vulkan_test_support.hpp"
+#include "../support/native_window_test_support.hpp"
 
 #include "MayaFlux/Buffers/BufferProcessingChain.hpp"
 #include "MayaFlux/Buffers/Root/RootGraphicsBuffer.hpp"
@@ -14,22 +12,215 @@
 #include "MayaFlux/Kakshya/NDData/VertexLayout.hpp"
 #include "MayaFlux/Kinesis/Viewport/ViewTransform.hpp"
 #include "MayaFlux/Portal/Graphics/RenderFlow.hpp"
+#include "MayaFlux/Portal/Graphics/SamplerForge.hpp"
+#include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
 #include "MayaFlux/Registry/Service/DisplayService.hpp"
 
-MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
+MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+
+namespace MayaFlux::Test {
+namespace {
+
+    using Buffers::RenderProcessor;
+    using Buffers::ShaderBinding;
+    using Buffers::ShaderConfig;
+    using Portal::Graphics::AddressMode;
+    using Portal::Graphics::FilterMode;
+    using Portal::Graphics::SampledTexture;
+    using Portal::Graphics::SamplerConfig;
+    using Portal::Graphics::SamplerForge;
+
+    constexpr const char* k_vertex = R"(#version 460
+void main() {
+    vec2 p[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+    gl_Position = vec4(p[gl_VertexIndex], 0.0, 1.0);
+}
+)";
+
+    SamplerConfig nearest_clamped()
+    {
+        return { .mag_filter = FilterMode::NEAREST, .min_filter = FilterMode::NEAREST, .address_mode_u = AddressMode::CLAMP_TO_EDGE };
+    }
+
+    class RenderProcessorSamplerTest : public VulkanDeviceTest {
+    protected:
+        static void SetUpTestSuite()
+        {
+            VulkanDeviceTest::SetUpTestSuite();
+            if (!vulkan_unavailable_reason().empty())
+                return;
+
+            s_backend_ref = std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) { });
+            auto& foundry = Portal::Graphics::get_shader_foundry();
+            foundry.shutdown();
+            s_foundry_ready = foundry.initialize(s_backend_ref);
+            if (!s_foundry_ready)
+                return;
+
+            auto& loom = Portal::Graphics::get_texture_manager();
+            loom.shutdown();
+            s_texture_ready = loom.initialize(s_backend_ref);
+        }
+
+        static void TearDownTestSuite()
+        {
+            SamplerForge::instance().shutdown();
+            if (s_texture_ready)
+                Portal::Graphics::get_texture_manager().shutdown();
+            if (s_foundry_ready)
+                Portal::Graphics::get_shader_foundry().shutdown();
+            s_texture_ready = false;
+            s_foundry_ready = false;
+            s_backend_ref.reset();
+            VulkanDeviceTest::TearDownTestSuite();
+        }
+
+        void SetUp() override
+        {
+            VulkanDeviceTest::SetUp();
+            if (IsSkipped())
+                return;
+            ASSERT_TRUE(s_foundry_ready);
+            ASSERT_TRUE(s_texture_ready);
+
+            SamplerForge::instance().shutdown();
+            ASSERT_TRUE(SamplerForge::instance().initialize(s_backend_ref));
+
+            ShaderConfig shader { k_vertex };
+            shader.stage = Portal::Graphics::ShaderStage::VERTEX;
+            shader.bindings["map"] = ShaderBinding(0, 2, vk::DescriptorType::eCombinedImageSampler);
+            render = std::make_shared<RenderProcessor>(shader);
+
+            image = Portal::Graphics::get_texture_manager().create_2d(4, 4, Portal::Graphics::ImageFormat::RGBA8);
+            ASSERT_NE(image, nullptr);
+        }
+
+        void TearDown() override
+        {
+            render.reset();
+            image.reset();
+            SamplerForge::instance().shutdown();
+        }
+
+        static size_t cached() { return SamplerForge::instance().get_sampler_count(); }
+
+        std::shared_ptr<RenderProcessor> render;
+        std::shared_ptr<Core::VKImage> image;
+
+    private:
+        static inline std::shared_ptr<Core::VulkanBackend> s_backend_ref;
+        static inline bool s_foundry_ready {};
+        static inline bool s_texture_ready {};
+    };
+
+    TEST_F(RenderProcessorSamplerTest, ABindWithoutASamplerCreatesTheDefault)
+    {
+        render->bind_texture(2, image);
+
+        EXPECT_EQ(cached(), 1U);
+    }
+
+    TEST_F(RenderProcessorSamplerTest, ABindWithAConfigCreatesThatSampler)
+    {
+        render->bind_texture(2, image, nearest_clamped());
+
+        EXPECT_EQ(cached(), 1U);
+        EXPECT_EQ(SamplerForge::instance().get_or_create(nearest_clamped()), SamplerForge::instance().get_or_create(nearest_clamped()));
+        EXPECT_EQ(cached(), 1U);
+    }
+
+    TEST_F(RenderProcessorSamplerTest, ABindingKeepsItsChosenSamplerWhenBoundAgainWithoutOne)
+    {
+        render->bind_texture(2, image, nearest_clamped());
+        ASSERT_EQ(cached(), 1U);
+
+        render->bind_texture(2, image);
+
+        EXPECT_EQ(cached(), 1U);
+    }
+
+    TEST_F(RenderProcessorSamplerTest, ABindingWithoutAChoiceGetsTheDefaultWhileAnotherKeepsItsOwn)
+    {
+        render->bind_texture(2, image, nearest_clamped());
+        render->bind_texture(3, image);
+
+        EXPECT_EQ(cached(), 2U);
+    }
+
+    TEST_F(RenderProcessorSamplerTest, ASamplerChosenBeforeTheTextureExistsAppliesToTheFirstBind)
+    {
+        render->set_binding_sampler(2, nearest_clamped());
+        ASSERT_EQ(cached(), 1U);
+
+        render->bind_texture(2, image);
+
+        EXPECT_EQ(cached(), 1U);
+    }
+
+    TEST_F(RenderProcessorSamplerTest, TheNamedFormsReachTheBindingTheNameIsDeclaredAt)
+    {
+        render->bind_texture("map", image, nearest_clamped());
+        ASSERT_EQ(cached(), 1U);
+
+        render->bind_texture(2, image);
+
+        EXPECT_EQ(cached(), 1U);
+    }
+
+    TEST_F(RenderProcessorSamplerTest, ANamedBindToAnUnknownDescriptorChoosesNothing)
+    {
+        render->set_binding_sampler("missing", nearest_clamped());
+
+        EXPECT_EQ(cached(), 0U);
+    }
+
+    TEST_F(RenderProcessorSamplerTest, ASampledTextureWithASamplerBindsItAndKeepsItForTheBinding)
+    {
+        render->bind_texture(SampledTexture { .name = "map", .image = image, .sampler = nearest_clamped() });
+        ASSERT_EQ(cached(), 1U);
+
+        render->bind_texture(2, image);
+
+        EXPECT_EQ(cached(), 1U);
+    }
+
+    TEST_F(RenderProcessorSamplerTest, ASampledTextureWithoutASamplerGetsTheDefault)
+    {
+        render->bind_texture(SampledTexture { .name = "map", .image = image });
+
+        EXPECT_EQ(cached(), 1U);
+        EXPECT_EQ(SamplerForge::instance().get_or_create({ .enable_mipmaps = true, .border_color = Portal::Graphics::BorderColor::OPAQUE_BLACK }),
+            SamplerForge::instance().get_or_create({ .enable_mipmaps = true, .border_color = Portal::Graphics::BorderColor::OPAQUE_BLACK }));
+        EXPECT_EQ(cached(), 1U);
+    }
+
+    TEST_F(RenderProcessorSamplerTest, ChangingTheSamplerOfABoundBindingCreatesItAndKeepsTheTexture)
+    {
+        render->bind_texture(2, image);
+        ASSERT_EQ(cached(), 1U);
+
+        render->set_binding_sampler(2, nearest_clamped());
+
+        EXPECT_EQ(cached(), 2U);
+
+        render->bind_texture(2, image);
+        EXPECT_EQ(cached(), 2U);
+    }
+
+} // namespace
+} // namespace MayaFlux::Test
+
+#if defined(MAYAFLUX_TEST_NATIVE_WINDOWS)
 
 namespace MayaFlux::Test {
 namespace {
 
     using Buffers::BufferProcessingChain;
     using Buffers::ProcessingToken;
-    using Buffers::RenderProcessor;
     using Buffers::RootGraphicsBuffer;
-    using Buffers::ShaderBinding;
-    using Buffers::ShaderConfig;
     using Buffers::VKBuffer;
     using Portal::Graphics::RenderPipelineID;
 
@@ -202,7 +393,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         bool flow_ready {};
     };
 
-    TEST_F(RenderProcessorPresentationTest, ProcessingCreatesOnePipelineAssociatedWithTheBufferAndWindow)
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, ProcessingCreatesOnePipelineAssociatedWithTheBufferAndWindow, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_plain_vertex);
 
@@ -218,7 +409,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         EXPECT_TRUE(pipeline_alive(id));
     }
 
-    TEST_F(RenderProcessorPresentationTest, RepeatedProcessingKeepsTheSamePipeline)
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, RepeatedProcessingKeepsTheSamePipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_plain_vertex);
         tick();
@@ -232,7 +423,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         EXPECT_EQ(root->get_renderable_buffers().size(), 1U);
     }
 
-    TEST_F(RenderProcessorPresentationTest, TriangulationStateSpecializesEachCreatedPipeline)
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, TriangulationStateSpecializesEachCreatedPipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_plain_vertex, true, 0, k_specialized_fragment, 3 * 68);
         auto layout = Kakshya::VertexLayout::for_points();
@@ -331,7 +522,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         EXPECT_EQ(*milled_pixel, (std::array<uint8_t, 4> { 0, 255, 0, 255 }));
     }
 
-    TEST_F(RenderProcessorPresentationTest, ReplacingThePipelineLeavesOneAssociationAndRetiresTheOldPipeline)
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, ReplacingThePipelineLeavesOneAssociationAndRetiresTheOldPipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_plain_vertex);
         tick();
@@ -356,7 +547,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         EXPECT_TRUE(pipeline_alive(replacement));
     }
 
-    TEST_F(RenderProcessorPresentationTest, PipelineIsCreatedOnceTheBufferGainsItsVertexLayout)
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, PipelineIsCreatedOnceTheBufferGainsItsVertexLayout, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_plain_vertex, false);
 
@@ -371,7 +562,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         EXPECT_EQ(root->get_renderable_buffers().size(), 1U);
     }
 
-    TEST_F(RenderProcessorPresentationTest, PushConstantFeedBeyondTheCreatedRangeCreatesAReplacementPipeline)
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, PushConstantFeedBeyondTheCreatedRangeCreatesAReplacementPipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_push_vertex, true, sizeof(float));
         render->set_push_constant_data(1.0F);
@@ -392,7 +583,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         EXPECT_TRUE(retired_within(original));
     }
 
-    TEST_F(RenderProcessorPresentationTest, PushConstantFeedWithinTheCreatedRangeKeepsThePipeline)
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, PushConstantFeedWithinTheCreatedRangeKeepsThePipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_push_vertex, true, 2 * sizeof(float));
         render->set_push_constant_data(std::array<float, 2> { 1.0F, 0.0F });
@@ -405,7 +596,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         EXPECT_EQ(render->get_render_pipeline_id(), original);
     }
 
-    TEST_F(RenderProcessorPresentationTest, BindingAddedAfterTheFirstDrawCreatesAReplacementPipeline)
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, BindingAddedAfterTheFirstDrawCreatesAReplacementPipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_plain_vertex);
         tick();
@@ -423,7 +614,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         EXPECT_TRUE(retired_within(original));
     }
 
-    TEST_F(RenderProcessorPresentationTest, PipelineWaitsForABindingTheShaderUsesAndIsCreatedOnceItIsBound)
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, PipelineWaitsForABindingTheShaderUsesAndIsCreatedOnceItIsBound, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_plain_vertex, true, 0, k_storage_fragment);
 
@@ -441,7 +632,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         EXPECT_EQ(root->get_renderable_buffers().size(), 1U);
     }
 
-    TEST_F(RenderProcessorPresentationTest, PipelineIsCreatedOnceTheMissingBindingIsStagedOnTheBuffer)
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, PipelineIsCreatedOnceTheMissingBindingIsStagedOnTheBuffer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_plain_vertex, true, 0, k_storage_fragment);
         tick();
@@ -464,7 +655,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         EXPECT_EQ(root->get_renderable_buffers().size(), 1U);
     }
 
-    TEST_F(RenderProcessorPresentationTest, PipelineIsCreatedWithAPlaceholderWhenTheBindingNeverArrivesAndYieldsWhenItDoes)
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, PipelineIsCreatedWithAPlaceholderWhenTheBindingNeverArrivesAndYieldsWhenItDoes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_plain_vertex, true, 0, k_storage_fragment);
 
@@ -517,7 +708,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
     class RenderProcessorUnchangedSetterTest : public RenderProcessorPresentationTest,
                                                public ::testing::WithParamInterface<UnchangedSetterCase> { };
 
-    MAYAFLUX_TEST_WITH(TEST_P, RenderProcessorUnchangedSetterTest, RepeatingTheSameValueKeepsThePipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    MAYAFLUX_TEST_WITH(TEST_P, RenderProcessorUnchangedSetterTest, RepeatingTheSameValueKeepsThePipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_push_vertex, true, sizeof(float));
         render->set_push_constant_data(1.0F);
@@ -540,7 +731,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         ::testing::ValuesIn(unchanged_setter_cases()),
         [](const ::testing::TestParamInfo<UnchangedSetterCase>& info) { return std::string(info.param.name); });
 
-    TEST_F(RenderProcessorPresentationTest, DetachingTheProcessorRemovesItsAssociationAndDestroyingItRetiresThePipeline)
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, DetachingTheProcessorRemovesItsAssociationAndDestroyingItRetiresThePipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         prepare_draw(k_plain_vertex);
         tick();

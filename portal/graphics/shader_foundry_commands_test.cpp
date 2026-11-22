@@ -554,6 +554,48 @@ namespace {
         EXPECT_TRUE(*released);
     }
 
+    TEST_F(ShaderFoundryDeviceTest, ReleaseAfterSubmitLeavesOpenDeferredBatchUntouched)
+    {
+        backend()->wait_idle();
+        auto& commands = backend()->get_command_manager();
+        backend()->get_resource_manager().record_deferred_commands([](vk::CommandBuffer) { });
+        ASSERT_TRUE(commands.has_deferred_commands());
+
+        bool released = false;
+        foundry().release_after_submit([&released] { released = true; });
+        EXPECT_TRUE(commands.has_deferred_commands());
+        EXPECT_TRUE(released);
+
+        foundry().flush_deferred();
+        commands.wait(commands.submitted());
+        commands.collect();
+    }
+
+    TEST_F(ShaderFoundryDeviceTest, WaitSubmittedLeavesDeferredWorkUnsubmitted)
+    {
+        auto output = host_buffer();
+        clear(*output);
+        auto& commands = backend()->get_command_manager();
+        backend()->get_resource_manager().record_deferred_commands([&output](vk::CommandBuffer cmd) {
+            cmd.fillBuffer(output->buffer(), 0, k_bytes, k_pattern);
+            const vk::MemoryBarrier2 to_host {
+                vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+                vk::PipelineStageFlagBits2::eHost, vk::AccessFlagBits2::eHostRead
+            };
+            vk::DependencyInfo dependency {};
+            dependency.memoryBarrierCount = 1;
+            dependency.pMemoryBarriers = &to_host;
+            cmd.pipelineBarrier2(dependency);
+        });
+
+        foundry().wait_submitted();
+        EXPECT_TRUE(commands.has_deferred_commands());
+
+        foundry().flush_deferred();
+        commands.wait(commands.submitted());
+        EXPECT_EQ(words(*output), std::vector<uint32_t>(k_words, k_pattern));
+    }
+
     TEST_F(ShaderFoundryDeviceTest, EveryQueueKindHasAQueue)
     {
         EXPECT_TRUE(foundry().get_graphics_queue());
