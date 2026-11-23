@@ -33,18 +33,18 @@ namespace {
 
     /** a parent at x = 10 with two wheels sharing a mesh, and a lamp with another. */
     struct Wheels {
-        MeshAssemblyContainer assembly;
+        std::shared_ptr<MeshAssemblyContainer> assembly = std::make_shared<MeshAssemblyContainer>();
         size_t wheel {};
         size_t lamp {};
 
         Wheels()
         {
-            wheel = assembly.add_source({ .geometry = triangle(), .name = "wheel" });
-            lamp = assembly.add_source({ .geometry = triangle(), .name = "lamp" });
-            const auto car = assembly.add_placement({ .name = "car", .local = moved(10.0F) }).value();
-            std::ignore = assembly.add_placement({ .name = "front_left", .parent = car, .source = wheel, .local = moved(1.0F) });
-            std::ignore = assembly.add_placement({ .name = "front_right", .parent = car, .source = wheel, .local = moved(-1.0F) });
-            std::ignore = assembly.add_placement({ .name = "lamp", .source = lamp, .local = moved(0.0F, 5.0F) });
+            wheel = assembly->add_source({ .geometry = triangle(), .name = "wheel" });
+            lamp = assembly->add_source({ .geometry = triangle(), .name = "lamp" });
+            const auto car = assembly->add_placement({ .name = "car", .local = moved(10.0F) }).value();
+            std::ignore = assembly->add_placement({ .name = "front_left", .parent = car, .source = wheel, .local = moved(1.0F) });
+            std::ignore = assembly->add_placement({ .name = "front_right", .parent = car, .source = wheel, .local = moved(-1.0F) });
+            std::ignore = assembly->add_placement({ .name = "lamp", .source = lamp, .local = moved(0.0F, 5.0F) });
         }
     };
 
@@ -53,7 +53,7 @@ namespace {
 TEST(InstanceNetworkAssemblyTest, ARowGroupBecomesOneSlotPerRowSharingOneTemplate)
 {
     const Wheels wheels;
-    const auto groups = wheels.assembly.groups();
+    const auto groups = wheels.assembly->groups();
     ASSERT_EQ(groups.size(), 2U);
 
     const auto network = make_instance_network(wheels.assembly, groups[0]);
@@ -71,7 +71,7 @@ TEST(InstanceNetworkAssemblyTest, ARowGroupBecomesOneSlotPerRowSharingOneTemplat
 TEST(InstanceNetworkAssemblyTest, EachSlotTakesItsRowsWorldPlacement)
 {
     const Wheels wheels;
-    const auto groups = wheels.assembly.groups();
+    const auto groups = wheels.assembly->groups();
 
     const auto network = make_instance_network(wheels.assembly, groups[0]);
 
@@ -83,7 +83,7 @@ TEST(InstanceNetworkAssemblyTest, EachSlotTakesItsRowsWorldPlacement)
 TEST(InstanceNetworkAssemblyTest, ASingleRowGroupIsANetworkOfOne)
 {
     const Wheels wheels;
-    const auto groups = wheels.assembly.groups();
+    const auto groups = wheels.assembly->groups();
 
     const auto network = make_instance_network(wheels.assembly, groups[1]);
 
@@ -96,7 +96,7 @@ TEST(InstanceNetworkAssemblyTest, EverySlotKeepsTheDefaultPayload)
 {
     const Wheels wheels;
 
-    const auto network = make_instance_network(wheels.assembly, wheels.assembly.groups()[0]);
+    const auto network = make_instance_network(wheels.assembly, wheels.assembly->groups()[0]);
 
     ASSERT_NE(network, nullptr);
     for (const auto& slot : network->slots()) {
@@ -108,20 +108,20 @@ TEST(InstanceNetworkAssemblyTest, EverySlotKeepsTheDefaultPayload)
 
 TEST(InstanceNetworkAssemblyTest, ASourceThatIsNotAMeshMakesNoNetwork)
 {
-    MeshAssemblyContainer assembly;
-    const auto points = assembly.add_source({
+    std::shared_ptr<MeshAssemblyContainer> assembly = std::make_shared<MeshAssemblyContainer>();
+    const auto points = assembly->add_source({
         .geometry = Kakshya::SpatialData { .topology = Portal::Graphics::PrimitiveTopology::POINT_LIST,
             .positions = { { 0.0F, 0.0F, 0.0F } } },
         .name = "points" });
-    ASSERT_TRUE(assembly.add_placement({ .name = "cloud", .source = points }).has_value());
+    ASSERT_TRUE(assembly->add_placement({ .name = "cloud", .source = points }).has_value());
 
-    EXPECT_EQ(make_instance_network(assembly, assembly.groups()[0]), nullptr);
+    EXPECT_EQ(make_instance_network(assembly, assembly->groups()[0]), nullptr);
 }
 
 TEST(InstanceNetworkAssemblyTest, AGroupWithARowOutOfRangeMakesNoNetwork)
 {
     const Wheels wheels;
-    auto group = wheels.assembly.groups()[0];
+    auto group = wheels.assembly->groups()[0];
     group.rows.push_back(99);
 
     EXPECT_EQ(make_instance_network(wheels.assembly, group), nullptr);
@@ -130,10 +130,10 @@ TEST(InstanceNetworkAssemblyTest, AGroupWithARowOutOfRangeMakesNoNetwork)
 TEST(InstanceNetworkAssemblyTest, DifferentMaterialsGiveSeparateNetworksForTheSameMesh)
 {
     Wheels wheels;
-    const auto chrome = wheels.assembly.add_material({ .name = "chrome" });
-    ASSERT_TRUE(wheels.assembly.add_placement({ .name = "spare", .parent = 0, .source = wheels.wheel, .material = chrome }).has_value());
+    const auto chrome = wheels.assembly->add_material({ .name = "chrome" });
+    ASSERT_TRUE(wheels.assembly->add_placement({ .name = "spare", .parent = 0, .source = wheels.wheel, .material = chrome }).has_value());
 
-    const auto groups = wheels.assembly.groups();
+    const auto groups = wheels.assembly->groups();
 
     ASSERT_EQ(groups.size(), 3U);
     const auto plain = make_instance_network(wheels.assembly, groups[0]);
