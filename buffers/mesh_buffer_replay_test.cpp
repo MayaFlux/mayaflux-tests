@@ -5,12 +5,14 @@
 
 #include "network/network_buffer_fixture.hpp"
 
+#include "MayaFlux/Buffers/Geometry/GeometryBuffer.hpp"
 #include "MayaFlux/Buffers/Geometry/MeshBuffer.hpp"
 #include "MayaFlux/Buffers/Shaders/VertexFieldProcessor.hpp"
 #include "MayaFlux/Kakshya/NDData/MeshData.hpp"
 #include "MayaFlux/Kinesis/Tendency/DualField.hpp"
 #include "MayaFlux/Kinesis/Tendency/ShaderCompat.hpp"
 #include "MayaFlux/Kriya/MeshReflow.hpp"
+#include "MayaFlux/Nodes/Graphics/MeshWriterNode.hpp"
 #include "MayaFlux/Nodes/Network/Operators/GpuFieldOperator.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
@@ -94,6 +96,12 @@ namespace {
             }
             mesh.reset();
             field_op.reset();
+            if (geometry) {
+                geometry->set_default_processor(nullptr);
+                if (geometry->is_initialized() && service)
+                    service->destroy_buffer(geometry);
+                geometry.reset();
+            }
             NetworkBufferDeviceTest::TearDown();
         }
 
@@ -166,6 +174,7 @@ namespace {
 
         std::shared_ptr<MeshBuffer> mesh;
         std::shared_ptr<GpuFieldOperator> field_op;
+        std::shared_ptr<Buffers::GeometryBuffer> geometry;
     };
 
     TEST_F(MeshBufferReplayDeviceTest, ABufferMadeEmptyDrawsNothingUntilItsFirstFrame)
@@ -391,6 +400,25 @@ namespace {
         for (size_t i = 0; i < vertices.size(); ++i) {
             EXPECT_EQ(read_vertices[i].position, vertices[i].position) << "vertex " << i;
         }
+    }
+
+    TEST_F(MeshBufferReplayDeviceTest, AGeometryBufferWhoseNodeShrinksDrawsOnlyItsOwnIndices)
+    {
+        auto node = std::make_shared<Nodes::GpuSync::MeshWriterNode>(6);
+        node->set_mesh(replay_triangles(2), replay_indices(2));
+        node->compute_frame();
+        geometry = std::make_shared<Buffers::GeometryBuffer>(node);
+        service->initialize_buffer(geometry);
+        ASSERT_TRUE(geometry->is_initialized());
+        geometry->setup_processors(Buffers::ProcessingToken::GRAPHICS_BACKEND);
+        geometry->process_default();
+        ASSERT_EQ(geometry->get_index_buffer_size(), 6 * sizeof(uint32_t));
+
+        node->set_mesh(replay_triangles(1), replay_indices(1));
+        node->compute_frame();
+        geometry->process_default();
+
+        EXPECT_EQ(geometry->get_index_buffer_size(), 3 * sizeof(uint32_t));
     }
 
     TEST_F(MeshBufferReplayDeviceTest, ABufferWithoutAFieldOperatorWiresNoPass)

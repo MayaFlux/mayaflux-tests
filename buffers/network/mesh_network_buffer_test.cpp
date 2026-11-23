@@ -522,6 +522,26 @@ namespace {
         }
     }
 
+    TEST_F(MeshNetworkBufferDeviceTest, ASlotMeshThatShrinksDrawsOnlyItsOwnIndices)
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        auto node = make_mesh(triangle(0.2F, { 1, 1, 1 }), { 0, 1, 2 });
+        std::vector<MeshVertex> two = triangle(0.2F, { 1, 1, 1 });
+        const auto second = triangle(0.4F, { 0, 1, 0 });
+        two.insert(two.end(), second.begin(), second.end());
+        node->set_mesh(two, std::vector<uint32_t> { 0, 1, 2, 3, 4, 5 });
+        node->compute_frame();
+        network->add_slot("only", node);
+        attach(network);
+        ASSERT_EQ(buffer->get_index_buffer_size(), 6 * sizeof(uint32_t));
+
+        node->set_mesh(triangle(0.2F, { 1, 1, 1 }), std::vector<uint32_t> { 0, 1, 2 });
+        node->compute_frame();
+        buffer->process_default();
+
+        EXPECT_EQ(buffer->get_index_buffer_size(), 3 * sizeof(uint32_t));
+    }
+
     TEST_F(MeshNetworkBufferDeviceTest, AGpuFieldDisplacesTheRestGeometryEveryCycleWithoutAccumulating)
     {
         auto network = std::make_shared<MeshNetwork>();
