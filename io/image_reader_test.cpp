@@ -1,16 +1,17 @@
-#include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
-
+#include "gtest/gtest.h"
 
 #include "../support/scoped_working_dir.hpp"
 #include "../support/vulkan_test_support.hpp"
 
-#include "MayaFlux/IO/Image/ImageReader.hpp"
-#include "MayaFlux/IO/Image/ImageExport.hpp"
-#include "MayaFlux/IO/IOManager.hpp"
-#include "MayaFlux/Core/GlobalStreamInfo.hpp"
-#include "MayaFlux/Buffers/Textures/TextureBuffer.hpp"
 #include "MayaFlux/Buffers/Textures/TextBuffer.hpp"
+#include "MayaFlux/Buffers/Textures/TextureBuffer.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
+#include "MayaFlux/Core/GlobalStreamInfo.hpp"
+#include "MayaFlux/IO/Detail/IOTransitions.hpp"
+#include "MayaFlux/IO/IOManager.hpp"
+#include "MayaFlux/IO/Image/ImageExport.hpp"
+#include "MayaFlux/IO/Image/ImageReader.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 
@@ -92,8 +93,7 @@ namespace {
         EXPECT_EQ(image->height, image_height);
         EXPECT_EQ(image->channels, 4U);
         ASSERT_NE(image->as_uint8(), nullptr);
-        EXPECT_EQ(*image->as_uint8(), expected_rgba(
-            Kakshya::Region::image_rect(0, 0, 3, 2)));
+        EXPECT_EQ(*image->as_uint8(), expected_rgba(Kakshya::Region::image_rect(0, 0, 3, 2)));
 
         const auto explicit_channels = IO::ImageReader::load(
             std::filesystem::path("image.pnm"), 4);
@@ -113,8 +113,7 @@ namespace {
         EXPECT_EQ(memory->height, image_height);
         EXPECT_EQ(memory->format, Kakshya::ImageFormat::RGBA8);
         ASSERT_NE(memory->as_uint8(), nullptr);
-        EXPECT_EQ(*memory->as_uint8(), expected_rgba(
-            Kakshya::Region::image_rect(0, 0, 3, 2)));
+        EXPECT_EQ(*memory->as_uint8(), expected_rgba(Kakshya::Region::image_rect(0, 0, 3, 2)));
 
         IO::ImageReader reader;
         EXPECT_FALSE(reader.is_open());
@@ -155,9 +154,7 @@ namespace {
         ASSERT_NE(whole->as_uint8(), nullptr);
         ASSERT_NE(crop->as_uint8(), nullptr);
         EXPECT_EQ(crop->format, Kakshya::ImageFormat::R8);
-        EXPECT_EQ(*crop->as_uint8(), (std::vector<uint8_t> {
-            (*whole->as_uint8())[5], (*whole->as_uint8())[6],
-            (*whole->as_uint8())[9], (*whole->as_uint8())[10] }));
+        EXPECT_EQ(*crop->as_uint8(), (std::vector<uint8_t> { (*whole->as_uint8())[5], (*whole->as_uint8())[6], (*whole->as_uint8())[9], (*whole->as_uint8())[10] }));
     }
 
     struct InvalidCropCase {
@@ -180,8 +177,7 @@ namespace {
             InvalidCropCase { "Reversed", Kakshya::Region::image_rect(2, 1, 1, 2) },
             InvalidCropCase { "PastRightEdge", Kakshya::Region::image_rect(0, 0, 4, 1) },
             InvalidCropCase { "PastBottomEdge", Kakshya::Region::image_rect(0, 0, 1, 3) },
-            InvalidCropCase { "WrongDimensions", Kakshya::Region(
-                std::vector<uint64_t> { 0 }, std::vector<uint64_t> { 1 }) }),
+            InvalidCropCase { "WrongDimensions", Kakshya::Region(std::vector<uint64_t> { 0 }, std::vector<uint64_t> { 1 }) }),
         [](const ::testing::TestParamInfo<InvalidCropCase>& info) { return info.param.name; });
 
     TEST(ImageReaderTest, ExistingReaderRegionReturnsExclusiveEndPixelBytes)
@@ -282,8 +278,7 @@ namespace {
         EXPECT_EQ(whole->get_height(), image_height);
         EXPECT_EQ(crop->get_width(), 2U);
         EXPECT_EQ(crop->get_height(), 2U);
-        EXPECT_EQ(crop->get_pixel_data(), expected_rgba(
-            Kakshya::Region::image_rect(1, 1, 2, 2)));
+        EXPECT_EQ(crop->get_pixel_data(), expected_rgba(Kakshya::Region::image_rect(1, 1, 2, 2)));
         IO::ImageReader invalid_reader(4, Kakshya::Region::image_rect(0, 0, 4, 2));
         EXPECT_FALSE(invalid_reader.open("image.pnm"));
     }
@@ -380,8 +375,62 @@ namespace {
         EXPECT_EQ(crop_pixels->width, 2U);
         EXPECT_EQ(crop_pixels->height, 2U);
         ASSERT_NE(crop_pixels->as_uint8(), nullptr);
-        EXPECT_EQ(*crop_pixels->as_uint8(), expected_rgba(
-            Kakshya::Region::image_rect(1, 1, 2, 2)));
+        EXPECT_EQ(*crop_pixels->as_uint8(), expected_rgba(Kakshya::Region::image_rect(1, 1, 2, 2)));
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, ImageReaderTextureTest, DefaultResolverReturnsOneImageForOnePath, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        ScopedWorkingDir files;
+        files.write("image.pnm", make_image());
+        const auto resolver = IO::Detail::make_default_resolver("model.glb");
+
+        const auto first = resolver("image.pnm");
+        const auto second = resolver("image.pnm");
+
+        ASSERT_NE(first, nullptr);
+        EXPECT_EQ(first, second);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, ImageReaderTextureTest, DefaultResolverReturnsNullForAMissingFileEveryTime, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        ScopedWorkingDir files;
+        const auto resolver = IO::Detail::make_default_resolver("model.glb");
+
+        EXPECT_EQ(resolver("absent.png"), nullptr);
+        EXPECT_EQ(resolver("absent.png"), nullptr);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, ImageReaderTextureTest, DefaultResolverClearsAnImageNoReceiverTookWhenItEnds, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        ScopedWorkingDir files;
+        files.write("image.pnm", make_image());
+        std::shared_ptr<Core::VKImage> image;
+        {
+            const auto resolver = IO::Detail::make_default_resolver("model.glb");
+            image = resolver("image.pnm");
+            ASSERT_NE(image, nullptr);
+            ASSERT_TRUE(image->is_initialized());
+        }
+
+        EXPECT_FALSE(image->is_initialized());
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, ImageReaderTextureTest, DefaultResolverLeavesAnImageResidentWhileAReceiverHoldsIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
+    {
+        ScopedWorkingDir files;
+        files.write("image.pnm", make_image());
+        auto& loom = Portal::Graphics::TextureLoom::instance();
+        std::shared_ptr<Core::VKImage> image;
+        {
+            const auto resolver = IO::Detail::make_default_resolver("model.glb");
+            image = resolver("image.pnm");
+            ASSERT_NE(image, nullptr);
+            loom.retain_image(image);
+        }
+
+        EXPECT_TRUE(image->is_initialized());
+        loom.release_image(image);
+        EXPECT_FALSE(image->is_initialized());
     }
 
     MAYAFLUX_TEST_WITH(TEST_F, ImageReaderTextureTest, SavesRealTextureSynchronouslyAndAsynchronously, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))

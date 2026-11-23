@@ -216,6 +216,91 @@ namespace {
         EXPECT_NO_THROW(loom().shutdown());
     }
 
+    TEST_F(TextureLoomTest, ReleasingTheOnlyHolderClearsTheImage)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        ImagePtr image = loom().create_2d(4, 4);
+        ASSERT_TRUE(image && image->is_initialized());
+        const std::weak_ptr<VKImage> weak = image;
+
+        loom().release_image(image);
+
+        EXPECT_FALSE(image->is_initialized());
+        image.reset();
+        EXPECT_TRUE(weak.expired());
+    }
+
+    TEST_F(TextureLoomTest, AnImageStaysResidentUntilEveryHolderReleasesIt)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        const ImagePtr image = loom().create_2d(4, 4);
+        ASSERT_TRUE(image && image->is_initialized());
+
+        loom().retain_image(image);
+        loom().retain_image(image);
+        loom().release_image(image);
+        loom().release_image(image);
+        EXPECT_TRUE(image->is_initialized());
+
+        loom().release_image(image);
+        EXPECT_FALSE(image->is_initialized());
+    }
+
+    TEST_F(TextureLoomTest, RetainAndReleaseIgnoreAnImageTheLoomDidNotCreate)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        const ImagePtr external = std::make_shared<VKImage>(
+            4, 4, 1, TextureLoom::to_vulkan_format(ImageFormat::RGBA8),
+            VKImage::Usage::TEXTURE_2D, VKImage::Type::TYPE_2D,
+            1, 1, Kakshya::DataModality::IMAGE_COLOR);
+        backend()->get_resource_manager().initialize_image(external);
+        ASSERT_TRUE(external->is_initialized());
+
+        loom().retain_image(external);
+        loom().release_image(external);
+        loom().release_image(external);
+
+        EXPECT_TRUE(external->is_initialized());
+        loom().clear_image_residency(external);
+    }
+
+    TEST_F(TextureLoomTest, RetainAndReleaseAcceptANullImage)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+
+        EXPECT_NO_THROW(loom().retain_image(nullptr));
+        EXPECT_NO_THROW(loom().release_image(nullptr));
+    }
+
+    TEST_F(TextureLoomTest, ReleasingAnImageAfterItsResidencyWasClearedChangesNothing)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        const ImagePtr cleared = loom().create_2d(4, 4);
+        const ImagePtr other = loom().create_2d(4, 4);
+        ASSERT_TRUE(cleared && cleared->is_initialized());
+        ASSERT_TRUE(other && other->is_initialized());
+
+        loom().retain_image(cleared);
+        loom().clear_image_residency(cleared);
+        loom().release_image(cleared);
+        loom().release_image(cleared);
+
+        EXPECT_FALSE(cleared->is_initialized());
+        EXPECT_TRUE(other->is_initialized());
+    }
+
+    TEST_F(TextureLoomTest, ReleasingAfterShutdownIsHarmless)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        const ImagePtr image = loom().create_2d(4, 4);
+        ASSERT_TRUE(image && image->is_initialized());
+
+        loom().shutdown();
+
+        EXPECT_NO_THROW(loom().release_image(image));
+        EXPECT_FALSE(image->is_initialized());
+    }
+
     TEST_F(TextureLoomTest, ShutdownIsRepeatable)
     {
         ASSERT_TRUE(loom().initialize(backend()));

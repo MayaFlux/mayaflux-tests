@@ -7,19 +7,23 @@
 #include "../../support/vulkan_test_support.hpp"
 
 #include "MayaFlux/Buffers/BufferProcessingChain.hpp"
+#include "MayaFlux/Buffers/Geometry/MeshBuffer.hpp"
 #include "MayaFlux/Buffers/Network/MeshNetworkBuffer.hpp"
 #include "MayaFlux/Buffers/Root/RootGraphicsBuffer.hpp"
 #include "MayaFlux/Buffers/Shaders/RenderProcessor.hpp"
 #include "MayaFlux/Buffers/Shaders/VertexFieldProcessor.hpp"
 #include "MayaFlux/Buffers/Staging/StagingUtils.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
 #include "MayaFlux/Kinesis/Tendency/DualField.hpp"
 #include "MayaFlux/Kinesis/Tendency/ShaderCompat.hpp"
+#include "MayaFlux/Nodes/Graphics/MeshWriterNode.hpp"
 #include "MayaFlux/Nodes/Network/MeshNetwork.hpp"
 #include "MayaFlux/Nodes/Network/Operators/GpuFieldOperator.hpp"
 #include "MayaFlux/Nodes/Network/Operators/MeshFieldOperator.hpp"
 #include "MayaFlux/Nodes/Network/Operators/MeshTransformOperator.hpp"
 #include "MayaFlux/Portal/Graphics/ComputePress.hpp"
 #include "MayaFlux/Portal/Graphics/RenderFlow.hpp"
+#include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
@@ -222,6 +226,170 @@ namespace {
         std::shared_ptr<MeshNetworkBuffer> buffer;
         std::shared_ptr<ScriptedWindow> window;
     };
+
+    class MeshTextureHoldTest : public MeshNetworkBufferDeviceTest {
+    protected:
+        void SetUp() override
+        {
+            MeshNetworkBufferDeviceTest::SetUp();
+            if (IsSkipped())
+                return;
+            auto borrowed = std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) { });
+            loom().shutdown();
+            ASSERT_TRUE(loom().initialize(borrowed));
+        }
+
+        void TearDown() override
+        {
+            loom().shutdown();
+            MeshNetworkBufferDeviceTest::TearDown();
+        }
+
+        static Portal::Graphics::TextureLoom& loom() { return Portal::Graphics::get_texture_manager(); }
+
+        static std::shared_ptr<Core::VKImage> held_texture()
+        {
+            auto image = loom().create_2d(2, 2);
+            EXPECT_TRUE(image && image->is_initialized());
+            return image;
+        }
+    };
+
+    TEST_F(MeshTextureHoldTest, ANetworkHoldsASlotTextureUntilItEnds)
+    {
+        auto net = std::make_shared<MeshNetwork>();
+        const auto slot = net->add_slot("a", nullptr);
+        const auto image = held_texture();
+
+        net->set_slot_texture(slot, image);
+        loom().release_image(image);
+        EXPECT_TRUE(image->is_initialized());
+        EXPECT_EQ(net->get_slot(slot).diffuse_texture, image);
+
+        net.reset();
+        EXPECT_FALSE(image->is_initialized());
+    }
+
+    TEST_F(MeshTextureHoldTest, ReplacingASlotTextureReleasesTheOldOne)
+    {
+        auto net = std::make_shared<MeshNetwork>();
+        const auto slot = net->add_slot("a", nullptr);
+        const auto old_image = held_texture();
+        const auto new_image = held_texture();
+
+        net->set_slot_texture(slot, old_image);
+        loom().release_image(old_image);
+        net->set_slot_texture(slot, new_image);
+        loom().release_image(new_image);
+
+        EXPECT_FALSE(old_image->is_initialized());
+        EXPECT_TRUE(new_image->is_initialized());
+        net.reset();
+        EXPECT_FALSE(new_image->is_initialized());
+    }
+
+    TEST_F(MeshTextureHoldTest, ClearingASlotTextureReleasesIt)
+    {
+        auto net = std::make_shared<MeshNetwork>();
+        const auto slot = net->add_slot("a", nullptr);
+        const auto image = held_texture();
+
+        net->set_slot_texture(slot, image);
+        loom().release_image(image);
+        net->set_slot_texture(slot, nullptr);
+
+        EXPECT_FALSE(image->is_initialized());
+        EXPECT_EQ(net->get_slot(slot).diffuse_texture, nullptr);
+    }
+
+    TEST_F(MeshTextureHoldTest, SlotsSharingATextureKeepItUntilTheLastSlotLetsGo)
+    {
+        auto net = std::make_shared<MeshNetwork>();
+        const auto first = net->add_slot("a", nullptr);
+        const auto second = net->add_slot("b", nullptr);
+        const auto image = held_texture();
+
+        net->set_slot_texture(first, image);
+        net->set_slot_texture(second, image);
+        loom().release_image(image);
+
+        net->set_slot_texture(first, nullptr);
+        EXPECT_TRUE(image->is_initialized());
+        net->set_slot_texture(second, nullptr);
+        EXPECT_FALSE(image->is_initialized());
+    }
+
+    TEST_F(MeshTextureHoldTest, ANetworkBufferHoldsItsDiffuseTextureUntilItIsReplacedOrEnds)
+    {
+        auto net = std::make_shared<MeshNetwork>();
+        net->add_slot("a", std::make_shared<MeshWriterNode>(4));
+        auto owner = std::make_shared<MeshNetworkBuffer>(net);
+        const auto first = held_texture();
+        const auto second = held_texture();
+
+        owner->bind_diffuse_texture(first);
+        loom().release_image(first);
+        EXPECT_TRUE(first->is_initialized());
+
+        owner->bind_diffuse_texture(second);
+        loom().release_image(second);
+        EXPECT_FALSE(first->is_initialized());
+        EXPECT_TRUE(second->is_initialized());
+
+        owner.reset();
+        EXPECT_FALSE(second->is_initialized());
+    }
+
+    TEST_F(MeshTextureHoldTest, BindingTheSameTextureAgainKeepsItResident)
+    {
+        auto net = std::make_shared<MeshNetwork>();
+        net->add_slot("a", std::make_shared<MeshWriterNode>(4));
+        auto owner = std::make_shared<MeshNetworkBuffer>(net);
+        const auto image = held_texture();
+
+        owner->bind_diffuse_texture(image);
+        owner->bind_diffuse_texture(image);
+        loom().release_image(image);
+
+        EXPECT_TRUE(image->is_initialized());
+        owner.reset();
+        EXPECT_FALSE(image->is_initialized());
+    }
+
+    TEST_F(MeshTextureHoldTest, AMeshBufferHoldsItsDiffuseTextureUntilItIsReplacedOrEnds)
+    {
+        auto owner = std::make_shared<Buffers::MeshBuffer>(std::make_shared<MeshWriterNode>(4));
+        const auto first = held_texture();
+        const auto second = held_texture();
+
+        owner->bind_diffuse_texture(first);
+        loom().release_image(first);
+        EXPECT_TRUE(first->is_initialized());
+
+        owner->bind_diffuse_texture(second);
+        loom().release_image(second);
+        EXPECT_FALSE(first->is_initialized());
+        EXPECT_TRUE(second->is_initialized());
+
+        owner.reset();
+        EXPECT_FALSE(second->is_initialized());
+    }
+
+    TEST_F(MeshTextureHoldTest, TwoMeshBuffersSharingATextureClearItWhenTheLastOneEnds)
+    {
+        auto first = std::make_shared<Buffers::MeshBuffer>(std::make_shared<MeshWriterNode>(4));
+        auto second = std::make_shared<Buffers::MeshBuffer>(std::make_shared<MeshWriterNode>(4));
+        const auto image = held_texture();
+
+        first->bind_diffuse_texture(image);
+        second->bind_diffuse_texture(image);
+        loom().release_image(image);
+
+        first.reset();
+        EXPECT_TRUE(image->is_initialized());
+        second.reset();
+        EXPECT_FALSE(image->is_initialized());
+    }
 
     TEST_F(MeshNetworkBufferDeviceTest, UploadsEveryVertexAttributeAndRebasesEachSlotsIndices)
     {
