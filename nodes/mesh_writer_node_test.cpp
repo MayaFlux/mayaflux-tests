@@ -352,6 +352,119 @@ namespace {
         EXPECT_EQ(ctx.vertex_stride, sizeof(MeshVertex));
     }
 
+    Kakshya::MeshData quad_with_parts()
+    {
+        auto corners = make_vertices(4);
+        corners[0].position = { 0.0F, 0.0F, 0.0F };
+        corners[1].position = { 1.0F, 0.0F, 0.0F };
+        corners[2].position = { 1.0F, 1.0F, 0.0F };
+        corners[3].position = { 0.0F, 1.0F, 0.0F };
+
+        auto data = Kakshya::MeshData::from_vertices(
+                        corners, Kakshya::FaceList { .sizes = { 4 }, .corners = { 0, 1, 2, 3 } })
+                        .value();
+
+        Kakshya::MeshSubrange part;
+        part.index_start = 0;
+        part.index_count = static_cast<uint32_t>(std::get<std::vector<uint32_t>>(data.index_variant).size());
+        part.name = "front";
+        part.material_name = "wood";
+
+        Kakshya::RegionGroup group("submeshes");
+        group.add_region(part.to_region());
+        data.submeshes = std::move(group);
+        return data;
+    }
+
+    TEST_F(MeshWriterNodeTest, AMeshSetFromMeshDataKeepsItsSubmeshesAndPolygonFaces)
+    {
+        node.set_mesh(quad_with_parts());
+
+        ASSERT_TRUE(node.get_mesh_submeshes().has_value());
+        ASSERT_EQ(node.get_mesh_submeshes()->regions.size(), 1U);
+        const auto* part = node.get_mesh_submeshes()->regions.front().get<Kakshya::MeshSubrange>();
+        ASSERT_NE(part, nullptr);
+        EXPECT_EQ(part->name, "front");
+        EXPECT_EQ(part->material_name, "wood");
+        ASSERT_TRUE(node.get_mesh_faces().has_value());
+        EXPECT_EQ(node.get_mesh_faces()->sizes, (std::vector<uint32_t> { 4 }));
+    }
+
+    TEST_F(MeshWriterNodeTest, GetMeshDataReturnsTheSubmeshesAndPolygonFacesItWasSetWith)
+    {
+        node.set_mesh(quad_with_parts());
+
+        const auto data = node.get_mesh_data();
+
+        ASSERT_TRUE(data.has_value());
+        EXPECT_EQ(data->polygon_count(), 1U);
+        EXPECT_EQ(data->face_count(), 2U);
+        ASSERT_TRUE(data->submeshes.has_value());
+        EXPECT_EQ(data->submeshes->regions.size(), 1U);
+        EXPECT_TRUE(data->is_valid());
+    }
+
+    TEST_F(MeshWriterNodeTest, AMeshSetFromArraysCarriesNoSubmeshesOrFaces)
+    {
+        node.set_mesh(quad_with_parts());
+
+        load_quad();
+
+        EXPECT_FALSE(node.get_mesh_submeshes().has_value());
+        EXPECT_FALSE(node.get_mesh_faces().has_value());
+        EXPECT_FALSE(node.get_mesh_data()->submeshes.has_value());
+    }
+
+    TEST_F(MeshWriterNodeTest, ReplacingTheVerticesWithTheSameCountKeepsTheParts)
+    {
+        node.set_mesh(quad_with_parts());
+
+        node.set_mesh_vertices(make_vertices(4, 9.0F));
+
+        EXPECT_TRUE(node.get_mesh_submeshes().has_value());
+        EXPECT_TRUE(node.get_mesh_faces().has_value());
+    }
+
+    TEST_F(MeshWriterNodeTest, ReplacingTheVerticesWithAnotherCountDropsTheParts)
+    {
+        node.set_mesh(quad_with_parts());
+
+        node.set_mesh_vertices(make_vertices(5));
+
+        EXPECT_FALSE(node.get_mesh_submeshes().has_value());
+        EXPECT_FALSE(node.get_mesh_faces().has_value());
+    }
+
+    TEST_F(MeshWriterNodeTest, ReplacingTheIndicesDropsTheParts)
+    {
+        node.set_mesh(quad_with_parts());
+
+        node.set_mesh_indices(QUAD_INDICES);
+
+        EXPECT_FALSE(node.get_mesh_submeshes().has_value());
+        EXPECT_FALSE(node.get_mesh_faces().has_value());
+    }
+
+    TEST_F(MeshWriterNodeTest, ClearingTheMeshDropsTheParts)
+    {
+        node.set_mesh(quad_with_parts());
+
+        node.clear_mesh();
+
+        EXPECT_FALSE(node.get_mesh_submeshes().has_value());
+        EXPECT_FALSE(node.get_mesh_faces().has_value());
+    }
+
+    TEST_F(MeshWriterNodeTest, AMeshDataThatIsNotValidLeavesTheNodeAsItWas)
+    {
+        node.set_mesh(quad_with_parts());
+
+        node.set_mesh(Kakshya::MeshData::empty());
+
+        EXPECT_EQ(node.get_mesh_vertex_count(), 4U);
+        EXPECT_TRUE(node.get_mesh_submeshes().has_value());
+    }
+
 } // namespace
 
 }
