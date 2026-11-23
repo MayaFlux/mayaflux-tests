@@ -6,6 +6,7 @@
 
 #include "MayaFlux/Buffers/Shaders/UVFieldProcessor.hpp"
 #include "MayaFlux/Buffers/VKBuffer.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
 #include "MayaFlux/Portal/Graphics/ComputePress.hpp"
 #include "MayaFlux/Portal/Graphics/SamplerForge.hpp"
@@ -272,6 +273,34 @@ namespace {
         const auto uv_only = read_vertex();
         EXPECT_EQ(uv_only.color, input.color);
         EXPECT_NEAR(uv_only.uv.x, -1.0F, 1e-5F);
+    }
+
+    TEST_F(UVFieldProcessorDeviceTest, ReplacingAClearedTextureSamplesTheNewAllocation)
+    {
+        MeshVertex input;
+        input.position = { 1.0F, 0.0F, 0.0F };
+        attach({ input });
+        auto& loom = Portal::Graphics::get_texture_manager();
+
+        const std::array<uint8_t, 4> red { 255U, 0U, 0U, 255U };
+        texture = loom.create_2d(1U, 1U, Portal::Graphics::ImageFormat::RGBA8, red.data(), 1U);
+        ASSERT_NE(texture, nullptr);
+        processor->set_texture(texture);
+        project();
+        EXPECT_NEAR(read_vertex().color.r, 1.0F, 1e-5F);
+
+        loom.clear_image_residency(texture);
+        EXPECT_FALSE(texture->is_initialized());
+        const std::array<uint8_t, 4> green { 0U, 255U, 0U, 255U };
+        texture = loom.create_2d(1U, 1U, Portal::Graphics::ImageFormat::RGBA8, green.data(), 1U);
+        ASSERT_NE(texture, nullptr);
+        processor->set_texture(texture);
+        seed({ input });
+        project();
+
+        const auto sampled = read_vertex();
+        EXPECT_NEAR(sampled.color.r, 0.0F, 1e-5F);
+        EXPECT_NEAR(sampled.color.g, 1.0F, 1e-5F);
     }
 
 } // namespace

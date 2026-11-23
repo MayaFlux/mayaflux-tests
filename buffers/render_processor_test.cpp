@@ -256,6 +256,12 @@ layout(location = 0) out vec4 color;
 void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
 )";
 
+    constexpr const char* k_sample_fragment = R"(#version 460
+layout(set = 1, binding = 0) uniform sampler2D tex;
+layout(location = 0) out vec4 color;
+void main() { color = texture(tex, vec2(0.5)); }
+)";
+
     class RenderProcessorPresentationTest : public PresentingVulkanTest {
     protected:
         void SetUp() override
@@ -301,6 +307,7 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
             }
             child.reset();
 
+            SamplerForge::instance().shutdown();
             Portal::Graphics::get_texture_manager().shutdown();
             if (flow_ready)
                 Portal::Graphics::get_render_flow().shutdown();
@@ -407,6 +414,47 @@ void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
         EXPECT_NE(child->get_pipeline_command(id), Portal::Graphics::INVALID_COMMAND_BUFFER);
         EXPECT_EQ(root->get_renderable_buffers().size(), 1U);
         EXPECT_TRUE(pipeline_alive(id));
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, RecordedTexturedDrawSurvivesImageResidencyClearBeforePresentation, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
+    {
+        prepare_draw(k_plain_vertex, true, 0, k_sample_fragment);
+        auto borrowed_backend = std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) {});
+        auto& loom = Portal::Graphics::get_texture_manager();
+        ASSERT_TRUE(loom.initialize(borrowed_backend));
+        ASSERT_TRUE(SamplerForge::instance().initialize(borrowed_backend));
+        const std::array<uint8_t, 4> white { 255, 255, 255, 255 };
+        auto image = loom.create_2d(1, 1, Portal::Graphics::ImageFormat::RGBA8, white.data());
+        ASSERT_NE(image, nullptr);
+        render->add_binding("tex", ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        render->bind_texture("tex", image);
+
+        tick();
+        ASSERT_TRUE(render->is_pipeline_ready());
+        const auto id = render->get_render_pipeline_id();
+        ASSERT_NE(child->get_pipeline_command(id), Portal::Graphics::INVALID_COMMAND_BUFFER);
+        auto allocation = backend().get_resource_manager().retain_image_allocation(image);
+        ASSERT_NE(allocation, nullptr);
+        const std::weak_ptr<void> weak = allocation;
+        allocation.reset();
+
+        loom.clear_image_residency(image);
+        EXPECT_FALSE(image->is_initialized());
+        EXPECT_FALSE(weak.expired());
+        present();
+
+        auto* display = Registry::BackendRegistry::instance()
+                            .get_service<Registry::Service::DisplayService>();
+        ASSERT_NE(display, nullptr);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        display->get_swapchain_extent(window, width, height);
+        std::vector<uint8_t> pixels(static_cast<size_t>(width) * height * 4);
+        ASSERT_TRUE(display->readback_swapchain_region(window, pixels.data(), 0, 0, width, height, pixels.size()));
+        const size_t center = (static_cast<size_t>(height / 2) * width + width / 2) * 4;
+        EXPECT_GT(pixels[center], 200);
+        EXPECT_GT(pixels[center + 1], 200);
+        EXPECT_GT(pixels[center + 2], 200);
     }
 
     MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, RepeatedProcessingKeepsTheSamePipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))

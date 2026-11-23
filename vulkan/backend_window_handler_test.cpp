@@ -9,8 +9,10 @@
 
 #include "MayaFlux/Buffers/VKBuffer.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/BackendResoureManager.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/BackendWindowHandler.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKContext.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VulkanBackend.hpp"
 #include "MayaFlux/Core/Windowing/WindowManager.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
@@ -491,6 +493,57 @@ TEST_F(BackendWindowHandlerTest, DepthAttachmentIsCreatedOnDemand)
 
     EXPECT_NE(display->get_depth_image_view(window), nullptr);
     EXPECT_EQ(display->get_depth_format(window), static_cast<uint32_t>(vk::Format::eD32Sfloat));
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, BackendWindowHandlerTest, UnregisteringAWindowDetachesItsManagedDepthImage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
+{
+    auto window = registered_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+    display->ensure_depth_attachment(window);
+    auto* context = backend().get_window_handler().find_window_context(window);
+    ASSERT_NE(context, nullptr);
+    const auto depth = context->depth_image;
+    ASSERT_TRUE(depth && depth->is_initialized());
+    const std::weak_ptr<void> allocation = backend().get_resource_manager().retain_image_allocation(depth);
+    ASSERT_FALSE(allocation.expired());
+
+    backend().unregister_window(window);
+    backend().get_command_manager().collect();
+
+    EXPECT_FALSE(depth->is_initialized());
+    EXPECT_TRUE(allocation.expired());
+    EXPECT_FALSE(backend().is_window_registered(window));
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, BackendWindowHandlerTest, ResizingThenUnregisteringDetachesBothDepthAllocations, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
+{
+    auto window = registered_window();
+    ASSERT_NE(window, nullptr);
+    auto* display = service();
+    ASSERT_NE(display, nullptr);
+    display->ensure_depth_attachment(window);
+    auto* context = backend().get_window_handler().find_window_context(window);
+    ASSERT_NE(context, nullptr);
+    const auto first = context->depth_image;
+    ASSERT_TRUE(first && first->is_initialized());
+
+    display->resize_surface(window, 200, 150);
+    backend().handle_window_resize();
+    EXPECT_FALSE(first->is_initialized());
+
+    display->ensure_depth_attachment(window);
+    context = backend().get_window_handler().find_window_context(window);
+    ASSERT_NE(context, nullptr);
+    const auto second = context->depth_image;
+    ASSERT_TRUE(second && second->is_initialized());
+    EXPECT_NE(second, first);
+
+    backend().unregister_window(window);
+    backend().get_command_manager().collect();
+
+    EXPECT_FALSE(second->is_initialized());
 }
 
 TEST_F(BackendWindowHandlerTest, DepthAttachmentRequestOnUnregisteredWindowIsIgnored)

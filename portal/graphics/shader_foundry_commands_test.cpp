@@ -7,6 +7,7 @@
 #include "../../support/vulkan_test_support.hpp"
 
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
@@ -341,6 +342,52 @@ namespace {
 
         EXPECT_EQ(arena.acquire(), 0U);
         arena.release();
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, ShaderFoundryDeviceTest, RecordedImageReadSurvivesCleanupBeforeSubmit, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
+    {
+        auto& resources = backend()->get_resource_manager();
+        auto image = std::make_shared<Core::VKImage>(4, 4, 1, vk::Format::eR8G8B8A8Unorm,
+            Core::VKImage::Usage::TEXTURE_2D);
+        resources.initialize_image(image);
+        const std::array<uint8_t, 64> expected = [] {
+            std::array<uint8_t, 64> bytes {};
+            std::iota(bytes.begin(), bytes.end(), uint8_t { 23 });
+            return bytes;
+        }();
+        resources.upload_image_data(image, expected.data(), expected.size());
+        resources.transition_image_layout(image, vk::ImageLayout::eTransferSrcOptimal, Core::SubmitMode::IMMEDIATE);
+        RawVulkanBuffer destination(*backend(), expected.size(), vk::BufferUsageFlagBits::eTransferDst, true);
+        std::memset(destination.mapped(), 0, expected.size());
+
+        auto allocation = resources.retain_image_allocation(image);
+        ASSERT_NE(allocation, nullptr);
+        const std::weak_ptr<void> weak = allocation;
+        const auto id = foundry().begin_commands(CommandType::GRAPHICS);
+        foundry().hold_image(id, image);
+        allocation.reset();
+        vk::BufferImageCopy region {};
+        region.imageSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+        region.imageExtent = vk::Extent3D { 4, 4, 1 };
+        auto cmd = foundry().get_command_buffer(id);
+        cmd.copyImageToBuffer(image->get_image(), vk::ImageLayout::eTransferSrcOptimal, destination.buffer(), 1, &region);
+        const vk::MemoryBarrier2 to_host {
+            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+            vk::PipelineStageFlagBits2::eHost, vk::AccessFlagBits2::eHostRead
+        };
+        vk::DependencyInfo dependency {};
+        dependency.memoryBarrierCount = 1;
+        dependency.pMemoryBarriers = &to_host;
+        cmd.pipelineBarrier2(dependency);
+
+        resources.cleanup_image(image);
+        EXPECT_FALSE(image->is_initialized());
+        EXPECT_FALSE(weak.expired());
+        foundry().submit_and_wait(id);
+        backend()->get_command_manager().collect();
+
+        EXPECT_EQ(std::memcmp(destination.mapped(), expected.data(), expected.size()), 0);
+        EXPECT_TRUE(weak.expired());
     }
 
     TEST_F(ShaderFoundryDeviceTest, HoldingAnEmptyLeaseOrOnAnUnknownBufferHoldsNothing)

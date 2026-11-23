@@ -550,6 +550,56 @@ TEST_F(BackendResourceManagerTest, CleanupImageReleasesHandlesAndIsRepeatable)
     EXPECT_NO_THROW(resources().cleanup_image(nullptr));
 }
 
+MAYAFLUX_TEST_WITH(TEST_F, BackendResourceManagerTest, DeferredImageReadSurvivesCleanupAndReinitialization, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
+{
+    auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
+    const auto expected = pattern(64, 37);
+    resources().upload_image_data(image, expected.data(), expected.size());
+    resources().transition_image_layout(image, vk::ImageLayout::eTransferSrcOptimal, Core::SubmitMode::IMMEDIATE);
+    RawVulkanBuffer destination(backend(), expected.size(), k_transfer_usage, true);
+    std::memset(destination.mapped(), 0, expected.size());
+
+    const vk::Image old_handle = image->get_image();
+    auto old_allocation = resources().retain_image_allocation(image);
+    ASSERT_NE(old_allocation, nullptr);
+    const std::weak_ptr<void> old_weak = old_allocation;
+    resources().record_deferred_commands([old_handle, &destination](vk::CommandBuffer cmd) {
+        vk::BufferImageCopy region {};
+        region.imageSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+        region.imageExtent = vk::Extent3D { 4, 4, 1 };
+        cmd.copyImageToBuffer(old_handle, vk::ImageLayout::eTransferSrcOptimal, destination.buffer(), 1, &region);
+        const vk::MemoryBarrier2 to_host {
+            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+            vk::PipelineStageFlagBits2::eHost, vk::AccessFlagBits2::eHostRead
+        };
+        vk::DependencyInfo dependency {};
+        dependency.memoryBarrierCount = 1;
+        dependency.pMemoryBarriers = &to_host;
+        cmd.pipelineBarrier2(dependency);
+    },
+        { image });
+    old_allocation.reset();
+
+    resources().cleanup_image(image);
+    EXPECT_FALSE(image->is_initialized());
+    EXPECT_TRUE(backend().get_command_manager().has_deferred_commands());
+    EXPECT_FALSE(old_weak.expired());
+
+    resources().initialize_image(image);
+    ASSERT_TRUE(image->is_initialized());
+    EXPECT_NE(resources().retain_image_allocation(image), old_weak.lock());
+
+    auto& commands = backend().get_command_manager();
+    const auto point = resources().flush_deferred_commands();
+    ASSERT_TRUE(point);
+    commands.wait(point);
+    commands.collect();
+
+    EXPECT_EQ(std::memcmp(destination.mapped(), expected.data(), expected.size()), 0);
+    EXPECT_TRUE(old_weak.expired());
+    resources().cleanup_image(image);
+}
+
 TEST_F(BackendResourceManagerTest, MipChainAndArrayImagesInitialize)
 {
     auto image = std::make_shared<VKImage>(8, 8, 1, vk::Format::eR8G8B8A8Unorm, VKImage::Usage::TEXTURE_2D,
@@ -786,6 +836,41 @@ TEST_F(BackendResourceManagerTest, ExecuteAsyncReleasesWhatItKeepsAliveOnceItCom
     backend().get_command_manager().wait(point);
     backend().get_command_manager().collect();
     EXPECT_TRUE(watcher.expired());
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, BackendResourceManagerTest, AsyncImageReadSurvivesResidencyClearBeforeWait, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
+{
+    auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
+    const auto expected = pattern(64, 93);
+    resources().upload_image_data(image, expected.data(), expected.size());
+    resources().transition_image_layout(image, vk::ImageLayout::eTransferSrcOptimal, Core::SubmitMode::IMMEDIATE);
+    RawVulkanBuffer destination(backend(), expected.size(), k_transfer_usage, true);
+    std::memset(destination.mapped(), 0, expected.size());
+    const auto old_handle = image->get_image();
+
+    const auto point = resources().execute_async([&](vk::CommandBuffer cmd) {
+        vk::BufferImageCopy region {};
+        region.imageSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+        region.imageExtent = vk::Extent3D { 4, 4, 1 };
+        cmd.copyImageToBuffer(old_handle, vk::ImageLayout::eTransferSrcOptimal, destination.buffer(), 1, &region);
+        const vk::MemoryBarrier2 to_host {
+            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+            vk::PipelineStageFlagBits2::eHost, vk::AccessFlagBits2::eHostRead
+        };
+        vk::DependencyInfo dependency {};
+        dependency.memoryBarrierCount = 1;
+        dependency.pMemoryBarriers = &to_host;
+        cmd.pipelineBarrier2(dependency);
+    },
+        { image });
+    ASSERT_TRUE(point);
+    resources().cleanup_image(image);
+    EXPECT_FALSE(image->is_initialized());
+
+    auto& commands = backend().get_command_manager();
+    commands.wait(point);
+    commands.collect();
+    EXPECT_EQ(std::memcmp(destination.mapped(), expected.data(), expected.size()), 0);
 }
 
 TEST_F(BackendResourceManagerTest, ConsecutiveAsyncSubmissionsOrderOnTheQueue)

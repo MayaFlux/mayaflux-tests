@@ -192,6 +192,17 @@ void main()
         EXPECT_FALSE(manager.is_ready("scale"));
     }
 
+    TYPED_TEST(GpuResourceManagerTest, ManagerCanOutliveFoundryShutdown)
+    {
+        auto manager = std::make_unique<GpuResourceManager>();
+        ASSERT_TRUE(init_scale(*manager));
+        ASSERT_TRUE(manager->is_ready("scale"));
+
+        this->teardown_portal();
+
+        EXPECT_NO_THROW(manager.reset());
+    }
+
     // ------------------------------------------------------------------
     // Dispatch without a recording
     // ------------------------------------------------------------------

@@ -3,6 +3,7 @@
 
 #include "../../support/gpu_dispatch_test_support.hpp"
 
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKCommandManager.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
 #include "MayaFlux/Portal/Graphics/SamplerForge.hpp"
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
@@ -106,6 +107,30 @@ void main()
         EXPECT_FALSE(recording->is_open());
     }
 
+    TYPED_TEST(GpuImageManagerTest, RecordedTransitionKeepsAnImageAllocationAfterResidencyIsCleared)
+    {
+        auto recording = std::make_shared<GpuDispatchRecorder>(false);
+        GpuResourceManager manager(false);
+        manager.set_recording(recording);
+        auto& loom = Portal::Graphics::get_texture_manager();
+        auto image = loom.create_storage_image(k_width, 1);
+        ASSERT_NE(image, nullptr);
+        auto allocation = this->backend()->get_resource_manager().retain_image_allocation(image);
+        ASSERT_NE(allocation, nullptr);
+        const std::weak_ptr<void> weak = allocation;
+
+        manager.transition_image(image, vk::ImageLayout::eShaderReadOnlyOptimal);
+        ASSERT_TRUE(recording->is_open());
+        allocation.reset();
+        loom.clear_image_residency(image);
+
+        EXPECT_FALSE(image->is_initialized());
+        EXPECT_FALSE(weak.expired());
+        recording->wait();
+        this->backend()->get_command_manager().collect();
+        EXPECT_TRUE(weak.expired());
+    }
+
     TYPED_TEST(GpuImageManagerTest, IsolatedManagerRefusesImageTransitions)
     {
         GpuResourceManager manager(true);
@@ -146,6 +171,40 @@ void main()
             Portal::Graphics::get_texture_manager().download_data(image, pixels.data(), pixels.size());
             EXPECT_EQ(pixels, std::vector<uint8_t>(k_row_bytes, 255));
         }
+    }
+
+    TYPED_TEST(GpuImageManagerTest, RecordedDispatchKeepsItsBoundImageAfterResidencyIsCleared)
+    {
+        auto recording = std::make_shared<GpuDispatchRecorder>(false);
+        GpuResourceManager manager(false);
+        manager.set_recording(recording);
+        const auto shader = load_compute(k_paint_source);
+        ASSERT_NE(shader, Portal::Graphics::INVALID_SHADER);
+        const auto binding = storage_image_binding(0);
+        ASSERT_TRUE(manager.initialise("paint", compute_config(shader, 0), { binding }));
+
+        auto& loom = Portal::Graphics::get_texture_manager();
+        auto image = loom.create_storage_image(k_width, 1);
+        ASSERT_NE(image, nullptr);
+        manager.transition_image(image, vk::ImageLayout::eGeneral);
+        manager.bind_images_batch("paint", { GpuResourceManager::ImageBind {
+                                               .index = 0,
+                                               .image = image,
+                                               .sampler = vk::Sampler {},
+                                               .spec = binding,
+                                           } });
+        auto allocation = this->backend()->get_resource_manager().retain_image_allocation(image);
+        ASSERT_NE(allocation, nullptr);
+        const std::weak_ptr<void> weak = allocation;
+        manager.record_stage("paint", k_one, {}, {});
+        allocation.reset();
+        loom.clear_image_residency(image);
+
+        EXPECT_FALSE(image->is_initialized());
+        EXPECT_FALSE(weak.expired());
+        recording->wait();
+        this->backend()->get_command_manager().collect();
+        EXPECT_TRUE(weak.expired());
     }
 
 } // namespace
