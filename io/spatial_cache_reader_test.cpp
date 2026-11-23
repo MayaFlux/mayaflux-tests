@@ -1254,5 +1254,32 @@ namespace {
         ::testing::ValuesIn(available_cores()),
         [](const ::testing::TestParamInfo<ArchiveCore>& info) { return info.param == ArchiveCore::Ogawa ? std::string("Ogawa") : std::string("Hdf5"); });
 
+
+    TEST(SpatialMovedFromTest, AReaderThatWasMovedFromAnswersAsAnUnopenedOne)
+    {
+        IO::SpatialReader original;
+        IO::SpatialReader taker(std::move(original));
+        IO::SpatialReader assigned;
+        assigned = std::move(taker);
+
+        EXPECT_FALSE(original.is_open());
+        EXPECT_TRUE(original.get_stream_names().empty());
+        EXPECT_TRUE(original.get_mesh_names().empty());
+        EXPECT_FALSE(original.read_sample("none", 0).has_value());
+        EXPECT_FALSE(taker.is_open());
+        EXPECT_NO_THROW(original.close());
+    }
+
+    TEST(SpatialMovedFromTest, ACacheThatWasMovedFromCanBeClosedAndAnswersNoWrites)
+    {
+        IO::SpatialCache original;
+        IO::SpatialCache taker(std::move(original));
+        IO::SpatialCache assigned;
+        assigned = std::move(taker);
+
+        EXPECT_NO_THROW(original.close());
+        EXPECT_NO_THROW(taker.close());
+    }
+
 }
 }

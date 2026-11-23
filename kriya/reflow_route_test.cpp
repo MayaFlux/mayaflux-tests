@@ -256,6 +256,24 @@ namespace {
         EXPECT_EQ(reflow->skips(), 1U);
     }
 
+    TEST(ReflowRouteTest, ARouteMayPickItsFramesInItsOwnWay)
+    {
+        RouteLog shared;
+        RouteLog own;
+        auto reflow = ReflowBuilder<int>(route_values(8, 10), shared.sink(), k_route_rate)
+                          .course(route_over(0.0, 0.875, CourseEdge::Once, 0.5))
+                          .route({ .course = route_over(0.0, 0.875, CourseEdge::Once, 0.5),
+                              .sink = own.sink(),
+                              .selection = Kriya::FrameSelection::Nearest })
+                          .build();
+        ASSERT_NE(reflow, nullptr);
+
+        route_run(*reflow, 4);
+
+        EXPECT_EQ(shared.values, (std::vector<int> { 0, 10 }));
+        EXPECT_EQ(own.values, (std::vector<int> { 0, 10, 20 }));
+    }
+
     TEST(ReflowRouteTest, ARouteOnASampledSourceOfItsOwnPlaysBesideAListedOne)
     {
         RouteLog shared;

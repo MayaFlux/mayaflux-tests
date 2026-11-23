@@ -11,6 +11,7 @@
 #include "MayaFlux/Buffers/Network/InstanceNetworkBuffer.hpp"
 #include "MayaFlux/Buffers/Network/MeshNetworkBuffer.hpp"
 #include "MayaFlux/Buffers/Network/NetworkGeometryBuffer.hpp"
+#include "MayaFlux/Buffers/Network/RecordedGeometryBuffer.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
 #include "MayaFlux/Nexus/Pheme/Survey.hpp"
 #include "MayaFlux/Nodes/Graphics/MeshWriterNode.hpp"
@@ -375,6 +376,65 @@ namespace {
         const auto volume = attach({ scalar_decl("density") }, unit_cell_lattice());
 
         EXPECT_FALSE(Nexus::read_anchor(volume, std::nullopt).has_value());
+    }
+
+
+    // =========================================================================
+    // Recorded geometry
+    // =========================================================================
+
+    std::shared_ptr<const Kakshya::SpatialData> recorded_points(std::vector<glm::vec3> positions)
+    {
+        auto frame = std::make_shared<Kakshya::SpatialData>();
+        frame->topology = Portal::Graphics::PrimitiveTopology::POINT_LIST;
+        frame->positions = std::move(positions);
+        return frame;
+    }
+
+    TEST(NexusSurveyRecordedTest, ARecordedStreamHasNoBoundsBeforeItsFirstFrame)
+    {
+        const auto buffer = std::make_shared<Buffers::RecordedGeometryBuffer>(
+            8, Portal::Graphics::PrimitiveTopology::POINT_LIST, Kinesis::SamplerBounds {});
+
+        EXPECT_FALSE(Nexus::read_bounds(buffer).has_value());
+        EXPECT_FALSE(Nexus::read_anchor(buffer, std::nullopt).has_value());
+    }
+
+    TEST(NexusSurveyRecordedTest, TheBoundsAndAnchorComeFromTheFrameItShowsNow)
+    {
+        const auto buffer = std::make_shared<Buffers::RecordedGeometryBuffer>(
+            8, Portal::Graphics::PrimitiveTopology::POINT_LIST, Kinesis::SamplerBounds {});
+
+        buffer->write_frame(recorded_points({ { 0.0F, 0.0F, 0.0F }, { 4.0F, 2.0F, 0.0F } }));
+
+        const auto bounds = Nexus::read_bounds(buffer);
+        ASSERT_TRUE(bounds.has_value());
+        expect_near(bounds->min, { 0.0F, 0.0F, 0.0F });
+        expect_near(bounds->max, { 4.0F, 2.0F, 0.0F });
+        const auto anchor = Nexus::read_anchor(buffer, std::nullopt);
+        ASSERT_TRUE(anchor.has_value());
+        expect_near(*anchor, { 2.0F, 1.0F, 0.0F });
+        const auto second = Nexus::read_anchor(buffer, 1U);
+        ASSERT_TRUE(second.has_value());
+        expect_near(*second, { 4.0F, 2.0F, 0.0F });
+
+        buffer->write_frame(recorded_points({ { 10.0F, 10.0F, 10.0F } }));
+
+        const auto moved = Nexus::read_bounds(buffer);
+        ASSERT_TRUE(moved.has_value());
+        expect_near(moved->min, { 10.0F, 10.0F, 10.0F });
+    }
+
+    TEST(NexusSurveyRecordedTest, OnlyTheVerticesTheBufferDrawsCount)
+    {
+        const auto buffer = std::make_shared<Buffers::RecordedGeometryBuffer>(
+            2, Portal::Graphics::PrimitiveTopology::POINT_LIST, Kinesis::SamplerBounds {});
+
+        buffer->write_frame(recorded_points({ { 0.0F, 0.0F, 0.0F }, { 1.0F, 0.0F, 0.0F }, { 50.0F, 0.0F, 0.0F } }));
+
+        const auto bounds = Nexus::read_bounds(buffer);
+        ASSERT_TRUE(bounds.has_value());
+        expect_near(bounds->max, { 1.0F, 0.0F, 0.0F });
     }
 
 }

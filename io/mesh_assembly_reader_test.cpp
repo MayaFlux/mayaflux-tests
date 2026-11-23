@@ -6,6 +6,8 @@
 
 #include "MayaFlux/IO/Model/ModelReader.hpp"
 #include "MayaFlux/IO/Spatial/SpatialReader.hpp"
+#include "MayaFlux/Kriya/MotionReflow.hpp"
+#include "MayaFlux/Nodes/Network/MeshNetwork.hpp"
 #include "MayaFlux/Kakshya/Semantic/MeshAssemblyContainer.hpp"
 #include "MayaFlux/Portal/Graphics/GraphicsUtils.hpp"
 
@@ -234,6 +236,57 @@ TEST_F(MeshAssemblyModelTest, AnAnimationBecomesAMotionInSeconds)
     EXPECT_TRUE(close(glm::vec3(end[0][3]), glm::vec3(2.0F, 0.0F, 0.0F)));
 }
 
+TEST_F(MeshAssemblyModelTest, AnImportedMotionPlaysOnAMeshNetworkThroughAReflow)
+{
+    const auto path = path_in_cwd("slide.gltf");
+    RoundTrip::write_bytes(path, sliding_box_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+    const auto assembly = reader.create_mesh_assembly();
+    ASSERT_NE(assembly, nullptr);
+
+    const auto network = Nodes::Network::make_mesh_network(assembly);
+    const auto frames = Kakshya::MeshAssemblyMotionFrames::create(assembly, 0);
+    ASSERT_NE(network, nullptr);
+    ASSERT_NE(frames, nullptr);
+    auto reflow = Kriya::MotionReflowBuilder::sampling(frames, Kriya::slot_sink(network), 8.0).build();
+    ASSERT_NE(reflow, nullptr);
+
+    for (int i = 0; i < 5; ++i) {
+        reflow->advance();
+    }
+
+    ASSERT_EQ(network->slot_count(), 1U);
+    EXPECT_NE(network->get_slot(0).node, nullptr);
+    EXPECT_NEAR(network->get_slot(0).local_transform[3].x, 1.0F, 1e-4F);
+}
+
+TEST_F(MeshAssemblyAlembicTest, PointsWhoseCountChangesAreHeterogeneousAndWhoseCountHoldsAreHomogeneous)
+{
+    const auto path = path_in_cwd("counts.abc");
+    {
+        using namespace Alembic::AbcGeom;
+        OArchive archive(Alembic::AbcCoreOgawa::WriteArchive(), path);
+        const uint32_t each_second = archive.addTimeSampling(Alembic::AbcCoreAbstract::TimeSampling(1.0, 0.0));
+        OPoints puffs(archive.getTop(), "puffs");
+        puffs.getSchema().setTimeSampling(each_second);
+        for (size_t count : { 2U, 3U }) {
+            std::vector<V3f> positions(count, V3f(0, 0, 0));
+            std::vector<uint64_t> ids(count, 1);
+            puffs.getSchema().set(OPointsSchema::Sample(
+                P3fArraySample(positions.data(), positions.size()), UInt64ArraySample(ids.data(), ids.size())));
+        }
+    }
+    IO::SpatialReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    ASSERT_EQ(assembly->get_data().sources.size(), 1U);
+    EXPECT_EQ(assembly->get_data().sources[0].variance, Kakshya::TopologyVariance::Heterogeneous);
+}
+
 TEST_F(MeshAssemblyAlembicTest, AnArchiveNeedsToBeOpenFirst)
 {
     IO::SpatialReader reader;
@@ -330,7 +383,7 @@ TEST_F(MeshAssemblyAlembicTest, ASourceKeepsItsSampleTimesAndTopologyVariance)
     const auto& sources = assembly->get_data().sources;
     const auto swarm = std::ranges::find_if(sources, [](const Kakshya::MeshAssemblySource& source) { return source.name == "swarm"; });
     ASSERT_NE(swarm, sources.end());
-    EXPECT_EQ(swarm->variance, Kakshya::TopologyVariance::Heterogeneous);
+    EXPECT_EQ(swarm->variance, Kakshya::TopologyVariance::Homogeneous);
     ASSERT_TRUE(swarm->time.has_value());
     EXPECT_EQ(swarm->time->time(1), std::optional<double> { 1.0 });
     ASSERT_NE(assembly->spatial(0), nullptr);

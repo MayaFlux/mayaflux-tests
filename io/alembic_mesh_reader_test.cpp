@@ -121,6 +121,38 @@ namespace {
             OPolyMesh broken(archive.getTop(), "broken");
             write(broken, { V3f(0, 0, 0), V3f(1, 0, 0), V3f(0, 1, 0) }, { 0, 1, 5 }, { 3 });
 
+            OPolyMesh flat(archive.getTop(), "flat");
+            {
+                const std::vector<V3f> positions { V3f(0, 0, 0), V3f(1, 0, 0), V3f(0, 1, 0) };
+                const std::vector<int32_t> indices { 0, 1, 2 };
+                const std::vector<int32_t> counts { 3 };
+                const std::vector<N3f> normal { N3f(0, 1, 0) };
+                flat.getSchema().set(OPolyMeshSchema::Sample(
+                    P3fArraySample(positions.data(), positions.size()),
+                    Int32ArraySample(indices.data(), indices.size()),
+                    Int32ArraySample(counts.data(), counts.size()),
+                    OV2fGeomParam::Sample(),
+                    ON3fGeomParam::Sample(N3fArraySample(normal.data(), normal.size()), kConstantScope)));
+            }
+
+            OPolyMesh banded(archive.getTop(), "banded");
+            {
+                const std::vector<V3f> positions { V3f(0, 0, 0), V3f(1, 0, 0), V3f(1, 1, 0), V3f(0, 1, 0) };
+                const std::vector<int32_t> indices { 0, 1, 2, 0, 2, 3 };
+                const std::vector<int32_t> counts { 3, 3 };
+                const std::vector<V2f> uvs { V2f(0.25F, 0.5F), V2f(0.75F, 0.5F) };
+                banded.getSchema().set(OPolyMeshSchema::Sample(
+                    P3fArraySample(positions.data(), positions.size()),
+                    Int32ArraySample(indices.data(), indices.size()),
+                    Int32ArraySample(counts.data(), counts.size()),
+                    OV2fGeomParam::Sample(V2fArraySample(uvs.data(), uvs.size()), kUniformScope)));
+            }
+
+            OPolyMesh vanishing(archive.getTop(), "vanishing");
+            vanishing.getSchema().setTimeSampling(each_second);
+            write(vanishing, { V3f(0, 0, 0), V3f(1, 0, 0), V3f(0, 1, 0) }, { 0, 1, 2 }, { 3 });
+            write(vanishing, {}, {}, {});
+
             OSubD cage(archive.getTop(), "cage");
             {
                 const std::vector<V3f> positions { V3f(0, 0, 0), V3f(1, 0, 0), V3f(1, 1, 0), V3f(0, 1, 0) };
@@ -149,7 +181,7 @@ TEST_F(AlembicMeshReaderTest, MeshObjectsAreListedInFileOrderApartFromTheStreams
     ASSERT_TRUE(reader.open(archive_path())) << reader.get_last_error();
 
     EXPECT_EQ(reader.get_mesh_names(),
-        (std::vector<std::string> { "tri", "quad", "walker", "morph", "strip", "lit", "broken", "cage" }));
+        (std::vector<std::string> { "tri", "quad", "walker", "morph", "strip", "lit", "broken", "flat", "banded", "vanishing", "cage" }));
     EXPECT_TRUE(reader.get_stream_names().empty());
     EXPECT_EQ(reader.get_mesh_sample_count("walker"), 3U);
     EXPECT_EQ(reader.get_mesh_sample_count("absent"), 0U);
@@ -233,6 +265,59 @@ TEST_F(AlembicMeshReaderTest, NormalsTheFileGivesPerVertexAreKeptAsWritten)
         EXPECT_NEAR(vertex.normal.y, 1.0F, 1e-5F);
         EXPECT_NEAR(vertex.normal.z, 0.0F, 1e-5F);
     }
+}
+
+TEST_F(AlembicMeshReaderTest, ANormalOfConstantScopeIsGivenToEveryVertex)
+{
+    IO::SpatialReader reader;
+    ASSERT_TRUE(reader.open(archive_path()));
+
+    const auto mesh = reader.read_mesh("flat", 0);
+
+    ASSERT_TRUE(mesh.has_value()) << reader.get_last_error();
+    EXPECT_EQ(mesh->vertex_count(), 3U);
+    for (const auto& vertex : vertices_of(*mesh)) {
+        EXPECT_NEAR(vertex.normal.y, 1.0F, 1e-5F);
+    }
+}
+
+TEST_F(AlembicMeshReaderTest, TextureCoordinatesOfUniformScopeBelongToEveryCornerOfTheirFace)
+{
+    IO::SpatialReader reader;
+    ASSERT_TRUE(reader.open(archive_path()));
+
+    const auto mesh = reader.read_mesh("banded", 0);
+
+    ASSERT_TRUE(mesh.has_value()) << reader.get_last_error();
+    ASSERT_EQ(mesh->vertex_count(), 6U);
+    const auto vertices = vertices_of(*mesh);
+    for (size_t corner = 0; corner < 3; ++corner) {
+        EXPECT_EQ(vertices[corner].uv, glm::vec2(0.25F, 0.5F)) << corner;
+        EXPECT_EQ(vertices[3 + corner].uv, glm::vec2(0.75F, 0.5F)) << corner;
+    }
+}
+
+TEST_F(AlembicMeshReaderTest, ASampleWithNoFacesIsAnEmptyFrameNotAnError)
+{
+    IO::SpatialReader reader;
+    ASSERT_TRUE(reader.open(archive_path()));
+
+    const auto empty = reader.read_mesh("vanishing", 1);
+
+    ASSERT_TRUE(empty.has_value()) << reader.get_last_error();
+    EXPECT_EQ(empty->vertex_count(), 0U);
+    EXPECT_EQ(empty->face_count(), 0U);
+}
+
+TEST_F(AlembicMeshReaderTest, AMeshFrameSourceServesAnEmptySampleAsAnEmptyFrame)
+{
+    const auto frames = IO::MeshFileFrames::create(archive_path(), "vanishing");
+    ASSERT_NE(frames, nullptr);
+
+    const auto frame = frames->read(1);
+
+    ASSERT_NE(frame, nullptr);
+    EXPECT_EQ(frame->vertex_count(), 0U);
 }
 
 TEST_F(AlembicMeshReaderTest, ASubdivisionSurfaceIsReadAsItsControlCage)

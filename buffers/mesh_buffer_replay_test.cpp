@@ -421,6 +421,34 @@ namespace {
         EXPECT_EQ(geometry->get_index_buffer_size(), 3 * sizeof(uint32_t));
     }
 
+    TEST_F(MeshBufferReplayDeviceTest, ABufferFedByANodeKeepsTheNodesPolygonFacesAndSubmeshes)
+    {
+        const std::vector<MeshVertex> corners {
+            replay_vertex({ 0.0F, 0.0F, 0.0F }), replay_vertex({ 1.0F, 0.0F, 0.0F }),
+            replay_vertex({ 1.0F, 1.0F, 0.0F }), replay_vertex({ 0.0F, 1.0F, 0.0F })
+        };
+        auto data = MeshData::from_vertices(corners, Kakshya::FaceList { .sizes = { 4 }, .corners = { 0, 1, 2, 3 } }).value();
+        Kakshya::MeshSubrange part;
+        part.index_start = 0;
+        part.index_count = 6;
+        part.name = "front";
+        Kakshya::RegionGroup group("submeshes");
+        group.add_region(part.to_region());
+        data.submeshes = std::move(group);
+
+        auto node = std::make_shared<Nodes::GpuSync::MeshWriterNode>(4);
+        node->set_mesh(data);
+        node->compute_frame();
+        mesh = std::make_shared<MeshBuffer>(node);
+        attach_mesh();
+
+        mesh->process_default();
+
+        EXPECT_EQ(mesh->get_mesh_data().polygon_count(), 1U);
+        ASSERT_TRUE(mesh->get_submeshes().has_value());
+        EXPECT_EQ(mesh->get_submeshes()->regions.size(), 1U);
+    }
+
     TEST_F(MeshBufferReplayDeviceTest, ABufferWithoutAFieldOperatorWiresNoPass)
     {
         make(*replay_frame(replay_triangles(1), replay_indices(1)));
