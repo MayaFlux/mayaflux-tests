@@ -10,8 +10,12 @@
 #include "MayaFlux/Buffers/Network/MeshNetworkBuffer.hpp"
 #include "MayaFlux/Buffers/Root/RootGraphicsBuffer.hpp"
 #include "MayaFlux/Buffers/Shaders/RenderProcessor.hpp"
+#include "MayaFlux/Buffers/Shaders/VertexFieldProcessor.hpp"
 #include "MayaFlux/Buffers/Staging/StagingUtils.hpp"
+#include "MayaFlux/Kinesis/Tendency/DualField.hpp"
+#include "MayaFlux/Kinesis/Tendency/ShaderCompat.hpp"
 #include "MayaFlux/Nodes/Network/MeshNetwork.hpp"
+#include "MayaFlux/Nodes/Network/Operators/GpuFieldOperator.hpp"
 #include "MayaFlux/Nodes/Network/Operators/MeshFieldOperator.hpp"
 #include "MayaFlux/Nodes/Network/Operators/MeshTransformOperator.hpp"
 #include "MayaFlux/Portal/Graphics/ComputePress.hpp"
@@ -30,7 +34,20 @@ namespace {
     using Buffers::ProcessingToken;
     using Nodes::MeshVertex;
     using Nodes::GpuSync::MeshWriterNode;
+    using Kinesis::FieldTarget;
+    using Nodes::Network::GpuFieldOperator;
     using Nodes::Network::MeshNetwork;
+
+    namespace fields {
+
+        using namespace MayaFlux::ShaderCompat;
+
+        const auto shift_x = MF_FIELD(shift_x, [](vec3 p) -> vec3 {
+            return p * 0.0f + vec3(0.25f, 0.0f, 0.0f);
+        });
+
+    } // namespace fields
+
     MeshVertex vertex(
         glm::vec3 position,
         glm::vec3 color,
@@ -98,12 +115,19 @@ namespace {
             auto& foundry = Portal::Graphics::get_shader_foundry();
             foundry.shutdown();
             s_foundry_ready = foundry.initialize(borrowed);
+            if (s_foundry_ready) {
+                Portal::Graphics::get_compute_press().shutdown();
+                s_compute_ready = Portal::Graphics::get_compute_press().initialize();
+            }
         }
 
         static void TearDownTestSuite()
         {
+            if (s_compute_ready)
+                Portal::Graphics::get_compute_press().shutdown();
             if (s_foundry_ready)
                 Portal::Graphics::get_shader_foundry().shutdown();
+            s_compute_ready = false;
             s_foundry_ready = false;
             VulkanDeviceTest::TearDownTestSuite();
         }
@@ -177,6 +201,14 @@ namespace {
             return read_raw_buffer(buffer->get_index_buffer(), byte_count);
         }
 
+        [[nodiscard]] bool has_field_pass() const
+        {
+            const auto processors = buffer->get_processing_chain()->get_processors(buffer);
+            return std::ranges::any_of(processors, [](const auto& processor) {
+                return std::dynamic_pointer_cast<Buffers::VertexFieldProcessor>(processor) != nullptr;
+            });
+        }
+
         void setup_rendering()
         {
             window = std::make_shared<ScriptedWindow>(320, 240);
@@ -184,6 +216,7 @@ namespace {
         }
 
         static inline bool s_foundry_ready {};
+        static inline bool s_compute_ready {};
         Registry::Service::BufferService* service {};
         std::shared_ptr<MeshNetwork> network;
         std::shared_ptr<MeshNetworkBuffer> buffer;
@@ -319,6 +352,54 @@ namespace {
             EXPECT_FLOAT_EQ(uploaded[i].weight, 0.75F);
             EXPECT_FLOAT_EQ(uploaded[i].position.y, triangle(0.2F, { 0, 1, 0 })[i - 3].position.y + 0.25F);
         }
+    }
+
+    TEST_F(MeshNetworkBufferDeviceTest, AGpuFieldDisplacesTheRestGeometryEveryCycleWithoutAccumulating)
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("only", make_mesh(triangle(0.2F, { 1, 0, 0 }), { 0, 1, 2 }));
+        auto field_op = network->get_operator_chain()->emplace<GpuFieldOperator>(
+            Kakshya::VertexLayout::for_meshes(sizeof(MeshVertex)));
+        field_op->bind(FieldTarget::POSITION, fields::shift_x);
+        attach(network);
+        setup_rendering();
+        ASSERT_TRUE(has_field_pass());
+
+        for (int cycle = 0; cycle < 3; ++cycle) {
+            buffer->process_default();
+            buffer->get_processing_chain()->process(buffer);
+        }
+
+        const auto rest = triangle(0.2F, { 1, 0, 0 });
+        std::vector<MeshVertex> uploaded(rest.size());
+        const auto bytes = read_vertices(uploaded.size() * sizeof(MeshVertex));
+        std::memcpy(uploaded.data(), bytes.data(), bytes.size());
+        for (size_t i = 0; i < rest.size(); ++i) {
+            EXPECT_NEAR(uploaded[i].position.x, rest[i].position.x + 0.25F, 1e-5F) << "vertex " << i;
+            EXPECT_EQ(uploaded[i].position.y, rest[i].position.y) << "vertex " << i;
+        }
+    }
+
+    TEST_F(MeshNetworkBufferDeviceTest, AFieldOperatorWithTheWrongLayoutSizeWiresNoPass)
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("only", make_mesh(triangle(0.2F, { 1, 0, 0 }), { 0, 1, 2 }));
+        auto field_op = network->get_operator_chain()->emplace<GpuFieldOperator>(
+            Kakshya::VertexLayout::for_meshes(sizeof(MeshVertex) + 2 * sizeof(float)));
+        field_op->bind(FieldTarget::POSITION, fields::shift_x);
+        attach(network);
+        setup_rendering();
+        EXPECT_FALSE(has_field_pass());
+
+        buffer->process_default();
+        buffer->get_processing_chain()->process(buffer);
+
+        const auto rest = triangle(0.2F, { 1, 0, 0 });
+        std::vector<MeshVertex> uploaded(rest.size());
+        const auto bytes = read_vertices(uploaded.size() * sizeof(MeshVertex));
+        std::memcpy(uploaded.data(), bytes.data(), bytes.size());
+        for (size_t i = 0; i < rest.size(); ++i)
+            EXPECT_EQ(uploaded[i].position.x, rest[i].position.x) << "vertex " << i;
     }
 
     TEST_F(MeshNetworkBufferDeviceTest, ATransformChangeRepublishesOnlyTheModelMatrices)
