@@ -162,12 +162,12 @@ namespace {
             return bytes;
         }
 
-        std::vector<uint8_t> read_raw_buffer(vk::Buffer source, size_t byte_count)
+        std::vector<uint8_t> read_raw_buffer(vk::Buffer source, size_t byte_count, size_t source_offset = 0)
         {
             RawVulkanBuffer destination(
                 backend(), byte_count, vk::BufferUsageFlagBits::eTransferDst, true);
             service->copy_buffer(
-                vulkan_handle(source), vulkan_handle(destination.buffer()), byte_count, 0, 0);
+                vulkan_handle(source), vulkan_handle(destination.buffer()), byte_count, source_offset, 0);
             const auto* data = static_cast<const uint8_t*>(destination.mapped());
             return { data, data + byte_count };
         }
@@ -319,6 +319,93 @@ namespace {
             EXPECT_FLOAT_EQ(uploaded[i].weight, 0.75F);
             EXPECT_FLOAT_EQ(uploaded[i].position.y, triangle(0.2F, { 0, 1, 0 })[i - 3].position.y + 0.25F);
         }
+    }
+
+    TEST_F(MeshNetworkBufferDeviceTest, ATransformChangeRepublishesOnlyTheModelMatrices)
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("first", make_mesh(triangle(0.2F, { 1, 0, 0 }), { 0, 1, 2 }));
+        network->add_slot("second", make_mesh(triangle(0.8F, { 0, 1, 0 }), { 0, 1, 2 }));
+        attach(network);
+
+        const std::vector<uint8_t> sentinel(6U * sizeof(MeshVertex), 0xAB);
+        Buffers::upload_to_gpu(sentinel.data(), sentinel.size(), buffer);
+        ASSERT_EQ(read_vertices(sentinel.size()), sentinel);
+
+        network->get_slot(1).local_transform[3] = glm::vec4(3.0F, 0.0F, 0.0F, 1.0F);
+        network->get_slot(1).dirty = true;
+        network->process_batch(1);
+        buffer->process_default();
+
+        EXPECT_EQ(read_vertices(sentinel.size()), sentinel);
+
+        const auto& bindings = buffer->get_engine_context().ssbo_bindings;
+        const auto models = std::ranges::find_if(bindings, [](const auto& binding) {
+            return binding.binding == 1;
+        });
+        ASSERT_NE(models, bindings.end());
+        std::array<glm::mat4, 2> uploaded;
+        const auto bytes = read_raw_buffer(
+            models->buffer_info.buffer, sizeof(uploaded), models->buffer_info.offset);
+        std::memcpy(uploaded.data(), bytes.data(), bytes.size());
+        EXPECT_FLOAT_EQ(uploaded[0][3].x, 0.0F);
+        EXPECT_FLOAT_EQ(uploaded[1][3].x, 3.0F);
+    }
+
+    TEST_F(MeshNetworkBufferDeviceTest, ADirtyFlagWithNothingChangedUploadsNothing)
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("first", make_mesh(triangle(0.2F, { 1, 0, 0 }), { 0, 1, 2 }));
+        attach(network);
+
+        const std::vector<uint8_t> sentinel(3U * sizeof(MeshVertex), 0xCD);
+        Buffers::upload_to_gpu(sentinel.data(), sentinel.size(), buffer);
+
+        process_dirty_network();
+
+        EXPECT_EQ(read_vertices(sentinel.size()), sentinel);
+    }
+
+    TEST_F(MeshNetworkBufferDeviceTest, ATransformChangeAlongsideAGeometryChangeUploadsBoth)
+    {
+        auto node = make_mesh(triangle(0.2F, { 1, 0, 0 }), { 0, 1, 2 });
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("editable", node);
+        attach(network);
+
+        auto replacement = triangle(0.9F, { 0, 0, 1 });
+        node->set_mesh(replacement, std::array<uint32_t, 3> { 0, 1, 2 });
+        node->compute_frame();
+        network->get_slot(0).local_transform[3] = glm::vec4(2.0F, 0.0F, 0.0F, 1.0F);
+        network->get_slot(0).dirty = true;
+        network->process_batch(1);
+        buffer->process_default();
+
+        EXPECT_EQ(read_vertices(3U * sizeof(MeshVertex)), bytes_of(replacement));
+        const auto& bindings = buffer->get_engine_context().ssbo_bindings;
+        const auto models = std::ranges::find_if(bindings, [](const auto& binding) {
+            return binding.binding == 1;
+        });
+        ASSERT_NE(models, bindings.end());
+        glm::mat4 uploaded;
+        const auto bytes = read_raw_buffer(
+            models->buffer_info.buffer, sizeof(uploaded), models->buffer_info.offset);
+        std::memcpy(&uploaded, bytes.data(), bytes.size());
+        EXPECT_FLOAT_EQ(uploaded[3].x, 2.0F);
+    }
+
+    TEST_F(MeshNetworkBufferDeviceTest, ChangingTheMillingLayoutAfterAttachUploadsTheGeometryAgain)
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("first", make_mesh(triangle(0.2F, { 1, 0, 0 }), { 0, 1, 2 }));
+        attach(network);
+
+        const std::vector<uint8_t> sentinel(3U * sizeof(MeshVertex), 0xEF);
+        Buffers::upload_to_gpu(sentinel.data(), sentinel.size(), buffer);
+        buffer->get_mesh_processor()->set_milling_slot_attribute(true);
+        buffer->process_default();
+
+        EXPECT_NE(read_vertices(sentinel.size()), sentinel);
     }
 
     TEST_F(MeshNetworkBufferDeviceTest, AddingALargeSlotGrowsBothGpuStreamsAndRebasesItsIndices)
