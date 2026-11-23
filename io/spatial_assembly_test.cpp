@@ -104,6 +104,31 @@ namespace {
             }
         }
 
+        /** An arm that slides two units along x each second for three samples, with a hand that never moves under it. */
+        static void write_arm(const std::string& path)
+        {
+            using namespace Alembic::AbcGeom;
+            OArchive archive(Alembic::AbcCoreOgawa::WriteArchive(), path);
+            const uint32_t each_second = archive.addTimeSampling(Alembic::AbcCoreAbstract::TimeSampling(1.0, 0.0));
+
+            OXform arm(archive.getTop(), "arm");
+            arm.getSchema().setTimeSampling(each_second);
+            for (int s = 0; s < 3; ++s) {
+                XformSample sample;
+                sample.setTranslation(Imath::V3d(2.0 * s, 0.0, 0.0));
+                arm.getSchema().set(sample);
+            }
+
+            OPolyMesh hand(arm, "hand");
+            const std::vector<V3f> positions { V3f(0, 0, 0), V3f(1, 0, 0), V3f(0, 1, 0) };
+            const std::vector<int32_t> indices { 0, 1, 2 };
+            const std::vector<int32_t> counts { 3 };
+            hand.getSchema().set(OPolyMeshSchema::Sample(
+                P3fArraySample(positions.data(), positions.size()),
+                Int32ArraySample(indices.data(), indices.size()),
+                Int32ArraySample(counts.data(), counts.size())));
+        }
+
         std::string level_path()
         {
             const auto path = path_in_cwd("level.abc");
@@ -243,6 +268,31 @@ namespace {
         points.join();
 
         EXPECT_EQ(wrong.load(), 0);
+    }
+
+    TEST_F(SpatialAssemblyTest, TheTransformSamplesOfAnArchiveMoveTheMeshesUnderThemThroughAReflow)
+    {
+        const auto path = path_in_cwd("arm.abc");
+        write_arm(path);
+        const auto assembly = IO::open_spatial_assembly(path);
+        ASSERT_NE(assembly, nullptr);
+        ASSERT_EQ(assembly->get_data().motions.size(), 1U);
+        const auto frames = Kakshya::MeshAssemblyMotionFrames::create(assembly, 0);
+        ASSERT_NE(frames, nullptr);
+        const auto realized = Kriya::MeshAssemblyRealization::create(assembly);
+        ASSERT_NE(realized, nullptr);
+        ASSERT_EQ(realized->parts().size(), 1U);
+        auto reflow = Kriya::MotionReflowBuilder::sampling(frames, realized->placement_sink(), 1.0).build();
+        ASSERT_NE(reflow, nullptr);
+        const auto& network = realized->parts()[0].network;
+        ASSERT_NE(network, nullptr);
+
+        reflow->advance();
+        EXPECT_NEAR(network->get_slot(0).local_transform[3].x, 0.0F, 1e-4F);
+        reflow->advance();
+        EXPECT_NEAR(network->get_slot(0).local_transform[3].x, 2.0F, 1e-4F);
+        reflow->advance();
+        EXPECT_NEAR(network->get_slot(0).local_transform[3].x, 4.0F, 1e-4F);
     }
 
     TEST_F(SpatialAssemblyTest, AnArchiveBecomesTargetsThatArePlacedAndPlayedFromItsOwnFrames)

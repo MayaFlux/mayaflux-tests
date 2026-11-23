@@ -4,6 +4,8 @@
 #include "MayaFlux/Buffers/Network/InstanceNetworkBuffer.hpp"
 #include "MayaFlux/Buffers/Network/MeshNetworkBuffer.hpp"
 #include "MayaFlux/Buffers/Network/RecordedGeometryBuffer.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
+#include "MayaFlux/Nodes/Network/Operators/GpuFieldOperator.hpp"
 #include "MayaFlux/Kriya/MeshAssemblyRealization.hpp"
 #include "MayaFlux/Nodes/Graphics/MeshWriterNode.hpp"
 #include "MayaFlux/Nodes/Network/InstanceNetwork.hpp"
@@ -474,6 +476,114 @@ namespace {
         ASSERT_EQ(buffers.size(), 2U);
         ASSERT_NE(buffers[0]->current_frame(), nullptr);
         EXPECT_EQ(buffers[0]->current_frame(), buffers[1]->current_frame());
+    }
+
+    TEST(MeshAssemblyRealizationTest, ABufferOfPointsOrCurvesAsksForItsOwnOperatorByPartAndRow)
+    {
+        const RealizedLevel level;
+        std::vector<std::pair<MeshAssemblyRowKind, uint64_t>> asked;
+        MeshAssemblyRealizeOptions options;
+        options.spatial_field = [&asked](const Kakshya::MeshAssemblyPart& part, uint64_t row) {
+            asked.emplace_back(part.kind, row);
+            return std::shared_ptr<Nodes::Network::GpuFieldOperator> {};
+        };
+
+        const auto realized = level.realize(options);
+
+        ASSERT_NE(realized, nullptr);
+        ASSERT_EQ(asked.size(), 2U);
+        EXPECT_EQ(asked[0], (std::pair<MeshAssemblyRowKind, uint64_t> { MeshAssemblyRowKind::Points, 4 }));
+        EXPECT_EQ(asked[1], (std::pair<MeshAssemblyRowKind, uint64_t> { MeshAssemblyRowKind::Curves, 5 }));
+    }
+
+    TEST(MeshAssemblyRealizationTest, BoundsMayBeGivenOrLeftToTheGeometry)
+    {
+        const RealizedLevel level;
+        MeshAssemblyRealizeOptions given;
+        given.bounds = Kinesis::SamplerBounds { .min = glm::vec3(-9.0F), .max = glm::vec3(9.0F) };
+
+        EXPECT_NE(level.realize(given), nullptr);
+        EXPECT_NE(level.realize(), nullptr);
+    }
+
+    /** A wall of stone and two wheels of rubber under a joint. */
+    struct MaterialLevel {
+        std::shared_ptr<MeshAssemblyContainer> assembly = std::make_shared<MeshAssemblyContainer>();
+
+        MaterialLevel()
+        {
+            const auto wall = assembly->add_source({ .geometry = level_triangle(), .name = "wall" });
+            const auto wheel = assembly->add_source({ .geometry = level_triangle(), .name = "wheel" });
+            const auto stone = assembly->add_material({ .name = "stone", .diffuse_path = "stone.png" });
+            const auto rubber = assembly->add_material({ .name = "rubber", .diffuse_path = "*0", .diffuse_embedded = true });
+            const auto level = assembly->add_placement({ .name = "level" }).value();
+            std::ignore = assembly->add_placement({ .name = "wall", .parent = level, .source = wall, .material = stone });
+            std::ignore = assembly->add_placement({ .name = "left", .parent = level, .source = wheel, .material = rubber, .local = level_shift(1.0F) });
+            std::ignore = assembly->add_placement({ .name = "right", .parent = level, .source = wheel, .material = rubber, .local = level_shift(-1.0F) });
+        }
+    };
+
+    TEST(MeshAssemblyRealizationTest, EveryMaterialAPartUsesIsResolvedOnceWithTheMaterialAsTheFileWroteIt)
+    {
+        const MaterialLevel level;
+        const auto realized = MeshAssemblyRealization::create(level.assembly);
+        ASSERT_NE(realized, nullptr);
+        std::vector<std::string> asked;
+        std::vector<bool> embedded;
+
+        const auto bound = realized->bind_materials([&](const Kakshya::MeshAssemblyMaterial& material) {
+            asked.push_back(material.name);
+            embedded.push_back(material.diffuse_embedded);
+            return std::shared_ptr<Core::VKImage> {};
+        });
+
+        EXPECT_EQ(bound, 0U);
+        ASSERT_EQ(asked.size(), 2U);
+        EXPECT_EQ(asked[0], "stone");
+        EXPECT_EQ(asked[1], "rubber");
+        EXPECT_FALSE(embedded[0]);
+        EXPECT_TRUE(embedded[1]);
+    }
+
+    TEST(MeshAssemblyRealizationTest, AnInstancedPartResolvesTheOneMaterialItsGroupShares)
+    {
+        const MaterialLevel level;
+        MeshAssemblyRealizeOptions options;
+        options.partition = Partitions::instanced(2);
+        const auto realized = MeshAssemblyRealization::create(level.assembly, options);
+        ASSERT_NE(realized, nullptr);
+        int asked = 0;
+
+        std::ignore = realized->bind_materials([&asked](const Kakshya::MeshAssemblyMaterial&) {
+            ++asked;
+            return std::shared_ptr<Core::VKImage> {};
+        });
+
+        EXPECT_EQ(asked, 2);
+    }
+
+    TEST(MeshAssemblyRealizationTest, NoResolverBindsNothing)
+    {
+        const MaterialLevel level;
+        const auto realized = MeshAssemblyRealization::create(level.assembly);
+        ASSERT_NE(realized, nullptr);
+
+        EXPECT_EQ(realized->bind_materials({}), 0U);
+    }
+
+    TEST(MeshAssemblyRealizationTest, RowsWithNoMaterialAreNeverAsked)
+    {
+        const RealizedLevel level;
+        const auto realized = level.realize();
+        ASSERT_NE(realized, nullptr);
+        int asked = 0;
+
+        std::ignore = realized->bind_materials([&asked](const Kakshya::MeshAssemblyMaterial&) {
+            ++asked;
+            return std::shared_ptr<Core::VKImage> {};
+        });
+
+        EXPECT_EQ(asked, 0);
     }
 
 } // namespace
