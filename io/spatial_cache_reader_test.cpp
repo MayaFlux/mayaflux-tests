@@ -1074,7 +1074,7 @@ namespace {
         }
     };
 
-    TEST_P(HostileArchiveTest, OnlyTopLevelPointsAndCurvesAreStreams)
+    TEST_P(HostileArchiveTest, PointsAndCurvesAtAnyDepthAreStreamsNamedByPath)
     {
         const auto path = archive_path();
         LogCapture::clear();
@@ -1082,8 +1082,30 @@ namespace {
         IO::SpatialReader reader;
         ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
 
-        EXPECT_EQ(reader.get_stream_names(), (std::vector<std::string> { "cloud", "hair" }));
+        EXPECT_EQ(reader.get_stream_names(), (std::vector<std::string> { "rig/nested", "cloud", "hair" }));
         EXPECT_TRUE(LogCapture::contains("neither points nor curves"));
+    }
+
+    TEST_P(HostileArchiveTest, EveryObjectIsListedParentsFirstAndMeshGeometryIsNotRead)
+    {
+        const auto path = archive_path();
+        IO::SpatialReader reader;
+        ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+        const auto& objects = reader.get_objects();
+
+        ASSERT_EQ(objects.size(), 5U);
+        EXPECT_EQ(objects[0].path, "rig");
+        EXPECT_EQ(objects[0].kind, IO::SpatialObjectKind::Xform);
+        EXPECT_FALSE(objects[0].parent.has_value());
+        EXPECT_EQ(objects[1].path, "rig/nested");
+        EXPECT_EQ(objects[1].kind, IO::SpatialObjectKind::Points);
+        EXPECT_EQ(objects[1].parent, std::optional<size_t> { 0 });
+        EXPECT_EQ(objects[2].path, "surface");
+        EXPECT_EQ(objects[2].kind, IO::SpatialObjectKind::PolyMesh);
+        EXPECT_EQ(objects[3].kind, IO::SpatialObjectKind::Points);
+        EXPECT_EQ(objects[4].kind, IO::SpatialObjectKind::Curves);
+        EXPECT_TRUE(reader.get_stream_names().size() == 3U);
     }
 
     TEST_P(HostileArchiveTest, PointsWithUnevenTimeSamplingAndMixedSizesReadBackExactly)
