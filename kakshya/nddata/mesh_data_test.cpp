@@ -1,8 +1,11 @@
 #include "gtest/gtest.h"
+#include "../../support/polyhedral_support.hpp"
 #include "../../support/test_metadata.hpp"
 
 #include "MayaFlux/Kakshya/NDData/MeshData.hpp"
 #include "MayaFlux/Kakshya/NDData/MeshInsertion.hpp"
+#include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
+#include "MayaFlux/Kinesis/Polyhedral/Triangulation.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
@@ -48,6 +51,39 @@ namespace {
         return data;
     }
 
+    struct SubmeshTag {
+        int value {};
+    };
+
+    std::vector<uint8_t> mesh_vertex_bytes(const std::vector<glm::vec3>& positions)
+    {
+        std::vector<Kakshya::MeshVertex> vertices(positions.size());
+        for (size_t i = 0; i < positions.size(); ++i) {
+            vertices[i].position = positions[i];
+        }
+        std::vector<uint8_t> bytes(vertices.size() * sizeof(Kakshya::MeshVertex));
+        std::memcpy(bytes.data(), vertices.data(), bytes.size());
+        return bytes;
+    }
+
+    MeshData polygon_mesh(const std::vector<glm::vec3>& positions)
+    {
+        MeshData data = MeshData::empty();
+        data.vertex_variant = mesh_vertex_bytes(positions);
+        data.index_variant = std::vector<uint32_t> { 0, 1, 2 };
+        return data;
+    }
+
+    Kakshya::FaceList faces_of(const Polyhedral::Surface& surface)
+    {
+        return { .sizes = surface.sizes, .corners = surface.corners };
+    }
+
+    const std::vector<uint32_t>& triangles_of(const MeshData& mesh)
+    {
+        return std::get<std::vector<uint32_t>>(mesh.index_variant);
+    }
+
     TEST(MeshSubrangeTest, RegionSpansTheIndexRange)
     {
         EXPECT_EQ(Region({ 0 }).get<MeshSubrange>(), nullptr);
@@ -63,12 +99,13 @@ namespace {
 
     TEST(MeshSubrangeTest, DescribedMembersRoundTripThroughFacets)
     {
-        static_assert(std::tuple_size_v<decltype(Reflect::Generated::Description<MeshSubrange>::members())> == 7);
+        static_assert(std::tuple_size_v<decltype(Reflect::Generated::Description<MeshSubrange>::members())> == 8);
 
         const MeshSubrange sub {
             .index_start = 6,
             .index_count = 9,
             .vertex_offset = 100,
+            .vertex_count = 40,
             .name = "hull",
             .material_name = "steel",
             .diffuse_path = "steel.png",
@@ -76,10 +113,11 @@ namespace {
         };
         const auto facets = Facets::from(sub);
 
-        EXPECT_EQ(facets.size(), 7U);
+        EXPECT_EQ(facets.size(), 8U);
         EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::index_start> {}), 6U);
         EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::index_count> {}), 9U);
         EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::vertex_offset> {}), 100U);
+        EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::vertex_count> {}), 40U);
         EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::name> {}), "hull");
         EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::material_name> {}), "steel");
         EXPECT_EQ(*facets.get(FacetMember<&MeshSubrange::diffuse_path> {}), "steel.png");
@@ -92,6 +130,7 @@ namespace {
         sub.index_start = 6;
         sub.index_count = 9;
         sub.vertex_offset = 100;
+        sub.vertex_count = 40;
         sub.name = "hull";
         sub.material_name = "steel";
         sub.diffuse_path = "steel.png";
@@ -104,6 +143,7 @@ namespace {
         EXPECT_EQ(stored->index_start, 6U);
         EXPECT_EQ(stored->index_count, 9U);
         EXPECT_EQ(stored->vertex_offset, 100U);
+        EXPECT_EQ(stored->vertex_count, 40U);
         EXPECT_EQ(stored->name, "hull");
         EXPECT_EQ(stored->material_name, "steel");
         EXPECT_EQ(stored->diffuse_path, "steel.png");
@@ -660,7 +700,9 @@ namespace {
         EXPECT_EQ(hull_sub->material_name, "steel");
         EXPECT_EQ(hull.start_coordinates, (std::vector<uint64_t> { 0 }));
         EXPECT_EQ(hull.end_coordinates, (std::vector<uint64_t> { 3 }));
+        EXPECT_EQ(hull_sub->index_start, 0U);
         EXPECT_EQ(hull_sub->vertex_offset, 0U);
+        EXPECT_EQ(hull_sub->vertex_count, 3U);
 
         const Region& deck = access->submeshes->regions[1];
         const auto* deck_sub = deck.get<MeshSubrange>();
@@ -669,8 +711,10 @@ namespace {
         EXPECT_EQ(deck_sub->material_name, "wood");
         EXPECT_EQ(deck.start_coordinates, (std::vector<uint64_t> { 3 }));
         EXPECT_EQ(deck.end_coordinates, (std::vector<uint64_t> { 9 }));
-        EXPECT_EQ(deck_sub->vertex_offset, 3U);
+        EXPECT_EQ(deck_sub->index_start, 3U);
         EXPECT_EQ(deck_sub->index_count, 6U);
+        EXPECT_EQ(deck_sub->vertex_offset, 3U);
+        EXPECT_EQ(deck_sub->vertex_count, 4U);
     }
 
     TEST(MeshInsertionSubmeshTest, BuildTotalsAcrossSubmeshes)
@@ -828,6 +872,373 @@ namespace {
         EXPECT_EQ(built->face_count(), viewed->face_count());
         EXPECT_TRUE(std::ranges::equal(built->vertices(), viewed->vertices()));
         EXPECT_TRUE(std::ranges::equal(built->indices(), viewed->indices()));
+    }
+
+    TEST(MeshInsertionCarriedRegionTest, ACarriedRegionKeepsItsOtherValuesAndGetsItsIndexRange)
+    {
+        InsertionTarget t;
+        t.insertion.insert_submesh(make_vertices(3), std::vector<uint32_t> { 0, 1, 2 }, "first");
+
+        MeshSubrange named;
+        named.name = "hull";
+        named.material_name = "steel";
+        named.diffuse_path = "steel.png";
+        Region carried = named.to_region();
+        carried.set(SubmeshTag { .value = 7 });
+        carried.label = "primary";
+        t.insertion.insert_submesh(make_vertices(3), std::vector<uint32_t> { 0, 1, 2 }, carried);
+        const auto access = t.insertion.build();
+
+        ASSERT_TRUE(access.has_value());
+        ASSERT_EQ(access->submeshes->regions.size(), 2U);
+        const Region& placed = access->submeshes->regions[1];
+
+        const auto* tag = placed.get<SubmeshTag>();
+        ASSERT_NE(tag, nullptr);
+        EXPECT_EQ(tag->value, 7);
+        EXPECT_EQ(placed.label.value_or(""), "primary");
+
+        const auto* sub = placed.get<MeshSubrange>();
+        ASSERT_NE(sub, nullptr);
+        EXPECT_EQ(sub->name, "hull");
+        EXPECT_EQ(sub->material_name, "steel");
+        EXPECT_EQ(sub->diffuse_path, "steel.png");
+        EXPECT_EQ(sub->index_start, 3U);
+        EXPECT_EQ(sub->index_count, 3U);
+        EXPECT_EQ(sub->vertex_offset, 3U);
+        EXPECT_EQ(sub->vertex_count, 3U);
+        EXPECT_EQ(placed.start_coordinates, (std::vector<uint64_t> { 3 }));
+        EXPECT_EQ(placed.end_coordinates, (std::vector<uint64_t> { 6 }));
+    }
+
+    TEST(MeshInsertionCarriedRegionTest, ACarriedRegionWithoutASubrangeStillGetsOne)
+    {
+        InsertionTarget t;
+        Region carried({ 0 });
+        carried.set(SubmeshTag { .value = 3 });
+
+        t.insertion.insert_submesh(make_vertices(4), std::vector<uint32_t> { 0, 1, 2, 2, 1, 3 }, carried);
+        const auto access = t.insertion.build();
+
+        ASSERT_TRUE(access.has_value());
+        const Region& placed = access->submeshes->regions[0];
+        const auto* sub = placed.get<MeshSubrange>();
+        ASSERT_NE(sub, nullptr);
+        EXPECT_EQ(sub->index_start, 0U);
+        EXPECT_EQ(sub->index_count, 6U);
+        EXPECT_TRUE(sub->name.empty());
+        ASSERT_NE(placed.get<SubmeshTag>(), nullptr);
+        EXPECT_EQ(placed.get<SubmeshTag>()->value, 3);
+    }
+
+    TEST(MeshInsertionCarriedRegionTest, TheCallersRegionIsNeverChanged)
+    {
+        InsertionTarget t;
+        t.insertion.insert_submesh(make_vertices(3), std::vector<uint32_t> { 0, 1, 2 });
+        MeshSubrange named;
+        named.name = "deck";
+        const Region carried = named.to_region();
+
+        t.insertion.insert_submesh(make_vertices(3), std::vector<uint32_t> { 0, 1, 2 }, carried);
+
+        EXPECT_EQ(carried.start_coordinates, (std::vector<uint64_t> { 0 }));
+        EXPECT_EQ(carried.get<MeshSubrange>()->index_start, 0U);
+    }
+
+    TEST(MeshInsertionCarriedRegionTest, ARefusedBatchAddsNoRegion)
+    {
+        InsertionTarget t;
+        t.insertion.insert_submesh(make_vertices(3), std::vector<uint32_t> { 0, 1, 2 }, "a");
+        Region carried({ 0 });
+        carried.set(SubmeshTag { .value = 1 });
+
+        t.insertion.insert_submesh(make_vertices(3, 32), std::vector<uint32_t> { 0, 1, 2 }, carried, position_only_layout(32));
+
+        const auto access = t.insertion.build();
+        ASSERT_TRUE(access.has_value());
+        EXPECT_EQ(access->submeshes->regions.size(), 1U);
+        EXPECT_EQ(access->vertex_count(), 3U);
+    }
+
+    MeshData assembled_mesh()
+    {
+        DataVariant vertices;
+        DataVariant indices;
+        MeshInsertion insertion(vertices, indices);
+
+        insertion.insert_submesh(make_vertices(3), std::vector<uint32_t> { 0, 1, 2 }, "hull", "steel");
+
+        MeshSubrange named;
+        named.name = "deck";
+        Region carried = named.to_region();
+        carried.set(SubmeshTag { .value = 9 });
+        insertion.insert_submesh(std::vector<uint8_t>(4 * k_stride, 7), std::vector<uint32_t> { 0, 1, 2, 2, 1, 3 }, carried);
+
+        const auto access = insertion.build();
+        MeshData data;
+        data.vertex_variant = std::move(vertices);
+        data.index_variant = std::move(indices);
+        data.layout = access->layout;
+        data.submeshes = access->submeshes;
+        return data;
+    }
+
+    TEST(MeshDataSubmeshTest, ASubmeshComesBackOutWithItsOwnVerticesAndLocalIndices)
+    {
+        const MeshData data = assembled_mesh();
+        ASSERT_EQ(triangles_of(data), (std::vector<uint32_t> { 0, 1, 2, 3, 4, 5, 5, 4, 6 }));
+
+        const auto deck = data.extract_submesh(1);
+
+        ASSERT_TRUE(deck.has_value());
+        EXPECT_EQ(std::get<std::vector<uint8_t>>(deck->vertex_variant), std::vector<uint8_t>(4 * k_stride, 7));
+        EXPECT_EQ(triangles_of(*deck), (std::vector<uint32_t> { 0, 1, 2, 2, 1, 3 }));
+        EXPECT_EQ(deck->layout.vertex_count, 4U);
+        EXPECT_EQ(deck->vertex_count(), 4U);
+        EXPECT_TRUE(deck->is_valid());
+    }
+
+    TEST(MeshDataSubmeshTest, TheExtractedSubmeshStartsAtZeroAndKeepsEverythingItCarried)
+    {
+        const MeshData data = assembled_mesh();
+
+        const auto deck = data.extract_submesh(1);
+
+        ASSERT_TRUE(deck.has_value());
+        ASSERT_TRUE(deck->submeshes.has_value());
+        ASSERT_EQ(deck->submeshes->regions.size(), 1U);
+        const Region& region = deck->submeshes->regions[0];
+        const auto* sub = region.get<MeshSubrange>();
+        ASSERT_NE(sub, nullptr);
+        EXPECT_EQ(sub->name, "deck");
+        EXPECT_EQ(sub->index_start, 0U);
+        EXPECT_EQ(sub->index_count, 6U);
+        EXPECT_EQ(sub->vertex_offset, 0U);
+        EXPECT_EQ(sub->vertex_count, 4U);
+        EXPECT_EQ(region.start_coordinates, (std::vector<uint64_t> { 0 }));
+        EXPECT_EQ(region.end_coordinates, (std::vector<uint64_t> { 6 }));
+        ASSERT_NE(region.get<SubmeshTag>(), nullptr);
+        EXPECT_EQ(region.get<SubmeshTag>()->value, 9);
+    }
+
+    TEST(MeshDataSubmeshTest, TheFirstSubmeshComesOutToo)
+    {
+        const MeshData data = assembled_mesh();
+
+        const auto hull = data.extract_submesh(0);
+
+        ASSERT_TRUE(hull.has_value());
+        EXPECT_EQ(std::get<std::vector<uint8_t>>(hull->vertex_variant), make_vertices(3));
+        EXPECT_EQ(triangles_of(*hull), (std::vector<uint32_t> { 0, 1, 2 }));
+        EXPECT_EQ(hull->submeshes->regions[0].get<MeshSubrange>()->material_name, "steel");
+    }
+
+    TEST(MeshDataSubmeshTest, GroupLevelValuesComeAlongAndTheSourceIsUntouched)
+    {
+        MeshData data = assembled_mesh();
+        const Facet<int> key;
+        data.submeshes->set(key, 5);
+        const auto vertex_bytes = std::get<std::vector<uint8_t>>(data.vertex_variant);
+        const auto indices = triangles_of(data);
+
+        const auto deck = data.extract_submesh(1);
+
+        ASSERT_TRUE(deck.has_value());
+        ASSERT_NE(deck->submeshes->get(key), nullptr);
+        EXPECT_EQ(*deck->submeshes->get(key), 5);
+        EXPECT_EQ(deck->submeshes->name, "submeshes");
+        EXPECT_EQ(std::get<std::vector<uint8_t>>(data.vertex_variant), vertex_bytes);
+        EXPECT_EQ(triangles_of(data), indices);
+        EXPECT_EQ(data.submeshes->regions.size(), 2U);
+    }
+
+    TEST(MeshDataSubmeshTest, ThereIsNothingToExtractWithoutASubmeshOrAtAnUnknownPosition)
+    {
+        const MeshData whole = filled_mesh();
+        const MeshData data = assembled_mesh();
+
+        EXPECT_FALSE(whole.extract_submesh(0).has_value());
+        EXPECT_FALSE(data.extract_submesh(2).has_value());
+    }
+
+    TEST(MeshDataSubmeshTest, ARegionWithoutARecordedVertexRangeCannotBeExtracted)
+    {
+        MeshData data = assembled_mesh();
+        MeshSubrange unrecorded = *data.submeshes->regions[1].get<MeshSubrange>();
+        unrecorded.vertex_count = 0;
+        data.submeshes->regions[1].set(unrecorded);
+
+        EXPECT_FALSE(data.extract_submesh(1).has_value());
+    }
+
+    TEST(MeshDataSubmeshTest, RangesThatLeaveTheArraysAreRefused)
+    {
+        MeshData data = assembled_mesh();
+        MeshSubrange wide = *data.submeshes->regions[1].get<MeshSubrange>();
+        wide.vertex_count = 99;
+        data.submeshes->regions[1].set(wide);
+        EXPECT_FALSE(data.extract_submesh(1).has_value());
+
+        MeshSubrange long_range = *data.submeshes->regions[1].get<MeshSubrange>();
+        long_range.vertex_count = 4;
+        long_range.index_count = 30;
+        data.submeshes->regions[1].set(long_range);
+        EXPECT_FALSE(data.extract_submesh(1).has_value());
+
+        MeshSubrange ragged = long_range;
+        ragged.index_count = 5;
+        data.submeshes->regions[1].set(ragged);
+        EXPECT_FALSE(data.extract_submesh(1).has_value());
+    }
+
+    TEST(MeshDataSubmeshTest, ATriangleThatNamesAVertexOutsideTheSubmeshIsRefused)
+    {
+        MeshData data = assembled_mesh();
+        std::get<std::vector<uint32_t>>(data.index_variant)[4] = 0;
+
+        EXPECT_FALSE(data.extract_submesh(1).has_value());
+        EXPECT_TRUE(data.extract_submesh(0).has_value());
+    }
+
+    TEST(MeshDataPolygonTest, AssignFacesKeepsThePolygonsAndDerivesTheTriangles)
+    {
+        const auto cube = Polyhedral::unit_cube();
+        MeshData mesh = polygon_mesh(cube.positions);
+        mesh.submeshes = RegionGroup("submeshes");
+
+        const auto failed = mesh.assign_faces(faces_of(cube));
+
+        ASSERT_TRUE(failed.has_value());
+        EXPECT_TRUE(failed->empty());
+        EXPECT_TRUE(mesh.has_polygons());
+        EXPECT_EQ(mesh.faces->sizes.size(), 6U);
+        EXPECT_EQ(triangles_of(mesh).size(), 36U);
+        EXPECT_EQ(mesh.face_count(), 12U);
+        EXPECT_EQ(mesh.polygon_count(), 6U);
+        EXPECT_TRUE(mesh.is_valid());
+        EXPECT_FALSE(mesh.submeshes.has_value());
+    }
+
+    TEST(MeshDataPolygonTest, ATrianglesOnlyMeshCountsItsTrianglesAsItsPolygons)
+    {
+        const MeshData mesh = filled_mesh();
+
+        EXPECT_FALSE(mesh.has_polygons());
+        EXPECT_EQ(mesh.polygon_count(), mesh.face_count());
+        EXPECT_EQ(mesh.polygon_count(), 2U);
+        EXPECT_TRUE(mesh.faces_are_valid());
+    }
+
+    TEST(MeshDataPolygonTest, FacesThatCannotBeTriangulatedAreReportedAndKept)
+    {
+        std::vector<glm::vec3> positions {
+            glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(1.0F, 1.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F),
+            glm::vec3(0.0F, 5.0F, 0.0F), glm::vec3(1.0F, 5.0F, 0.0F), glm::vec3(2.0F, 5.0F, 0.0F), glm::vec3(3.0F, 5.0F, 0.0F)
+        };
+        MeshData mesh = polygon_mesh(positions);
+
+        const auto failed = mesh.assign_faces({ .sizes = { 4, 4 }, .corners = { 0, 1, 2, 3, 4, 5, 6, 7 } });
+
+        ASSERT_TRUE(failed.has_value());
+        EXPECT_EQ(*failed, (std::vector<uint32_t> { 1 }));
+        EXPECT_EQ(triangles_of(mesh).size(), 6U);
+        EXPECT_EQ(mesh.polygon_count(), 2U);
+        EXPECT_TRUE(mesh.is_valid());
+    }
+
+    TEST(MeshDataPolygonTest, AssignFacesRefusesFacesOutsideTheVerticesAndChangesNothing)
+    {
+        const auto cube = Polyhedral::unit_cube();
+        MeshData mesh = polygon_mesh(cube.positions);
+        Kakshya::FaceList outside = faces_of(cube);
+        outside.corners[5] = 99;
+
+        EXPECT_FALSE(mesh.assign_faces(outside).has_value());
+        EXPECT_FALSE(mesh.has_polygons());
+        EXPECT_EQ(triangles_of(mesh), (std::vector<uint32_t> { 0, 1, 2 }));
+    }
+
+    TEST(MeshDataPolygonTest, AssignFacesNeedsAPositionAttribute)
+    {
+        const auto cube = Polyhedral::unit_cube();
+        MeshData mesh = polygon_mesh(cube.positions);
+        mesh.layout.attributes.clear();
+
+        EXPECT_FALSE(mesh.assign_faces(faces_of(cube)).has_value());
+        EXPECT_FALSE(mesh.has_polygons());
+    }
+
+    TEST(MeshDataPolygonTest, TriangulationOptionsReachTheTriangulation)
+    {
+        const std::vector<glm::vec3> rhombus {
+            glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(4.0F, 0.0F, 0.0F), glm::vec3(5.0F, 2.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F)
+        };
+        const Kakshya::FaceList quad { .sizes = { 4 }, .corners = { 0, 1, 2, 3 } };
+
+        MeshData shorter = polygon_mesh(rhombus);
+        MeshData first = polygon_mesh(rhombus);
+        ASSERT_TRUE(shorter.assign_faces(quad).has_value());
+        ASSERT_TRUE(first.assign_faces(quad, { .quad_diagonal = Kinesis::QuadDiagonal::First }).has_value());
+
+        EXPECT_EQ(triangles_of(shorter), (std::vector<uint32_t> { 1, 2, 3, 1, 3, 0 }));
+        EXPECT_EQ(triangles_of(first), (std::vector<uint32_t> { 0, 1, 2, 0, 2, 3 }));
+    }
+
+    TEST(MeshDataPolygonTest, FaceValidityChecksTheirShapeOverTheVertices)
+    {
+        const auto cube = Polyhedral::unit_cube();
+        MeshData mesh = polygon_mesh(cube.positions);
+        ASSERT_TRUE(mesh.assign_faces(faces_of(cube)).has_value());
+        ASSERT_TRUE(mesh.is_valid());
+
+        mesh.faces->corners[0] = 99;
+        EXPECT_FALSE(mesh.faces_are_valid());
+        EXPECT_FALSE(mesh.is_valid());
+        mesh.faces->corners[0] = 0;
+
+        mesh.faces->sizes[0] = 3;
+        EXPECT_FALSE(mesh.faces_are_valid());
+        EXPECT_FALSE(mesh.is_valid());
+        mesh.faces->sizes[0] = 2;
+        EXPECT_FALSE(mesh.is_valid());
+    }
+
+    TEST(MeshDataPolygonTest, AccessViewsThePolygonFacesWithoutCopyingThem)
+    {
+        const auto cube = Polyhedral::unit_cube();
+        MeshData mesh = polygon_mesh(cube.positions);
+        ASSERT_TRUE(mesh.assign_faces(faces_of(cube)).has_value());
+
+        const auto view = mesh.access();
+
+        ASSERT_TRUE(view.has_value());
+        EXPECT_TRUE(view->has_polygons());
+        EXPECT_EQ(view->faces, &*mesh.faces);
+        EXPECT_EQ(view->face_count(), 12U);
+    }
+
+    TEST(MeshDataPolygonTest, AccessOfATrianglesOnlyMeshHasNoFaces)
+    {
+        const MeshData mesh = filled_mesh();
+
+        const auto view = mesh.access();
+
+        ASSERT_TRUE(view.has_value());
+        EXPECT_FALSE(view->has_polygons());
+        EXPECT_EQ(view->faces, nullptr);
+    }
+
+    TEST(MeshDataPolygonTest, ACopyKeepsItsOwnFaces)
+    {
+        const auto cube = Polyhedral::unit_cube();
+        MeshData mesh = polygon_mesh(cube.positions);
+        ASSERT_TRUE(mesh.assign_faces(faces_of(cube)).has_value());
+
+        MeshData copy = mesh;
+        copy.faces->sizes[0] = 7;
+
+        EXPECT_EQ(mesh.faces->sizes[0], 4U);
+        EXPECT_TRUE(mesh.is_valid());
     }
 
 } // namespace

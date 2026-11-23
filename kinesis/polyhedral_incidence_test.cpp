@@ -204,7 +204,7 @@ TEST(PolyhedralIncidenceTest, LargeSurfacesTakeTheParallelPaths)
 TEST(PolyhedralIncidenceTest, AFaceListIsViewedNotCopied)
 {
     const auto cube = Polyhedral::unit_cube();
-    const Kinesis::FaceList list { .sizes = cube.sizes, .corners = cube.corners };
+    const Kakshya::FaceList list { .sizes = cube.sizes, .corners = cube.corners };
     const auto incidence = Incidence::create(list, cube.positions.size());
 
     ASSERT_TRUE(incidence.has_value());

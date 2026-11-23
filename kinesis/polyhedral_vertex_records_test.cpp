@@ -235,6 +235,41 @@ TEST(PolyhedralVertexRecordsTest, TangentsNeedTextureCoordinates)
     EXPECT_EQ(Kinesis::write_vertex_tangents(quad.records, layout, quad.triangles), FillOutcome::Unsupported);
 }
 
+TEST(PolyhedralVertexRecordsTest, PositionsAreReadFromEveryRecordWhateverTheStride)
+{
+    const auto cube = Polyhedral::unit_cube();
+
+    const auto packed = Kinesis::read_vertex_positions(pack(vertices_of(cube.positions)), Kakshya::VertexLayout::for_meshes());
+    ASSERT_TRUE(packed.has_value());
+    EXPECT_EQ(*packed, cube.positions);
+
+    constexpr size_t stride = sizeof(MeshVertex) + 12;
+    std::vector<uint8_t> wide(8 * stride, 0xAB);
+    for (size_t i = 0; i < 8; ++i) {
+        std::memcpy(wide.data() + i * stride, &cube.positions[i], sizeof(glm::vec3));
+    }
+    const auto widened = Kinesis::read_vertex_positions(wide, Kakshya::VertexLayout::for_meshes(stride));
+    ASSERT_TRUE(widened.has_value());
+    EXPECT_EQ(*widened, cube.positions);
+}
+
+TEST(PolyhedralVertexRecordsTest, PositionsCannotBeReadWithoutAFittingPositionAttributeOrWholeRecords)
+{
+    const auto records = pack(vertices_of(Polyhedral::unit_cube().positions));
+
+    auto no_position = Kakshya::VertexLayout::for_meshes();
+    no_position.attributes.clear();
+    EXPECT_FALSE(Kinesis::read_vertex_positions(records, no_position).has_value());
+
+    auto too_narrow = Kakshya::VertexLayout::for_meshes();
+    too_narrow.stride_bytes = 8;
+    EXPECT_FALSE(Kinesis::read_vertex_positions(records, too_narrow).has_value());
+
+    auto ragged = Kakshya::VertexLayout::for_meshes();
+    ragged.stride_bytes = sizeof(MeshVertex) - 1;
+    EXPECT_FALSE(Kinesis::read_vertex_positions(records, ragged).has_value());
+}
+
 TEST(PolyhedralVertexRecordsTest, ARecordCanBeGatheredFromTheVerticesNamedAndInThatOrder)
 {
     const auto cube = Polyhedral::unit_cube();
