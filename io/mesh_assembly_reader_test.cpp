@@ -291,7 +291,7 @@ TEST_F(MeshAssemblyAlembicTest, AnInstanceSharesTheSourcesOfTheObjectItInstances
     const auto assembly = reader.create_mesh_assembly();
 
     ASSERT_NE(assembly, nullptr);
-    EXPECT_EQ(assembly->get_data().sources.size(), 2U);
+    EXPECT_EQ(assembly->get_data().sources.size(), 3U);
     const auto groups = assembly->groups();
     const auto shared = std::ranges::find_if(groups, [](const Kakshya::MeshAssemblyGroup& group) { return group.rows.size() == 2; });
     ASSERT_NE(shared, groups.end());
@@ -340,7 +340,7 @@ TEST_F(MeshAssemblyAlembicTest, ASourceKeepsItsSampleTimesAndTopologyVariance)
     EXPECT_EQ(cloud->variance, Kakshya::TopologyVariance::Constant);
 }
 
-TEST_F(MeshAssemblyAlembicTest, MeshObjectsAreListedButContributeNoRowOrSource)
+TEST_F(MeshAssemblyAlembicTest, AMeshObjectIsASourceHoldingItsFirstSampleAndARowThatShowsIt)
 {
     IO::SpatialReader reader;
     ASSERT_TRUE(reader.open(rig_path()));
@@ -348,12 +348,21 @@ TEST_F(MeshAssemblyAlembicTest, MeshObjectsAreListedButContributeNoRowOrSource)
     const auto assembly = reader.create_mesh_assembly();
 
     ASSERT_NE(assembly, nullptr);
+    const auto& sources = assembly->get_data().sources;
+    const auto surface = std::ranges::find_if(sources, [](const Kakshya::MeshAssemblySource& source) { return source.name == "surface"; });
+    ASSERT_NE(surface, sources.end());
+    EXPECT_EQ(surface->variance, Kakshya::TopologyVariance::Constant);
+    const auto* geometry = std::get_if<Kakshya::MeshData>(&surface->geometry);
+    ASSERT_NE(geometry, nullptr);
+    EXPECT_EQ(geometry->vertex_count(), 3U);
+    EXPECT_EQ(geometry->face_count(), 1U);
+
+    bool shown = false;
     for (size_t row = 0; row < assembly->get_total_elements(); ++row) {
-        EXPECT_NE(assembly->placement(row)->name, "surface");
+        const auto placement = assembly->placement(row);
+        shown = shown || (placement->name == "surface" && placement->source.has_value());
     }
-    for (const auto& source : assembly->get_data().sources) {
-        EXPECT_NE(source.name, "surface");
-    }
+    EXPECT_TRUE(shown);
 }
 
 TEST_F(MeshAssemblyAlembicTest, ATransformMatrixPlacesTheChildrenAsItsTranslationSays)

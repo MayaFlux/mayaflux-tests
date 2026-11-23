@@ -1083,10 +1083,10 @@ namespace {
         ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
 
         EXPECT_EQ(reader.get_stream_names(), (std::vector<std::string> { "rig/nested", "cloud", "hair" }));
-        EXPECT_TRUE(LogCapture::contains("neither points nor curves"));
+        EXPECT_EQ(reader.get_mesh_names(), (std::vector<std::string> { "surface" }));
     }
 
-    TEST_P(HostileArchiveTest, EveryObjectIsListedParentsFirstAndMeshGeometryIsNotRead)
+    TEST_P(HostileArchiveTest, EveryObjectIsListedParentsFirst)
     {
         const auto path = archive_path();
         IO::SpatialReader reader;
