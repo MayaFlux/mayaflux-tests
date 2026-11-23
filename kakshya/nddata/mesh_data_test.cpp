@@ -5,7 +5,6 @@
 #include "MayaFlux/Kakshya/NDData/MeshData.hpp"
 #include "MayaFlux/Kakshya/NDData/MeshInsertion.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
-#include "MayaFlux/Kinesis/Polyhedral/Triangulation.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
 
@@ -960,6 +959,21 @@ namespace {
         EXPECT_EQ(access->vertex_count(), 3U);
     }
 
+    Kakshya::MeshVertex vertex_at(const MeshData& mesh, size_t index)
+    {
+        Kakshya::MeshVertex vertex {};
+        std::memcpy(&vertex, std::get<std::vector<uint8_t>>(mesh.vertex_variant).data() + index * sizeof(Kakshya::MeshVertex),
+            sizeof(Kakshya::MeshVertex));
+        return vertex;
+    }
+
+    std::vector<glm::vec3> square_positions()
+    {
+        return { glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(1.0F, 1.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F) };
+    }
+
+    const std::vector<uint32_t> k_square_triangles { 0, 1, 2, 0, 2, 3 };
+
     MeshData assembled_mesh()
     {
         DataVariant vertices;
@@ -981,6 +995,262 @@ namespace {
         data.layout = access->layout;
         data.submeshes = access->submeshes;
         return data;
+    }
+
+    TEST(MeshDataFromArraysTest, PositionsAndTrianglesMakeAValidMeshWithDefaultAttributes)
+    {
+        const auto positions = square_positions();
+
+        const auto mesh = MeshData::from_positions(positions, k_square_triangles);
+
+        ASSERT_TRUE(mesh.has_value());
+        EXPECT_TRUE(mesh->is_valid());
+        EXPECT_EQ(mesh->vertex_count(), 4U);
+        EXPECT_EQ(mesh->face_count(), 2U);
+        EXPECT_EQ(mesh->layout.stride_bytes, 68U);
+        EXPECT_EQ(triangles_of(*mesh), k_square_triangles);
+        const auto vertex = vertex_at(*mesh, 2);
+        EXPECT_EQ(vertex.position, positions[2]);
+        EXPECT_EQ(vertex.normal, glm::vec3(0.0F, 0.0F, 1.0F));
+        EXPECT_EQ(vertex.color, glm::vec4(1.0F));
+        EXPECT_EQ(vertex.uv, glm::vec2(0.0F));
+    }
+
+    TEST(MeshDataFromArraysTest, TheResultIsWhatTheManualInsertionRouteMakes)
+    {
+        const auto positions = square_positions();
+        const auto bytes = mesh_vertex_bytes(positions);
+        MeshData manual = MeshData::empty();
+        MeshInsertion insertion(manual.vertex_variant, manual.index_variant);
+        insertion.insert_flat(bytes, k_square_triangles, VertexLayout::for_meshes(k_stride));
+
+        const auto made = MeshData::from_positions(positions, k_square_triangles);
+
+        ASSERT_TRUE(made.has_value());
+        EXPECT_EQ(made->vertex_variant, manual.vertex_variant);
+        EXPECT_EQ(made->index_variant, manual.index_variant);
+        EXPECT_EQ(made->layout.vertex_count, 4U);
+    }
+
+    TEST(MeshDataFromArraysTest, MeshVerticesKeepEveryField)
+    {
+        std::vector<Kakshya::MeshVertex> vertices(3);
+        for (size_t i = 0; i < 3; ++i) {
+            vertices[i].position = glm::vec3(static_cast<float>(i), 0.0F, 0.0F);
+            vertices[i].uv = glm::vec2(0.1F * static_cast<float>(i + 1), 0.9F);
+            vertices[i].normal = glm::vec3(0.0F, 1.0F, 0.0F);
+            vertices[i].tangent = glm::vec4(0.0F, 0.0F, 1.0F, -1.0F);
+            vertices[i].weight = 0.25F;
+        }
+
+        const auto mesh = MeshData::from_vertices(vertices, std::vector<uint32_t> { 0, 1, 2 });
+
+        ASSERT_TRUE(mesh.has_value());
+        for (size_t i = 0; i < 3; ++i) {
+            const auto read = vertex_at(*mesh, i);
+            EXPECT_EQ(read.position, vertices[i].position);
+            EXPECT_EQ(read.uv, vertices[i].uv);
+            EXPECT_EQ(read.normal, vertices[i].normal);
+            EXPECT_EQ(read.tangent, vertices[i].tangent);
+            EXPECT_EQ(read.weight, 0.25F);
+        }
+    }
+
+    TEST(MeshDataFromArraysTest, AVertexKeepsItsUvAndItsScalarBecomesTheWeight)
+    {
+        std::vector<Kakshya::Vertex> vertices(3);
+        for (size_t i = 0; i < 3; ++i) {
+            vertices[i].position = glm::vec3(static_cast<float>(i), 1.0F, 0.0F);
+            vertices[i].uv = glm::vec2(0.25F, 0.75F);
+            vertices[i].scalar = 0.5F;
+        }
+
+        const auto mesh = MeshData::from_vertices(vertices, std::vector<uint32_t> { 0, 1, 2 });
+
+        ASSERT_TRUE(mesh.has_value());
+        EXPECT_EQ(vertex_at(*mesh, 1).uv, glm::vec2(0.25F, 0.75F));
+        EXPECT_EQ(vertex_at(*mesh, 1).weight, 0.5F);
+    }
+
+    TEST(MeshDataFromArraysTest, PointAndLineVerticesAndAnyContiguousRangeAreAccepted)
+    {
+        std::vector<Kakshya::PointVertex> points(3);
+        std::array<Kakshya::LineVertex, 3> lines {};
+        for (size_t i = 0; i < 3; ++i) {
+            points[i].position = glm::vec3(static_cast<float>(i), 0.0F, 0.0F);
+            points[i].size = 7.0F;
+            lines[i].position = glm::vec3(0.0F, static_cast<float>(i), 0.0F);
+            lines[i].thickness = 3.0F;
+        }
+
+        const auto from_points = MeshData::from_vertices(points, std::vector<uint32_t> { 0, 1, 2 });
+        const auto from_lines = MeshData::from_vertices(lines, std::vector<uint32_t> { 0, 1, 2 });
+
+        ASSERT_TRUE(from_points.has_value());
+        ASSERT_TRUE(from_lines.has_value());
+        EXPECT_EQ(vertex_at(*from_points, 2).weight, 7.0F);
+        EXPECT_EQ(vertex_at(*from_lines, 2).weight, 3.0F);
+        EXPECT_EQ(vertex_at(*from_lines, 2).position, glm::vec3(0.0F, 2.0F, 0.0F));
+    }
+
+    TEST(MeshDataFromArraysTest, RecordsOfAnyStrideComeThroughWhole)
+    {
+        constexpr uint32_t stride = static_cast<uint32_t>(sizeof(Kakshya::MeshVertex)) + 12;
+        const auto records = make_vertices(4, stride);
+
+        const auto mesh = MeshData::from_records(records, VertexLayout::for_meshes(stride), k_square_triangles);
+
+        ASSERT_TRUE(mesh.has_value());
+        EXPECT_EQ(mesh->layout.stride_bytes, stride);
+        EXPECT_EQ(mesh->vertex_count(), 4U);
+        EXPECT_EQ(std::get<std::vector<uint8_t>>(mesh->vertex_variant), records);
+    }
+
+    TEST(MeshDataFromArraysTest, VariantsHoldPositionsFlatTriplesOrRecords)
+    {
+        const auto positions = square_positions();
+        const std::vector<DataVariant> sources {
+            std::vector<glm::vec3>(positions),
+            std::vector<float> { 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0 },
+            std::vector<double> { 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0 },
+            mesh_vertex_bytes(positions)
+        };
+        const DataVariant triangles = k_square_triangles;
+
+        for (size_t source = 0; source < sources.size(); ++source) {
+            const auto mesh = MeshData::from_variants(sources[source], triangles);
+
+            ASSERT_TRUE(mesh.has_value()) << "source " << source;
+            EXPECT_TRUE(mesh->is_valid());
+            EXPECT_EQ(mesh->vertex_count(), 4U);
+            for (size_t i = 0; i < 4; ++i) {
+                EXPECT_EQ(vertex_at(*mesh, i).position, positions[i]) << "source " << source;
+            }
+        }
+    }
+
+    TEST(MeshDataFromArraysTest, RecordsInAVariantUseTheLayoutGiven)
+    {
+        constexpr uint32_t stride = static_cast<uint32_t>(sizeof(Kakshya::MeshVertex)) + 12;
+        const DataVariant records = make_vertices(4, stride);
+        const DataVariant triangles = k_square_triangles;
+
+        const auto mesh = MeshData::from_variants(records, triangles, VertexLayout::for_meshes(stride));
+
+        ASSERT_TRUE(mesh.has_value());
+        EXPECT_EQ(mesh->layout.stride_bytes, stride);
+        EXPECT_EQ(mesh->vertex_count(), 4U);
+    }
+
+    TEST(MeshDataFromArraysTest, NarrowIndexVariantsAreWidened)
+    {
+        const DataVariant positions = std::vector<glm::vec3>(square_positions());
+
+        const auto from_half = MeshData::from_variants(positions, DataVariant { std::vector<uint16_t> { 0, 1, 2 } });
+        const auto from_byte = MeshData::from_variants(positions, DataVariant { std::vector<uint8_t> { 0, 2, 3 } });
+
+        ASSERT_TRUE(from_half.has_value());
+        ASSERT_TRUE(from_byte.has_value());
+        EXPECT_EQ(triangles_of(*from_half), (std::vector<uint32_t> { 0, 1, 2 }));
+        EXPECT_EQ(triangles_of(*from_byte), (std::vector<uint32_t> { 0, 2, 3 }));
+    }
+
+    TEST(MeshDataFromArraysTest, UnsupportedVariantsAreRefused)
+    {
+        const DataVariant positions = std::vector<glm::vec3>(square_positions());
+        const DataVariant triangles = k_square_triangles;
+
+        EXPECT_FALSE(MeshData::from_variants(DataVariant { std::vector<glm::vec4>(4) }, triangles).has_value());
+        EXPECT_FALSE(MeshData::from_variants(DataVariant { std::vector<float>(8, 0.0F) }, triangles).has_value());
+        EXPECT_FALSE(MeshData::from_variants(positions, DataVariant { std::vector<float> { 0, 1, 2 } }).has_value());
+    }
+
+    TEST(MeshDataFromArraysTest, InputThatCannotMakeAValidMeshIsRefused)
+    {
+        const auto positions = square_positions();
+
+        EXPECT_FALSE(MeshData::from_positions(std::vector<glm::vec3> {}, k_square_triangles).has_value());
+        EXPECT_FALSE(MeshData::from_positions(positions, std::vector<uint32_t> {}).has_value());
+        EXPECT_FALSE(MeshData::from_positions(positions, std::vector<uint32_t> { 0, 1, 2, 3 }).has_value());
+        EXPECT_FALSE(MeshData::from_positions(positions, std::vector<uint32_t> { 0, 1, 4 }).has_value());
+
+        VertexLayout no_stride = VertexLayout::for_meshes(k_stride);
+        no_stride.stride_bytes = 0;
+        EXPECT_FALSE(MeshData::from_records(make_vertices(4), no_stride, k_square_triangles).has_value());
+        EXPECT_FALSE(MeshData::from_records(std::vector<uint8_t>(k_stride + 1, 0), VertexLayout::for_meshes(k_stride),
+                         k_square_triangles)
+                         .has_value());
+    }
+
+    TEST(MeshDataFromArraysTest, PolygonsFromEveryKindOfSourceKeepTheirFacesAndDeriveTriangles)
+    {
+        const auto cube = Polyhedral::unit_cube();
+        const auto vertices = [&] {
+            std::vector<Kakshya::MeshVertex> records(cube.positions.size());
+            for (size_t i = 0; i < records.size(); ++i) {
+                records[i].position = cube.positions[i];
+            }
+            return records;
+        }();
+
+        const std::vector<std::optional<MeshData>> meshes {
+            MeshData::from_positions(cube.positions, faces_of(cube)),
+            MeshData::from_vertices(vertices, faces_of(cube)),
+            MeshData::from_variants(DataVariant { std::vector<glm::vec3>(cube.positions) }, faces_of(cube)),
+            MeshData::from_records(mesh_vertex_bytes(cube.positions), VertexLayout::for_meshes(k_stride), faces_of(cube))
+        };
+
+        for (size_t source = 0; source < meshes.size(); ++source) {
+            ASSERT_TRUE(meshes[source].has_value()) << "source " << source;
+            EXPECT_TRUE(meshes[source]->has_polygons());
+            EXPECT_EQ(meshes[source]->polygon_count(), 6U);
+            EXPECT_EQ(meshes[source]->face_count(), 12U);
+            EXPECT_TRUE(meshes[source]->is_valid());
+        }
+    }
+
+    TEST(MeshDataFromArraysTest, TheQuadDiagonalChoiceReachesAPolygonFactory)
+    {
+        const std::vector<glm::vec3> rhombus {
+            glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(4.0F, 0.0F, 0.0F), glm::vec3(5.0F, 2.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F)
+        };
+        const Kakshya::FaceList quad { .sizes = { 4 }, .corners = { 0, 1, 2, 3 } };
+
+        const auto shorter = MeshData::from_positions(rhombus, quad);
+        const auto first = MeshData::from_positions(rhombus, quad, false);
+
+        ASSERT_TRUE(shorter.has_value());
+        ASSERT_TRUE(first.has_value());
+        EXPECT_EQ(triangles_of(*shorter), (std::vector<uint32_t> { 1, 2, 3, 1, 3, 0 }));
+        EXPECT_EQ(triangles_of(*first), (std::vector<uint32_t> { 0, 1, 2, 0, 2, 3 }));
+    }
+
+    TEST(MeshDataFromArraysTest, APolygonThatCannotBeTriangulatedIsKeptWithoutTriangles)
+    {
+        const std::vector<glm::vec3> positions {
+            glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(1.0F, 1.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F),
+            glm::vec3(0.0F, 5.0F, 0.0F), glm::vec3(1.0F, 5.0F, 0.0F), glm::vec3(2.0F, 5.0F, 0.0F), glm::vec3(3.0F, 5.0F, 0.0F)
+        };
+
+        const auto mesh = MeshData::from_positions(positions,
+            Kakshya::FaceList { .sizes = { 4, 4 }, .corners = { 0, 1, 2, 3, 4, 5, 6, 7 } });
+
+        ASSERT_TRUE(mesh.has_value());
+        EXPECT_EQ(mesh->polygon_count(), 2U);
+        EXPECT_EQ(triangles_of(*mesh).size(), 6U);
+    }
+
+    TEST(MeshDataFromArraysTest, PolygonsThatCannotMakeAMeshAreRefused)
+    {
+        const std::vector<glm::vec3> line {
+            glm::vec3(0.0F), glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(2.0F, 0.0F, 0.0F), glm::vec3(3.0F, 0.0F, 0.0F)
+        };
+        const Kakshya::FaceList quad { .sizes = { 4 }, .corners = { 0, 1, 2, 3 } };
+
+        EXPECT_FALSE(MeshData::from_positions(line, quad).has_value());
+        EXPECT_FALSE(MeshData::from_positions(square_positions(),
+                         Kakshya::FaceList { .sizes = { 4 }, .corners = { 0, 1, 2, 9 } })
+                         .has_value());
     }
 
     TEST(MeshDataSubmeshTest, ASubmeshComesBackOutWithItsOwnVerticesAndLocalIndices)
@@ -1168,7 +1438,7 @@ namespace {
         EXPECT_FALSE(mesh.has_polygons());
     }
 
-    TEST(MeshDataPolygonTest, TriangulationOptionsReachTheTriangulation)
+    TEST(MeshDataPolygonTest, TheQuadDiagonalChoiceReachesTheTriangulation)
     {
         const std::vector<glm::vec3> rhombus {
             glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(4.0F, 0.0F, 0.0F), glm::vec3(5.0F, 2.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F)
@@ -1178,7 +1448,7 @@ namespace {
         MeshData shorter = polygon_mesh(rhombus);
         MeshData first = polygon_mesh(rhombus);
         ASSERT_TRUE(shorter.assign_faces(quad).has_value());
-        ASSERT_TRUE(first.assign_faces(quad, { .quad_diagonal = Kinesis::QuadDiagonal::First }).has_value());
+        ASSERT_TRUE(first.assign_faces(quad, false).has_value());
 
         EXPECT_EQ(triangles_of(shorter), (std::vector<uint32_t> { 1, 2, 3, 1, 3, 0 }));
         EXPECT_EQ(triangles_of(first), (std::vector<uint32_t> { 0, 1, 2, 0, 2, 3 }));

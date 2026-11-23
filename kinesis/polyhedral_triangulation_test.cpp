@@ -14,14 +14,12 @@ namespace MayaFlux::Test {
 namespace {
 
     using Kinesis::Incidence;
-    using Kinesis::QuadDiagonal;
-    using Kinesis::TriangulationOptions;
 
-    Kinesis::Triangulation triangulate(const Polyhedral::Surface& surface, const TriangulationOptions& options = {})
+    Kinesis::Triangulation triangulate(const Polyhedral::Surface& surface, bool shorter_quad_diagonal = true)
     {
         const auto incidence = Incidence::create(surface.sizes, surface.corners, surface.positions.size());
         EXPECT_TRUE(incidence.has_value());
-        const auto result = Kinesis::triangulate_faces(surface.positions, *incidence, options);
+        const auto result = Kinesis::triangulate_faces(surface.positions, *incidence, shorter_quad_diagonal);
         EXPECT_TRUE(result.has_value());
         return result.value_or(Kinesis::Triangulation {});
     }
@@ -61,7 +59,7 @@ TEST(PolyhedralTriangulationTest, AConvexQuadSplitsAlongTheShorterDiagonalByDefa
 TEST(PolyhedralTriangulationTest, TheFirstDiagonalCanBeAskedFor)
 {
     const auto surface = Polyhedral::single_face(rhombus());
-    const auto result = triangulate(surface, { .quad_diagonal = QuadDiagonal::First });
+    const auto result = triangulate(surface, false);
 
     EXPECT_EQ(result.indices, (std::vector<uint32_t> { 0, 1, 2, 0, 2, 3 }));
     EXPECT_NEAR(Polyhedral::triangle_list_area(surface.positions, result.indices), 6.5, 1.0e-5);
