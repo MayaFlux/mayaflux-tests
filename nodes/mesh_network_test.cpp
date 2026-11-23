@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
+#include "MayaFlux/Kakshya/NDData/MeshAccess.hpp"
 #include "MayaFlux/Nodes/Network/MeshNetwork.hpp"
 #include "MayaFlux/Nodes/Network/Operators/MeshFieldOperator.hpp"
 #include "MayaFlux/Nodes/Network/Operators/MeshTransformOperator.hpp"
@@ -407,6 +408,115 @@ namespace {
         ASSERT_TRUE(mesh.has_value());
         ASSERT_TRUE(mesh->submeshes.has_value());
         EXPECT_EQ(mesh->submeshes->regions.size(), 2U);
+    }
+
+    /** Two triangles in one node, the second shifted by five along x, named as two parts. */
+    std::shared_ptr<MeshWriterNode> two_part_node(const std::string& first = "left", uint32_t covered_indices = 6)
+    {
+        std::vector<MeshVertex> v(6);
+        const std::array<glm::vec3, 3> corner { glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F) };
+        for (size_t i = 0; i < 6; ++i) {
+            v[i].position = corner[i % 3] + glm::vec3(i < 3 ? 0.0F : 5.0F, 0.0F, 0.0F);
+        }
+        const std::vector<uint32_t> indices { 0, 1, 2, 3, 4, 5 };
+        auto data = Kakshya::MeshData::from_vertices(v, std::span<const uint32_t>(indices)).value();
+
+        Kakshya::RegionGroup group("submeshes");
+        Kakshya::MeshSubrange left;
+        left.index_start = 0;
+        left.index_count = 3;
+        left.vertex_offset = 0;
+        left.vertex_count = 3;
+        left.name = first;
+        left.material_name = "wood";
+        group.add_region(left.to_region());
+        if (covered_indices > 3) {
+            Kakshya::MeshSubrange right;
+            right.index_start = 3;
+            right.index_count = 3;
+            right.vertex_offset = 3;
+            right.vertex_count = 3;
+            right.name = "right";
+            group.add_region(right.to_region());
+        }
+        data.submeshes = std::move(group);
+
+        auto node = std::make_shared<MeshWriterNode>(8);
+        node->set_mesh(data);
+        node->compute_frame();
+        return node;
+    }
+
+    const Kakshya::MeshSubrange& part_of(const Kakshya::MeshData& mesh, size_t index)
+    {
+        return *mesh.submeshes->regions.at(index).get<Kakshya::MeshSubrange>();
+    }
+
+    TEST(MeshNetworkTest, MeshDataKeepsTheNodesOwnPartsInPlaceOfOneSubmeshForTheSlot)
+    {
+        MeshNetwork net;
+        net.add_slot("rig", two_part_node());
+        net.add_slot("plain", quad_node());
+
+        const auto mesh = net.get_mesh_data();
+
+        ASSERT_TRUE(mesh.has_value());
+        ASSERT_TRUE(mesh->submeshes.has_value());
+        ASSERT_EQ(mesh->submeshes->regions.size(), 3U);
+        EXPECT_EQ(part_of(*mesh, 0).name, "left");
+        EXPECT_EQ(part_of(*mesh, 0).material_name, "wood");
+        EXPECT_EQ(part_of(*mesh, 0).vertex_offset, 0U);
+        EXPECT_EQ(part_of(*mesh, 1).name, "right");
+        EXPECT_EQ(part_of(*mesh, 1).vertex_offset, 3U);
+        EXPECT_EQ(part_of(*mesh, 1).index_start, 3U);
+        EXPECT_EQ(part_of(*mesh, 2).name, "plain");
+        EXPECT_EQ(part_of(*mesh, 2).vertex_offset, 6U);
+        EXPECT_EQ(part_of(*mesh, 2).index_start, 6U);
+        EXPECT_EQ(mesh->vertex_count(), 10U);
+    }
+
+    TEST(MeshNetworkTest, APartWithNoNameTakesTheNameOfItsSlot)
+    {
+        MeshNetwork net;
+        net.add_slot("rig", two_part_node(""));
+
+        const auto mesh = net.get_mesh_data();
+
+        ASSERT_TRUE(mesh.has_value());
+        ASSERT_EQ(mesh->submeshes->regions.size(), 2U);
+        EXPECT_EQ(part_of(*mesh, 0).name, "rig");
+        EXPECT_EQ(part_of(*mesh, 1).name, "right");
+    }
+
+    TEST(MeshNetworkTest, PartsThatDoNotCoverTheWholeMeshGiveOneSubmeshForTheSlotAndLoseNothing)
+    {
+        MeshNetwork net;
+        net.add_slot("rig", two_part_node("left", 3));
+
+        const auto mesh = net.get_mesh_data();
+
+        ASSERT_TRUE(mesh.has_value());
+        ASSERT_EQ(mesh->submeshes->regions.size(), 1U);
+        EXPECT_EQ(part_of(*mesh, 0).name, "rig");
+        EXPECT_EQ(part_of(*mesh, 0).vertex_count, 6U);
+        EXPECT_EQ(mesh->vertex_count(), 6U);
+    }
+
+    TEST(MeshNetworkTest, WorldMeshDataPlacesEveryPartThroughItsSlot)
+    {
+        MeshNetwork net;
+        const auto rig = net.add_slot("rig", two_part_node());
+        net.get_slot(rig).local_transform = translation(10.0F, 0.0F, 0.0F);
+
+        const auto mesh = net.get_world_mesh_data();
+
+        ASSERT_TRUE(mesh.has_value());
+        ASSERT_EQ(mesh->submeshes->regions.size(), 2U);
+        const auto& bytes = std::get<std::vector<uint8_t>>(mesh->vertex_variant);
+        std::vector<MeshVertex> vertices(bytes.size() / sizeof(MeshVertex));
+        std::memcpy(vertices.data(), bytes.data(), bytes.size());
+        EXPECT_NEAR(vertices[0].position.x, 10.0F, 1e-5F);
+        EXPECT_NEAR(vertices[3].position.x, 15.0F, 1e-5F);
     }
 
     TEST(MeshNetworkTest, MeshDataSkipsASlotWithoutANode)
