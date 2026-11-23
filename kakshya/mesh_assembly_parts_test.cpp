@@ -239,6 +239,43 @@ namespace {
         EXPECT_NE(seen[0], seen[1]);
     }
 
+    TEST(MeshAssemblyPartsTest, ACameraIsAKindOfRowAndHasAPartOfItsOwn)
+    {
+        auto assembly = std::make_shared<MeshAssemblyContainer>();
+        const auto lens = assembly->add_source({ .geometry = Kinesis::Lens {}, .name = "lens" });
+        const auto mesh = assembly->add_source({ .geometry = part_triangle(), .name = "tri" });
+        std::ignore = assembly->add_placement({ .name = "camera", .source = lens });
+        std::ignore = assembly->add_placement({ .name = "tri", .source = mesh });
+
+        EXPECT_EQ(row_kind(*assembly, 0), MeshAssemblyRowKind::Camera);
+        EXPECT_EQ(row_kind(*assembly, 1), MeshAssemblyRowKind::Mesh);
+        EXPECT_NE(assembly->lens(lens), nullptr);
+        EXPECT_EQ(assembly->mesh(lens), nullptr);
+        EXPECT_EQ(assembly->lens(mesh), nullptr);
+
+        const auto parts = partition_assembly(*assembly);
+        ASSERT_EQ(parts.size(), 2U);
+        EXPECT_EQ(parts[0].kind, MeshAssemblyRowKind::Camera);
+        EXPECT_EQ(parts[0].rows, (Rows { 0 }));
+    }
+
+    TEST(MeshAssemblyFramesTest, ACameraSourceTakesLensFramesAndNothingElseDoes)
+    {
+        auto assembly = std::make_shared<MeshAssemblyContainer>();
+        const auto lens = assembly->add_source({ .geometry = Kinesis::Lens {}, .name = "lens" });
+        const auto mesh = assembly->add_source({ .geometry = part_triangle(), .name = "tri" });
+        const auto frames = ResidentFrames<Kinesis::Lens>::create(*Kinesis::TimeSampling::uniform(1.0), std::vector<Kinesis::Lens> { Kinesis::Lens {}, Kinesis::Lens {} });
+
+        EXPECT_TRUE(assembly->set_lens_frames(lens, frames));
+        EXPECT_FALSE(assembly->set_lens_frames(mesh, frames));
+        EXPECT_FALSE(assembly->set_lens_frames(9, frames));
+        EXPECT_EQ(assembly->lens_frames(lens), frames);
+        EXPECT_EQ(assembly->lens_frames(mesh), nullptr);
+
+        assembly->clear();
+        EXPECT_EQ(assembly->lens_frames(lens), nullptr);
+    }
+
     TEST(MeshAssemblyFramesTest, ASourceTakesFramesOfItsOwnKindOnly)
     {
         const PartLevel level;

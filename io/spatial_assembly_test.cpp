@@ -11,7 +11,7 @@
 #include "MayaFlux/IO/Spatial/SpatialSequence.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
 #include "MayaFlux/Kakshya/Semantic/MeshAssemblyContainer.hpp"
-#include "MayaFlux/Kriya/MeshAssemblyRealization.hpp"
+#include "MayaFlux/Kriya/Realization/MeshAssemblyRealization.hpp"
 #include "MayaFlux/Nodes/Graphics/MeshWriterNode.hpp"
 
 #ifdef MAYAFLUX_PLATFORM_WINDOWS

@@ -3,7 +3,7 @@
 
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
 #include "MayaFlux/Kakshya/Semantic/MeshAssemblyContainer.hpp"
-#include "MayaFlux/Kriya/FrameBlend.hpp"
+#include "MayaFlux/Kriya/ReflowHelpers/FrameBlend.hpp"
 #include "MayaFlux/Portal/Graphics/GraphicsUtils.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>

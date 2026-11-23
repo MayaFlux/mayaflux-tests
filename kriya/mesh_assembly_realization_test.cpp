@@ -6,7 +6,7 @@
 #include "MayaFlux/Buffers/Network/RecordedGeometryBuffer.hpp"
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
 #include "MayaFlux/Nodes/Network/Operators/GpuFieldOperator.hpp"
-#include "MayaFlux/Kriya/MeshAssemblyRealization.hpp"
+#include "MayaFlux/Kriya/Realization/MeshAssemblyRealization.hpp"
 #include "MayaFlux/Nodes/Graphics/MeshWriterNode.hpp"
 #include "MayaFlux/Nodes/Network/InstanceNetwork.hpp"
 
