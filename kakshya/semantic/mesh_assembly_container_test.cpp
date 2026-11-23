@@ -15,7 +15,7 @@ namespace MayaFlux::Test {
 namespace {
 
     using Kakshya::MeshAssemblyChannel;
-    using Kakshya::MeshAssemblyClip;
+    using Kakshya::MeshAssemblyMotion;
     using Kakshya::MeshAssemblyContainer;
     using Kakshya::MeshAssemblyData;
     using Kakshya::MeshAssemblyMaterial;
@@ -340,7 +340,7 @@ TEST(MeshAssemblyContainerTest, ASharedSourceWithDifferentMaterialsSplitsIntoGro
 TEST(MeshAssemblyContainerTest, ARegionCopyIsASelfContainedMeshAssembly)
 {
     CarFixture car;
-    ASSERT_TRUE(car.assembly.add_clip({ .name = "roll", .channels = { { .row = 1, .translation = slide({ 0, 0, 0 }, { 0, 0, 5 }) }, { .row = 3, .translation = slide({ 0, 0, 0 }, { 1, 0, 0 }) } } }).has_value());
+    ASSERT_TRUE(car.assembly.add_motion({ .name = "roll", .channels = { { .row = 1, .translation = slide({ 0, 0, 0 }, { 0, 0, 5 }) }, { .row = 3, .translation = slide({ 0, 0, 0 }, { 1, 0, 0 }) } } }).has_value());
 
     const auto copies = car.assembly.get_region_data(
         Region(std::vector<uint64_t> { 1 }, std::vector<uint64_t> { 2 }));
@@ -352,9 +352,9 @@ TEST(MeshAssemblyContainerTest, ARegionCopyIsASelfContainedMeshAssembly)
     EXPECT_EQ(copy.get_data().sources[0].name, "wheel");
     EXPECT_EQ(copy.get_data().materials.size(), 1U);
     EXPECT_EQ(copy.index_forest().roots().size(), 2U);
-    ASSERT_EQ(copy.get_data().clips.size(), 1U);
-    ASSERT_EQ(copy.get_data().clips[0].channels.size(), 1U);
-    EXPECT_EQ(copy.get_data().clips[0].channels[0].row, 0U);
+    ASSERT_EQ(copy.get_data().motions.size(), 1U);
+    ASSERT_EQ(copy.get_data().motions[0].channels.size(), 1U);
+    EXPECT_EQ(copy.get_data().motions[0].channels[0].row, 0U);
 }
 
 TEST(MeshAssemblyContainerTest, ASubtreeCopyRebasesItsParentLinksAndSourceIndices)
@@ -433,21 +433,21 @@ TEST(MeshAssemblyContainerTest, FacetsOnASourceAMaterialAndTheWholeSurviveACopy)
     EXPECT_EQ(*file_author, "exporter");
 }
 
-TEST(MeshAssemblyContainerTest, AClipTargetingARowTwiceOrAMissingRowIsRefused)
+TEST(MeshAssemblyContainerTest, AMotionTargetingARowTwiceOrAMissingRowIsRefused)
 {
     CarFixture car;
 
-    EXPECT_FALSE(car.assembly.add_clip({ .name = "twice", .channels = { { .row = 1 }, { .row = 1 } } }).has_value());
-    EXPECT_FALSE(car.assembly.add_clip({ .name = "missing", .channels = { { .row = 40 } } }).has_value());
-    EXPECT_TRUE(car.assembly.add_clip({ .name = "fine", .channels = { { .row = 1 }, { .row = 2 } } }).has_value());
+    EXPECT_FALSE(car.assembly.add_motion({ .name = "twice", .channels = { { .row = 1 }, { .row = 1 } } }).has_value());
+    EXPECT_FALSE(car.assembly.add_motion({ .name = "missing", .channels = { { .row = 40 } } }).has_value());
+    EXPECT_TRUE(car.assembly.add_motion({ .name = "fine", .channels = { { .row = 1 }, { .row = 2 } } }).has_value());
 }
 
-TEST(MeshAssemblyClipTest, ASampledClipMovesOnlyTheRowsItTargets)
+TEST(MeshAssemblyMotionTest, ASampledMotionMovesOnlyTheRowsItTargets)
 {
     CarFixture car;
-    const auto clip = car.assembly.add_clip({ .name = "drive", .channels = { { .row = 0, .translation = slide({ 10, 0, 0 }, { 30, 0, 0 }) } } }).value();
+    const auto motion = car.assembly.add_motion({ .name = "drive", .channels = { { .row = 0, .translation = slide({ 10, 0, 0 }, { 30, 0, 0 }) } } }).value();
 
-    const auto locals = car.assembly.sample(clip, 0.5).value();
+    const auto locals = car.assembly.sample(motion, 0.5).value();
 
     ASSERT_EQ(locals.size(), 4U);
     EXPECT_TRUE(close(glm::vec3(locals[0][3]), glm::vec3(20.0F, 0.0F, 0.0F)));
@@ -458,43 +458,43 @@ TEST(MeshAssemblyClipTest, ASampledClipMovesOnlyTheRowsItTargets)
     EXPECT_TRUE(close(glm::vec3(world[1][3]), glm::vec3(21.0F, 0.0F, 1.0F)));
 }
 
-TEST(MeshAssemblyClipTest, AComponentTheChannelDoesNotKeepKeepsTheRowsRestValue)
+TEST(MeshAssemblyMotionTest, AComponentTheChannelDoesNotKeepKeepsTheRowsRestValue)
 {
     MeshAssemblyContainer assembly;
     const auto row = assembly.add_placement({ .name = "row", .local = Kinesis::compose_transform({ 1.0F, 2.0F, 3.0F }, glm::quat(1.0F, 0.0F, 0.0F, 0.0F), { 2.0F, 2.0F, 2.0F }) })
                          .value();
-    const auto clip = assembly.add_clip({ .name = "slide", .channels = { { .row = row, .translation = slide({ 0, 0, 0 }, { 4, 0, 0 }) } } }).value();
+    const auto motion = assembly.add_motion({ .name = "slide", .channels = { { .row = row, .translation = slide({ 0, 0, 0 }, { 4, 0, 0 }) } } }).value();
 
-    const auto locals = assembly.sample(clip, 1.0).value();
+    const auto locals = assembly.sample(motion, 1.0).value();
 
     EXPECT_TRUE(close(glm::vec3(locals[0][3]), glm::vec3(4.0F, 0.0F, 0.0F)));
     EXPECT_NEAR(glm::length(glm::vec3(locals[0][0])), 2.0F, 1e-4F);
 }
 
-TEST(MeshAssemblyClipTest, ARotationChannelTurnsTheRow)
+TEST(MeshAssemblyMotionTest, ARotationChannelTurnsTheRow)
 {
     MeshAssemblyContainer assembly;
     const auto row = assembly.add_placement({ .name = "row" }).value();
-    const auto clip = assembly.add_clip({ .name = "turn", .channels = { { .row = row, .rotation = turn_about_z(glm::half_pi<float>()) } } }).value();
+    const auto motion = assembly.add_motion({ .name = "turn", .channels = { { .row = row, .rotation = turn_about_z(glm::half_pi<float>()) } } }).value();
 
-    const auto locals = assembly.sample(clip, 1.0).value();
+    const auto locals = assembly.sample(motion, 1.0).value();
 
     EXPECT_TRUE(close(glm::vec3(locals[0] * glm::vec4(1.0F, 0.0F, 0.0F, 1.0F)), glm::vec3(0.0F, 1.0F, 0.0F)));
 }
 
-TEST(MeshAssemblyClipTest, AClipThatDoesNotExistGivesNothing)
+TEST(MeshAssemblyMotionTest, AMotionThatDoesNotExistGivesNothing)
 {
     const CarFixture car;
 
     EXPECT_FALSE(car.assembly.sample(0, 0.0).has_value());
 }
 
-TEST(MeshAssemblyClipTest, AbsentOutsideTheKeysLeavesTheRestPlacement)
+TEST(MeshAssemblyMotionTest, AbsentOutsideTheKeysLeavesTheRestPlacement)
 {
     CarFixture car;
-    const auto clip = car.assembly.add_clip({ .name = "late", .channels = { { .row = 0, .translation = slide({ 0, 0, 0 }, { 5, 0, 0 }) } } }).value();
+    const auto motion = car.assembly.add_motion({ .name = "late", .channels = { { .row = 0, .translation = slide({ 0, 0, 0 }, { 5, 0, 0 }) } } }).value();
 
-    const auto locals = car.assembly.sample(clip, 9.0, Kinesis::OutOfRange::Absent).value();
+    const auto locals = car.assembly.sample(motion, 9.0, Kinesis::OutOfRange::Absent).value();
 
     EXPECT_TRUE(close(glm::vec3(locals[0][3]), glm::vec3(10.0F, 0.0F, 0.0F)));
 }

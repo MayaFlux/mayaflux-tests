@@ -211,7 +211,7 @@ TEST_F(MeshAssemblyModelTest, TheSceneInfoIsKeptInTheFacets)
     EXPECT_EQ(info->mesh_count, 1U);
 }
 
-TEST_F(MeshAssemblyModelTest, AnAnimationBecomesAClipInSeconds)
+TEST_F(MeshAssemblyModelTest, AnAnimationBecomesAMotionInSeconds)
 {
     const auto path = path_in_cwd("slide.gltf");
     RoundTrip::write_bytes(path, sliding_box_gltf());
@@ -221,12 +221,12 @@ TEST_F(MeshAssemblyModelTest, AnAnimationBecomesAClipInSeconds)
     const auto assembly = reader.create_mesh_assembly();
 
     ASSERT_NE(assembly, nullptr);
-    ASSERT_EQ(assembly->get_data().clips.size(), 1U);
-    const auto& clip = assembly->get_data().clips[0];
-    EXPECT_EQ(clip.name, "slide");
-    ASSERT_EQ(clip.channels.size(), 1U);
-    EXPECT_EQ(clip.channels[0].row, 0U);
-    EXPECT_TRUE(clip.channels[0].translation.has_value());
+    ASSERT_EQ(assembly->get_data().motions.size(), 1U);
+    const auto& motion = assembly->get_data().motions[0];
+    EXPECT_EQ(motion.name, "slide");
+    ASSERT_EQ(motion.channels.size(), 1U);
+    EXPECT_EQ(motion.channels[0].row, 0U);
+    EXPECT_TRUE(motion.channels[0].translation.has_value());
 
     const auto halfway = assembly->sample(0, 0.5).value();
     const auto end = assembly->sample(0, 1.0).value();
@@ -297,7 +297,7 @@ TEST_F(MeshAssemblyAlembicTest, AnInstanceSharesTheSourcesOfTheObjectItInstances
     ASSERT_NE(shared, groups.end());
 }
 
-TEST_F(MeshAssemblyAlembicTest, ATransformThatChangesOverTimeBecomesAChannelOfOneClip)
+TEST_F(MeshAssemblyAlembicTest, ATransformThatChangesOverTimeBecomesAChannelOfOneMotion)
 {
     IO::SpatialReader reader;
     ASSERT_TRUE(reader.open(rig_path()));
@@ -305,13 +305,13 @@ TEST_F(MeshAssemblyAlembicTest, ATransformThatChangesOverTimeBecomesAChannelOfOn
     const auto assembly = reader.create_mesh_assembly();
 
     ASSERT_NE(assembly, nullptr);
-    ASSERT_EQ(assembly->get_data().clips.size(), 1U);
-    const auto& clip = assembly->get_data().clips[0];
-    EXPECT_EQ(clip.name, "rig");
-    EXPECT_EQ(clip.channels.size(), 2U);
-    EXPECT_TRUE(clip.channels[0].translation.has_value());
-    EXPECT_TRUE(clip.channels[0].rotation.has_value());
-    EXPECT_TRUE(clip.channels[0].scale.has_value());
+    ASSERT_EQ(assembly->get_data().motions.size(), 1U);
+    const auto& motion = assembly->get_data().motions[0];
+    EXPECT_EQ(motion.name, "rig");
+    EXPECT_EQ(motion.channels.size(), 2U);
+    EXPECT_TRUE(motion.channels[0].translation.has_value());
+    EXPECT_TRUE(motion.channels[0].rotation.has_value());
+    EXPECT_TRUE(motion.channels[0].scale.has_value());
 
     const auto at_start = assembly->world_transforms(assembly->sample(0, 0.0).value());
     const auto at_end = assembly->world_transforms(assembly->sample(0, 2.0).value());
