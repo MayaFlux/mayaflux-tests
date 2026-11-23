@@ -201,7 +201,41 @@ namespace {
                 ++instanced;
             }
         }
-        EXPECT_EQ(instanced, 2U);
+        EXPECT_EQ(instanced, 3U);
+    }
+
+    TEST(MeshAssemblyRealizationTest, APointSetShownInSeveralPlacesIsOneInstancedPartThatAMotionPlaces)
+    {
+        auto assembly = std::make_shared<MeshAssemblyContainer>();
+        const auto dust = assembly->add_source({ .geometry = level_points(3), .name = "dust" });
+        const auto joint = assembly->add_placement({ .name = "joint", .local = level_shift(10.0F) }).value();
+        std::ignore = assembly->add_placement({ .name = "left", .parent = joint, .source = dust, .local = level_shift(1.0F) });
+        std::ignore = assembly->add_placement({ .name = "right", .parent = joint, .source = dust, .local = level_shift(-1.0F) });
+        const auto times = *Kinesis::TimeSampling::acyclic({ 0.0, 2.0 });
+        auto slide = Kinesis::TimedValues<glm::vec3>::create({ .times = times,
+            .values = { glm::vec3(10.0F, 0.0F, 0.0F), glm::vec3(2.0F, 0.0F, 0.0F) } });
+        std::ignore = assembly->add_motion({ .name = "slide", .channels = { { .row = joint, .translation = slide } } });
+        MeshAssemblyRealizeOptions options;
+        options.partition = Partitions::instanced(2);
+
+        const auto realized = MeshAssemblyRealization::create(assembly, options);
+
+        ASSERT_NE(realized, nullptr);
+        ASSERT_EQ(realized->parts().size(), 1U);
+        const auto& cloud = realized->parts()[0];
+        EXPECT_EQ(cloud.kind, MeshAssemblyRowKind::Points);
+        EXPECT_TRUE(cloud.instanced);
+        ASSERT_NE(cloud.instances, nullptr);
+        EXPECT_EQ(cloud.instances->slot_count(), 2U);
+        EXPECT_NE(cloud.instance_buffer, nullptr);
+        EXPECT_TRUE(cloud.spatial_buffers.empty());
+
+        const auto frames = Kakshya::MeshAssemblyMotionFrames::create(assembly, 0);
+        auto reflow = Kriya::MotionReflowBuilder::sampling(frames, realized->placement_sink(), k_level_rate).build();
+        ASSERT_NE(reflow, nullptr);
+        level_run(*reflow, 5);
+        EXPECT_NEAR(cloud.instances->get_slot(0).transform[3].x, 9.0F, 1e-4F);
+        EXPECT_NEAR(cloud.instances->get_slot(1).transform[3].x, 7.0F, 1e-4F);
     }
 
     TEST(MeshAssemblyRealizationTest, EverySourceCanHaveATargetOfItsOwn)
@@ -584,6 +618,129 @@ namespace {
         });
 
         EXPECT_EQ(asked, 0);
+    }
+
+    TEST(MeshAssemblyRealizationTest, AnAssemblyWithNoMotionHasOneFrameAtEveryTime)
+    {
+        const RealizedLevel level;
+
+        const auto frames = Kakshya::MeshAssemblyRestFrames::create(level.assembly);
+
+        ASSERT_NE(frames, nullptr);
+        EXPECT_EQ(frames->extent(), (std::pair<double, double> { 0.0, 1.0 }));
+        const auto frame = frames->sample(0.3);
+        ASSERT_NE(frame, nullptr);
+        EXPECT_EQ(frame, frames->sample(0.9));
+        ASSERT_EQ(frame->world.size(), level.assembly->get_total_elements());
+        EXPECT_FLOAT_EQ(frame->world[2][3].x, 11.0F);
+        EXPECT_EQ(Kakshya::MeshAssemblyRestFrames::create(nullptr), nullptr);
+        EXPECT_EQ(Kakshya::MeshAssemblyRestFrames::create(std::make_shared<MeshAssemblyContainer>()), nullptr);
+    }
+
+    TEST(MeshAssemblyRealizationTest, AnEditOfTheLocalPlacementsMovesEveryPartThroughTheHierarchy)
+    {
+        const RealizedLevel level;
+        const auto realized = level.realize();
+        ASSERT_NE(realized, nullptr);
+        const auto rest = Kakshya::MeshAssemblyRestFrames::create(level.assembly);
+        auto reflow = Kriya::MotionReflowBuilder::sampling(rest, realized->placement_sink(), k_level_rate)
+                          .operation(Kriya::placement_edit(level.assembly, [](std::span<glm::mat4> locals, const Kriya::FrameContext&) {
+                              locals[0] = level_shift(20.0F);
+                          }))
+                          .build();
+        ASSERT_NE(reflow, nullptr);
+
+        level_run(*reflow, 2);
+
+        const auto& network = realized->parts()[0].network;
+        EXPECT_NEAR(network->get_slot(0).local_transform[3].x, 20.0F, 1e-4F);
+        EXPECT_NEAR(network->get_slot(1).local_transform[3].x, 21.0F, 1e-4F);
+        EXPECT_NEAR(network->get_slot(2).local_transform[3].x, 19.0F, 1e-4F);
+    }
+
+    TEST(MeshAssemblyRealizationTest, AnEditMayReadTheReflowsTimeAndAnAdditiveLayerSitsOnAMotion)
+    {
+        const RealizedLevel level;
+        const auto realized = level.realize();
+        ASSERT_NE(realized, nullptr);
+        const auto frames = Kakshya::MeshAssemblyMotionFrames::create(level.assembly, 0);
+        auto reflow = Kriya::MotionReflowBuilder::sampling(frames, realized->placement_sink(), k_level_rate)
+                          .operation(Kriya::placement_edit(level.assembly, [](std::span<glm::mat4> locals, const Kriya::FrameContext& context) {
+                              locals[2][3].y += static_cast<float>(context.time) * 8.0F;
+                          }))
+                          .build();
+        ASSERT_NE(reflow, nullptr);
+
+        level_run(*reflow, 5);
+
+        const auto& network = realized->parts()[0].network;
+        EXPECT_NEAR(network->get_slot(1).local_transform[3].x, 9.0F, 1e-4F);
+        EXPECT_NEAR(network->get_slot(1).local_transform[3].y, 4.0F, 1e-4F);
+        EXPECT_NEAR(network->get_slot(2).local_transform[3].y, 0.0F, 1e-4F);
+    }
+
+    TEST(MeshAssemblyRealizationTest, AnEditWithNoCallableOrNoAssemblyLeavesTheFrameAsItIs)
+    {
+        const RealizedLevel level;
+        const auto rest = Kakshya::MeshAssemblyRestFrames::create(level.assembly);
+        const auto frame = rest->sample(0.0);
+
+        const auto none = Kriya::placement_edit(level.assembly, {});
+        const auto lost = Kriya::placement_edit(nullptr, [](std::span<glm::mat4>, const Kriya::FrameContext&) { });
+
+        EXPECT_EQ(none.transform_fn()(Kriya::FrameContext {}, frame), frame);
+        EXPECT_EQ(lost.transform_fn()(Kriya::FrameContext {}, frame), frame);
+    }
+
+    /** Two wheels of rubber that a reader gave a colour, and one of stone it did not. */
+    struct SurfaceLevel {
+        std::shared_ptr<MeshAssemblyContainer> assembly = std::make_shared<MeshAssemblyContainer>();
+
+        SurfaceLevel()
+        {
+            const auto wheel = assembly->add_source({ .geometry = level_triangle(), .name = "wheel" });
+            const auto rock = assembly->add_source({ .geometry = level_triangle(), .name = "rock" });
+            Facets colours;
+            colours.set(Kakshya::MeshAssemblySurface { .base_color = glm::vec4(1.0F, 0.5F, 0.25F, 1.0F), .metallic = 0.3F, .roughness = 0.6F });
+            const auto rubber = assembly->add_material({ .name = "rubber", .facets = colours });
+            const auto stone = assembly->add_material({ .name = "stone" });
+            std::ignore = assembly->add_placement({ .name = "left", .source = wheel, .material = rubber });
+            std::ignore = assembly->add_placement({ .name = "right", .source = wheel, .material = rubber, .local = level_shift(2.0F) });
+            std::ignore = assembly->add_placement({ .name = "rock", .source = rock, .material = stone });
+        }
+    };
+
+    TEST(MeshAssemblyRealizationTest, InstancesAreTintedWithTheColourOfTheirMaterial)
+    {
+        const SurfaceLevel level;
+        MeshAssemblyRealizeOptions options;
+        options.partition = Partitions::instanced(2);
+        const auto realized = MeshAssemblyRealization::create(level.assembly, options);
+        ASSERT_NE(realized, nullptr);
+
+        EXPECT_EQ(realized->apply_surfaces(), 2U);
+
+        const auto& wheels = realized->parts()[0];
+        ASSERT_NE(wheels.instances, nullptr);
+        for (const auto& slot : wheels.instances->slots()) {
+            EXPECT_EQ(slot.tint, glm::vec3(1.0F, 0.5F, 0.25F));
+            EXPECT_TRUE(slot.dirty);
+        }
+    }
+
+    TEST(MeshAssemblyRealizationTest, ANetworkAndAMaterialWithNoColourAreLeftAlone)
+    {
+        const SurfaceLevel level;
+
+        const auto flat = MeshAssemblyRealization::create(level.assembly);
+        ASSERT_NE(flat, nullptr);
+        EXPECT_EQ(flat->apply_surfaces(), 0U);
+
+        MeshAssemblyRealizeOptions options;
+        options.partition = Partitions::instanced(1);
+        const auto many = MeshAssemblyRealization::create(level.assembly, options);
+        ASSERT_NE(many, nullptr);
+        EXPECT_EQ(many->apply_surfaces(), 2U);
     }
 
 } // namespace

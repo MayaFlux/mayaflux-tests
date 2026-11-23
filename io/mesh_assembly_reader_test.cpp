@@ -115,6 +115,20 @@ namespace {
             + RoundTrip::base64(payload) + R"("}]})";
     }
 
+    /** A triangle whose material has a base colour and metallic and roughness factors. */
+    std::string coloured_box_gltf()
+    {
+        const std::string payload = float_bytes({ 0, 0, 0, 1, 0, 0, 0, 1, 0 });
+        return R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],)"
+               R"("nodes":[{"name":"box","mesh":0}],)"
+               R"("materials":[{"name":"paint","pbrMetallicRoughness":{"baseColorFactor":[0.5,0.25,0.125,1.0],"metallicFactor":0.3,"roughnessFactor":0.6}}],)"
+               R"("meshes":[{"name":"tri","primitives":[{"attributes":{"POSITION":0},"mode":4,"material":0}]}],)"
+               R"("accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]}],)"
+               R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36,"target":34962}],)"
+               R"("buffers":[{"byteLength":36,"uri":"data:application/octet-stream;base64,)"
+            + RoundTrip::base64(payload) + R"("}]})";
+    }
+
     float first_vertex_x(const Kakshya::MeshData& mesh)
     {
         const auto& bytes = std::get<std::vector<uint8_t>>(mesh.vertex_variant);
@@ -361,6 +375,26 @@ TEST_F(MeshAssemblyModelTest, ASceneWithNoSceneLoadedMakesNoNetwork)
     IO::ModelReader reader;
 
     EXPECT_EQ(reader.create_mesh_network(), nullptr);
+}
+
+TEST_F(MeshAssemblyModelTest, AMaterialKeepsItsColourAndFactorsInItsFacets)
+{
+    const auto path = path_in_cwd("paint.gltf");
+    RoundTrip::write_bytes(path, coloured_box_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    ASSERT_EQ(assembly->get_data().materials.size(), 1U);
+    const auto* surface = assembly->get_data().materials[0].facets.get<Kakshya::MeshAssemblySurface>();
+    ASSERT_NE(surface, nullptr);
+    EXPECT_NEAR(surface->base_color.r, 0.5F, 1e-4F);
+    EXPECT_NEAR(surface->base_color.g, 0.25F, 1e-4F);
+    EXPECT_NEAR(surface->base_color.b, 0.125F, 1e-4F);
+    EXPECT_NEAR(surface->metallic, 0.3F, 1e-4F);
+    EXPECT_NEAR(surface->roughness, 0.6F, 1e-4F);
 }
 
 TEST_F(MeshAssemblyModelTest, FlatteningBakesTheNodeTreeIntoTheVertices)

@@ -3,6 +3,7 @@
 
 #include "MayaFlux/Kakshya/Semantic/MeshAssemblyContainer.hpp"
 #include "MayaFlux/Nodes/Graphics/MeshWriterNode.hpp"
+#include "MayaFlux/Nodes/Graphics/PointCollectionNode.hpp"
 #include "MayaFlux/Nodes/Network/InstanceNetwork.hpp"
 #include "MayaFlux/Portal/Graphics/GraphicsUtils.hpp"
 
@@ -106,16 +107,38 @@ TEST(InstanceNetworkAssemblyTest, EverySlotKeepsTheDefaultPayload)
     }
 }
 
-TEST(InstanceNetworkAssemblyTest, ASourceThatIsNotAMeshMakesNoNetwork)
+TEST(InstanceNetworkAssemblyTest, ASourceOfCurvesMakesNoNetwork)
+{
+    std::shared_ptr<MeshAssemblyContainer> assembly = std::make_shared<MeshAssemblyContainer>();
+    const auto curve = assembly->add_source({
+        .geometry = Kakshya::SpatialData { .topology = Portal::Graphics::PrimitiveTopology::LINE_STRIP,
+            .positions = { { 0.0F, 0.0F, 0.0F }, { 1.0F, 0.0F, 0.0F } },
+            .vertex_counts_per_curve = { 2 } },
+        .name = "curve" });
+    ASSERT_TRUE(assembly->add_placement({ .name = "line", .source = curve }).has_value());
+
+    EXPECT_EQ(make_instance_network(assembly, assembly->groups()[0]), nullptr);
+}
+
+TEST(InstanceNetworkAssemblyTest, ASetOfPointsIsInstancedAroundOneTemplateOfItsPoints)
 {
     std::shared_ptr<MeshAssemblyContainer> assembly = std::make_shared<MeshAssemblyContainer>();
     const auto points = assembly->add_source({
         .geometry = Kakshya::SpatialData { .topology = Portal::Graphics::PrimitiveTopology::POINT_LIST,
-            .positions = { { 0.0F, 0.0F, 0.0F } } },
+            .positions = { { 0.0F, 0.0F, 0.0F }, { 1.0F, 0.0F, 0.0F }, { 2.0F, 0.0F, 0.0F } } },
         .name = "points" });
-    ASSERT_TRUE(assembly->add_placement({ .name = "cloud", .source = points }).has_value());
+    ASSERT_TRUE(assembly->add_placement({ .name = "first", .source = points }).has_value());
+    ASSERT_TRUE(assembly->add_placement({ .name = "second", .source = points, .local = moved(5.0F) }).has_value());
 
-    EXPECT_EQ(make_instance_network(assembly, assembly->groups()[0]), nullptr);
+    const auto network = make_instance_network(assembly, assembly->groups()[0]);
+
+    ASSERT_NE(network, nullptr);
+    ASSERT_EQ(network->slot_count(), 2U);
+    EXPECT_EQ(network->get_slot(0).node, network->get_slot(1).node);
+    const auto cloud = std::dynamic_pointer_cast<Nodes::GpuSync::PointCollectionNode>(network->get_slot(0).node);
+    ASSERT_NE(cloud, nullptr);
+    EXPECT_EQ(cloud->get_point_count(), 3U);
+    EXPECT_FLOAT_EQ(network->get_slot(1).transform[3].x, 5.0F);
 }
 
 TEST(InstanceNetworkAssemblyTest, AGroupWithARowOutOfRangeMakesNoNetwork)

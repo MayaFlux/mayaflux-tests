@@ -192,7 +192,7 @@ namespace {
         EXPECT_FALSE(parts[0].key.instanced);
     }
 
-    TEST(MeshAssemblyPartsTest, ThePartitionMarkOfInstancingIsDroppedForPointsAndCurves)
+    TEST(MeshAssemblyPartsTest, ThePartitionMarkOfInstancingIsKeptForMeshesAndPointsAndDroppedForCurves)
     {
         const PartLevel level;
 
@@ -201,7 +201,7 @@ namespace {
         });
 
         for (const auto& part : parts) {
-            EXPECT_EQ(part.key.instanced, part.kind == MeshAssemblyRowKind::Mesh);
+            EXPECT_EQ(part.key.instanced, part.kind != MeshAssemblyRowKind::Curves);
         }
     }
 
