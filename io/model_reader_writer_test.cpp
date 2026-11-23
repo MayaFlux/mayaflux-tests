@@ -99,6 +99,21 @@ namespace {
         return make_mesh(vertices, indices, name, material, diffuse_path);
     }
 
+    MeshData polygon_mesh(const std::vector<glm::vec3>& positions, Kakshya::FaceList faces)
+    {
+        return MeshData::from_positions(positions, std::move(faces)).value();
+    }
+
+    std::vector<glm::vec3> pentagon_at(float x)
+    {
+        std::vector<glm::vec3> ring;
+        for (int i = 0; i < 5; ++i) {
+            const float angle = 2.0F * std::numbers::pi_v<float> * static_cast<float>(i) / 5.0F;
+            ring.emplace_back(x + std::cos(angle), std::sin(angle), 0.0F);
+        }
+        return ring;
+    }
+
     std::vector<MeshVertex> vertices_of(const MeshData& mesh)
     {
         const auto& bytes = std::get<std::vector<uint8_t>>(mesh.vertex_variant);
@@ -247,6 +262,141 @@ namespace {
             EXPECT_NEAR(match->uv.x, original.uv.x, 1e-4F);
             EXPECT_NEAR(match->uv.y, 1.0F - original.uv.y, 1e-4F);
         }
+    }
+
+    TEST_F(ModelFileTest, KeepingPolygonsReadsAQuadAsOneFaceAndItsTwoTriangles)
+    {
+        const std::vector<glm::vec3> positions {
+            glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(1.0F, 1.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F)
+        };
+        const auto source = polygon_mesh(positions, { .sizes = { 4 }, .corners = { 0, 1, 2, 3 } });
+        const auto path = path_in_cwd("quad.obj");
+        IO::AssimpModelWriter writer;
+        ASSERT_TRUE(writer.write(path, { source })) << writer.get_last_error();
+
+        IO::ModelReader reader;
+        reader.set_keep_polygons(true);
+        const auto loaded = reader.load(path);
+
+        ASSERT_EQ(loaded.size(), 1U) << reader.get_last_error();
+        const auto& mesh = loaded.front();
+        EXPECT_TRUE(mesh.has_polygons());
+        EXPECT_EQ(mesh.polygon_count(), 1U);
+        EXPECT_EQ(mesh.face_count(), 2U);
+        EXPECT_EQ(mesh.faces->sizes, (std::vector<uint32_t> { 4 }));
+        EXPECT_TRUE(mesh.is_valid());
+        EXPECT_TRUE(covers_positions(vertices_of(mesh), vertices_of(source)));
+    }
+
+    TEST_F(ModelFileTest, PolygonsAreOffByDefaultAndTheSameFileComesBackAsTriangles)
+    {
+        const std::vector<glm::vec3> positions {
+            glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(1.0F, 1.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F)
+        };
+        const auto source = polygon_mesh(positions, { .sizes = { 4 }, .corners = { 0, 1, 2, 3 } });
+        const auto path = path_in_cwd("quad.obj");
+        IO::AssimpModelWriter writer;
+        ASSERT_TRUE(writer.write(path, { source })) << writer.get_last_error();
+
+        IO::ModelReader reader;
+        const auto loaded = reader.load(path);
+
+        ASSERT_EQ(loaded.size(), 1U) << reader.get_last_error();
+        EXPECT_FALSE(loaded.front().has_polygons());
+        EXPECT_EQ(loaded.front().face_count(), 2U);
+    }
+
+    TEST_F(ModelFileTest, AMeshOfTrianglesAndAPentagonStaysOneMeshWhenPolygonsAreKept)
+    {
+        auto positions = std::vector<glm::vec3> { glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F) };
+        const auto pentagon = pentagon_at(5.0F);
+        positions.insert(positions.end(), pentagon.begin(), pentagon.end());
+        const auto source = polygon_mesh(positions, { .sizes = { 3, 5 }, .corners = { 0, 1, 2, 3, 4, 5, 6, 7 } });
+        const auto path = path_in_cwd("mixed.obj");
+        IO::AssimpModelWriter writer;
+        ASSERT_TRUE(writer.write(path, { source })) << writer.get_last_error();
+
+        IO::ModelReader kept;
+        kept.set_keep_polygons(true);
+        const auto polygons = kept.load(path);
+        IO::ModelReader triangulated;
+        const auto triangles = triangulated.load(path);
+
+        ASSERT_EQ(polygons.size(), 1U) << kept.get_last_error();
+        EXPECT_EQ(polygons.front().polygon_count(), 2U);
+        EXPECT_EQ(polygons.front().face_count(), 4U);
+        EXPECT_EQ(polygons.front().faces->sizes, (std::vector<uint32_t> { 3, 5 }));
+        ASSERT_EQ(triangles.size(), 1U) << triangulated.get_last_error();
+        EXPECT_EQ(triangles_in(triangles), 4U);
+    }
+
+    TEST_F(ModelFileTest, KeepingPolygonsDerivesTheNormalsAFileDoesNotCarry)
+    {
+        const std::vector<glm::vec3> positions {
+            glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 0.0F, 1.0F), glm::vec3(1.0F, 0.0F, 1.0F), glm::vec3(1.0F, 0.0F, 0.0F)
+        };
+        const auto source = polygon_mesh(positions, { .sizes = { 4 }, .corners = { 0, 1, 2, 3 } });
+        const auto path = path_in_cwd("tilted.obj");
+        IO::AssimpModelWriter writer;
+        ASSERT_TRUE(writer.write(path, { source })) << writer.get_last_error();
+
+        IO::ModelReader reader;
+        reader.set_keep_polygons(true);
+        const auto loaded = reader.load(path);
+
+        ASSERT_EQ(loaded.size(), 1U) << reader.get_last_error();
+        for (const auto& vertex : vertices_of(loaded.front())) {
+            EXPECT_TRUE(near(vertex.normal, glm::vec3(0.0F, 1.0F, 0.0F)));
+        }
+    }
+
+    TEST_F(ModelFileTest, KeepingPolygonsLeavesTheNormalsAFileDoesCarry)
+    {
+        std::vector<MeshVertex> vertices(4);
+        const std::array<glm::vec3, 4> corners {
+            glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(1.0F, 1.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F)
+        };
+        for (size_t i = 0; i < 4; ++i) {
+            vertices[i].position = corners[i];
+            vertices[i].normal = glm::vec3(0.0F, 1.0F, 0.0F);
+        }
+        const auto source = MeshData::from_vertices(vertices, Kakshya::FaceList { .sizes = { 4 }, .corners = { 0, 1, 2, 3 } }).value();
+        const auto path = path_in_cwd("authored.obj");
+        IO::AssimpModelWriter writer;
+        ASSERT_TRUE(writer.write(path, { source })) << writer.get_last_error();
+
+        IO::ModelReader reader;
+        reader.set_keep_polygons(true);
+        const auto loaded = reader.load(path);
+
+        ASSERT_EQ(loaded.size(), 1U) << reader.get_last_error();
+        for (const auto& vertex : vertices_of(loaded.front())) {
+            EXPECT_TRUE(near(vertex.normal, glm::vec3(0.0F, 1.0F, 0.0F)));
+        }
+    }
+
+    TEST_F(ModelFileTest, TheSwitchAppliesToTheNextOpenOnly)
+    {
+        const std::vector<glm::vec3> positions {
+            glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(1.0F, 1.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F)
+        };
+        const auto source = polygon_mesh(positions, { .sizes = { 4 }, .corners = { 0, 1, 2, 3 } });
+        const auto path = path_in_cwd("quad.obj");
+        IO::AssimpModelWriter writer;
+        ASSERT_TRUE(writer.write(path, { source })) << writer.get_last_error();
+
+        IO::ModelReader reader;
+        reader.set_keep_polygons(true);
+        ASSERT_TRUE(reader.open(path));
+        reader.set_keep_polygons(false);
+        const auto still_polygons = reader.extract_meshes();
+        reader.close();
+        const auto triangles = reader.load(path);
+
+        ASSERT_EQ(still_polygons.size(), 1U);
+        EXPECT_TRUE(still_polygons.front().has_polygons());
+        ASSERT_EQ(triangles.size(), 1U);
+        EXPECT_FALSE(triangles.front().has_polygons());
     }
 
     TEST_F(ModelFileTest, PlyRoundTripCurrentlyReadsEveryVertexColorBackAsZero)
