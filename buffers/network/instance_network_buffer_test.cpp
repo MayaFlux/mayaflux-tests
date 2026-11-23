@@ -175,6 +175,108 @@ TEST_F(InstanceNetworkBufferDeviceTest, ProcessorUploadsEachTransformAndSetsTheI
     EXPECT_EQ(render->get_instance_count(), 2U);
 }
 
+TEST_F(InstanceNetworkBufferDeviceTest, ProcessorUploadsEachSlotsPayloadAndRewritesItWhenDirty)
+{
+    auto net = std::make_shared<InstanceNetwork>();
+    auto shape = point_template();
+    net->add_slot("left", shape);
+    net->add_slot("right", shape);
+    net->get_slot(0).tint = glm::vec3(1.0F, 0.5F, 0.25F);
+    net->get_slot(0).scalar = 2.0F;
+    net->get_slot(1).texture = 3U;
+    attach(net);
+
+    const auto payload_ssbo = buffer->get_ssbo_processor()->get_payload_ssbo();
+    ASSERT_NE(payload_ssbo, nullptr);
+
+    const auto read_payload = [&]() {
+        std::array<Buffers::InstancePayload, 2> payload;
+        const auto bytes = read_raw_buffer(payload_ssbo->get_buffer(), sizeof(payload));
+        std::memcpy(payload.data(), bytes.data(), bytes.size());
+        return payload;
+    };
+
+    auto payload = read_payload();
+    EXPECT_EQ(payload[0].tint, glm::vec3(1.0F, 0.5F, 0.25F));
+    EXPECT_EQ(payload[0].scalar, 2.0F);
+    EXPECT_EQ(payload[0].texture, 0U);
+    EXPECT_EQ(payload[1].tint, glm::vec3(1.0F));
+    EXPECT_EQ(payload[1].scalar, 1.0F);
+    EXPECT_EQ(payload[1].texture, 3U);
+
+    net->get_slot(1).tint = glm::vec3(0.0F, 1.0F, 0.0F);
+    net->get_slot(1).scalar = 4.0F;
+    net->get_slot(1).dirty = true;
+    buffer->process_default();
+
+    payload = read_payload();
+    EXPECT_EQ(payload[1].tint, glm::vec3(0.0F, 1.0F, 0.0F));
+    EXPECT_EQ(payload[1].scalar, 4.0F);
+    EXPECT_EQ(payload[0].scalar, 2.0F);
+}
+
+TEST_F(InstanceNetworkBufferDeviceTest, TheRenderPipelineDeclaresThePayloadBinding)
+{
+    auto net = std::make_shared<InstanceNetwork>();
+    net->add_slot("only", point_template());
+    attach(net);
+
+    const auto render = buffer->get_render_processor();
+    ASSERT_NE(render, nullptr);
+    const auto& bindings = render->get_config().bindings;
+    const auto payload = bindings.find("instancePayload");
+    ASSERT_NE(payload, bindings.end());
+    EXPECT_EQ(payload->second.set, 0U);
+    EXPECT_EQ(payload->second.binding, 8U);
+    EXPECT_EQ(payload->second.type, vk::DescriptorType::eStorageBuffer);
+}
+
+TEST_F(InstanceNetworkBufferDeviceTest, InstanceTexturesBecomeATextureArrayAheadOfAnyAdditionalTexture)
+{
+    auto net = std::make_shared<InstanceNetwork>();
+    net->add_slot("left", indexed_quad_template());
+    network = net;
+    buffer = std::make_shared<InstanceNetworkBuffer>(network);
+    service->initialize_buffer(buffer);
+    ASSERT_TRUE(buffer->is_initialized());
+    buffer->setup_processors(ProcessingToken::GRAPHICS_BACKEND);
+    buffer->bind_instance_textures({ nullptr, nullptr, nullptr });
+    ASSERT_TRUE(buffer->has_instance_textures());
+    window = std::make_shared<ScriptedWindow>(320, 240);
+    buffer->setup_rendering(InstanceNetworkBuffer::RenderConfig {
+        .target_window = window,
+        .additional_textures = { { .name = "extra", .image = nullptr } } });
+
+    const auto render = buffer->get_render_processor();
+    ASSERT_NE(render, nullptr);
+    const auto& bindings = render->get_config().bindings;
+    const auto array = bindings.find("diffuseTex");
+    ASSERT_NE(array, bindings.end());
+    EXPECT_EQ(array->second.binding, 2U);
+    EXPECT_EQ(array->second.count, 3U);
+    const auto extra = bindings.find("extra");
+    ASSERT_NE(extra, bindings.end());
+    EXPECT_EQ(extra->second.binding, 5U);
+}
+
+TEST_F(InstanceNetworkBufferDeviceTest, InstanceTexturesAreIgnoredForAPointTemplate)
+{
+    auto net = std::make_shared<InstanceNetwork>();
+    net->add_slot("only", point_template());
+    network = net;
+    buffer = std::make_shared<InstanceNetworkBuffer>(network);
+    service->initialize_buffer(buffer);
+    ASSERT_TRUE(buffer->is_initialized());
+    buffer->setup_processors(ProcessingToken::GRAPHICS_BACKEND);
+    buffer->bind_instance_textures({ nullptr });
+    window = std::make_shared<ScriptedWindow>(320, 240);
+    buffer->setup_rendering(InstanceNetworkBuffer::RenderConfig { .target_window = window });
+
+    const auto render = buffer->get_render_processor();
+    ASSERT_NE(render, nullptr);
+    EXPECT_EQ(render->get_config().bindings.find("diffuseTex"), render->get_config().bindings.end());
+}
+
 TEST_F(InstanceNetworkBufferDeviceTest, IndexedTemplateKeepsItsIndexStreamForInstancedMilling)
 {
     auto net = std::make_shared<InstanceNetwork>();

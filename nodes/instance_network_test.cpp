@@ -97,6 +97,31 @@ namespace {
         EXPECT_TRUE(net.get_slot(0).dirty);
     }
 
+    TEST(InstanceNetworkTest, NewSlotsStartWithThePayloadThatLeavesTheTemplateAsAuthored)
+    {
+        InstanceNetwork net;
+        net.add_slot("a", leaf());
+
+        EXPECT_EQ(net.get_slot(0).tint, glm::vec3(1.0F));
+        EXPECT_EQ(net.get_slot(0).scalar, 1.0F);
+        EXPECT_EQ(net.get_slot(0).texture, 0U);
+    }
+
+    TEST(InstanceNetworkTest, ThePayloadOfOneSlotDoesNotTouchAnother)
+    {
+        InstanceNetwork net;
+        net.add_slot("a", leaf());
+        net.add_slot("b", leaf());
+
+        net.get_slot(0).tint = glm::vec3(0.5F, 0.25F, 0.0F);
+        net.get_slot(0).scalar = 3.0F;
+        net.get_slot(0).texture = 2U;
+
+        EXPECT_EQ(net.get_slot(1).tint, glm::vec3(1.0F));
+        EXPECT_EQ(net.get_slot(1).scalar, 1.0F);
+        EXPECT_EQ(net.get_slot(1).texture, 0U);
+    }
+
     TEST(InstanceNetworkTest, NullNodeIsRejected)
     {
         InstanceNetwork net;
