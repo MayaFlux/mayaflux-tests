@@ -1187,5 +1187,137 @@ namespace {
         EXPECT_TRUE(contains_none(emit_spirv_asm(argmax_spec(64, 2, 2)), { { "%main = OpFunction", "three push constants are needed" } }));
     }
 
+    std::size_t skin_count(const std::string& text, std::string_view needle)
+    {
+        std::size_t count = 0;
+        for (auto at = text.find(needle); at != std::string::npos; at = text.find(needle, at + needle.size())) {
+            ++count;
+        }
+        return count;
+    }
+
+    ShaderSpec skin_asm_spec(uint32_t workgroup = 256, std::size_t push_constants = 4,
+        GpuDataFormat joints = GpuDataFormat::UINT32, GpuDataFormat push_format = GpuDataFormat::UINT32,
+        bool with_vertices = true)
+    {
+        ShaderSpec::Assemble assemble;
+        assemble.tmpl(KernelTemplate::Skin)
+            .ssbo("rest", BindingDirection::Input, GpuDataFormat::FLOAT32)
+            .ssbo("joints", BindingDirection::Input, joints)
+            .ssbo("weights", BindingDirection::Input, GpuDataFormat::FLOAT32)
+            .ssbo("palette", BindingDirection::Input, GpuDataFormat::FLOAT32);
+        if (with_vertices) {
+            assemble.ssbo("vertices", BindingDirection::InOut, GpuDataFormat::FLOAT32);
+        }
+        constexpr std::array<std::string_view, 5> names { "first_vertex", "vertex_count", "stride_words", "palette_base", "extra" };
+        for (std::size_t i = 0; i < push_constants; ++i) {
+            assemble.pc(std::string(names[i]), push_format);
+        }
+        return assemble.workgroup(workgroup).build();
+    }
+
+    TEST(SkinAsmTest, TheEntryPointListsEveryBindingAndThePushConstantsInTheInterface)
+    {
+        EXPECT_TRUE(contains_all(emit_spirv_asm(skin_asm_spec()),
+            { { "OpEntryPoint GLCompute %main \"main\" %gid_var %buf_rest %buf_joints %buf_weights %buf_palette %buf_vertices %pc", "all five bindings and the block" },
+                { "OpExecutionMode %main LocalSize 256 1 1", "the workgroup size of the spec" },
+                { "%main = OpFunction", "an entry point" } }));
+    }
+
+    TEST(SkinAsmTest, ThreadsPastTheVertexCountAreGuardedByOneComparison)
+    {
+        const std::string text = emit_spirv_asm(skin_asm_spec());
+
+        EXPECT_EQ(skin_count(text, "OpULessThan"), 1U);
+        EXPECT_TRUE(contains_all(text,
+            { { "OpSelectionMerge %sk_end None", "a structured guard" },
+                { "OpBranchConditional", "the guard branches" },
+                { "%sk_end = OpLabel", "every thread rejoins" } }));
+    }
+
+    TEST(SkinAsmTest, EachVertexReadsTenRestWordsFourJointsFourWeightsAndTwelveMatrixElementsOfEachJoint)
+    {
+        const std::string text = emit_spirv_asm(skin_asm_spec());
+
+        EXPECT_EQ(skin_count(text, "OpAccessChain %pelem_rest"), 10U);
+        EXPECT_EQ(skin_count(text, "OpAccessChain %pelem_joints"), 4U);
+        EXPECT_EQ(skin_count(text, "OpAccessChain %pelem_weights"), 4U);
+        EXPECT_EQ(skin_count(text, "OpAccessChain %pelem_palette"), 48U);
+    }
+
+    TEST(SkinAsmTest, ItWritesPositionNormalAndTangentAndNothingElse)
+    {
+        const std::string text = emit_spirv_asm(skin_asm_spec());
+
+        EXPECT_EQ(skin_count(text, "OpStore"), 10U);
+        EXPECT_EQ(skin_count(text, "OpAccessChain %pelem_vertices"), 10U);
+        for (const uint32_t word : { 0U, 1U, 2U, 10U, 11U, 12U, 13U, 14U, 15U, 16U }) {
+            const std::string declared = "%sk_u" + std::to_string(word) + " = OpConstant %u32 " + std::to_string(word);
+            EXPECT_NE(text.find(declared), std::string::npos) << "word " << word;
+        }
+    }
+
+    TEST(SkinAsmTest, WhateverWeightIsLeftOverBelongsToTheIdentity)
+    {
+        EXPECT_TRUE(contains_all(emit_spirv_asm(skin_asm_spec()),
+            { { "OpFSub %f32 %sk_f1", "one minus the weights is what the identity keeps" },
+                { "%sk_f1 = OpConstant %f32 1.0", "the constant it subtracts from" } }));
+    }
+
+    TEST(SkinAsmTest, NormalsAndTangentsAreNormalisedWithoutDividingByZero)
+    {
+        const std::string text = emit_spirv_asm(skin_asm_spec());
+
+        EXPECT_EQ(skin_count(text, "InverseSqrt"), 2U);
+        EXPECT_EQ(skin_count(text, "OpFOrdGreaterThan"), 2U);
+        EXPECT_EQ(skin_count(text, "OpSelect %f32"), 3U);
+    }
+
+    TEST(SkinAsmTest, TheHandednessFlipsWithTheSignOfTheDeterminant)
+    {
+        const std::string text = emit_spirv_asm(skin_asm_spec());
+
+        EXPECT_EQ(skin_count(text, "OpFOrdLessThan"), 1U);
+        EXPECT_TRUE(contains_all(text, { { "%sk_fn1 = OpConstant %f32 -1.0", "the mirrored sign" } }));
+    }
+
+    TEST(SkinAsmTest, ItUsesNoSoftDoubleFunctionNoBarrierAndNoElementwiseBody)
+    {
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec()),
+            { { "OpFunctionCall", "no emulated double arithmetic" },
+                { "OpControlBarrier", "threads never cooperate" },
+                { "%gep_", "not the elementwise body" },
+                { "%lid_var", "no local id is needed" } }));
+    }
+
+    TEST(SkinAsmTest, TheTextIsTheSameForTheSameSpecAndFollowsTheWorkgroup)
+    {
+        const std::string first = emit_spirv_asm(skin_asm_spec());
+        const std::string second = emit_spirv_asm(skin_asm_spec());
+        const std::string wider = emit_spirv_asm(skin_asm_spec(64));
+
+        EXPECT_EQ(first, second);
+        EXPECT_NE(first, wider);
+        EXPECT_TRUE(contains_all(wider, { { "LocalSize 64 1 1", "the narrower group" } }));
+    }
+
+    TEST(SkinAsmTest, AMalformedSpecEmitsNoEntryPoint)
+    {
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 4, GpuDataFormat::UINT32, GpuDataFormat::UINT32, false)),
+            { { "%main = OpFunction", "five bindings are needed" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 4, GpuDataFormat::FLOAT32)),
+            { { "%main = OpFunction", "the joints are words" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 3)),
+            { { "%main = OpFunction", "four push constants are needed" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 5)),
+            { { "%main = OpFunction", "four push constants and no more" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 4, GpuDataFormat::UINT32, GpuDataFormat::FLOAT32)),
+            { { "%main = OpFunction", "the push constants are words" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(0)),
+            { { "%main = OpFunction", "a group has at least one invocation" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(2048)),
+            { { "%main = OpFunction", "1024 is the widest group" } }));
+    }
+
 } // namespace
 } // namespace MayaFlux::Test

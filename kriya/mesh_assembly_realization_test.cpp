@@ -743,5 +743,50 @@ namespace {
         EXPECT_EQ(many->apply_surfaces(), 2U);
     }
 
+    TEST(MeshAssemblyRealizationTest, ASkinnedMeshIsListedAsASkinnedSlotOfItsNetwork)
+    {
+        auto assembly = std::make_shared<MeshAssemblyContainer>();
+        Kakshya::MeshSkin skin;
+        skin.joints = { 0 };
+        skin.inverse_bind = { glm::mat4(1.0F) };
+        skin.influence_joints.assign(3, glm::uvec4(0));
+        skin.influence_weights.assign(3, glm::vec4(1.0F, 0.0F, 0.0F, 0.0F));
+        Facets facets;
+        facets.set(std::make_shared<const Kakshya::MeshSkin>(std::move(skin)));
+        const auto skinned = assembly->add_source({ .geometry = level_triangle(), .name = "skinned", .facets = std::move(facets) });
+        const auto plain = assembly->add_source({ .geometry = level_triangle(), .name = "plain" });
+        const auto joint = assembly->add_placement({ .name = "joint" });
+        ASSERT_TRUE(joint.has_value());
+        const auto body = assembly->add_placement({ .name = "body", .parent = *joint, .source = skinned });
+        const auto wall = assembly->add_placement({ .name = "wall", .source = plain });
+        ASSERT_TRUE(body.has_value());
+        ASSERT_TRUE(wall.has_value());
+
+        const auto realized = MeshAssemblyRealization::create(assembly);
+
+        ASSERT_NE(realized, nullptr);
+        ASSERT_EQ(realized->parts().size(), 1U);
+        const auto& part = realized->parts().front();
+        ASSERT_EQ(part.skinned.size(), 1U);
+        EXPECT_EQ(part.rows[part.skinned[0].slot], *body);
+        EXPECT_EQ(part.skinned[0].row, *body);
+        EXPECT_EQ(part.skinned[0].skin, assembly->skin(skinned));
+    }
+
+    TEST(MeshAssemblyRealizationTest, ACameraRowMakesNoPartOfItsOwn)
+    {
+        auto assembly = std::make_shared<MeshAssemblyContainer>();
+        const auto lens = assembly->add_source({ .geometry = Kinesis::Lens {}, .name = "lens" });
+        const auto mesh = assembly->add_source({ .geometry = level_triangle(), .name = "tri" });
+        ASSERT_TRUE(assembly->add_placement({ .name = "camera", .source = lens }).has_value());
+        ASSERT_TRUE(assembly->add_placement({ .name = "tri", .source = mesh }).has_value());
+
+        const auto realized = MeshAssemblyRealization::create(assembly);
+
+        ASSERT_NE(realized, nullptr);
+        ASSERT_EQ(realized->parts().size(), 1U);
+        EXPECT_EQ(realized->parts().front().kind, MeshAssemblyRowKind::Mesh);
+    }
+
 } // namespace
 } // namespace MayaFlux::Test

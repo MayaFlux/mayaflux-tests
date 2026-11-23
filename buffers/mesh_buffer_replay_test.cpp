@@ -3,12 +3,16 @@
 
 #include <thread>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include "network/network_buffer_fixture.hpp"
 
 #include "MayaFlux/Buffers/Geometry/GeometryBuffer.hpp"
 #include "MayaFlux/Buffers/Geometry/MeshBuffer.hpp"
+#include "MayaFlux/Buffers/Shaders/SkinProcessor.hpp"
 #include "MayaFlux/Buffers/Shaders/VertexFieldProcessor.hpp"
 #include "MayaFlux/Kakshya/NDData/MeshData.hpp"
+#include "MayaFlux/Kakshya/NDData/MeshSkin.hpp"
 #include "MayaFlux/Kinesis/Tendency/DualField.hpp"
 #include "MayaFlux/Kinesis/Tendency/ShaderCompat.hpp"
 #include "MayaFlux/Kriya/MeshReflow.hpp"
@@ -34,6 +38,52 @@ namespace {
         const auto replay_shift = MF_FIELD(replay_shift, [](vec3 p) -> vec3 {
             return p * 0.0f + vec3(0.25f, 0.0f, 0.0f);
         });
+
+    }
+
+
+    namespace skinning {
+
+        /** Every vertex follows the first joint of the skin, whole. */
+        std::shared_ptr<const Kakshya::MeshSkin> follow_first_joint(size_t vertices, size_t joints = 1)
+        {
+            Kakshya::MeshSkin skin;
+            for (size_t j = 0; j < joints; ++j) {
+                skin.joints.push_back(j);
+                skin.inverse_bind.push_back(glm::mat4(1.0F));
+            }
+            skin.influence_joints.assign(vertices, glm::uvec4(0));
+            skin.influence_weights.assign(vertices, glm::vec4(1.0F, 0.0F, 0.0F, 0.0F));
+            return std::make_shared<const Kakshya::MeshSkin>(std::move(skin));
+        }
+
+        /** The skinned record a vertex should become, from the definition of the blend. */
+        MeshVertex skin_oracle(const MeshVertex& vertex, const Kakshya::MeshSkin& skin, size_t index,
+            const std::vector<glm::mat4>& palette)
+        {
+            glm::mat4 blended(0.0F);
+            float total = 0.0F;
+            for (glm::length_t c = 0; c < 4; ++c) {
+                const float weight = skin.influence_weights[index][c];
+                blended += weight * palette[skin.influence_joints[index][c]];
+                total += weight;
+            }
+            blended += (1.0F - total) * glm::mat4(1.0F);
+
+            const glm::vec3 a0(blended[0]);
+            const glm::vec3 a1(blended[1]);
+            const glm::vec3 a2(blended[2]);
+            const glm::vec3 c0 = glm::cross(a1, a2);
+            const glm::vec3 c1 = glm::cross(a2, a0);
+            const glm::vec3 c2 = glm::cross(a0, a1);
+
+            MeshVertex result = vertex;
+            result.position = glm::vec3(blended * glm::vec4(vertex.position, 1.0F));
+            result.normal = glm::normalize(c0 * vertex.normal.x + c1 * vertex.normal.y + c2 * vertex.normal.z);
+            const glm::vec3 tangent = glm::normalize(a0 * vertex.tangent.x + a1 * vertex.tangent.y + a2 * vertex.tangent.z);
+            result.tangent = glm::vec4(tangent, vertex.tangent.w * (glm::dot(a0, c0) < 0.0F ? -1.0F : 1.0F));
+            return result;
+        }
 
     }
 
@@ -170,6 +220,37 @@ namespace {
             return std::ranges::any_of(processors, [](const auto& processor) {
                 return std::dynamic_pointer_cast<Buffers::VertexFieldProcessor>(processor) != nullptr;
             });
+        }
+
+        [[nodiscard]] bool has_skin_pass() const
+        {
+            const auto processors = mesh->get_processing_chain()->get_processors(mesh);
+            return std::ranges::any_of(processors, [](const auto& processor) {
+                return std::dynamic_pointer_cast<Buffers::SkinProcessor>(processor) != nullptr;
+            });
+        }
+
+        void run_cycles(int cycles)
+        {
+            for (int cycle = 0; cycle < cycles; ++cycle) {
+                mesh->process_default();
+                mesh->get_processing_chain()->process(mesh);
+            }
+        }
+
+        void expect_matches_oracle(const std::vector<MeshVertex>& rest,
+            const Kakshya::MeshSkin& skin, const std::vector<glm::mat4>& palette)
+        {
+            const auto read_vertices = read_mesh_vertices(rest.size());
+            for (size_t i = 0; i < rest.size(); ++i) {
+                const auto expected = skinning::skin_oracle(rest[i], skin, i, palette);
+                EXPECT_NEAR(glm::length(read_vertices[i].position - expected.position), 0.0F, 1e-4F) << "position " << i;
+                EXPECT_NEAR(glm::length(read_vertices[i].normal - expected.normal), 0.0F, 1e-4F) << "normal " << i;
+                EXPECT_NEAR(glm::length(glm::vec3(read_vertices[i].tangent) - glm::vec3(expected.tangent)), 0.0F, 1e-4F) << "tangent " << i;
+                EXPECT_FLOAT_EQ(read_vertices[i].tangent.w, expected.tangent.w) << "handedness " << i;
+                EXPECT_EQ(read_vertices[i].uv, rest[i].uv) << "uv " << i;
+                EXPECT_EQ(read_vertices[i].color, rest[i].color) << "colour " << i;
+            }
         }
 
         std::shared_ptr<MeshBuffer> mesh;
@@ -399,6 +480,143 @@ namespace {
         const auto read_vertices = read_mesh_vertices(vertices.size());
         for (size_t i = 0; i < vertices.size(); ++i) {
             EXPECT_EQ(read_vertices[i].position, vertices[i].position) << "vertex " << i;
+        }
+    }
+
+    TEST_F(MeshBufferReplayDeviceTest, ASkinPassSkinsPositionNormalAndTangentFromAPalette)
+    {
+        const auto vertices = replay_triangles(1);
+        make(*replay_frame(vertices, replay_indices(1)));
+        const auto skin = skinning::follow_first_joint(vertices.size());
+        mesh->set_skin(skin);
+        attach_mesh();
+        render_mesh();
+        ASSERT_TRUE(has_skin_pass());
+
+        const std::vector<glm::mat4> palette {
+            glm::translate(glm::mat4(1.0F), glm::vec3(1.0F, 0.0F, 2.0F))
+            * glm::rotate(glm::mat4(1.0F), glm::radians(90.0F), glm::vec3(1.0F, 0.0F, 0.0F))
+        };
+        ASSERT_TRUE(mesh->set_palette(palette));
+        run_cycles(2);
+
+        expect_matches_oracle(vertices, *skin, palette);
+    }
+
+    TEST_F(MeshBufferReplayDeviceTest, AVertexBlendsItsJointsAndKeepsTheRestOfItsWeightInPlace)
+    {
+        const auto vertices = replay_triangles(1);
+        make(*replay_frame(vertices, replay_indices(1)));
+        Kakshya::MeshSkin blend;
+        blend.joints = { 0, 1 };
+        blend.inverse_bind = { glm::mat4(1.0F), glm::mat4(1.0F) };
+        blend.influence_joints = { glm::uvec4(0, 1, 0, 0), glm::uvec4(0), glm::uvec4(0) };
+        blend.influence_weights = { glm::vec4(0.5F, 0.5F, 0.0F, 0.0F), glm::vec4(0.25F, 0.0F, 0.0F, 0.0F), glm::vec4(0.0F) };
+        const auto skin = std::make_shared<const Kakshya::MeshSkin>(std::move(blend));
+        mesh->set_skin(skin);
+        attach_mesh();
+        render_mesh();
+
+        const std::vector<glm::mat4> palette {
+            glm::translate(glm::mat4(1.0F), glm::vec3(2.0F, 0.0F, 0.0F)),
+            glm::translate(glm::mat4(1.0F), glm::vec3(-2.0F, 0.0F, 0.0F))
+        };
+        ASSERT_TRUE(mesh->set_palette(palette));
+        run_cycles(1);
+
+        expect_matches_oracle(vertices, *skin, palette);
+        const auto read_vertices = read_mesh_vertices(vertices.size());
+        EXPECT_NEAR(read_vertices[0].position.x, vertices[0].position.x, 1e-5F);
+        EXPECT_NEAR(read_vertices[1].position.x, vertices[1].position.x + 0.5F, 1e-5F);
+        EXPECT_NEAR(read_vertices[2].position.x, vertices[2].position.x, 1e-5F);
+    }
+
+    TEST_F(MeshBufferReplayDeviceTest, ANormalFollowsTheCofactorSoANonUniformScaleKeepsItPerpendicular)
+    {
+        std::vector<MeshVertex> vertices = replay_triangles(1);
+        for (auto& vertex : vertices) {
+            vertex.normal = glm::normalize(glm::vec3(1.0F, 1.0F, 0.0F));
+        }
+        make(*replay_frame(vertices, replay_indices(1)));
+        const auto skin = skinning::follow_first_joint(vertices.size());
+        mesh->set_skin(skin);
+        attach_mesh();
+        render_mesh();
+
+        const std::vector<glm::mat4> palette { glm::scale(glm::mat4(1.0F), glm::vec3(2.0F, 1.0F, 1.0F)) };
+        ASSERT_TRUE(mesh->set_palette(palette));
+        run_cycles(1);
+
+        const auto read_vertices = read_mesh_vertices(vertices.size());
+        const glm::vec3 expected = glm::normalize(glm::vec3(1.0F, 2.0F, 0.0F));
+        EXPECT_NEAR(glm::length(read_vertices[0].normal - expected), 0.0F, 1e-4F);
+        expect_matches_oracle(vertices, *skin, palette);
+    }
+
+    TEST_F(MeshBufferReplayDeviceTest, ASkinnedBufferStaysInItsRestPoseUntilAPaletteArrives)
+    {
+        const auto vertices = replay_triangles(1);
+        make(*replay_frame(vertices, replay_indices(1)));
+        mesh->set_skin(skinning::follow_first_joint(vertices.size()));
+        attach_mesh();
+        render_mesh();
+
+        run_cycles(2);
+
+        const auto read_vertices = read_mesh_vertices(vertices.size());
+        for (size_t i = 0; i < vertices.size(); ++i) {
+            EXPECT_EQ(read_vertices[i].position, vertices[i].position) << "vertex " << i;
+        }
+    }
+
+    TEST_F(MeshBufferReplayDeviceTest, APaletteOfTheWrongSizeOrBeforeRenderingIsRefused)
+    {
+        const auto vertices = replay_triangles(1);
+        make(*replay_frame(vertices, replay_indices(1)));
+        mesh->set_skin(skinning::follow_first_joint(vertices.size()));
+        attach_mesh();
+
+        EXPECT_FALSE(mesh->set_palette({ glm::mat4(1.0F) }));
+
+        render_mesh();
+
+        EXPECT_FALSE(mesh->set_palette({ glm::mat4(1.0F), glm::mat4(1.0F) }));
+        EXPECT_TRUE(mesh->set_palette({ glm::mat4(1.0F) }));
+    }
+
+    TEST_F(MeshBufferReplayDeviceTest, ASkinThatDoesNotCoverTheVerticesWiresNoPass)
+    {
+        const auto vertices = replay_triangles(1);
+        make(*replay_frame(vertices, replay_indices(1)));
+        mesh->set_skin(skinning::follow_first_joint(vertices.size() + 1));
+        attach_mesh();
+        render_mesh();
+
+        EXPECT_FALSE(has_skin_pass());
+        EXPECT_FALSE(mesh->set_palette({ glm::mat4(1.0F) }));
+    }
+
+    TEST_F(MeshBufferReplayDeviceTest, AFieldDisplacesTheSkinnedSurfaceEveryCycleWithoutAccumulating)
+    {
+        const auto vertices = replay_triangles(1);
+        make(*replay_frame(vertices, replay_indices(1)));
+        const auto skin = skinning::follow_first_joint(vertices.size());
+        mesh->set_skin(skin);
+        field_op = std::make_shared<GpuFieldOperator>(Kakshya::VertexLayout::for_meshes(sizeof(MeshVertex)));
+        field_op->bind(FieldTarget::POSITION, replay_fields::replay_shift);
+        mesh->set_field_operator(field_op);
+        attach_mesh();
+        render_mesh();
+        ASSERT_TRUE(has_skin_pass());
+        ASSERT_TRUE(has_field_pass());
+
+        ASSERT_TRUE(mesh->set_palette({ glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 0.0F, 2.0F)) }));
+        run_cycles(3);
+
+        const auto read_vertices = read_mesh_vertices(vertices.size());
+        for (size_t i = 0; i < vertices.size(); ++i) {
+            EXPECT_NEAR(read_vertices[i].position.x, vertices[i].position.x + 0.25F, 1e-5F) << "vertex " << i;
+            EXPECT_NEAR(read_vertices[i].position.z, 2.0F, 1e-5F) << "vertex " << i;
         }
     }
 
