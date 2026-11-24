@@ -17,6 +17,7 @@
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 #include "MayaFlux/Registry/BackendRegistry.hpp"
 #include "MayaFlux/Registry/Service/BufferService.hpp"
+#include "MayaFlux/Registry/Service/DisplayService.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
@@ -269,7 +270,7 @@ void main() { color = texture(tex, vec2(0.5)); }
         auto sink = make_target();
         auto& consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
         consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        consumer.render->bind_texture("tex", source->image());
+        consumer.render->bind_texture({ .name = "tex", .image = source->image() });
 
         source->request_redraw();
         sink->request_redraw();
@@ -285,7 +286,7 @@ void main() { color = texture(tex, vec2(0.5)); }
 
         auto& consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
         consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        consumer.render->bind_texture("tex", source->image());
+        consumer.render->bind_texture({ .name = "tex", .image = source->image() });
         add_drawable(source);
 
         cycle();
@@ -976,12 +977,12 @@ void main() { color = texture(tex, vec2(0.5)); }
         const Drawable consumer = add_drawable(sink_a, k_full_vertex, k_sample_fragment);
         consumer.render->add_target_image(sink_b, consumer.buffer);
         consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        consumer.render->bind_texture("tex", red->image());
+        consumer.render->bind_texture({ .name = "tex", .image = red->image() });
         cycle();
         ASSERT_EQ(pixel(sink_a, 16, 16).r, 255);
         ASSERT_EQ(pixel(sink_b, 16, 16).r, 255);
 
-        consumer.render->bind_texture("tex", green->image());
+        consumer.render->bind_texture({ .name = "tex", .image = green->image() });
         sink_a->request_redraw();
         sink_b->request_redraw();
         cycle();
@@ -1248,19 +1249,199 @@ void main() { color = texture(tex, vec2(0.5)); }
         const auto sink = make_target();
         const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
         consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        consumer.render->bind_texture("tex", source->image());
+        consumer.render->bind_texture({ .name = "tex", .image = source->image() });
         cycle();
         ASSERT_EQ(pixel(sink, 16, 16).r, 255);
         const auto old_image = source->image();
 
         ASSERT_TRUE(source->resize(32, 32));
         EXPECT_FALSE(old_image->is_initialized());
-        consumer.render->bind_texture("tex", source->image());
+        consumer.render->bind_texture({ .name = "tex", .image = source->image() });
         sink->set_clear_color({ 0.0F, 0.0F, 1.0F, 1.0F });
         cycle();
 
         EXPECT_EQ(pixel(sink, 16, 16).r, 255);
         EXPECT_EQ(pixel(sink, 16, 16).b, 0);
+    }
+
+    // =========================================================================
+    // Bindings made with a target
+    // =========================================================================
+
+    TEST_F(ImageTargetRenderTest, ASamplerBoundToATargetFollowsItsResizeWithoutBindingAgain)
+    {
+        const auto source = make_target({ .width = 16, .height = 16 });
+        const Drawable producer = add_drawable(source);
+        const auto sink = make_target();
+        const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture({ .name = "tex", .target = source });
+        cycle();
+        ASSERT_EQ(pixel(sink, 16, 16).r, 255);
+        const auto old_image = source->image();
+
+        producer.render->set_fragment_shader(k_green_fragment);
+        ASSERT_TRUE(source->resize(32, 32));
+        EXPECT_FALSE(old_image->is_initialized());
+        cycle();
+
+        EXPECT_EQ(pixel(sink, 16, 16).g, 255);
+        EXPECT_EQ(pixel(sink, 16, 16).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, ATargetBoundByTargetDrawsAfterItsSourceWhicheverOrderTheyWereAdded)
+    {
+        auto source = make_target();
+        auto sink = make_target();
+
+        auto& consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture({ .name = "tex", .target = source });
+        add_drawable(source);
+
+        cycle();
+
+        EXPECT_EQ(pixel(sink, 16, 16).r, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, ASourceThatRedrawsAsksATargetBoundByTargetToRedraw)
+    {
+        const auto source = make_target();
+        const Drawable producer = add_drawable(source);
+        const auto sink = make_target();
+        const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture({ .name = "tex", .target = source });
+        cycle();
+        ASSERT_EQ(pixel(sink, 16, 16).r, 255);
+
+        producer.render->set_fragment_shader(k_green_fragment);
+        source->request_redraw();
+        cycle();
+
+        EXPECT_EQ(pixel(sink, 16, 16).g, 255);
+        EXPECT_EQ(pixel(sink, 16, 16).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, AProcessorSamplesATargetBoundByTargetOrByItsImageAndNoOther)
+    {
+        const auto source = make_target();
+        const auto other = make_target();
+        const Drawable consumer = add_drawable(make_target(), k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        EXPECT_FALSE(consumer.render->samples(source));
+
+        consumer.render->bind_texture({ .name = "tex", .target = source });
+        EXPECT_TRUE(consumer.render->samples(source));
+        EXPECT_FALSE(consumer.render->samples(other));
+
+        consumer.render->bind_texture({ .name = "tex", .image = other->image() });
+        EXPECT_FALSE(consumer.render->samples(source));
+        EXPECT_TRUE(consumer.render->samples(other));
+        EXPECT_FALSE(consumer.render->samples(nullptr));
+    }
+
+    TEST_F(ImageTargetRenderTest, ABindingMadeWithAnImageStopsFollowingTheTargetItReplaced)
+    {
+        const auto source = make_target({ .width = 16, .height = 16 });
+        add_drawable(source);
+        const auto other = make_target({ .width = 16, .height = 16 });
+        const Drawable consumer = add_drawable(make_target(), k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture({ .name = "tex", .target = source });
+        consumer.render->bind_texture({ .name = "tex", .image = other->image() });
+
+        ASSERT_TRUE(source->resize(32, 32));
+        cycle();
+
+        EXPECT_FALSE(consumer.render->samples(source));
+        EXPECT_TRUE(consumer.render->samples(other));
+    }
+
+    TEST_F(ImageTargetRenderTest, ABindingGivenAnIndexNeedsNoName)
+    {
+        const auto source = make_target();
+        const Drawable consumer = add_drawable(make_target(), k_full_vertex, k_sample_fragment);
+
+        consumer.render->bind_texture({ .binding = 0, .target = source });
+
+        EXPECT_TRUE(consumer.render->samples(source));
+    }
+
+    TEST_F(ImageTargetRenderTest, AnImageAndATargetTogetherBindNothing)
+    {
+        const auto source = make_target();
+        const auto other = make_target();
+        const Drawable consumer = add_drawable(make_target(), k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+
+        consumer.render->bind_texture({ .name = "tex", .image = other->image(), .target = source });
+
+        EXPECT_FALSE(consumer.render->samples(source));
+        EXPECT_FALSE(consumer.render->samples(other));
+    }
+
+    TEST_F(ImageTargetRenderTest, ANameTheProcessorDoesNotListBindsNothing)
+    {
+        const auto source = make_target();
+        const Drawable consumer = add_drawable(make_target(), k_full_vertex, k_sample_fragment);
+
+        consumer.render->bind_texture({ .name = "missing", .target = source });
+
+        EXPECT_FALSE(consumer.render->samples(source));
+    }
+
+    TEST_F(ImageTargetRenderTest, ANullTargetAndNullImageBindNothing)
+    {
+        const Drawable consumer = add_drawable(make_target(), k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+
+        EXPECT_NO_THROW(consumer.render->bind_texture({ .name = "tex" }));
+        EXPECT_NO_THROW(consumer.render->bind_texture({ .binding = 0 }));
+    }
+
+    TEST_F(ImageTargetRenderTest, TheGenerationCountsOnlyResizesThatMadeNewImages)
+    {
+        const auto target = make_target({ .width = 16, .height = 16 });
+        EXPECT_EQ(target->generation(), 0U);
+
+        EXPECT_TRUE(target->resize(16, 16));
+        EXPECT_EQ(target->generation(), 0U);
+
+        EXPECT_FALSE(target->resize(0, 16));
+        EXPECT_EQ(target->generation(), 0U);
+
+        EXPECT_TRUE(target->resize(32, 16));
+        EXPECT_EQ(target->generation(), 1U);
+
+        EXPECT_TRUE(target->resize(32, 32));
+        EXPECT_EQ(target->generation(), 2U);
+    }
+
+    // =========================================================================
+    // No display service
+    // =========================================================================
+
+    TEST_F(ImageTargetRenderTest, TheFlowInitializesAndDrawsIntoATargetWithoutADisplayService)
+    {
+        auto& registry = Registry::BackendRegistry::instance();
+        auto* display = registry.get_service<Registry::Service::DisplayService>();
+        registry.unregister_service<Registry::Service::DisplayService>();
+        Portal::Graphics::get_render_flow().shutdown();
+
+        const bool initialized = Portal::Graphics::get_render_flow().initialize();
+        const auto target = make_target();
+        add_drawable(target);
+        if (initialized)
+            cycle();
+        const auto drawn = initialized ? pixel(target, 16, 16) : Pixel {};
+
+        if (display)
+            registry.register_service<Registry::Service::DisplayService>([display]() -> void* { return display; });
+
+        ASSERT_TRUE(initialized);
+        EXPECT_EQ(drawn.r, 255);
+        EXPECT_EQ(drawn.g, 0);
     }
 
     // =========================================================================
@@ -1287,7 +1468,7 @@ void main() { color = texture(tex, vec2(0.5)); }
         const auto sink = make_target();
         const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_lod_fragment);
         consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        consumer.render->bind_texture("tex", source->image());
+        consumer.render->bind_texture({ .name = "tex", .image = source->image() });
 
         cycle();
 
@@ -1304,7 +1485,7 @@ void main() { color = texture(tex, vec2(0.5)); }
         const auto sink = make_target();
         const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_lod_fragment);
         consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        consumer.render->bind_texture("tex", source->image());
+        consumer.render->bind_texture({ .name = "tex", .image = source->image() });
         cycle();
         ASSERT_EQ(pixel(sink, 16, 16).r, 255);
 
@@ -1325,13 +1506,13 @@ void main() { color = texture(tex, vec2(0.5)); }
         const auto sink = make_target();
         const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_lod_fragment);
         consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        consumer.render->bind_texture("tex", source->image());
+        consumer.render->bind_texture({ .name = "tex", .image = source->image() });
         cycle();
         ASSERT_EQ(pixel(sink, 16, 16).r, 255);
 
         ASSERT_TRUE(source->resize(64, 64));
         ASSERT_EQ(source->image()->get_mip_levels(), 7U);
-        consumer.render->bind_texture("tex", source->image());
+        consumer.render->bind_texture({ .name = "tex", .image = source->image() });
         sink->request_redraw();
         cycle();
 
@@ -1351,7 +1532,7 @@ void main() { color = texture(tex, vec2(0.5)); }
         const auto sink = make_target();
         const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
         consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        consumer.render->bind_texture("tex", source->image());
+        consumer.render->bind_texture({ .name = "tex", .image = source->image() });
         cycle();
         ASSERT_EQ(pixel(sink, 16, 16).r, 255);
 
@@ -1371,11 +1552,11 @@ void main() { color = texture(tex, vec2(0.5)); }
         const auto second = make_target();
         const Drawable middle = add_drawable(second, k_full_vertex, k_sample_fragment);
         middle.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        middle.render->bind_texture("tex", first->image());
+        middle.render->bind_texture({ .name = "tex", .image = first->image() });
         const auto third = make_target();
         const Drawable last = add_drawable(third, k_full_vertex, k_sample_fragment);
         last.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        last.render->bind_texture("tex", second->image());
+        last.render->bind_texture({ .name = "tex", .image = second->image() });
         cycle();
         ASSERT_EQ(pixel(third, 16, 16).r, 255);
 
@@ -1395,7 +1576,7 @@ void main() { color = texture(tex, vec2(0.5)); }
         const auto sink = make_target();
         const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
         consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        consumer.render->bind_texture("tex", source->image());
+        consumer.render->bind_texture({ .name = "tex", .image = source->image() });
         const auto stranger = make_target();
         add_drawable(stranger);
         cycle();
@@ -1417,7 +1598,7 @@ void main() { color = texture(tex, vec2(0.5)); }
         const auto sink = make_target();
         const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
         consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        consumer.render->bind_texture("tex", source->image());
+        consumer.render->bind_texture({ .name = "tex", .image = source->image() });
         cycle();
 
         tick();
@@ -1433,7 +1614,7 @@ void main() { color = texture(tex, vec2(0.5)); }
         const auto sink = make_target();
         const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
         consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        consumer.render->bind_texture("tex", source->image());
+        consumer.render->bind_texture({ .name = "tex", .image = source->image() });
         cycle();
         sink->set_active(false);
 

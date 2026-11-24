@@ -118,14 +118,14 @@ void main() {
 
     TEST_F(RenderProcessorSamplerTest, ABindWithoutASamplerCreatesTheDefault)
     {
-        render->bind_texture(2, image);
+        render->bind_texture({ .image = image, .binding = 2 });
 
         EXPECT_EQ(cached(), 1U);
     }
 
     TEST_F(RenderProcessorSamplerTest, ABindWithAConfigCreatesThatSampler)
     {
-        render->bind_texture(2, image, nearest_clamped());
+        render->bind_texture({ .image = image, .sampler = nearest_clamped(), .binding = 2 });
 
         EXPECT_EQ(cached(), 1U);
         EXPECT_EQ(SamplerForge::instance().get_or_create(nearest_clamped()), SamplerForge::instance().get_or_create(nearest_clamped()));
@@ -134,18 +134,18 @@ void main() {
 
     TEST_F(RenderProcessorSamplerTest, ABindingKeepsItsChosenSamplerWhenBoundAgainWithoutOne)
     {
-        render->bind_texture(2, image, nearest_clamped());
+        render->bind_texture({ .image = image, .sampler = nearest_clamped(), .binding = 2 });
         ASSERT_EQ(cached(), 1U);
 
-        render->bind_texture(2, image);
+        render->bind_texture({ .image = image, .binding = 2 });
 
         EXPECT_EQ(cached(), 1U);
     }
 
     TEST_F(RenderProcessorSamplerTest, ABindingWithoutAChoiceGetsTheDefaultWhileAnotherKeepsItsOwn)
     {
-        render->bind_texture(2, image, nearest_clamped());
-        render->bind_texture(3, image);
+        render->bind_texture({ .image = image, .sampler = nearest_clamped(), .binding = 2 });
+        render->bind_texture({ .image = image, .binding = 3 });
 
         EXPECT_EQ(cached(), 2U);
     }
@@ -155,17 +155,17 @@ void main() {
         render->set_binding_sampler(2, nearest_clamped());
         ASSERT_EQ(cached(), 1U);
 
-        render->bind_texture(2, image);
+        render->bind_texture({ .image = image, .binding = 2 });
 
         EXPECT_EQ(cached(), 1U);
     }
 
     TEST_F(RenderProcessorSamplerTest, TheNamedFormsReachTheBindingTheNameIsDeclaredAt)
     {
-        render->bind_texture("map", image, nearest_clamped());
+        render->bind_texture({ .name = "map", .image = image, .sampler = nearest_clamped() });
         ASSERT_EQ(cached(), 1U);
 
-        render->bind_texture(2, image);
+        render->bind_texture({ .image = image, .binding = 2 });
 
         EXPECT_EQ(cached(), 1U);
     }
@@ -182,7 +182,7 @@ void main() {
         render->bind_texture(SampledTexture { .name = "map", .image = image, .sampler = nearest_clamped() });
         ASSERT_EQ(cached(), 1U);
 
-        render->bind_texture(2, image);
+        render->bind_texture({ .image = image, .binding = 2 });
 
         EXPECT_EQ(cached(), 1U);
     }
@@ -199,15 +199,44 @@ void main() {
 
     TEST_F(RenderProcessorSamplerTest, ChangingTheSamplerOfABoundBindingCreatesItAndKeepsTheTexture)
     {
-        render->bind_texture(2, image);
+        render->bind_texture({ .image = image, .binding = 2 });
         ASSERT_EQ(cached(), 1U);
 
         render->set_binding_sampler(2, nearest_clamped());
 
         EXPECT_EQ(cached(), 2U);
 
-        render->bind_texture(2, image);
+        render->bind_texture({ .image = image, .binding = 2 });
         EXPECT_EQ(cached(), 2U);
+    }
+
+    TEST(SampledTextureDescriptionTest, TwoDescriptionsAreEqualWhenEveryFieldIs)
+    {
+        const SampledTexture a { .name = "map", .sampler = nearest_clamped(), .binding = 2 };
+        const SampledTexture b { .name = "map", .sampler = nearest_clamped(), .binding = 2 };
+
+        EXPECT_TRUE(a == b);
+    }
+
+    TEST(SampledTextureDescriptionTest, ABindingIndexAFreshNameOrASamplerMakesThemDiffer)
+    {
+        const SampledTexture base { .name = "map", .binding = 2 };
+
+        EXPECT_FALSE(base == SampledTexture { .name = "map" });
+        EXPECT_FALSE(base == (SampledTexture { .name = "map", .binding = 3 }));
+        EXPECT_FALSE(base == (SampledTexture { .name = "other", .binding = 2 }));
+        EXPECT_FALSE(base == (SampledTexture { .name = "map", .sampler = nearest_clamped(), .binding = 2 }));
+    }
+
+    TEST(SampledTextureDescriptionTest, ThePositionalFormStillNamesATextureWithoutAnImage)
+    {
+        const SampledTexture text { "text", nullptr };
+
+        EXPECT_EQ(text.name, "text");
+        EXPECT_EQ(text.image, nullptr);
+        EXPECT_FALSE(text.binding.has_value());
+        EXPECT_EQ(text.target, nullptr);
+        EXPECT_FALSE(text.sampler.has_value());
     }
 
 } // namespace
@@ -427,7 +456,7 @@ void main() { color = texture(tex, vec2(0.5)); }
         auto image = loom.create_2d(1, 1, Portal::Graphics::ImageFormat::RGBA8, white.data());
         ASSERT_NE(image, nullptr);
         render->add_binding("tex", ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
-        render->bind_texture("tex", image);
+        render->bind_texture({ .name = "tex", .image = image });
 
         tick();
         ASSERT_TRUE(render->is_pipeline_ready());
