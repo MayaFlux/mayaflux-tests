@@ -19,6 +19,14 @@ namespace {
         return { .mag_filter = FilterMode::NEAREST, .min_filter = FilterMode::NEAREST, .address_mode_u = AddressMode::CLAMP_TO_EDGE };
     }
 
+    TEST(RenderConfigDestinationTest, ADefaultConfigNamesNoWindowAndNoImage)
+    {
+        const RenderConfig config;
+
+        EXPECT_EQ(config.target_window, nullptr);
+        EXPECT_TRUE(config.target_images.empty());
+    }
+
     TEST(SampledTextureTest, ANameAndAnImageLeaveTheSamplerUnset)
     {
         const SampledTexture entry { .name = "text", .image = nullptr };

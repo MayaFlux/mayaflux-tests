@@ -1,6 +1,8 @@
 #include "../../support/forma_rig.hpp"
 #include "../../support/test_metadata.hpp"
 
+#include "MayaFlux/Portal/Graphics/ImageTarget.hpp"
+#include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 #include "MayaFlux/Portal/Forma/Internal/TextRow.hpp"
 #include "MayaFlux/Portal/Forma/Internal/TextSlice.hpp"
 #include "MayaFlux/Portal/Forma/Primitives/TextField.hpp"
@@ -130,6 +132,112 @@ TEST_F(FormaTextSliceTest, TheSurfaceBatchIsMadeOnceAndReplacedAfterItsLastSlice
     auto second = atelier.surface_batch(*surface);
     EXPECT_NE(second, first);
     EXPECT_FALSE(second->needs_removal());
+}
+
+TEST_F(FormaTextSliceTest, AnImageBatchDrawsIntoItsTargetAndNotTheWindow)
+{
+    auto& atelier = Forma::internal::atelier();
+    const auto target = Portal::Graphics::get_texture_manager().create_image_target({ .width = 64, .height = 64 });
+    ASSERT_NE(target, nullptr);
+
+    const auto batch = atelier.surface_batch(*surface, target);
+
+    ASSERT_NE(batch, nullptr);
+    const auto config = batch->get_render_config();
+    EXPECT_EQ(config.target_window, nullptr);
+    ASSERT_EQ(config.target_images.size(), 1U);
+    EXPECT_EQ(config.target_images.front(), target);
+}
+
+TEST_F(FormaTextSliceTest, AnImageBatchIsHeldByTheLayerSeparatelyFromTheWindowBatch)
+{
+    auto& atelier = Forma::internal::atelier();
+    const auto target = Portal::Graphics::get_texture_manager().create_image_target({ .width = 64, .height = 64 });
+    ASSERT_NE(target, nullptr);
+
+    const auto window_batch = atelier.surface_batch(*surface);
+    const auto image_batch = atelier.surface_batch(*surface, target);
+
+    EXPECT_NE(window_batch, image_batch);
+    EXPECT_EQ(surface->layer().batch(), window_batch);
+    EXPECT_EQ(surface->layer().batch(target), image_batch);
+    EXPECT_EQ(atelier.surface_batch(*surface, target), image_batch);
+    EXPECT_EQ(atelier.surface_batch(*surface), window_batch);
+}
+
+TEST_F(FormaTextSliceTest, EachTargetGetsItsOwnBatch)
+{
+    auto& atelier = Forma::internal::atelier();
+    auto& loom = Portal::Graphics::get_texture_manager();
+    const auto first = loom.create_image_target({ .width = 64, .height = 64 });
+    const auto second = loom.create_image_target({ .width = 64, .height = 64 });
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+
+    const auto first_batch = atelier.surface_batch(*surface, first);
+    const auto second_batch = atelier.surface_batch(*surface, second);
+
+    EXPECT_NE(first_batch, second_batch);
+    EXPECT_EQ(surface->layer().batch(first), first_batch);
+    EXPECT_EQ(surface->layer().batch(second), second_batch);
+}
+
+TEST_F(FormaTextSliceTest, AnImageBatchIsReplacedAfterItsLastSliceIsRetired)
+{
+    auto& atelier = Forma::internal::atelier();
+    const auto target = Portal::Graphics::get_texture_manager().create_image_target({ .width = 64, .height = 64 });
+    ASSERT_NE(target, nullptr);
+
+    const auto first = atelier.surface_batch(*surface, target);
+    const auto slice = atelier.batch_slice(*surface, target, PrimitiveTopology::TRIANGLE_LIST);
+    EXPECT_EQ(slice.buffer(), first);
+    slice.retire();
+    ASSERT_TRUE(first->needs_removal());
+
+    const auto second = atelier.surface_batch(*surface, target);
+    EXPECT_NE(second, first);
+    EXPECT_FALSE(second->needs_removal());
+    EXPECT_EQ(surface->layer().batch(target), second);
+}
+
+TEST_F(FormaTextSliceTest, ALayerHasNoBatchForATargetItNeverDrewInto)
+{
+    const auto target = Portal::Graphics::get_texture_manager().create_image_target({ .width = 8, .height = 8 });
+    ASSERT_NE(target, nullptr);
+
+    EXPECT_EQ(surface->layer().batch(target), nullptr);
+    EXPECT_EQ(surface->layer().batch(nullptr), nullptr);
+}
+
+TEST_F(FormaTextSliceTest, ClearingTheLayerDropsItsImageBatches)
+{
+    auto& atelier = Forma::internal::atelier();
+    const auto target = Portal::Graphics::get_texture_manager().create_image_target({ .width = 64, .height = 64 });
+    ASSERT_NE(target, nullptr);
+    (void)atelier.surface_batch(*surface, target);
+    ASSERT_NE(surface->layer().batch(target), nullptr);
+
+    surface->layer().clear();
+
+    EXPECT_EQ(surface->layer().batch(target), nullptr);
+}
+
+TEST_F(FormaTextSliceTest, ANullTargetIsRefusedForAnImageBatch)
+{
+    EXPECT_THROW((void)Forma::internal::atelier().surface_batch(*surface, nullptr), std::invalid_argument);
+}
+
+TEST_F(FormaTextSliceTest, AnImageConfigKeepsTheRestOfTheBaseAndDropsTheWindow)
+{
+    const auto target = Portal::Graphics::get_texture_manager().create_image_target({ .width = 8, .height = 8 });
+    ASSERT_NE(target, nullptr);
+
+    const auto config = surface->image_config(target, { .fragment_shader = "x.frag.spv" });
+
+    EXPECT_EQ(config.target_window, nullptr);
+    ASSERT_EQ(config.target_images.size(), 1U);
+    EXPECT_EQ(config.target_images.front(), target);
+    EXPECT_EQ(config.fragment_shader, "x.frag.spv");
 }
 
 TEST_F(FormaTextSliceTest, ScrollBatchesDrawAboveTheSurfaceBatchInTheOrderTheyWereMade)
