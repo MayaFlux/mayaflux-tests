@@ -114,6 +114,42 @@ TEST(ImageAccessInfoTest, TransfersAreOrderedAtTheTransferStage)
     EXPECT_TRUE(has(Core::image_access_info(ImageAccess::TRANSFER_DST).stages, vk::PipelineStageFlagBits2::eAllTransfer));
 }
 
+TEST(ImageAccessInfoTest, TheHostUseIsTheGeneralLayoutAtTheHostStageWithHostReadAndWrite)
+{
+    const auto info = Core::image_access_info(ImageAccess::HOST);
+
+    EXPECT_EQ(info.layout, vk::ImageLayout::eGeneral);
+    EXPECT_EQ(info.stages, vk::PipelineStageFlags2(vk::PipelineStageFlagBits2::eHost));
+    EXPECT_TRUE(has(info.access, vk::AccessFlagBits2::eHostRead));
+    EXPECT_TRUE(has(info.access, vk::AccessFlagBits2::eHostWrite));
+}
+
+TEST(ImageAccessInfoTest, TheGeneralLayoutMapsBackToStorageNotToTheHostUse)
+{
+    const auto back = Core::image_access_of(Core::image_access_info(ImageAccess::HOST).layout);
+
+    ASSERT_TRUE(back.has_value());
+    EXPECT_EQ(*back, ImageAccess::STORAGE);
+}
+
+TEST(ImageAccessInfoTest, APresentedImageIsWaitedOnAsTheColorAttachmentThatWroteIt)
+{
+    const auto presented = Core::presented_image_access();
+    const auto written = Core::image_access_info(ImageAccess::COLOR_ATTACHMENT);
+
+    EXPECT_EQ(presented.layout, vk::ImageLayout::ePresentSrcKHR);
+    EXPECT_EQ(presented.stages, written.stages);
+    EXPECT_EQ(presented.access, vk::AccessFlags2(vk::AccessFlagBits2::eColorAttachmentWrite));
+}
+
+TEST(ImageAccessInfoTest, ThePresentationUseItselfWaitsOnNothing)
+{
+    const auto info = Core::image_access_info(ImageAccess::PRESENT);
+
+    EXPECT_EQ(info.stages, vk::PipelineStageFlags2 {});
+    EXPECT_EQ(info.access, vk::AccessFlags2 {});
+}
+
 TEST(ImageAccessOfTest, LayoutsNoAccessDescribesMapToNothing)
 {
     for (const auto layout : {

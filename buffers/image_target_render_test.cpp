@@ -64,6 +64,25 @@ layout(location = 0) out vec4 color;
 void main() { if (gl_FragCoord.x < 16.0) discard; color = vec4(0.0, 1.0, 0.0, 1.0); }
 )";
 
+    constexpr const char* k_two_outputs_fragment = R"(#version 460
+layout(location = 0) out vec4 first;
+layout(location = 1) out vec4 second;
+void main() { first = vec4(1.0, 0.0, 0.0, 1.0); second = vec4(0.0, 1.0, 0.0, 1.0); }
+)";
+
+    constexpr const char* k_half_depth_vertex = R"(#version 460
+void main() {
+    vec2 p[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+    gl_Position = vec4(p[gl_VertexIndex], 0.5, 1.0);
+}
+)";
+
+    constexpr const char* k_sample_red_channel_fragment = R"(#version 460
+layout(set = 1, binding = 0) uniform sampler2D tex;
+layout(location = 0) out vec4 color;
+void main() { color = vec4(texture(tex, vec2(0.5)).r, 0.0, 0.0, 1.0); }
+)";
+
     constexpr const char* k_sample_lod_fragment = R"(#version 460
 layout(set = 1, binding = 0) uniform sampler2D tex;
 layout(location = 0) out vec4 color;
@@ -230,6 +249,16 @@ void main() { color = texture(tex, vec2(0.5)); }
             std::vector<uint8_t> bytes(static_cast<size_t>(target->width()) * target->height() * 4);
             loom().download_data(target->image(), bytes.data(), bytes.size());
             const size_t at = (static_cast<size_t>(y) * target->width() + x) * 4;
+            return { bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3] };
+        }
+
+        /** A pixel of one layer of any 8 bit, 4 channel image, read back whole. */
+        Pixel texel(const std::shared_ptr<Core::VKImage>& image, uint32_t x, uint32_t y, uint32_t layer = 0)
+        {
+            const size_t layer_bytes = static_cast<size_t>(image->get_width()) * image->get_height() * 4;
+            std::vector<uint8_t> bytes(layer_bytes * image->get_array_layers());
+            loom().download_data(image, bytes.data(), bytes.size());
+            const size_t at = layer * layer_bytes + (static_cast<size_t>(y) * image->get_width() + x) * 4;
             return { bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3] };
         }
 
@@ -1416,6 +1445,258 @@ void main() { color = texture(tex, vec2(0.5)); }
 
         EXPECT_TRUE(target->resize(32, 32));
         EXPECT_EQ(target->generation(), 2U);
+    }
+
+    // =========================================================================
+    // Layers, cube faces and areas
+    // =========================================================================
+
+    TEST_F(ImageTargetRenderTest, DestinationsDrawIntoTheLayersTheyNameOfOneTarget)
+    {
+        const auto target = make_target({ .width = 16, .height = 16, .layers = 3 });
+        ASSERT_NE(target, nullptr);
+        EXPECT_EQ(target->layers(), 3U);
+        EXPECT_EQ(target->image()->get_array_layers(), 3U);
+        const Drawable first = add_drawable(target, k_full_vertex, k_red_fragment);
+        const Drawable last = add_drawable(target, k_full_vertex, k_green_fragment);
+        first.render->set_target_area(target, { .layer = 0 });
+        last.render->set_target_area(target, { .layer = 2 });
+
+        cycle();
+
+        EXPECT_EQ(texel(target->image(), 8, 8, 0).r, 255);
+        EXPECT_EQ(texel(target->image(), 8, 8, 0).g, 0);
+        EXPECT_EQ(texel(target->image(), 8, 8, 2).g, 255);
+        EXPECT_EQ(texel(target->image(), 8, 8, 2).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, ACubeTargetDrawsIntoItsFaces)
+    {
+        const auto target = make_target({ .width = 16, .height = 16, .cube = true });
+        ASSERT_NE(target, nullptr);
+        EXPECT_TRUE(target->cube());
+        EXPECT_EQ(target->layers(), 6U);
+        const Drawable face = add_drawable(target, k_full_vertex, k_green_fragment);
+        face.render->set_target_area(target, { .layer = 4 });
+
+        cycle();
+
+        EXPECT_EQ(texel(target->image(), 8, 8, 4).g, 255);
+        EXPECT_EQ(texel(target->image(), 8, 8, 4).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, ALayerBeyondTheTargetIsRefused)
+    {
+        const auto target = make_target({ .width = 16, .height = 16, .layers = 2 });
+        const Drawable drawable = add_drawable(target);
+
+        drawable.render->set_target_area(target, { .layer = 5 });
+
+        EXPECT_EQ(drawable.render->get_target_area(target).layer, 0U);
+    }
+
+    TEST_F(ImageTargetRenderTest, ALayeredTargetResizesEveryLayer)
+    {
+        const auto target = make_target({ .width = 16, .height = 16, .layers = 2 });
+        ASSERT_NE(target, nullptr);
+
+        ASSERT_TRUE(target->resize(32, 16));
+
+        EXPECT_EQ(target->image()->get_width(), 32U);
+        EXPECT_EQ(target->image()->get_array_layers(), 2U);
+        EXPECT_EQ(target->generation(), 1U);
+    }
+
+    TEST_F(ImageTargetRenderTest, LayersAndCubesRefuseMipLevelsAndCubesRefuseNonSquareFaces)
+    {
+        EXPECT_EQ(loom().create_image_target({ .width = 16, .height = 16, .mip_levels = 3, .layers = 2 }), nullptr);
+        EXPECT_EQ(loom().create_image_target({ .width = 16, .height = 16, .mip_levels = 3, .cube = true }), nullptr);
+        EXPECT_EQ(loom().create_image_target({ .width = 16, .height = 8, .cube = true }), nullptr);
+    }
+
+    TEST_F(ImageTargetRenderTest, ADestinationDrawsOnlyIntoTheAreaItNames)
+    {
+        const auto target = make_target({ .width = 32, .height = 32 });
+        const Drawable left = add_drawable(target, k_full_vertex, k_red_fragment);
+        const Drawable right = add_drawable(target, k_full_vertex, k_green_fragment);
+        left.render->set_target_area(target,
+            { .area = Kinesis::Scissor::from(Kinesis::AABB2D { .min = { -1.F, -1.F }, .max = { 0.F, 1.F } }) });
+        right.render->set_target_area(target,
+            { .area = Kinesis::Scissor::from(Kinesis::AABB2D { .min = { 0.F, -1.F }, .max = { 1.F, 1.F } }) });
+
+        cycle();
+
+        EXPECT_EQ(pixel(target, 8, 16).r, 255);
+        EXPECT_EQ(pixel(target, 8, 16).g, 0);
+        EXPECT_EQ(pixel(target, 24, 16).g, 255);
+        EXPECT_EQ(pixel(target, 24, 16).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, AnAreaFollowsTheTargetsSizeAfterAResize)
+    {
+        const auto target = make_target({ .width = 32, .height = 32 });
+        const Drawable left = add_drawable(target, k_full_vertex, k_red_fragment);
+        const Drawable right = add_drawable(target, k_full_vertex, k_green_fragment);
+        left.render->set_target_area(target,
+            { .area = Kinesis::Scissor::from(Kinesis::AABB2D { .min = { -1.F, -1.F }, .max = { 0.F, 1.F } }) });
+        right.render->set_target_area(target,
+            { .area = Kinesis::Scissor::from(Kinesis::AABB2D { .min = { 0.F, -1.F }, .max = { 1.F, 1.F } }) });
+        cycle();
+
+        ASSERT_TRUE(target->resize(64, 32));
+        cycle();
+
+        EXPECT_EQ(pixel(target, 16, 16).r, 255);
+        EXPECT_EQ(pixel(target, 48, 16).g, 255);
+    }
+
+    TEST(TargetAreaDescriptionTest, TwoAreasAreEqualWhenLayerAndRegionAre)
+    {
+        const Portal::Graphics::TargetArea whole {};
+        const Portal::Graphics::TargetArea half { .area = Kinesis::Scissor::from(Kinesis::AABB2D { .min = { -1.F, -1.F }, .max = { 0.F, 1.F } }) };
+
+        EXPECT_TRUE(whole == Portal::Graphics::TargetArea {});
+        EXPECT_FALSE(whole == half);
+        EXPECT_TRUE(half == half);
+        EXPECT_FALSE(whole == (Portal::Graphics::TargetArea { .layer = 1 }));
+    }
+
+    // =========================================================================
+    // Several color attachments
+    // =========================================================================
+
+    TEST_F(ImageTargetRenderTest, OnePassDrawsEveryColorImageOfATarget)
+    {
+        const auto target = make_target({ .width = 16, .height = 16, .extra_formats = { Portal::Graphics::ImageFormat::RGBA8 } });
+        if (!target) {
+            GTEST_SKIP() << "no independent blend on this device";
+        }
+        EXPECT_EQ(target->attachment_count(), 2U);
+        EXPECT_EQ(target->color_formats().size(), 2U);
+        add_drawable(target, k_full_vertex, k_two_outputs_fragment);
+
+        cycle();
+
+        EXPECT_EQ(texel(target->image(0), 8, 8).r, 255);
+        EXPECT_EQ(texel(target->image(0), 8, 8).g, 0);
+        EXPECT_EQ(texel(target->image(1), 8, 8).g, 255);
+        EXPECT_EQ(texel(target->image(1), 8, 8).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, ATargetWithExtraColorImagesResizesThemAll)
+    {
+        const auto target = make_target({ .width = 16, .height = 16, .extra_formats = { Portal::Graphics::ImageFormat::RGBA8 } });
+        if (!target) {
+            GTEST_SKIP() << "no independent blend on this device";
+        }
+
+        ASSERT_TRUE(target->resize(32, 8));
+
+        EXPECT_EQ(target->image(0)->get_width(), 32U);
+        EXPECT_EQ(target->image(1)->get_width(), 32U);
+        EXPECT_EQ(target->image(1)->get_height(), 8U);
+    }
+
+    TEST_F(ImageTargetRenderTest, AProcessorSamplesAnExtraColorImageOfATarget)
+    {
+        const auto source = make_target({ .width = 16, .height = 16, .extra_formats = { Portal::Graphics::ImageFormat::RGBA8 } });
+        if (!source) {
+            GTEST_SKIP() << "no independent blend on this device";
+        }
+        const Drawable consumer = add_drawable(make_target(), k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+
+        consumer.render->bind_texture({ .name = "tex", .image = source->image(1) });
+
+        EXPECT_TRUE(consumer.render->samples(source));
+    }
+
+    TEST_F(ImageTargetRenderTest, ExtraColorImagesRefuseMipLevels)
+    {
+        EXPECT_EQ(loom().create_image_target({ .width = 16, .height = 16, .mip_levels = 3, .extra_formats = { Portal::Graphics::ImageFormat::RGBA8 } }), nullptr);
+    }
+
+    // =========================================================================
+    // Compute writes and sampled depth
+    // =========================================================================
+
+    TEST_F(ImageTargetRenderTest, ATargetMadeForStorageAllowsComputeWritesAndOthersDoNot)
+    {
+        const auto plain = make_target({ .width = 16, .height = 16 });
+        const auto writable = make_target({ .width = 16, .height = 16, .storage = true });
+        ASSERT_NE(plain, nullptr);
+        if (!writable) {
+            GTEST_SKIP() << "the format has no storage image support on this device";
+        }
+
+        EXPECT_FALSE(plain->storage());
+        EXPECT_FALSE(static_cast<bool>(plain->image()->get_usage_flags() & vk::ImageUsageFlagBits::eStorage));
+        EXPECT_TRUE(writable->storage());
+        EXPECT_TRUE(static_cast<bool>(writable->image()->get_usage_flags() & vk::ImageUsageFlagBits::eStorage));
+    }
+
+    TEST_F(ImageTargetRenderTest, ATargetDrawsAgainAfterAComputePassLeftItInTheGeneralLayout)
+    {
+        const auto target = make_target({ .width = 16, .height = 16, .storage = true });
+        if (!target) {
+            GTEST_SKIP() << "the format has no storage image support on this device";
+        }
+        const Drawable drawable = add_drawable(target);
+        cycle();
+        ASSERT_EQ(pixel(target, 8, 8).r, 255);
+
+        loom().transition_layout(target->image(), vk::ImageLayout::eGeneral, Portal::Graphics::SubmitMode::IMMEDIATE);
+        ASSERT_EQ(target->image()->get_current_layout(), vk::ImageLayout::eGeneral);
+        drawable.render->set_fragment_shader(k_green_fragment);
+        target->request_redraw();
+        cycle();
+
+        EXPECT_EQ(pixel(target, 8, 8).g, 255);
+        EXPECT_EQ(pixel(target, 8, 8).r, 0);
+        EXPECT_EQ(target->image()->get_current_layout(), vk::ImageLayout::eShaderReadOnlyOptimal);
+    }
+
+    TEST_F(ImageTargetRenderTest, ADepthImageKeptForSamplingHoldsTheDepthThatWasDrawn)
+    {
+        const auto source = make_target({ .width = 16, .height = 16, .depth = true, .sample_depth = true });
+        ASSERT_NE(source, nullptr);
+        const Drawable producer = add_drawable(source, k_half_depth_vertex, k_red_fragment, true);
+        producer.render->enable_depth_test();
+        producer.buffer->set_needs_depth_attachment(true);
+        const auto sink = make_target();
+        const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_red_channel_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture({ .name = "tex",
+            .image = source->depth_image(),
+            .sampler = Portal::Graphics::SamplerConfig {
+                .mag_filter = Portal::Graphics::FilterMode::NEAREST,
+                .min_filter = Portal::Graphics::FilterMode::NEAREST } });
+        EXPECT_TRUE(consumer.render->samples(source));
+
+        cycle();
+
+        EXPECT_GE(pixel(sink, 8, 8).r, 120);
+        EXPECT_LE(pixel(sink, 8, 8).r, 135);
+        EXPECT_EQ(source->depth_image()->get_current_layout(), vk::ImageLayout::eShaderReadOnlyOptimal);
+    }
+
+    TEST_F(ImageTargetRenderTest, ADepthImageNotKeptStaysAnAttachmentAfterTheDraw)
+    {
+        const auto target = make_target({ .width = 16, .height = 16, .depth = true });
+        ASSERT_NE(target, nullptr);
+        EXPECT_FALSE(target->sample_depth());
+        const Drawable drawable = add_drawable(target, k_half_depth_vertex, k_red_fragment, true);
+        drawable.render->enable_depth_test();
+        drawable.buffer->set_needs_depth_attachment(true);
+
+        cycle();
+
+        EXPECT_NE(target->depth_image()->get_current_layout(), vk::ImageLayout::eShaderReadOnlyOptimal);
+    }
+
+    TEST_F(ImageTargetRenderTest, SampledDepthNeedsDepth)
+    {
+        EXPECT_EQ(loom().create_image_target({ .width = 16, .height = 16, .sample_depth = true }), nullptr);
     }
 
     // =========================================================================

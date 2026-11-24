@@ -1000,9 +1000,14 @@ namespace {
         ASSERT_TRUE(loom().initialize(backend()));
         ImageCacheEntry entry;
 
-        ImageKey layered_target = sampled_key(8, 8);
-        layered_target.kind = ImageKey::Kind::RENDER_TARGET;
-        layered_target.layers = 2;
+        ImageKey layered_mipped_target = sampled_key(8, 8);
+        layered_mipped_target.kind = ImageKey::Kind::RENDER_TARGET;
+        layered_mipped_target.layers = 2;
+        layered_mipped_target.mip_levels = 2;
+        ImageKey non_square_cube = sampled_key(8, 4);
+        non_square_cube.kind = ImageKey::Kind::RENDER_TARGET;
+        non_square_cube.layers = 6;
+        non_square_cube.cube = true;
         ImageKey layered_depth = sampled_key(8, 8);
         layered_depth.kind = ImageKey::Kind::DEPTH;
         layered_depth.layers = 2;
@@ -1010,10 +1015,52 @@ namespace {
         mipped_depth.kind = ImageKey::Kind::DEPTH;
         mipped_depth.mip_levels = 2;
 
-        EXPECT_EQ(loom().acquire_cached_image(entry, layered_target), nullptr);
+        EXPECT_EQ(loom().acquire_cached_image(entry, layered_mipped_target), nullptr);
+        EXPECT_EQ(loom().acquire_cached_image(entry, non_square_cube), nullptr);
         EXPECT_EQ(loom().acquire_cached_image(entry, layered_depth), nullptr);
         EXPECT_EQ(loom().acquire_cached_image(entry, mipped_depth), nullptr);
         EXPECT_EQ(entry.image, nullptr);
+    }
+
+    TEST_F(TextureLoomTest, ACachedRenderTargetKeyWithLayersMakesAnArrayAndAStorageKeyMakesAStorageUsableImage)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        ImageCacheEntry layered_entry;
+        ImageKey layered = sampled_key(8, 8);
+        layered.kind = ImageKey::Kind::RENDER_TARGET;
+        layered.layers = 2;
+
+        const auto array = loom().acquire_cached_image(layered_entry, layered);
+
+        ASSERT_NE(array, nullptr);
+        EXPECT_EQ(array->get_array_layers(), 2U);
+
+        ImageCacheEntry storage_entry;
+        ImageKey storage = sampled_key(8, 8);
+        storage.kind = ImageKey::Kind::RENDER_TARGET;
+        storage.storage = true;
+
+        const auto writable = loom().acquire_cached_image(storage_entry, storage);
+
+        ASSERT_NE(writable, nullptr);
+        EXPECT_TRUE(static_cast<bool>(writable->get_usage_flags() & vk::ImageUsageFlagBits::eStorage));
+        EXPECT_NE(writable, array);
+    }
+
+    TEST_F(TextureLoomTest, ACachedRenderTargetIsNotReusedForAKeyThatDiffersOnlyInStorageOrCube)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        ImageCacheEntry entry;
+        ImageKey plain = sampled_key(8, 8);
+        plain.kind = ImageKey::Kind::RENDER_TARGET;
+        const auto first = loom().acquire_cached_image(entry, plain);
+        ASSERT_NE(first, nullptr);
+        EXPECT_EQ(loom().acquire_cached_image(entry, plain), first);
+
+        ImageKey writable = plain;
+        writable.storage = true;
+
+        EXPECT_NE(loom().acquire_cached_image(entry, writable), first);
     }
 
     TEST_F(TextureLoomTest, RefreshCachedImageRefusesRenderTargetAndDepthKeys)
