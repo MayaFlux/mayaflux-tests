@@ -425,6 +425,8 @@ TEST_F(BackendWindowHandlerTest, CompletedFramesNeverExceedSubmittedAndCatchUpWh
     }
 
     backend().wait_idle();
+    auto& commands = backend().get_command_manager();
+    commands.wait(commands.submitted());
     EXPECT_EQ(display->get_completed_frame_count(window), display->get_submitted_frame_count(window));
 }
 
@@ -510,7 +512,10 @@ MAYAFLUX_TEST_WITH(TEST_F, BackendWindowHandlerTest, UnregisteringAWindowDetache
     ASSERT_FALSE(allocation.expired());
 
     backend().unregister_window(window);
-    backend().get_command_manager().collect();
+    backend().flush_deferred();
+    auto& commands = backend().get_command_manager();
+    commands.wait(commands.submitted());
+    commands.collect();
 
     EXPECT_FALSE(depth->is_initialized());
     EXPECT_TRUE(allocation.expired());
