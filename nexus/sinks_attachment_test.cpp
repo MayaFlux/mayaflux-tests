@@ -23,7 +23,9 @@
 #include "MayaFlux/Nexus/Principals/Locus.hpp"
 #include "MayaFlux/Nexus/Tapestry.hpp"
 #include "MayaFlux/Portal/Graphics/GraphicsUtils.hpp"
+#include "MayaFlux/Portal/Graphics/ImageTarget.hpp"
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
+#include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
 
@@ -301,6 +303,58 @@ namespace {
 
         EXPECT_EQ(sinks.size(), 1U);
         EXPECT_TRUE(registered(sinks.front().buf));
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, AnImageTargetAloneIsADestinationOfTheSink, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        auto& loom = Portal::Graphics::get_texture_manager();
+        loom.shutdown();
+        ASSERT_TRUE(loom.initialize(std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) { })));
+        {
+            const auto target = loom.create_image_target({ .width = 16, .height = 16 });
+            ASSERT_NE(target, nullptr);
+            auto config = render_config();
+            config.target_window = nullptr;
+            config.target_images = { target };
+
+            Nexus::add_render_sink(sinks, manager, config);
+
+            ASSERT_EQ(sinks.size(), 1U);
+            EXPECT_EQ(sinks.front().window, nullptr);
+            EXPECT_EQ(sinks.front().renderer->get_target_window(), nullptr);
+            EXPECT_EQ(sinks.front().renderer->get_target_image(), target);
+            EXPECT_EQ(sinks.front().renderer->destination_count(), 1U);
+            EXPECT_TRUE(registered(sinks.front().buf));
+
+            Nexus::release_render_sinks(sinks, manager);
+            EXPECT_TRUE(sinks.empty());
+        }
+        loom.shutdown();
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, AWindowAndAnImageTargetAreBothDestinationsOfTheSink, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        auto& loom = Portal::Graphics::get_texture_manager();
+        loom.shutdown();
+        ASSERT_TRUE(loom.initialize(std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) { })));
+        {
+            const auto target = loom.create_image_target({ .width = 16, .height = 16 });
+            ASSERT_NE(target, nullptr);
+            auto config = render_config();
+            config.target_images = { target };
+
+            Nexus::add_render_sink(sinks, manager, config);
+
+            ASSERT_EQ(sinks.size(), 1U);
+            EXPECT_EQ(sinks.front().window, window);
+            EXPECT_EQ(sinks.front().renderer->get_target_window(), window);
+            EXPECT_EQ(sinks.front().renderer->get_target_image(), target);
+            EXPECT_EQ(sinks.front().renderer->destination_count(), 2U);
+
+            Nexus::remove_render_sink(sinks, manager, window);
+            EXPECT_TRUE(sinks.empty());
+        }
+        loom.shutdown();
     }
 
     MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, EveryTopologyBuildsASink, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))

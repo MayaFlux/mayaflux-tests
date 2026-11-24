@@ -1340,5 +1340,228 @@ void main() { color = texture(tex, vec2(0.5)); }
     }
 
 
+    // =========================================================================
+    // Targets that sample other targets
+    // =========================================================================
+
+    TEST_F(ImageTargetRenderTest, ASourceThatRedrawsAsksTheTargetThatSamplesItToRedraw)
+    {
+        const auto source = make_target();
+        const Drawable producer = add_drawable(source);
+        const auto sink = make_target();
+        const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture("tex", source->image());
+        cycle();
+        ASSERT_EQ(pixel(sink, 16, 16).r, 255);
+
+        producer.render->set_fragment_shader(k_green_fragment);
+        source->request_redraw();
+        cycle();
+
+        EXPECT_EQ(pixel(source, 16, 16).g, 255);
+        EXPECT_EQ(pixel(sink, 16, 16).g, 255);
+        EXPECT_EQ(pixel(sink, 16, 16).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, ARedrawReachesATargetThroughAChainOfSamplers)
+    {
+        const auto first = make_target();
+        const Drawable producer = add_drawable(first);
+        const auto second = make_target();
+        const Drawable middle = add_drawable(second, k_full_vertex, k_sample_fragment);
+        middle.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        middle.render->bind_texture("tex", first->image());
+        const auto third = make_target();
+        const Drawable last = add_drawable(third, k_full_vertex, k_sample_fragment);
+        last.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        last.render->bind_texture("tex", second->image());
+        cycle();
+        ASSERT_EQ(pixel(third, 16, 16).r, 255);
+
+        producer.render->set_fragment_shader(k_green_fragment);
+        first->request_redraw();
+        cycle();
+
+        EXPECT_EQ(pixel(second, 16, 16).g, 255);
+        EXPECT_EQ(pixel(third, 16, 16).g, 255);
+        EXPECT_EQ(pixel(third, 16, 16).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, ATargetThatDoesNotSampleTheSourceStaysUntouched)
+    {
+        const auto source = make_target();
+        add_drawable(source);
+        const auto sink = make_target();
+        const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture("tex", source->image());
+        const auto stranger = make_target();
+        add_drawable(stranger);
+        cycle();
+
+        source->request_redraw();
+        tick();
+
+        ASSERT_EQ(root->get_renderable_buffers().size(), 2U);
+        for (const auto& info : root->get_renderable_buffers()) {
+            EXPECT_NE(info.target_image, stranger);
+        }
+        present();
+    }
+
+    TEST_F(ImageTargetRenderTest, ATargetThatSamplesAnUnchangedSourceIsNotRedrawn)
+    {
+        const auto source = make_target();
+        add_drawable(source);
+        const auto sink = make_target();
+        const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture("tex", source->image());
+        cycle();
+
+        tick();
+
+        EXPECT_TRUE(root->get_renderable_buffers().empty());
+        present();
+    }
+
+    TEST_F(ImageTargetRenderTest, AnInactiveTargetIsNotDrawnWhenItsSourceRedraws)
+    {
+        const auto source = make_target();
+        add_drawable(source);
+        const auto sink = make_target();
+        const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture("tex", source->image());
+        cycle();
+        sink->set_active(false);
+
+        source->request_redraw();
+        tick();
+
+        ASSERT_EQ(root->get_renderable_buffers().size(), 1U);
+        EXPECT_EQ(root->get_renderable_buffers().front().target_image, source);
+        present();
+    }
+
+    TEST_F(ImageTargetRenderTest, SettingDestinationsFromAWindowlessConfigUsesTheImages)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+
+        drawable.render->set_destinations(nullptr, { second }, drawable.buffer);
+
+        EXPECT_EQ(drawable.render->destination_count(), 1U);
+        EXPECT_EQ(drawable.render->get_target_image(), second);
+        EXPECT_TRUE(first->take_redraw());
+    }
+
+    TEST_F(ImageTargetRenderTest, SettingNoDestinationKeepsTheCurrentOnes)
+    {
+        const auto target = make_target();
+        const Drawable drawable = add_drawable(target);
+
+        drawable.render->set_destinations(nullptr, {}, drawable.buffer);
+
+        EXPECT_EQ(drawable.render->destination_count(), 1U);
+        EXPECT_EQ(drawable.render->get_target_image(), target);
+    }
+
+
+    // =========================================================================
+    // Drawing a scope through the render flow
+    // =========================================================================
+
+    TEST_F(ImageTargetRenderTest, TheFlowDrawsARecordedSecondaryIntoATarget)
+    {
+        const auto target = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 0.0F, 1.0F, 1.0F } });
+        const Drawable drawable = add_drawable(target, k_full_vertex, k_left_red_fragment);
+        tick();
+        const auto command = drawable.buffer->get_pipeline_command(pipeline_for(drawable, target));
+        ASSERT_NE(command, Portal::Graphics::INVALID_COMMAND_BUFFER);
+
+        const auto point = Portal::Graphics::get_render_flow().draw_image_target(*target, { command }, false);
+
+        EXPECT_TRUE(static_cast<bool>(point));
+        EXPECT_EQ(pixel(target, 4, 16).r, 255);
+        EXPECT_EQ(pixel(target, 28, 16).b, 255);
+        EXPECT_EQ(pixel(target, 28, 16).r, 0);
+        drawable.buffer->clear_pipeline_commands();
+        const std::array<Portal::Graphics::CommandBufferID, 1> done { command };
+        Portal::Graphics::get_shader_foundry().retire_after_submit(done);
+    }
+
+    TEST_F(ImageTargetRenderTest, ASecondScopeCompletesAfterTheFirst)
+    {
+        const auto target = make_target();
+        auto& flow = Portal::Graphics::get_render_flow();
+
+        const auto first = flow.draw_image_target(*target, {}, false);
+        const auto second = flow.draw_image_target(*target, {}, false);
+
+        ASSERT_TRUE(static_cast<bool>(first));
+        ASSERT_TRUE(static_cast<bool>(second));
+        EXPECT_EQ(second.timeline, first.timeline);
+        EXPECT_GT(second.value, first.value);
+    }
+
+    TEST_F(ImageTargetRenderTest, AScopeWithNothingRecordedStillClearsTheTarget)
+    {
+        const auto target = make_target({ .width = 16, .height = 16, .clear_color = { 0.0F, 1.0F, 0.0F, 1.0F } });
+
+        const auto point = Portal::Graphics::get_render_flow().draw_image_target(*target, {}, false);
+
+        EXPECT_TRUE(static_cast<bool>(point));
+        EXPECT_EQ(pixel(target, 8, 8).g, 255);
+        EXPECT_EQ(pixel(target, 8, 8).r, 0);
+        EXPECT_EQ(pixel(target, 8, 8).b, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, SecondaryCommandsTheFoundryDoesNotKnowAreSkipped)
+    {
+        const auto target = make_target({ .width = 16, .height = 16, .clear_color = { 0.0F, 1.0F, 0.0F, 1.0F } });
+
+        const auto point = Portal::Graphics::get_render_flow().draw_image_target(
+            *target, { Portal::Graphics::INVALID_COMMAND_BUFFER, 987654U }, false);
+
+        EXPECT_TRUE(static_cast<bool>(point));
+        EXPECT_EQ(pixel(target, 8, 8).g, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, APreservingTargetKeepsItsContentWhenTheFlowDrawsAgain)
+    {
+        const auto target = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 0.0F, 1.0F, 1.0F }, .preserve = true });
+        const Drawable drawable = add_drawable(target, k_full_vertex, k_left_red_fragment);
+        tick();
+        const auto command = drawable.buffer->get_pipeline_command(pipeline_for(drawable, target));
+        ASSERT_NE(command, Portal::Graphics::INVALID_COMMAND_BUFFER);
+        auto& flow = Portal::Graphics::get_render_flow();
+        ASSERT_TRUE(static_cast<bool>(flow.draw_image_target(*target, { command }, false)));
+        ASSERT_EQ(pixel(target, 4, 16).r, 255);
+
+        ASSERT_TRUE(static_cast<bool>(flow.draw_image_target(*target, {}, false)));
+
+        EXPECT_EQ(pixel(target, 4, 16).r, 255);
+        EXPECT_EQ(pixel(target, 28, 16).b, 255);
+        drawable.buffer->clear_pipeline_commands();
+        const std::array<Portal::Graphics::CommandBufferID, 1> done { command };
+        Portal::Graphics::get_shader_foundry().retire_after_submit(done);
+    }
+
+    TEST_F(ImageTargetRenderTest, ATargetWithDepthTakesAScopeWithOrWithoutItsDepthAttachment)
+    {
+        const auto target = make_target({ .width = 16, .height = 16, .depth = true, .clear_color = { 1.0F, 0.0F, 0.0F, 1.0F } });
+        ASSERT_NE(target, nullptr);
+        auto& flow = Portal::Graphics::get_render_flow();
+
+        EXPECT_TRUE(static_cast<bool>(flow.draw_image_target(*target, {}, true)));
+        EXPECT_EQ(pixel(target, 8, 8).r, 255);
+        EXPECT_TRUE(static_cast<bool>(flow.draw_image_target(*target, {}, false)));
+        EXPECT_EQ(pixel(target, 8, 8).r, 255);
+    }
+
+
 }
 }
