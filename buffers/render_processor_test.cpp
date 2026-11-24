@@ -794,6 +794,143 @@ void main() { color = texture(tex, vec2(0.5)); }
         EXPECT_FALSE(pipeline_alive(id));
     }
 
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, AWindowAndAnImageShareOneProcessor, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
+    {
+        prepare_draw(k_plain_vertex);
+        auto borrowed_backend = std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) {});
+        auto& loom = Portal::Graphics::get_texture_manager();
+        ASSERT_TRUE(loom.initialize(borrowed_backend));
+        const auto target = loom.create_image_target({ .width = 16, .height = 16 });
+        ASSERT_NE(target, nullptr);
+        render->add_target_image(target, child);
+
+        tick();
+
+        EXPECT_EQ(render->destination_count(), 2U);
+        EXPECT_EQ(render->get_target_window(), window);
+        EXPECT_EQ(render->get_target_image(), target);
+        EXPECT_EQ(child->get_render_pipelines().size(), 1U);
+        EXPECT_EQ(child->get_image_pipelines().size(), 1U);
+        EXPECT_EQ(root->get_renderable_buffers().size(), 2U);
+        present();
+
+        std::vector<uint8_t> pixels(16U * 16U * 4U);
+        loom.download_data(target->image(), pixels.data(), pixels.size());
+        const size_t center = (8U * 16U + 8U) * 4U;
+        EXPECT_EQ(pixels[center], 255);
+        EXPECT_EQ(pixels[center + 1], 0);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, RetargetingFromAnImageToTheWindowRetiresTheImagePipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
+    {
+        prepare_draw(k_plain_vertex);
+        auto borrowed_backend = std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) {});
+        auto& loom = Portal::Graphics::get_texture_manager();
+        ASSERT_TRUE(loom.initialize(borrowed_backend));
+        const auto target = loom.create_image_target({ .width = 16, .height = 16 });
+        ASSERT_NE(target, nullptr);
+        render->set_target_image(target, child);
+        tick();
+        present();
+        const auto image_id = render->get_render_pipeline_id();
+        ASSERT_TRUE(pipeline_alive(image_id));
+        ASSERT_EQ(child->get_image_pipelines().size(), 1U);
+
+        render->set_target_window(window, child);
+        tick();
+
+        EXPECT_NE(render->get_render_pipeline_id(), image_id);
+        EXPECT_TRUE(retired_within(image_id));
+        EXPECT_TRUE(child->get_image_pipelines().empty());
+        ASSERT_EQ(child->get_render_pipelines().size(), 1U);
+        EXPECT_EQ(child->get_render_pipelines().begin()->second, window);
+        EXPECT_EQ(render->get_target_image(), nullptr);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, ASkippedWindowKeepsItsPipelineWhileTheImageKeepsDrawing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
+    {
+        prepare_draw(k_plain_vertex);
+        auto borrowed_backend = std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) {});
+        auto& loom = Portal::Graphics::get_texture_manager();
+        ASSERT_TRUE(loom.initialize(borrowed_backend));
+        const auto target = loom.create_image_target({ .width = 16, .height = 16 });
+        ASSERT_NE(target, nullptr);
+        render->add_target_image(target, child);
+        tick();
+        present();
+        ASSERT_EQ(child->get_render_pipelines().size(), 1U);
+        const auto window_id = child->get_render_pipelines().begin()->first;
+
+        render->set_window_enabled(false);
+        tick();
+
+        EXPECT_EQ(child->get_pipeline_command(window_id), Portal::Graphics::INVALID_COMMAND_BUFFER);
+        EXPECT_TRUE(pipeline_alive(window_id));
+        EXPECT_EQ(root->get_renderable_buffers().size(), 1U);
+        EXPECT_EQ(root->get_renderable_buffers().front().target_image, target);
+        present();
+
+        render->set_window_enabled(true);
+        tick();
+
+        EXPECT_NE(child->get_pipeline_command(window_id), Portal::Graphics::INVALID_COMMAND_BUFFER);
+        present();
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, RemovingTheWindowDestinationLeavesTheImageAndRetiresTheWindowPipeline, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
+    {
+        prepare_draw(k_plain_vertex);
+        auto borrowed_backend = std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) {});
+        auto& loom = Portal::Graphics::get_texture_manager();
+        ASSERT_TRUE(loom.initialize(borrowed_backend));
+        const auto target = loom.create_image_target({ .width = 16, .height = 16 });
+        ASSERT_NE(target, nullptr);
+        render->add_target_image(target, child);
+        tick();
+        present();
+        ASSERT_EQ(child->get_render_pipelines().size(), 1U);
+        const auto window_id = child->get_render_pipelines().begin()->first;
+
+        render->remove_target_window(window, child);
+
+        EXPECT_TRUE(child->get_render_pipelines().empty());
+        EXPECT_EQ(render->get_target_window(), nullptr);
+        EXPECT_EQ(render->get_target_image(), target);
+        EXPECT_TRUE(retired_within(window_id));
+        EXPECT_EQ(child->get_image_pipelines().size(), 1U);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, DetachingTheWindowFromTheRootKeepsAProcessorThatAlsoDrawsIntoAnImage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
+    {
+        prepare_draw(k_plain_vertex);
+        auto borrowed_backend = std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) {});
+        auto& loom = Portal::Graphics::get_texture_manager();
+        ASSERT_TRUE(loom.initialize(borrowed_backend));
+        const auto target = loom.create_image_target({ .width = 16, .height = 16 });
+        ASSERT_NE(target, nullptr);
+        render->add_target_image(target, child);
+        tick();
+        present();
+
+        root->detach_window(window);
+
+        EXPECT_EQ(render->get_target_window(), nullptr);
+        EXPECT_EQ(render->get_target_image(), target);
+        EXPECT_EQ(chain->get_final_processor(child), render);
+        EXPECT_TRUE(child->get_render_pipelines().empty());
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, DetachingTheWindowFromTheRootRemovesAProcessorThatOnlyDrewIntoIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
+    {
+        prepare_draw(k_plain_vertex);
+        tick();
+        present();
+
+        root->detach_window(window);
+
+        EXPECT_NE(chain->get_final_processor(child), render);
+    }
+
 }
 }
 

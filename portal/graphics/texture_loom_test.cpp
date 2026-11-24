@@ -944,6 +944,131 @@ namespace {
         EXPECT_EQ(storage->get_usage(), VKImage::Usage::STORAGE);
     }
 
+    TEST_F(TextureLoomTest, CachedKeyKindsMapToRenderTargetAndDepthImages)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        ImageCacheEntry target_entry;
+        ImageCacheEntry depth_entry;
+
+        ImageKey target_key = sampled_key(8, 8);
+        target_key.kind = ImageKey::Kind::RENDER_TARGET;
+        target_key.mip_levels = 3;
+        ImageKey depth_key = sampled_key(8, 8);
+        depth_key.kind = ImageKey::Kind::DEPTH;
+
+        const ImagePtr target = loom().acquire_cached_image(target_entry, target_key);
+        const ImagePtr depth = loom().acquire_cached_image(depth_entry, depth_key);
+
+        ASSERT_TRUE(target && depth);
+        EXPECT_EQ(target->get_usage(), VKImage::Usage::RENDER_TARGET);
+        EXPECT_EQ(target->get_mip_levels(), 3U);
+        EXPECT_EQ(target->get_format(), TextureLoom::to_vulkan_format(ImageFormat::RGBA8));
+        EXPECT_EQ(depth->get_usage(), VKImage::Usage::DEPTH_STENCIL);
+        EXPECT_EQ(depth->get_width(), 8U);
+        EXPECT_EQ(depth->get_height(), 8U);
+    }
+
+    TEST_F(TextureLoomTest, CachedRenderTargetAndDepthAreReusedForTheSameKeyAndReplacedForANewSize)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        ImageCacheEntry target_entry;
+        ImageCacheEntry depth_entry;
+        ImageKey target_key = sampled_key(8, 8);
+        target_key.kind = ImageKey::Kind::RENDER_TARGET;
+        ImageKey depth_key = sampled_key(8, 8);
+        depth_key.kind = ImageKey::Kind::DEPTH;
+
+        const ImagePtr target = loom().acquire_cached_image(target_entry, target_key);
+        const ImagePtr depth = loom().acquire_cached_image(depth_entry, depth_key);
+        EXPECT_EQ(loom().acquire_cached_image(target_entry, target_key), target);
+        EXPECT_EQ(loom().acquire_cached_image(depth_entry, depth_key), depth);
+
+        target_key.width = 16;
+        depth_key.width = 16;
+        const ImagePtr larger_target = loom().acquire_cached_image(target_entry, target_key);
+        const ImagePtr larger_depth = loom().acquire_cached_image(depth_entry, depth_key);
+
+        ASSERT_TRUE(larger_target && larger_depth);
+        EXPECT_NE(larger_target, target);
+        EXPECT_NE(larger_depth, depth);
+        EXPECT_EQ(larger_target->get_width(), 16U);
+        EXPECT_EQ(larger_depth->get_width(), 16U);
+    }
+
+    TEST_F(TextureLoomTest, CachedRenderTargetAndDepthRefuseInconsistentKeys)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        ImageCacheEntry entry;
+
+        ImageKey layered_target = sampled_key(8, 8);
+        layered_target.kind = ImageKey::Kind::RENDER_TARGET;
+        layered_target.layers = 2;
+        ImageKey layered_depth = sampled_key(8, 8);
+        layered_depth.kind = ImageKey::Kind::DEPTH;
+        layered_depth.layers = 2;
+        ImageKey mipped_depth = sampled_key(8, 8);
+        mipped_depth.kind = ImageKey::Kind::DEPTH;
+        mipped_depth.mip_levels = 2;
+
+        EXPECT_EQ(loom().acquire_cached_image(entry, layered_target), nullptr);
+        EXPECT_EQ(loom().acquire_cached_image(entry, layered_depth), nullptr);
+        EXPECT_EQ(loom().acquire_cached_image(entry, mipped_depth), nullptr);
+        EXPECT_EQ(entry.image, nullptr);
+    }
+
+    TEST_F(TextureLoomTest, RefreshCachedImageRefusesRenderTargetAndDepthKeys)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        ImageCacheEntry entry;
+        const std::vector<uint8_t> exact(16, 0);
+        ImageKey target_key = sampled_key(2, 2);
+        target_key.kind = ImageKey::Kind::RENDER_TARGET;
+        ImageKey depth_key = sampled_key(2, 2);
+        depth_key.kind = ImageKey::Kind::DEPTH;
+
+        EXPECT_EQ(loom().refresh_cached_image(entry, target_key, exact), nullptr);
+        EXPECT_EQ(loom().refresh_cached_image(entry, depth_key, exact), nullptr);
+        EXPECT_EQ(entry.image, nullptr);
+    }
+
+    TEST_F(TextureLoomTest, ARenderTargetTakesALevelCountAndZeroMeansAFullChain)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+
+        const ImagePtr flat = loom().create_render_target(8, 8);
+        const ImagePtr three = loom().create_render_target(8, 8, ImageFormat::RGBA8, 3);
+        const ImagePtr full = loom().create_render_target(8, 8, ImageFormat::RGBA8, 0);
+        const ImagePtr full_wide = loom().create_render_target(32, 4, ImageFormat::RGBA8, 0);
+
+        ASSERT_TRUE(flat && three && full && full_wide);
+        EXPECT_EQ(flat->get_mip_levels(), 1U);
+        EXPECT_EQ(three->get_mip_levels(), 3U);
+        EXPECT_EQ(full->get_mip_levels(), 4U);
+        EXPECT_EQ(full_wide->get_mip_levels(), 6U);
+    }
+
+    TEST_F(TextureLoomTest, TheAttachmentViewCoversOnlyTheFirstLevel)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        const ImagePtr mipped = loom().create_render_target(8, 8, ImageFormat::RGBA8, 4);
+        const ImagePtr flat = loom().create_render_target(8, 8);
+        ASSERT_TRUE(mipped && flat);
+
+        const vk::ImageView first_level = loom().attachment_view(mipped);
+
+        EXPECT_TRUE(first_level);
+        EXPECT_NE(first_level, mipped->get_image_view());
+        EXPECT_EQ(loom().attachment_view(mipped), first_level);
+        EXPECT_TRUE(loom().attachment_view(flat));
+    }
+
+    TEST_F(TextureLoomTest, TheAttachmentViewOfNothingIsNull)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+
+        EXPECT_FALSE(loom().attachment_view(nullptr));
+    }
+
     TEST_F(TextureLoomTest, CachedImageRefusesDegenerateAndInconsistentKeys)
     {
         ASSERT_TRUE(loom().initialize(backend()));

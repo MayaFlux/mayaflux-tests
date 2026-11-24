@@ -58,6 +58,17 @@ layout(location = 0) out vec4 color;
 void main() { if (gl_FragCoord.x > 16.0) discard; color = vec4(0.0, 1.0, 0.0, 1.0); }
 )";
 
+    constexpr const char* k_right_green_fragment = R"(#version 460
+layout(location = 0) out vec4 color;
+void main() { if (gl_FragCoord.x < 16.0) discard; color = vec4(0.0, 1.0, 0.0, 1.0); }
+)";
+
+    constexpr const char* k_sample_lod_fragment = R"(#version 460
+layout(set = 1, binding = 0) uniform sampler2D tex;
+layout(location = 0) out vec4 color;
+void main() { color = textureLod(tex, vec2(0.5), 2.0); }
+)";
+
     constexpr const char* k_sample_fragment = R"(#version 460
 layout(set = 1, binding = 0) uniform sampler2D tex;
 layout(location = 0) out vec4 color;
@@ -75,10 +86,13 @@ void main() { color = texture(tex, vec2(0.5)); }
         {
         }
 
-        void apply(const Portal::Graphics::RenderConfig& config)
+        std::shared_ptr<RenderProcessor> apply(const Portal::Graphics::RenderConfig& config)
         {
+            ShaderConfig shader { k_full_vertex };
+            shader.stage = Portal::Graphics::ShaderStage::VERTEX;
             std::shared_ptr<RenderProcessor> processor;
-            apply_render_config(processor, config, ShaderConfig { "unused.vert.spv" });
+            apply_render_config(processor, config, shader);
+            return processor;
         }
     };
 
@@ -137,6 +151,21 @@ void main() { color = texture(tex, vec2(0.5)); }
         }
 
         static Portal::Graphics::TextureLoom& loom() { return Portal::Graphics::get_texture_manager(); }
+
+        static bool pipeline_alive(Portal::Graphics::RenderPipelineID id)
+        {
+            return static_cast<bool>(Portal::Graphics::get_render_flow().get_view_transform_layout(id));
+        }
+
+        /** The pipeline a buffer draws into one target with. */
+        static Portal::Graphics::RenderPipelineID pipeline_for(const Drawable& drawable, const std::shared_ptr<ImageTarget>& target)
+        {
+            for (const auto& [id, held] : drawable.buffer->get_image_pipelines()) {
+                if (held == target)
+                    return id;
+            }
+            return Portal::Graphics::INVALID_RENDER_PIPELINE;
+        }
 
         std::shared_ptr<ImageTarget> make_target(ImageTarget::Config config = { .width = 32, .height = 32 })
         {
@@ -520,23 +549,68 @@ void main() { color = texture(tex, vec2(0.5)); }
     // setup_rendering
     // =========================================================================
 
-    TEST_F(ImageTargetRenderTest, ARenderConfigWithTwoImagesIsRefused)
+    TEST_F(ImageTargetRenderTest, ARenderConfigWithTwoImagesDrawsIntoBoth)
     {
         const auto buffer = std::make_shared<ConfigProbeBuffer>();
+        const auto first = make_target();
+        const auto second = make_target();
         Portal::Graphics::RenderConfig config;
-        config.target_images = { make_target(), make_target() };
+        config.fragment_shader = k_red_fragment;
+        config.target_images = { first, second };
 
-        EXPECT_THROW(buffer->apply(config), std::invalid_argument);
+        const auto processor = buffer->apply(config);
+
+        ASSERT_NE(processor, nullptr);
+        EXPECT_EQ(processor->destination_count(), 2U);
+        ASSERT_EQ(processor->get_target_images().size(), 2U);
+        EXPECT_EQ(processor->get_target_images()[0], first);
+        EXPECT_EQ(processor->get_target_images()[1], second);
+        EXPECT_EQ(processor->get_target_window(), nullptr);
     }
 
-    TEST_F(ImageTargetRenderTest, ARenderConfigWithTheSameImageTwiceIsRefused)
+    TEST_F(ImageTargetRenderTest, ARenderConfigWithTheSameImageTwiceHasOneDestination)
     {
         const auto buffer = std::make_shared<ConfigProbeBuffer>();
         const auto target = make_target();
         Portal::Graphics::RenderConfig config;
+        config.fragment_shader = k_red_fragment;
         config.target_images = { target, target };
 
-        EXPECT_THROW(buffer->apply(config), std::invalid_argument);
+        const auto processor = buffer->apply(config);
+
+        ASSERT_NE(processor, nullptr);
+        EXPECT_EQ(processor->destination_count(), 1U);
+        EXPECT_EQ(processor->get_target_image(), target);
+    }
+
+    TEST_F(ImageTargetRenderTest, ARenderConfigWithOneImageMakesItTheOnlyDestination)
+    {
+        const auto buffer = std::make_shared<ConfigProbeBuffer>();
+        const auto target = make_target();
+        Portal::Graphics::RenderConfig config;
+        config.fragment_shader = k_red_fragment;
+        config.target_images = { target };
+
+        const auto processor = buffer->apply(config);
+
+        ASSERT_NE(processor, nullptr);
+        EXPECT_EQ(processor->destination_count(), 1U);
+        EXPECT_EQ(processor->get_target_image(), target);
+        EXPECT_EQ(processor->get_target_window(), nullptr);
+    }
+
+    TEST_F(ImageTargetRenderTest, ARenderConfigWithNoDestinationLeavesTheProcessorWithoutOne)
+    {
+        const auto buffer = std::make_shared<ConfigProbeBuffer>();
+        Portal::Graphics::RenderConfig config;
+        config.fragment_shader = k_red_fragment;
+
+        const auto processor = buffer->apply(config);
+
+        ASSERT_NE(processor, nullptr);
+        EXPECT_EQ(processor->destination_count(), 0U);
+        EXPECT_EQ(processor->get_target_image(), nullptr);
+        EXPECT_EQ(processor->get_target_window(), nullptr);
     }
 
     // =========================================================================
@@ -598,6 +672,673 @@ void main() { color = texture(tex, vec2(0.5)); }
         EXPECT_EQ(pixel(b, 32, 4).g, 255);
         EXPECT_EQ(pixel(b, 32, 4).r, 0);
     }
+
+    // =========================================================================
+    // One processor, several destinations
+    // =========================================================================
+
+    TEST_F(ImageTargetRenderTest, OneProcessorDrawsIntoTwoTargetsEachWithItsOwnClearColor)
+    {
+        const auto first = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 0.0F, 1.0F, 1.0F } });
+        const auto second = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 1.0F, 0.0F, 1.0F } });
+        const Drawable drawable = add_drawable(first, k_full_vertex, k_left_red_fragment);
+        drawable.render->add_target_image(second, drawable.buffer);
+
+        cycle();
+
+        EXPECT_EQ(pixel(first, 4, 16).r, 255);
+        EXPECT_EQ(pixel(second, 4, 16).r, 255);
+        EXPECT_EQ(pixel(first, 28, 16).b, 255);
+        EXPECT_EQ(pixel(first, 28, 16).g, 0);
+        EXPECT_EQ(pixel(second, 28, 16).g, 255);
+        EXPECT_EQ(pixel(second, 28, 16).b, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, EveryDestinationHasItsOwnPipelineAndItsOwnScope)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+
+        tick();
+
+        const auto associations = drawable.buffer->get_image_pipelines();
+        ASSERT_EQ(associations.size(), 2U);
+        const auto first_id = pipeline_for(drawable, first);
+        const auto second_id = pipeline_for(drawable, second);
+        EXPECT_NE(first_id, Portal::Graphics::INVALID_RENDER_PIPELINE);
+        EXPECT_NE(second_id, Portal::Graphics::INVALID_RENDER_PIPELINE);
+        EXPECT_NE(first_id, second_id);
+        ASSERT_EQ(root->get_renderable_buffers().size(), 2U);
+        EXPECT_NE(root->get_renderable_buffers()[0].target_image, root->get_renderable_buffers()[1].target_image);
+        present();
+    }
+
+    TEST_F(ImageTargetRenderTest, EachDestinationDrawsAtItsOwnSize)
+    {
+        const auto small = make_target({ .width = 32, .height = 32 });
+        const auto large = make_target({ .width = 64, .height = 64 });
+        const Drawable drawable = add_drawable(small);
+        drawable.render->add_target_image(large, drawable.buffer);
+
+        cycle();
+
+        EXPECT_EQ(pixel(small, 28, 28).r, 255);
+        EXPECT_EQ(pixel(large, 60, 60).r, 255);
+        EXPECT_EQ(pixel(large, 60, 4).r, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, DestinationsOfDifferentFormatsEachGetAPipeline)
+    {
+        const auto bytes = make_target({ .width = 16, .height = 16 });
+        const auto floats = make_target({ .width = 16, .height = 16, .format = Portal::Graphics::ImageFormat::RGBA16F });
+        ASSERT_NE(floats, nullptr);
+        const Drawable drawable = add_drawable(bytes);
+        drawable.render->add_target_image(floats, drawable.buffer);
+
+        tick();
+
+        EXPECT_EQ(root->get_renderable_buffers().size(), 2U);
+        EXPECT_NE(pipeline_for(drawable, bytes), pipeline_for(drawable, floats));
+        EXPECT_NO_THROW(present());
+        EXPECT_EQ(pixel(bytes, 8, 8).r, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, TheProcessorOwnsEveryPipelineItDrawsWithAndNoOther)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+        tick();
+        const auto first_id = pipeline_for(drawable, first);
+        const auto second_id = pipeline_for(drawable, second);
+
+        EXPECT_TRUE(drawable.render->owns_pipeline(first_id));
+        EXPECT_TRUE(drawable.render->owns_pipeline(second_id));
+        EXPECT_FALSE(drawable.render->owns_pipeline(Portal::Graphics::INVALID_RENDER_PIPELINE));
+        EXPECT_EQ(drawable.buffer->get_render_processor(first_id), drawable.render);
+        EXPECT_EQ(drawable.buffer->get_render_processor(second_id), drawable.render);
+        present();
+    }
+
+    TEST_F(ImageTargetRenderTest, AddingADestinationAlreadyThereChangesNothing)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+        const auto first_id = pipeline_for(drawable, first);
+        const auto second_id = pipeline_for(drawable, second);
+
+        drawable.render->add_target_image(first, drawable.buffer);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+
+        EXPECT_EQ(drawable.render->destination_count(), 2U);
+        EXPECT_EQ(pipeline_for(drawable, first), first_id);
+        EXPECT_EQ(pipeline_for(drawable, second), second_id);
+    }
+
+    TEST_F(ImageTargetRenderTest, AddingANullDestinationIsRefused)
+    {
+        const auto target = make_target();
+        const Drawable drawable = add_drawable(target);
+
+        drawable.render->add_target_image(nullptr, drawable.buffer);
+        drawable.render->add_target_window(nullptr, drawable.buffer);
+
+        EXPECT_EQ(drawable.render->destination_count(), 1U);
+        EXPECT_EQ(drawable.render->get_target_image(), target);
+    }
+
+    TEST_F(ImageTargetRenderTest, RemovingTheFirstDestinationLetsTheNextOneKeepDrawing)
+    {
+        const auto first = make_target({ .width = 32, .height = 32 });
+        const auto second = make_target({ .width = 32, .height = 32 });
+        const Drawable drawable = add_drawable(first, k_full_vertex, k_left_red_fragment);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+        ASSERT_FALSE(first->take_redraw());
+
+        drawable.render->remove_target_image(first, drawable.buffer);
+
+        EXPECT_EQ(drawable.render->get_target_image(), second);
+        EXPECT_EQ(drawable.render->destination_count(), 1U);
+        EXPECT_EQ(drawable.buffer->get_image_pipelines().size(), 1U);
+        EXPECT_EQ(pipeline_for(drawable, first), Portal::Graphics::INVALID_RENDER_PIPELINE);
+        EXPECT_TRUE(first->take_redraw());
+
+        second->set_clear_color({ 0.0F, 0.0F, 1.0F, 1.0F });
+        cycle();
+
+        EXPECT_EQ(pixel(second, 4, 16).r, 255);
+        EXPECT_EQ(pixel(second, 28, 16).b, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, RemovingALaterDestinationLeavesTheFirstDrawing)
+    {
+        const auto first = make_target({ .width = 32, .height = 32 });
+        const auto second = make_target({ .width = 32, .height = 32 });
+        const Drawable drawable = add_drawable(first, k_full_vertex, k_left_red_fragment);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+        ASSERT_FALSE(second->take_redraw());
+
+        drawable.render->remove_target_image(second, drawable.buffer);
+
+        EXPECT_EQ(drawable.render->get_target_image(), first);
+        EXPECT_EQ(drawable.buffer->get_image_pipelines().size(), 1U);
+        EXPECT_TRUE(second->take_redraw());
+
+        first->set_clear_color({ 0.0F, 0.0F, 1.0F, 1.0F });
+        cycle();
+
+        EXPECT_EQ(pixel(first, 28, 16).b, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, RemovingEveryDestinationLeavesNothingToDrawAndProcessingHarmless)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+
+        drawable.render->remove_target_image(first, drawable.buffer);
+        drawable.render->remove_target_image(second, drawable.buffer);
+
+        EXPECT_EQ(drawable.render->destination_count(), 0U);
+        EXPECT_EQ(drawable.render->get_target_image(), nullptr);
+        EXPECT_TRUE(drawable.render->get_target_images().empty());
+        EXPECT_TRUE(drawable.buffer->get_image_pipelines().empty());
+        EXPECT_NO_THROW(cycle());
+        EXPECT_TRUE(root->get_renderable_buffers().empty());
+    }
+
+    TEST_F(ImageTargetRenderTest, ADestinationAddedAfterEveryOneWasRemovedDrawsAgain)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+        cycle();
+        drawable.render->remove_target_image(first, drawable.buffer);
+        cycle();
+
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+
+        EXPECT_EQ(drawable.render->get_target_image(), second);
+        EXPECT_EQ(pixel(second, 16, 16).r, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, SettingASingleTargetReplacesEveryDestination)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const auto third = make_target();
+        const Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+        ASSERT_FALSE(first->take_redraw());
+        ASSERT_FALSE(second->take_redraw());
+
+        drawable.render->set_target_image(third, drawable.buffer);
+        cycle();
+
+        EXPECT_EQ(drawable.render->destination_count(), 1U);
+        ASSERT_EQ(drawable.render->get_target_images().size(), 1U);
+        EXPECT_EQ(drawable.render->get_target_images().front(), third);
+        EXPECT_EQ(drawable.buffer->get_image_pipelines().size(), 1U);
+        EXPECT_EQ(pipeline_for(drawable, first), Portal::Graphics::INVALID_RENDER_PIPELINE);
+        EXPECT_EQ(pipeline_for(drawable, second), Portal::Graphics::INVALID_RENDER_PIPELINE);
+        EXPECT_TRUE(first->take_redraw());
+        EXPECT_TRUE(second->take_redraw());
+        EXPECT_EQ(pixel(third, 16, 16).r, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, ADestinationCanBeSkippedAndDrawnAgainWithoutTouchingTheOthers)
+    {
+        const auto first = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 0.0F, 1.0F, 1.0F } });
+        const auto second = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 0.0F, 1.0F, 1.0F } });
+        const Drawable drawable = add_drawable(first, k_full_vertex, k_left_red_fragment);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+        ASSERT_EQ(pixel(second, 28, 16).b, 255);
+        const auto second_id = pipeline_for(drawable, second);
+
+        drawable.render->set_target_enabled(second, false);
+        EXPECT_TRUE(second->take_redraw());
+        first->set_clear_color({ 0.0F, 1.0F, 0.0F, 1.0F });
+        second->set_clear_color({ 0.0F, 1.0F, 0.0F, 1.0F });
+        cycle();
+
+        EXPECT_EQ(pixel(first, 28, 16).g, 255);
+        EXPECT_EQ(pixel(second, 28, 16).g, 0);
+        EXPECT_EQ(pixel(second, 28, 16).b, 255);
+        EXPECT_EQ(pipeline_for(drawable, second), second_id);
+        EXPECT_TRUE(pipeline_alive(second_id));
+
+        drawable.render->set_target_enabled(second, true);
+        cycle();
+
+        EXPECT_EQ(pixel(second, 28, 16).g, 255);
+        EXPECT_EQ(pixel(second, 4, 16).r, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, EveryDestinationSkippedMeansNothingIsDrawn)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+
+        drawable.render->set_target_enabled(first, false);
+        drawable.render->set_target_enabled(second, false);
+        tick();
+
+        EXPECT_TRUE(root->get_renderable_buffers().empty());
+        present();
+
+        drawable.render->set_target_enabled(first, true);
+        tick();
+        EXPECT_EQ(root->get_renderable_buffers().size(), 1U);
+        present();
+    }
+
+    TEST_F(ImageTargetRenderTest, EnablingAnUnknownTargetChangesNothing)
+    {
+        const auto target = make_target();
+        const auto stranger = make_target();
+        const Drawable drawable = add_drawable(target);
+        cycle();
+        ASSERT_FALSE(target->take_redraw());
+        ASSERT_TRUE(stranger->take_redraw());
+
+        drawable.render->set_target_enabled(stranger, false);
+
+        EXPECT_FALSE(target->take_redraw());
+        EXPECT_FALSE(stranger->take_redraw());
+        EXPECT_EQ(drawable.render->destination_count(), 1U);
+    }
+
+    TEST_F(ImageTargetRenderTest, ABindingChangedAfterTheFirstDrawReachesEveryDestination)
+    {
+        const auto red = make_target();
+        const auto green = make_target();
+        add_drawable(red);
+        add_drawable(green, k_full_vertex, k_green_fragment);
+        const auto sink_a = make_target();
+        const auto sink_b = make_target();
+        const Drawable consumer = add_drawable(sink_a, k_full_vertex, k_sample_fragment);
+        consumer.render->add_target_image(sink_b, consumer.buffer);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture("tex", red->image());
+        cycle();
+        ASSERT_EQ(pixel(sink_a, 16, 16).r, 255);
+        ASSERT_EQ(pixel(sink_b, 16, 16).r, 255);
+
+        consumer.render->bind_texture("tex", green->image());
+        sink_a->request_redraw();
+        sink_b->request_redraw();
+        cycle();
+
+        EXPECT_EQ(pixel(sink_a, 16, 16).g, 255);
+        EXPECT_EQ(pixel(sink_a, 16, 16).r, 0);
+        EXPECT_EQ(pixel(sink_b, 16, 16).g, 255);
+        EXPECT_EQ(pixel(sink_b, 16, 16).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, AShaderChangedAfterTheFirstDrawReachesEveryDestination)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+        ASSERT_EQ(pixel(first, 16, 16).r, 255);
+        ASSERT_EQ(pixel(second, 16, 16).r, 255);
+
+        drawable.render->set_fragment_shader(k_green_fragment);
+        first->request_redraw();
+        second->request_redraw();
+        cycle();
+
+        EXPECT_EQ(pixel(first, 16, 16).g, 255);
+        EXPECT_EQ(pixel(first, 16, 16).r, 0);
+        EXPECT_EQ(pixel(second, 16, 16).g, 255);
+        EXPECT_EQ(pixel(second, 16, 16).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, WritingTheBuffersContentAsksEveryDestinationToRedraw)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+        tick();
+        ASSERT_TRUE(root->get_renderable_buffers().empty());
+        present();
+
+        drawable.buffer->mark_dirty_range(0, 16);
+        tick();
+
+        EXPECT_EQ(root->get_renderable_buffers().size(), 2U);
+        present();
+    }
+
+    TEST_F(ImageTargetRenderTest, ARemovedChildAsksEveryDestinationToRedraw)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+        ASSERT_FALSE(first->take_redraw());
+        ASSERT_FALSE(second->take_redraw());
+
+        drawable.buffer->mark_for_removal();
+        tick();
+
+        EXPECT_TRUE(first->take_redraw());
+        EXPECT_TRUE(second->take_redraw());
+        present();
+    }
+
+    TEST_F(ImageTargetRenderTest, DetachingTheProcessorReleasesEveryDestination)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+        ASSERT_FALSE(first->take_redraw());
+        ASSERT_FALSE(second->take_redraw());
+
+        drawable.buffer->get_processing_chain()->remove_processor_anywhere(drawable.render, drawable.buffer);
+
+        EXPECT_TRUE(drawable.buffer->get_image_pipelines().empty());
+        EXPECT_TRUE(first->take_redraw());
+        EXPECT_TRUE(second->take_redraw());
+    }
+
+    TEST_F(ImageTargetRenderTest, DestroyingTheProcessorRetiresEveryPipeline)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+        const auto first_id = pipeline_for(drawable, first);
+        const auto second_id = pipeline_for(drawable, second);
+        ASSERT_TRUE(pipeline_alive(first_id));
+        ASSERT_TRUE(pipeline_alive(second_id));
+
+        drawable.buffer->get_processing_chain()->remove_processor_anywhere(drawable.render, drawable.buffer);
+        drawables.back().render.reset();
+        drawable.render.reset();
+
+        EXPECT_FALSE(pipeline_alive(first_id));
+        EXPECT_FALSE(pipeline_alive(second_id));
+    }
+
+    TEST_F(ImageTargetRenderTest, TheRefreshPathRecordsOnlyTheDestinationItIsGiven)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+        cycle();
+        const auto first_id = pipeline_for(drawable, first);
+        const auto second_id = pipeline_for(drawable, second);
+        drawable.buffer->clear_pipeline_commands();
+
+        drawable.render->record_draw(drawable.buffer, second_id);
+
+        EXPECT_NE(drawable.buffer->get_pipeline_command(second_id), Portal::Graphics::INVALID_COMMAND_BUFFER);
+        EXPECT_EQ(drawable.buffer->get_pipeline_command(first_id), Portal::Graphics::INVALID_COMMAND_BUFFER);
+
+        EXPECT_NO_THROW(drawable.render->record_draw(drawable.buffer, 987654U));
+        drawable.buffer->clear_pipeline_commands();
+    }
+
+    // =========================================================================
+    // Keeping what was drawn
+    // =========================================================================
+
+    TEST_F(ImageTargetRenderTest, AFirstScopeOfAPreservingTargetClearsToItsColor)
+    {
+        const auto target = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 0.0F, 1.0F, 1.0F }, .preserve = true });
+        add_drawable(target, k_full_vertex, k_left_red_fragment);
+
+        cycle();
+
+        EXPECT_EQ(pixel(target, 4, 16).r, 255);
+        EXPECT_EQ(pixel(target, 28, 16).b, 255);
+        EXPECT_EQ(pixel(target, 28, 16).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, APreservingTargetKeepsWhatWasDrawnAndANormalOneStartsOver)
+    {
+        const auto keep = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 0.0F, 1.0F, 1.0F }, .preserve = true });
+        const auto wipe = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 0.0F, 1.0F, 1.0F } });
+        const Drawable drawable = add_drawable(keep, k_full_vertex, k_left_red_fragment);
+        drawable.render->add_target_image(wipe, drawable.buffer);
+        cycle();
+        ASSERT_EQ(pixel(keep, 4, 16).r, 255);
+        ASSERT_EQ(pixel(wipe, 4, 16).r, 255);
+
+        drawable.render->set_fragment_shader(k_right_green_fragment);
+        keep->request_redraw();
+        wipe->request_redraw();
+        cycle();
+
+        EXPECT_EQ(pixel(keep, 4, 16).r, 255);
+        EXPECT_EQ(pixel(keep, 28, 16).g, 255);
+        EXPECT_EQ(pixel(wipe, 4, 16).r, 0);
+        EXPECT_EQ(pixel(wipe, 4, 16).b, 255);
+        EXPECT_EQ(pixel(wipe, 28, 16).g, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, AClearRequestWipesAPreservingTargetBeforeTheNextDraw)
+    {
+        const auto keep = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 0.0F, 1.0F, 1.0F }, .preserve = true });
+        const Drawable drawable = add_drawable(keep, k_full_vertex, k_left_red_fragment);
+        cycle();
+        ASSERT_EQ(pixel(keep, 4, 16).r, 255);
+
+        drawable.render->set_fragment_shader(k_right_green_fragment);
+        keep->request_clear();
+        cycle();
+
+        EXPECT_EQ(pixel(keep, 4, 16).r, 0);
+        EXPECT_EQ(pixel(keep, 4, 16).b, 255);
+        EXPECT_EQ(pixel(keep, 28, 16).g, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, ANewClearColorShowsAtTheNextDrawOfAPreservingTarget)
+    {
+        const auto keep = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 0.0F, 1.0F, 1.0F }, .preserve = true });
+        add_drawable(keep, k_full_vertex, k_left_red_fragment);
+        cycle();
+        ASSERT_EQ(pixel(keep, 28, 16).b, 255);
+
+        keep->set_clear_color({ 0.0F, 1.0F, 0.0F, 1.0F });
+        cycle();
+
+        EXPECT_EQ(pixel(keep, 28, 16).g, 255);
+        EXPECT_EQ(pixel(keep, 28, 16).b, 0);
+        EXPECT_EQ(pixel(keep, 4, 16).r, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, APreservingTargetThatLosesItsBufferIsClearedWhenAnotherTakesOver)
+    {
+        const auto keep = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 0.0F, 1.0F, 1.0F }, .preserve = true });
+        const Drawable first = add_drawable(keep, k_full_vertex, k_left_red_fragment);
+        cycle();
+        ASSERT_EQ(pixel(keep, 4, 16).r, 255);
+
+        first.buffer->mark_for_removal();
+        add_drawable(keep, k_full_vertex, k_right_green_fragment);
+        cycle();
+
+        EXPECT_EQ(pixel(keep, 4, 16).r, 0);
+        EXPECT_EQ(pixel(keep, 4, 16).b, 255);
+        EXPECT_EQ(pixel(keep, 28, 16).g, 255);
+    }
+
+    // =========================================================================
+    // Resizing
+    // =========================================================================
+
+    TEST_F(ImageTargetRenderTest, AResizedTargetDrawsAtItsNewSize)
+    {
+        const auto target = make_target({ .width = 32, .height = 32 });
+        add_drawable(target);
+        cycle();
+        ASSERT_EQ(pixel(target, 16, 16).r, 255);
+
+        ASSERT_TRUE(target->resize(64, 16));
+        cycle();
+
+        EXPECT_EQ(target->width(), 64U);
+        EXPECT_EQ(target->height(), 16U);
+        EXPECT_EQ(pixel(target, 60, 12).r, 255);
+        EXPECT_EQ(pixel(target, 2, 2).r, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, AResizedTargetWithDepthStillDraws)
+    {
+        const auto target = make_target({ .width = 32, .height = 32, .depth = true });
+        const Drawable drawable = add_drawable(target, k_full_vertex, k_red_fragment, true);
+        drawable.render->enable_depth_test();
+        drawable.buffer->set_needs_depth_attachment(true);
+        cycle();
+        ASSERT_EQ(pixel(target, 16, 16).r, 255);
+
+        ASSERT_TRUE(target->resize(48, 48));
+        cycle();
+
+        EXPECT_EQ(pixel(target, 40, 40).r, 255);
+    }
+
+    TEST_F(ImageTargetRenderTest, AResizedPreservingTargetStartsFromItsClearColor)
+    {
+        const auto target = make_target({ .width = 32, .height = 32, .clear_color = { 0.0F, 0.0F, 1.0F, 1.0F }, .preserve = true });
+        add_drawable(target, k_full_vertex, k_left_red_fragment);
+        cycle();
+        ASSERT_EQ(pixel(target, 4, 16).r, 255);
+
+        ASSERT_TRUE(target->resize(48, 24));
+        cycle();
+
+        EXPECT_EQ(pixel(target, 4, 12).r, 255);
+        EXPECT_EQ(pixel(target, 40, 12).b, 255);
+        EXPECT_EQ(pixel(target, 40, 12).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, ASamplerShowsAResizedSourceOnceItBindsTheNewImage)
+    {
+        const auto source = make_target({ .width = 16, .height = 16 });
+        add_drawable(source);
+        const auto sink = make_target();
+        const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture("tex", source->image());
+        cycle();
+        ASSERT_EQ(pixel(sink, 16, 16).r, 255);
+        const auto old_image = source->image();
+
+        ASSERT_TRUE(source->resize(32, 32));
+        EXPECT_FALSE(old_image->is_initialized());
+        consumer.render->bind_texture("tex", source->image());
+        sink->set_clear_color({ 0.0F, 0.0F, 1.0F, 1.0F });
+        cycle();
+
+        EXPECT_EQ(pixel(sink, 16, 16).r, 255);
+        EXPECT_EQ(pixel(sink, 16, 16).b, 0);
+    }
+
+    // =========================================================================
+    // Mip chains
+    // =========================================================================
+
+    TEST_F(ImageTargetRenderTest, AMippedTargetStillReadsBackItsFirstLevel)
+    {
+        const auto target = make_target({ .width = 32, .height = 32, .mip_levels = 3 });
+        ASSERT_NE(target, nullptr);
+        add_drawable(target);
+
+        cycle();
+
+        EXPECT_EQ(pixel(target, 16, 16).r, 255);
+        EXPECT_EQ(pixel(target, 16, 16).g, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, ALowerLevelOfAMippedTargetHoldsTheDrawAfterTheScope)
+    {
+        const auto source = make_target({ .width = 32, .height = 32, .mip_levels = 3 });
+        ASSERT_NE(source, nullptr);
+        add_drawable(source);
+        const auto sink = make_target();
+        const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_lod_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture("tex", source->image());
+
+        cycle();
+
+        EXPECT_EQ(pixel(sink, 16, 16).r, 255);
+        EXPECT_EQ(pixel(sink, 16, 16).g, 0);
+        EXPECT_EQ(pixel(sink, 16, 16).b, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, AMippedTargetMakesItsChainAgainAtEveryRedraw)
+    {
+        const auto source = make_target({ .width = 32, .height = 32, .mip_levels = 3 });
+        ASSERT_NE(source, nullptr);
+        const Drawable producer = add_drawable(source);
+        const auto sink = make_target();
+        const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_lod_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture("tex", source->image());
+        cycle();
+        ASSERT_EQ(pixel(sink, 16, 16).r, 255);
+
+        producer.render->set_fragment_shader(k_green_fragment);
+        source->request_redraw();
+        sink->request_redraw();
+        cycle();
+
+        EXPECT_EQ(pixel(sink, 16, 16).g, 255);
+        EXPECT_EQ(pixel(sink, 16, 16).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, AResizedMippedTargetMakesItsChainAtTheNewSize)
+    {
+        const auto source = make_target({ .width = 16, .height = 16, .mip_levels = 0 });
+        ASSERT_NE(source, nullptr);
+        add_drawable(source);
+        const auto sink = make_target();
+        const Drawable consumer = add_drawable(sink, k_full_vertex, k_sample_lod_fragment);
+        consumer.render->add_binding("tex", Buffers::ShaderBinding { 1, 0, vk::DescriptorType::eCombinedImageSampler });
+        consumer.render->bind_texture("tex", source->image());
+        cycle();
+        ASSERT_EQ(pixel(sink, 16, 16).r, 255);
+
+        ASSERT_TRUE(source->resize(64, 64));
+        ASSERT_EQ(source->image()->get_mip_levels(), 7U);
+        consumer.render->bind_texture("tex", source->image());
+        sink->request_redraw();
+        cycle();
+
+        EXPECT_EQ(pixel(sink, 16, 16).r, 255);
+        EXPECT_EQ(pixel(sink, 16, 16).g, 0);
+    }
+
 
 }
 }
