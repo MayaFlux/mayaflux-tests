@@ -30,7 +30,7 @@ namespace {
 
 class FormaContextTest : public ::testing::Test {
 protected:
-    Vruta::EventManager manager;
+    std::shared_ptr<Vruta::EventManager> manager = std::make_shared<Vruta::EventManager>();
     std::shared_ptr<ScriptedWindow> window = std::make_shared<ScriptedWindow>(200U, 100U);
     std::shared_ptr<Forma::Layer> layer = std::make_shared<Forma::Layer>();
     std::unique_ptr<Forma::Context> ctx = std::make_unique<Forma::Context>(layer, window, manager, "ctx");
@@ -60,8 +60,39 @@ TEST_F(FormaContextTest, RegistersOneNamedEventPerInputKind)
 {
     for (const char* suffix : { "_move", "_press_left", "_release_left", "_press_right", "_release_right",
              "_press_middle", "_release_middle", "_scroll", "_text", "_resize", "_close" }) {
-        EXPECT_NE(manager.get_event(std::string("ctx") + suffix), nullptr) << suffix;
+        EXPECT_NE(manager->get_event(std::string("ctx") + suffix), nullptr) << suffix;
     }
+}
+
+TEST_F(FormaContextTest, ANullEventManagerIsRefused)
+{
+    EXPECT_THROW(Forma::Context(layer, window, nullptr, "null_manager"), std::invalid_argument);
+}
+
+TEST_F(FormaContextTest, TheContextKeepsItsEventManagerAliveAfterEveryOtherOwnerLetsGo)
+{
+    auto owned = std::make_shared<Vruta::EventManager>();
+    const std::weak_ptr<Vruta::EventManager> weak = owned;
+    auto local = std::make_unique<Forma::Context>(layer, window, owned, "keepalive");
+    owned.reset();
+
+    EXPECT_FALSE(weak.expired());
+    ASSERT_NE(weak.lock()->get_event("keepalive_press_left"), nullptr);
+
+    local.reset();
+
+    EXPECT_TRUE(weak.expired());
+}
+
+TEST_F(FormaContextTest, DestroyingTheContextAfterTheEngineDroppedItsEventManagerCancelsCleanly)
+{
+    auto owned = std::make_shared<Vruta::EventManager>();
+    auto local = std::make_unique<Forma::Context>(layer, window, owned, "late");
+    const std::weak_ptr<Vruta::EventManager> weak = owned;
+    owned.reset();
+
+    EXPECT_NO_THROW(local.reset());
+    EXPECT_TRUE(weak.expired());
 }
 
 TEST_F(FormaContextTest, DestroyingTheContextCancelsEveryHandler)
@@ -75,9 +106,9 @@ TEST_F(FormaContextTest, DestroyingTheContextCancelsEveryHandler)
 
     for (const char* suffix : { "_move", "_press_left", "_release_left", "_press_right", "_release_right",
              "_press_middle", "_release_middle", "_scroll", "_text", "_resize", "_close" }) {
-        EXPECT_EQ(manager.get_event(std::string("ctx") + suffix), nullptr) << suffix;
+        EXPECT_EQ(manager->get_event(std::string("ctx") + suffix), nullptr) << suffix;
     }
-    EXPECT_EQ(manager.get_event("ctx_key_press_" + std::to_string(static_cast<int>(Keys::A))), nullptr);
+    EXPECT_EQ(manager->get_event("ctx_key_press_" + std::to_string(static_cast<int>(Keys::A))), nullptr);
     window->move_to_ndc(k_left);
     window->press(MouseButtons::Left);
     EXPECT_EQ(presses, 0);
@@ -87,14 +118,14 @@ TEST_F(FormaContextTest, KeyListenersRegisterOncePerKeyNotPerElement)
 {
     const uint32_t a = left_half();
     const uint32_t b = right_half();
-    const size_t before = manager.get_all_events().size();
+    const size_t before = manager->get_all_events().size();
 
     ctx->on_press(a, Keys::A, [](uint32_t) { });
-    const size_t after_first = manager.get_all_events().size();
+    const size_t after_first = manager->get_all_events().size();
     ctx->on_press(b, Keys::A, [](uint32_t) { });
 
     EXPECT_EQ(after_first, before + 1);
-    EXPECT_EQ(manager.get_all_events().size(), after_first);
+    EXPECT_EQ(manager->get_all_events().size(), after_first);
 }
 
 // =============================================================================
@@ -712,8 +743,8 @@ TEST_F(FormaContextTest, CloseDetachesTheContextFromFurtherInput)
     window->press(MouseButtons::Left);
 
     EXPECT_EQ(presses, 0);
-    EXPECT_EQ(manager.get_event("ctx_close"), nullptr);
-    EXPECT_EQ(manager.get_event("ctx_press_left"), nullptr);
+    EXPECT_EQ(manager->get_event("ctx_close"), nullptr);
+    EXPECT_EQ(manager->get_event("ctx_press_left"), nullptr);
 }
 
 // =============================================================================
@@ -1197,17 +1228,17 @@ TEST_F(FormaContextTest, ChordListenersRegisterOncePerChordNotPerElement)
 {
     const uint32_t a = left_half();
     const uint32_t b = right_half();
-    const size_t before = manager.get_all_events().size();
+    const size_t before = manager->get_all_events().size();
 
     ctx->on_press(a, Keys::A | IO::Modifiers::Ctrl, [](uint32_t) { });
-    const size_t after_first = manager.get_all_events().size();
+    const size_t after_first = manager->get_all_events().size();
     ctx->on_press(b, Keys::A | IO::Modifiers::Ctrl, [](uint32_t) { });
-    const size_t after_second = manager.get_all_events().size();
+    const size_t after_second = manager->get_all_events().size();
     ctx->on_press(a, Keys::A, [](uint32_t) { });
 
     EXPECT_EQ(after_first, before + 1);
     EXPECT_EQ(after_second, after_first);
-    EXPECT_EQ(manager.get_all_events().size(), after_first + 1);
+    EXPECT_EQ(manager->get_all_events().size(), after_first + 1);
 }
 
 TEST_F(FormaContextTest, ChordHandlersBelongToTheirOwnElement)
@@ -1259,7 +1290,7 @@ TEST_F(FormaContextTest, DestroyingTheContextCancelsChordHandlers)
 
     ctx.reset();
 
-    EXPECT_TRUE(manager.get_all_events().empty());
+    EXPECT_TRUE(manager->get_all_events().empty());
 }
 
 TEST_F(FormaContextTest, ATextSubscriberReceivesTheCodepointWhileFocused)

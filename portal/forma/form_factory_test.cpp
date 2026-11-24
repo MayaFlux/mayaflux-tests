@@ -872,7 +872,7 @@ protected:
         window->press(IO::MouseButtons::Left);
     }
 
-    Vruta::EventManager manager;
+    std::shared_ptr<Vruta::EventManager> manager = std::make_shared<Vruta::EventManager>();
     std::shared_ptr<ScriptedWindow> window = std::make_shared<ScriptedWindow>(200U, 100U);
     std::shared_ptr<Forma::Layer> layer = std::make_shared<Forma::Layer>();
     std::unique_ptr<Forma::Context> ctx = std::make_unique<Forma::Context>(layer, window, manager, "handle-path");

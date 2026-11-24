@@ -215,7 +215,7 @@ MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, CreateSurfaceUsesASupplied
     ASSERT_TRUE(harness.up());
 
     auto layer = std::make_shared<Forma::Layer>();
-    auto ctx = std::make_shared<Forma::Context>(layer, window, *harness.events, "supplied");
+    auto ctx = std::make_shared<Forma::Context>(layer, window, harness.events, "supplied");
     Forma::SurfaceConfig config;
     config.window = window;
     config.layer = layer;
@@ -249,7 +249,7 @@ MAYAFLUX_TEST_WITH(TEST_F, FormaAtelierLifecycleTest, CreateSurfaceTakesTheLayer
     ASSERT_TRUE(harness.up());
 
     auto layer = std::make_shared<Forma::Layer>();
-    auto ctx = std::make_shared<Forma::Context>(layer, window, *harness.events, "atelier-lone-ctx");
+    auto ctx = std::make_shared<Forma::Context>(layer, window, harness.events, "atelier-lone-ctx");
     Forma::SurfaceConfig config;
     config.window = window;
     config.ctx = ctx;

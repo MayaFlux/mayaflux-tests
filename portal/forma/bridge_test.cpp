@@ -27,7 +27,7 @@ namespace {
     struct BridgeRig {
         FrameScheduler frames;
         std::shared_ptr<Buffers::BufferManager> buffers = std::make_shared<Buffers::BufferManager>();
-        Forma::Bridge bridge { *frames.scheduler, *buffers };
+        Forma::Bridge bridge { frames.scheduler, buffers };
         std::shared_ptr<Forma::Layer> layer = std::make_shared<Forma::Layer>();
 
         [[nodiscard]] Forma::ElementRef ref(uint32_t id) const { return { layer, id }; }

@@ -151,13 +151,13 @@ protected:
     FrameScheduler frames;
     std::shared_ptr<Nodes::NodeGraphManager> nodes = std::make_shared<Nodes::NodeGraphManager>();
     std::shared_ptr<Buffers::BufferManager> rig_buffers = std::make_shared<Buffers::BufferManager>();
-    Vruta::EventManager events;
+    std::shared_ptr<Vruta::EventManager> events = std::make_shared<Vruta::EventManager>();
     std::shared_ptr<ScriptedWindow> window = std::make_shared<ScriptedWindow>(400U, 300U);
     std::shared_ptr<Forma::Layer> layer = std::make_shared<Forma::Layer>();
     std::shared_ptr<Forma::Context> ctx = std::make_shared<Forma::Context>(layer, window, events, "inspect");
     Forma::Surface surface { Forma::SurfaceConfig { .window = window, .layer = layer, .ctx = ctx, .detach_on_close = false } };
     Forma::LayoutCursor cursor;
-    Forma::Inspector inspector { *nodes, *rig_buffers, *frames.scheduler, events };
+    Forma::Inspector inspector { nodes, rig_buffers, frames.scheduler, events };
     std::vector<InspectResult*> persistent;
 
 private:
@@ -168,6 +168,14 @@ private:
 // =============================================================================
 // Nodes
 // =============================================================================
+
+TEST_F(FormaInspectorTest, AnyNullManagerIsRefused)
+{
+    EXPECT_THROW(Forma::Inspector(nullptr, rig_buffers, frames.scheduler, events), std::invalid_argument);
+    EXPECT_THROW(Forma::Inspector(nodes, nullptr, frames.scheduler, events), std::invalid_argument);
+    EXPECT_THROW(Forma::Inspector(nodes, rig_buffers, nullptr, events), std::invalid_argument);
+    EXPECT_THROW(Forma::Inspector(nodes, rig_buffers, frames.scheduler, nullptr), std::invalid_argument);
+}
 
 TEST_F(FormaInspectorTest, ANodeShowsItsOutputRowAndRelatesTheRowToTheHeader)
 {
@@ -445,9 +453,9 @@ TEST_F(FormaInspectorTest, AnEventShowsItsTokenAndActiveRows)
 TEST_F(FormaInspectorTest, TheEventManagerResultListsEveryEventAndIsReused)
 {
     auto source = std::make_shared<Vruta::BroadcastSource<int>>();
-    const size_t baseline = events.get_all_events().size();
-    events.add_event(std::make_shared<Vruta::Event>(idle_listener(source)), "first");
-    events.add_event(std::make_shared<Vruta::Event>(idle_listener(source)), "second");
+    const size_t baseline = events->get_all_events().size();
+    events->add_event(std::make_shared<Vruta::Event>(idle_listener(source)), "first");
+    events->add_event(std::make_shared<Vruta::Event>(idle_listener(source)), "second");
 
     auto& first = keep(inspector.event_manager(surface, cursor));
     const size_t built = layer->size();

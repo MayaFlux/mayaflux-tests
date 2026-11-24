@@ -28,7 +28,7 @@ namespace {
 
 class FormaSurfaceTest : public ::testing::Test {
 protected:
-    Vruta::EventManager manager;
+    std::shared_ptr<Vruta::EventManager> manager = std::make_shared<Vruta::EventManager>();
     std::shared_ptr<ScriptedWindow> window = std::make_shared<ScriptedWindow>(200U, 100U);
     std::shared_ptr<Forma::Layer> layer = std::make_shared<Forma::Layer>();
     std::shared_ptr<Forma::Context> ctx = std::make_shared<Forma::Context>(layer, window, manager, "surface");
