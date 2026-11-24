@@ -79,6 +79,37 @@ TEST_F(IOManagerAudioLoadTest, EmptyFileGivesNull)
     EXPECT_TRUE(manager->get_audio_readers().empty());
 }
 
+TEST_F(IOManagerAudioLoadTest, AFileShorterThanOneBlockGivesNullInsteadOfThrowing)
+{
+    write_wav("click.wav", 1, k_block - 1);
+
+    std::shared_ptr<Kakshya::SoundFileContainer> container;
+    EXPECT_NO_THROW(container = manager->load_audio(path_of("click.wav")));
+
+    EXPECT_EQ(container, nullptr);
+    EXPECT_TRUE(manager->get_audio_readers().empty());
+}
+
+TEST_F(IOManagerAudioLoadTest, AFileExactlyOneBlockLongLoads)
+{
+    write_wav("block.wav", 1, k_block);
+
+    const auto container = manager->load_audio(path_of("block.wav"));
+
+    ASSERT_NE(container, nullptr);
+    EXPECT_EQ(manager->get_audio_readers().size(), 1U);
+}
+
+TEST_F(IOManagerAudioLoadTest, AShortFileDoesNotPoisonTheNextLoad)
+{
+    write_wav("click.wav", 1, 100);
+    write_wav("long.wav", 2);
+
+    EXPECT_NO_THROW(static_cast<void>(manager->load_audio(path_of("click.wav"))));
+
+    EXPECT_NE(manager->load_audio(path_of("long.wav")), nullptr);
+}
+
 TEST_F(IOManagerAudioLoadTest, ValidFileLoadsWithItsChannelCount)
 {
     write_wav("stereo.wav", 2);
@@ -455,6 +486,29 @@ TEST_F(IOManagerAudioWriterTest, WritingTheSameContainerToTheSamePathTwiceSettle
 // =========================================================================
 // Audio capture against a stand-in AudioBackendService
 // =========================================================================
+
+TEST_F(IOManagerAudioCaptureTest, WithoutAnAudioBackendServiceCaptureGivesZeroAndTouchesNothing)
+{
+    uint32_t id = 1;
+
+    EXPECT_NO_THROW(id = manager->capture_output(path_of("take.wav")));
+
+    EXPECT_EQ(id, 0U);
+    EXPECT_TRUE(manager->get_audio_capture_ids().empty());
+    EXPECT_TRUE(manager->get_sound_writers().empty());
+    EXPECT_FALSE(exists("take.wav"));
+}
+
+TEST_F(IOManagerAudioCaptureTest, CaptureWorksOnceTheServiceAppearsAfterAFailedAttempt)
+{
+    ASSERT_EQ(manager->capture_output(path_of("first.wav")), 0U);
+
+    FakeAudioBackend backend;
+    const auto id = manager->capture_output(path_of("second.wav"));
+
+    EXPECT_NE(id, 0U);
+    EXPECT_EQ(backend.observer_count(), 1U);
+}
 
 TEST_F(IOManagerAudioCaptureTest, CaptureRegistersOneObserverAndATrackedWriter)
 {

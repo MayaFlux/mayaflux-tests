@@ -77,6 +77,38 @@ TEST_F(IOManagerLifecycleTest, StopIsIdempotent)
     EXPECT_TRUE(service_registered());
 }
 
+TEST_F(IOManagerLifecycleTest, AnOlderManagersShutdownLeavesALaterManagersServiceRegistered)
+{
+    IO::IOManager later(stream_info, k_fps, buffers, scheduler);
+    auto camera = std::make_shared<CountingCameraSource>();
+    const auto id = later.register_camera_source(camera);
+
+    manager->shutdown();
+
+    ASSERT_TRUE(service_registered());
+    io_service()->request_frame(id);
+    EXPECT_EQ(camera->pulls.load(), 1);
+}
+
+TEST_F(IOManagerLifecycleTest, ALaterManagersShutdownUnregistersItsOwnService)
+{
+    IO::IOManager later(stream_info, k_fps, buffers, scheduler);
+
+    later.shutdown();
+
+    EXPECT_FALSE(service_registered());
+}
+
+TEST_F(IOManagerLifecycleTest, AnOlderManagersDestructionLeavesALaterManagersServiceRegistered)
+{
+    IO::IOManager later(stream_info, k_fps, buffers, scheduler);
+
+    manager.reset();
+
+    EXPECT_TRUE(service_registered());
+    EXPECT_TRUE(static_cast<bool>(io_service()->request_frame));
+}
+
 TEST_F(IOManagerLifecycleTest, ShutdownIsIdempotent)
 {
     manager->shutdown();
