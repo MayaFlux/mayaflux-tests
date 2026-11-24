@@ -354,6 +354,59 @@ namespace {
         EXPECT_EQ(image->get_mip_levels(), 4U);
     }
 
+    TEST_F(TextureLoomTest, Create2dWithDataAndMipLevelsKeepsTheFirstLevelAndSettlesToShaderRead)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        const auto bytes = pixel_pattern(ImageFormat::RGBA8, 64);
+
+        const ImagePtr image = loom().create_2d(8, 8, ImageFormat::RGBA8, bytes.data(), 4);
+
+        ASSERT_NE(image, nullptr);
+        EXPECT_EQ(image->get_mip_levels(), 4U);
+        EXPECT_EQ(image->get_current_layout(), vk::ImageLayout::eShaderReadOnlyOptimal);
+        const auto words = rgba8_words(image);
+        ASSERT_EQ(words.size(), 64U);
+        EXPECT_EQ(std::memcmp(words.data(), bytes.data(), bytes.size()), 0);
+    }
+
+    TEST_F(TextureLoomTest, GenerateMipmapsAcceptsAnImageWithLevelsInEverySubmitMode)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+
+        for (const auto mode : { Portal::Graphics::SubmitMode::IMMEDIATE, Portal::Graphics::SubmitMode::DEFERRED, Portal::Graphics::SubmitMode::ASYNC }) {
+            const ImagePtr image = loom().create_2d(8, 8, ImageFormat::RGBA8, nullptr, 4);
+            ASSERT_NE(image, nullptr);
+
+            EXPECT_TRUE(loom().generate_mipmaps(image, FilterMode::LINEAR, mode));
+            EXPECT_EQ(image->get_current_layout(), vk::ImageLayout::eShaderReadOnlyOptimal);
+        }
+    }
+
+    TEST_F(TextureLoomTest, GenerateMipmapsTakesNearestAndFallsBackFromCubic)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        const ImagePtr image = loom().create_2d(8, 8, ImageFormat::RGBA8, nullptr, 4);
+        ASSERT_NE(image, nullptr);
+
+        EXPECT_TRUE(loom().generate_mipmaps(image, FilterMode::NEAREST));
+        EXPECT_TRUE(loom().generate_mipmaps(image, FilterMode::CUBIC));
+    }
+
+    TEST_F(TextureLoomTest, GenerateMipmapsRefusesOneLevelNullAndAnUninitializedLoom)
+    {
+        ASSERT_TRUE(loom().initialize(backend()));
+        const ImagePtr flat = loom().create_2d(8, 8, ImageFormat::RGBA8);
+        const ImagePtr mipped = loom().create_2d(8, 8, ImageFormat::RGBA8, nullptr, 4);
+        ASSERT_NE(flat, nullptr);
+        ASSERT_NE(mipped, nullptr);
+
+        EXPECT_FALSE(loom().generate_mipmaps(flat));
+        EXPECT_FALSE(loom().generate_mipmaps(nullptr));
+
+        loom().shutdown();
+        EXPECT_FALSE(loom().generate_mipmaps(mipped));
+    }
+
     TEST_F(TextureLoomTest, Create2dUninitializedAllocatesWithoutAnUpload)
     {
         ASSERT_TRUE(loom().initialize(backend()));

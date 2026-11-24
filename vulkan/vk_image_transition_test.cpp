@@ -94,6 +94,61 @@ namespace {
     class ImageRangeTransitionTest : public ImageTransitionFixture { };
     class ImageViewTest : public ImageTransitionFixture { };
 
+    class ImageMipChainTest : public ImageTransitionFixture {
+    protected:
+        static std::vector<uint8_t> solid(uint32_t width, uint32_t height, std::array<uint8_t, 4> color)
+        {
+            std::vector<uint8_t> bytes;
+            bytes.reserve(static_cast<size_t>(width) * height * 4);
+            for (uint32_t i = 0; i < width * height; ++i) {
+                bytes.insert(bytes.end(), color.begin(), color.end());
+            }
+            return bytes;
+        }
+
+        static std::shared_ptr<VKImage> solid_image(
+            uint32_t width, uint32_t height, uint32_t mips, std::array<uint8_t, 4> color)
+        {
+            auto image = make_image(width, height, k_rgba, VKImage::Usage::TEXTURE_2D, mips);
+            const auto bytes = solid(width, height, color);
+            resources().upload_image_data(image, bytes.data(), bytes.size());
+            resources().transition_image_layout(image, vk::ImageLayout::eShaderReadOnlyOptimal, SubmitMode::IMMEDIATE);
+            return image;
+        }
+
+        static std::vector<uint8_t> read_level(const std::shared_ptr<VKImage>& image, uint32_t level, uint32_t layer = 0)
+        {
+            const uint32_t width = std::max(1U, image->get_width() >> level);
+            const uint32_t height = std::max(1U, image->get_height() >> level);
+            const size_t bytes = static_cast<size_t>(width) * height * 4;
+            RawVulkanBuffer raw(backend(), bytes, vk::BufferUsageFlagBits::eTransferDst, true);
+
+            resources().execute_immediate_commands([&](vk::CommandBuffer cmd) {
+                resources().record_image_transition(cmd, image, ImageAccess::SHADER_READ, ImageAccess::TRANSFER_SRC);
+                vk::BufferImageCopy region {};
+                region.imageSubresource = { vk::ImageAspectFlagBits::eColor, level, layer, 1 };
+                region.imageExtent = vk::Extent3D { width, height, 1 };
+                cmd.copyImageToBuffer(image->get_image(), vk::ImageLayout::eTransferSrcOptimal,
+                    raw.buffer(), 1, &region);
+                resources().record_image_transition(cmd, image, ImageAccess::TRANSFER_SRC, ImageAccess::SHADER_READ);
+            });
+
+            std::vector<uint8_t> out(bytes);
+            std::memcpy(out.data(), raw.mapped(), bytes);
+            return out;
+        }
+
+        static void expect_every_level_solid(
+            const std::shared_ptr<VKImage>& image, std::array<uint8_t, 4> color, uint32_t layer = 0)
+        {
+            for (uint32_t level = 0; level < image->get_mip_levels(); ++level) {
+                const uint32_t width = std::max(1U, image->get_width() >> level);
+                const uint32_t height = std::max(1U, image->get_height() >> level);
+                EXPECT_EQ(read_level(image, level, layer), solid(width, height, color)) << "level " << level << " layer " << layer;
+            }
+        }
+    };
+
     vk::ImageLayout transient_to_settled(vk::ImageLayout layout)
     {
         return layout == vk::ImageLayout::eTransferSrcOptimal || layout == vk::ImageLayout::eTransferDstOptimal
@@ -582,6 +637,161 @@ MAYAFLUX_TEST_WITH(TEST_F, ImageViewTest, ARecordedPassCanRenderIntoOneArrayLaye
     });
 
     resources().cleanup_image(image);
+}
+
+// =========================================================================
+// generate_mip_chain
+// =========================================================================
+
+MAYAFLUX_TEST_WITH(TEST_F, ImageMipChainTest, EveryLevelTakesTheColorOfTheFirst, IMAGE_TRANSITION_VALIDATED)
+{
+    const std::array<uint8_t, 4> color { 200, 100, 50, 255 };
+    auto image = solid_image(8, 8, 4, color);
+
+    ASSERT_TRUE(resources().generate_mip_chain(image, vk::Filter::eLinear, SubmitMode::IMMEDIATE));
+
+    expect_every_level_solid(image, color);
+    resources().cleanup_image(image);
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, ImageMipChainTest, LevelsThatHeldSomethingElseAreOverwritten, IMAGE_TRANSITION_VALIDATED)
+{
+    const std::array<uint8_t, 4> color { 30, 60, 90, 255 };
+    auto image = solid_image(8, 8, 4, color);
+    resources().execute_immediate_commands([&](vk::CommandBuffer cmd) {
+        resources().record_image_transition(cmd, image, ImageAccess::UNDEFINED, ImageAccess::TRANSFER_DST,
+            { .base_mip = 1, .mip_count = 3 });
+        const vk::ClearColorValue blank(std::array<float, 4> { 0.0F, 0.0F, 0.0F, 0.0F });
+        const vk::ImageSubresourceRange lower { vk::ImageAspectFlagBits::eColor, 1, 3, 0, 1 };
+        cmd.clearColorImage(image->get_image(), vk::ImageLayout::eTransferDstOptimal, &blank, 1, &lower);
+        resources().record_image_transition(cmd, image, ImageAccess::TRANSFER_DST, ImageAccess::SHADER_READ,
+            { .base_mip = 1, .mip_count = 3 });
+    });
+
+    ASSERT_TRUE(resources().generate_mip_chain(image));
+
+    expect_every_level_solid(image, color);
+    resources().cleanup_image(image);
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, ImageMipChainTest, EverySubmitModeProducesTheChain, IMAGE_TRANSITION_VALIDATED)
+{
+    const std::array<uint8_t, 4> color { 250, 10, 120, 255 };
+
+    for (const auto mode : { SubmitMode::DEFERRED, SubmitMode::ASYNC, SubmitMode::IMMEDIATE }) {
+        auto image = solid_image(8, 8, 4, color);
+
+        ASSERT_TRUE(resources().generate_mip_chain(image, vk::Filter::eLinear, mode));
+        idle();
+
+        expect_every_level_solid(image, color);
+        resources().cleanup_image(image);
+    }
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, ImageMipChainTest, BothFiltersGiveTheChainForASolidImage, IMAGE_TRANSITION_VALIDATED)
+{
+    const std::array<uint8_t, 4> color { 11, 22, 33, 255 };
+
+    for (const auto filter : { vk::Filter::eNearest, vk::Filter::eLinear }) {
+        auto image = solid_image(8, 8, 4, color);
+
+        ASSERT_TRUE(resources().generate_mip_chain(image, filter));
+
+        expect_every_level_solid(image, color);
+        resources().cleanup_image(image);
+    }
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, ImageMipChainTest, OddAndNonSquareExtentsReachAOneByOneLevel, IMAGE_TRANSITION_VALIDATED)
+{
+    const std::array<uint8_t, 4> color { 90, 80, 70, 255 };
+    auto image = solid_image(5, 3, 3, color);
+
+    ASSERT_TRUE(resources().generate_mip_chain(image));
+
+    expect_every_level_solid(image, color);
+    resources().cleanup_image(image);
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, ImageMipChainTest, EveryArrayLayerGetsItsOwnChain, IMAGE_TRANSITION_VALIDATED)
+{
+    auto image = make_image(8, 8, k_rgba, VKImage::Usage::TEXTURE_2D, 3, 2);
+    const std::array<uint8_t, 4> first { 255, 0, 0, 255 };
+    const std::array<uint8_t, 4> second { 0, 0, 255, 255 };
+    const auto first_bytes = solid(8, 8, first);
+    const auto second_bytes = solid(8, 8, second);
+    ASSERT_TRUE(resources().upload_image_layer(image, 0, first_bytes.data(), first_bytes.size()));
+    ASSERT_TRUE(resources().upload_image_layer(image, 1, second_bytes.data(), second_bytes.size()));
+    resources().transition_image_layout(image, vk::ImageLayout::eShaderReadOnlyOptimal, SubmitMode::IMMEDIATE);
+
+    ASSERT_TRUE(resources().generate_mip_chain(image));
+
+    expect_every_level_solid(image, first, 0);
+    expect_every_level_solid(image, second, 1);
+    resources().cleanup_image(image);
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, ImageMipChainTest, TheImageKeepsAStableLayoutAndSettlesATransientOne, IMAGE_TRANSITION_VALIDATED)
+{
+    const std::array<uint8_t, 4> color { 1, 2, 3, 255 };
+
+    for (const auto start : {
+             vk::ImageLayout::eShaderReadOnlyOptimal,
+             vk::ImageLayout::eGeneral,
+             vk::ImageLayout::eTransferSrcOptimal,
+             vk::ImageLayout::eTransferDstOptimal,
+         }) {
+        auto image = solid_image(8, 8, 4, color);
+        settle(image, start);
+
+        ASSERT_TRUE(resources().generate_mip_chain(image));
+
+        EXPECT_EQ(image->get_current_layout(), transient_to_settled(start)) << vk::to_string(start);
+        resources().cleanup_image(image);
+    }
+
+    EXPECT_FALSE(LogCapture::contains("generic image layout transition"));
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, ImageMipChainTest, ARenderTargetKeepsItsAttachmentLayoutAfterItsChainIsMade, IMAGE_TRANSITION_VALIDATED)
+{
+    auto image = make_image(8, 8, k_rgba, VKImage::Usage::RENDER_TARGET, 4);
+    settle(image, vk::ImageLayout::eColorAttachmentOptimal);
+
+    ASSERT_TRUE(resources().generate_mip_chain(image));
+
+    EXPECT_EQ(image->get_current_layout(), vk::ImageLayout::eColorAttachmentOptimal);
+    resources().cleanup_image(image);
+}
+
+TEST_F(ImageMipChainTest, AnImageWithOneLevelIsRefusedAndSaysSo)
+{
+    auto image = make_image(8, 8, k_rgba);
+
+    EXPECT_FALSE(resources().generate_mip_chain(image));
+
+    EXPECT_TRUE(LogCapture::contains("one mip level"));
+    resources().cleanup_image(image);
+}
+
+TEST_F(ImageMipChainTest, ADepthImageIsRefusedAndSaysSo)
+{
+    auto image = make_image(8, 8, vk::Format::eD32Sfloat, VKImage::Usage::DEPTH_STENCIL, 2);
+
+    EXPECT_FALSE(resources().generate_mip_chain(image));
+
+    EXPECT_TRUE(LogCapture::contains("only color images"));
+    resources().cleanup_image(image);
+}
+
+TEST_F(ImageMipChainTest, NullAndUnmanagedImagesAreRefused)
+{
+    auto unmanaged = std::make_shared<VKImage>(8, 8, 1, k_rgba, VKImage::Usage::TEXTURE_2D,
+        VKImage::Type::TYPE_2D, 3, 1);
+
+    EXPECT_FALSE(resources().generate_mip_chain(nullptr));
+    EXPECT_FALSE(resources().generate_mip_chain(unmanaged));
 }
 
 }

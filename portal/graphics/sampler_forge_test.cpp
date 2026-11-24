@@ -175,7 +175,10 @@ namespace {
             { "AddressW", [](SamplerConfig& c) { c.address_mode_w = AddressMode::CLAMP_TO_EDGE; } },
             { "Anisotropy", [](SamplerConfig& c) { c.max_anisotropy = 4.0F; } },
             { "Mipmaps", [](SamplerConfig& c) { c.enable_mipmaps = true; } },
-            { "BorderColor", [](SamplerConfig& c) { c.border_color = BorderColor::OPAQUE_WHITE; } }
+            { "BorderColor", [](SamplerConfig& c) { c.border_color = BorderColor::OPAQUE_WHITE; } },
+            { "LodBias", [](SamplerConfig& c) { c.lod_bias = 0.5F; } },
+            { "MinLod", [](SamplerConfig& c) { c.min_lod = 1.0F; } },
+            { "MaxLod", [](SamplerConfig& c) { c.max_lod = 3.0F; } }
         };
     }
 
@@ -200,6 +203,55 @@ namespace {
     INSTANTIATE_TEST_SUITE_P(Fields, SamplerForgeFieldTest,
         ::testing::ValuesIn(field_cases()),
         [](const ::testing::TestParamInfo<FieldCase>& info) { return std::string(info.param.name); });
+
+    TEST_F(SamplerForgeTest, MipmapSamplersWithDifferentLodRangesAreDifferentSamplersAndAreServedAgain)
+    {
+        ASSERT_TRUE(forge().initialize(backend()));
+        SamplerConfig wide;
+        wide.enable_mipmaps = true;
+        SamplerConfig narrow = wide;
+        narrow.min_lod = 1.0F;
+        narrow.max_lod = 2.0F;
+        SamplerConfig biased = wide;
+        biased.lod_bias = -0.5F;
+
+        const vk::Sampler first = forge().get_or_create(wide);
+        const vk::Sampler second = forge().get_or_create(narrow);
+        const vk::Sampler third = forge().get_or_create(biased);
+
+        ASSERT_TRUE(first);
+        ASSERT_TRUE(second);
+        ASSERT_TRUE(third);
+        EXPECT_NE(first, second);
+        EXPECT_NE(first, third);
+        EXPECT_NE(second, third);
+        EXPECT_EQ(forge().get_or_create(narrow), second);
+        EXPECT_EQ(forge().get_sampler_count(), 3U);
+    }
+
+    TEST_F(SamplerForgeTest, LodValuesOutsideWhatTheDeviceAllowsStillMakeASampler)
+    {
+        ASSERT_TRUE(forge().initialize(backend()));
+        SamplerConfig extreme;
+        extreme.enable_mipmaps = true;
+        extreme.lod_bias = 1000.0F;
+        extreme.min_lod = 5.0F;
+        extreme.max_lod = 1.0F;
+
+        EXPECT_TRUE(forge().get_or_create(extreme));
+
+        extreme.lod_bias = -1000.0F;
+        EXPECT_TRUE(forge().get_or_create(extreme));
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, SamplerConfigValueTest, ADefaultConfigLeavesTheLodRangeUnclamped, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        const SamplerConfig config;
+
+        EXPECT_EQ(config.lod_bias, 0.0F);
+        EXPECT_EQ(config.min_lod, 0.0F);
+        EXPECT_GE(config.max_lod, 1000.0F);
+    }
 
     class SamplerConfigEqualityTest : public ::testing::TestWithParam<FieldCase> { };
 
