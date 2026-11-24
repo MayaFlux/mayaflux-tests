@@ -20,6 +20,12 @@
 #ifdef ERROR
 #undef ERROR
 #endif
+#ifdef near
+#undef near
+#endif
+#ifdef far
+#undef far
+#endif
 #endif
 
 #include <glm/gtc/matrix_transform.hpp>
