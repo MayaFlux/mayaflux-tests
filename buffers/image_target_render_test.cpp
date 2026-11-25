@@ -1308,8 +1308,9 @@ void main() { color = texture(tex, vec2(0.5)); }
         const auto old_image = source->image();
 
         ASSERT_TRUE(source->resize(32, 32));
-        EXPECT_FALSE(old_image->is_initialized());
+        EXPECT_TRUE(old_image->is_initialized());
         consumer.render->bind_texture({ .name = "tex", .image = source->image() });
+        EXPECT_FALSE(old_image->is_initialized());
         sink->set_clear_color({ 0.0F, 0.0F, 1.0F, 1.0F });
         cycle();
 
@@ -1335,11 +1336,75 @@ void main() { color = texture(tex, vec2(0.5)); }
 
         producer.render->set_fragment_shader(k_green_fragment);
         ASSERT_TRUE(source->resize(32, 32));
-        EXPECT_FALSE(old_image->is_initialized());
+        EXPECT_TRUE(old_image->is_initialized());
         cycle();
 
+        EXPECT_FALSE(old_image->is_initialized());
         EXPECT_EQ(pixel(sink, 16, 16).g, 255);
         EXPECT_EQ(pixel(sink, 16, 16).r, 0);
+    }
+
+    TEST_F(ImageTargetRenderTest, ABoundImageOutlivesItsCreatorsReleaseUntilTheBindingTakesAnother)
+    {
+        const auto first = loom().create_2d(2, 2);
+        const auto second = loom().create_2d(2, 2);
+        ASSERT_TRUE(first && second);
+        const Drawable consumer = add_drawable(make_target());
+
+        consumer.render->bind_texture({ .image = first, .binding = 0 });
+        loom().release_image(first);
+        EXPECT_TRUE(first->is_initialized());
+
+        consumer.render->bind_texture({ .image = second, .binding = 0 });
+        EXPECT_FALSE(first->is_initialized());
+        EXPECT_TRUE(second->is_initialized());
+        loom().release_image(second);
+    }
+
+    TEST_F(ImageTargetRenderTest, BindingTheSameImageAgainDoesNotHoldItTwice)
+    {
+        const auto image = loom().create_2d(2, 2);
+        ASSERT_NE(image, nullptr);
+        const auto other = loom().create_2d(2, 2);
+        const Drawable consumer = add_drawable(make_target());
+
+        consumer.render->bind_texture({ .image = image, .binding = 0 });
+        consumer.render->bind_texture({ .image = image, .binding = 0 });
+        loom().release_image(image);
+        EXPECT_TRUE(image->is_initialized());
+
+        consumer.render->bind_texture({ .image = other, .binding = 0 });
+        EXPECT_FALSE(image->is_initialized());
+        loom().release_image(other);
+    }
+
+    TEST_F(ImageTargetRenderTest, ADestroyedProcessorGivesUpTheImagesItBound)
+    {
+        const auto image = loom().create_2d(2, 2);
+        ASSERT_NE(image, nullptr);
+        ShaderConfig shader { k_full_vertex };
+        shader.stage = Portal::Graphics::ShaderStage::VERTEX;
+        auto render = std::make_shared<RenderProcessor>(shader);
+        render->bind_texture({ .image = image, .binding = 0 });
+        loom().release_image(image);
+        ASSERT_TRUE(image->is_initialized());
+
+        render.reset();
+
+        EXPECT_FALSE(image->is_initialized());
+    }
+
+    TEST_F(ImageTargetRenderTest, ATargetBoundByTargetOrImageOutlivesTheTargetItself)
+    {
+        auto source = loom().create_image_target({ .width = 8, .height = 8 });
+        ASSERT_NE(source, nullptr);
+        const auto image = source->image();
+        const Drawable consumer = add_drawable(make_target());
+        consumer.render->bind_texture({ .image = image, .binding = 0 });
+
+        source.reset();
+
+        EXPECT_TRUE(image->is_initialized());
     }
 
     TEST_F(ImageTargetRenderTest, ATargetBoundByTargetDrawsAfterItsSourceWhicheverOrderTheyWereAdded)

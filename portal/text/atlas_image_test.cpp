@@ -116,6 +116,39 @@ namespace {
         EXPECT_EQ(image.generation(), 2U);
     }
 
+    TEST_F(AtlasImageTest, AReplacedImageIsReleasedUnlessSomeoneHoldsIt)
+    {
+        auto& loom = Portal::Graphics::get_texture_manager();
+        GlyphAtlas first_atlas(face, k_pixel_size, 128);
+        GlyphAtlas second_atlas(face, k_pixel_size, 128);
+        AtlasImage image;
+        const auto held = image.sync(first_atlas);
+        loom.retain_image(held);
+
+        const auto replacement = image.sync(second_atlas);
+        EXPECT_TRUE(held->is_initialized());
+        loom.release_image(held);
+        EXPECT_FALSE(held->is_initialized());
+
+        const auto next = image.sync(first_atlas);
+        EXPECT_FALSE(replacement->is_initialized());
+        EXPECT_TRUE(next->is_initialized());
+    }
+
+    TEST_F(AtlasImageTest, DestroyingTheAtlasImageReleasesItsImage)
+    {
+        GlyphAtlas atlas(face, k_pixel_size, 128);
+        std::shared_ptr<Core::VKImage> synced;
+        {
+            AtlasImage image;
+            synced = image.sync(atlas);
+            ASSERT_NE(synced, nullptr);
+            EXPECT_TRUE(synced->is_initialized());
+        }
+
+        EXPECT_FALSE(synced->is_initialized());
+    }
+
     TEST_F(AtlasImageTest, ADifferentAtlasReplacesTheImage)
     {
         GlyphAtlas first_atlas(face, k_pixel_size, 128);
