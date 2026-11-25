@@ -243,7 +243,7 @@ namespace {
             FormatCase { "3ds" }),
         [](const ::testing::TestParamInfo<FormatCase>& info) { return std::string(info.param.extension); });
 
-    TEST_F(ModelFileTest, ObjRoundTripKeepsNormalsAndFlipsTheVerticalUvCoordinate)
+    TEST_F(ModelFileTest, ObjRoundTripKeepsNormalsAndUvCoordinates)
     {
         const auto source = flat_cube("cube");
         const auto path = path_in_cwd("uv.obj");
@@ -260,7 +260,7 @@ namespace {
             const auto* match = find_vertex(read_back, original.position, &original.normal);
             ASSERT_NE(match, nullptr) << "no vertex at " << original.position.x << ' ' << original.position.y << ' ' << original.position.z;
             EXPECT_NEAR(match->uv.x, original.uv.x, 1e-4F);
-            EXPECT_NEAR(match->uv.y, 1.0F - original.uv.y, 1e-4F);
+            EXPECT_NEAR(match->uv.y, original.uv.y, 1e-4F);
         }
     }
 
@@ -596,7 +596,7 @@ namespace {
         IO::AssimpModelWriter writer;
         const auto path = path_in_cwd("none.obj");
 
-        EXPECT_FALSE(writer.write(path, {}));
+        EXPECT_FALSE(writer.write(path, std::vector<Kakshya::MeshData> {}));
         EXPECT_NE(writer.get_last_error().find("No meshes"), std::string::npos);
         EXPECT_FALSE(RoundTrip::exists(path));
     }
@@ -657,7 +657,7 @@ namespace {
     TEST_F(ModelFileTest, WriterErrorIsClearedByTheNextSuccessfulWrite)
     {
         IO::AssimpModelWriter writer;
-        ASSERT_FALSE(writer.write(path_in_cwd("none.obj"), {}));
+        ASSERT_FALSE(writer.write(path_in_cwd("none.obj"), std::vector<Kakshya::MeshData> {}));
         ASSERT_FALSE(writer.get_last_error().empty());
 
         ASSERT_TRUE(writer.write(path_in_cwd("cube.obj"), { flat_cube("cube") }));

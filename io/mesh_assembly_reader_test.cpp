@@ -5,6 +5,7 @@
 #include "../support/scoped_working_dir.hpp"
 
 #include "MayaFlux/IO/Model/ModelReader.hpp"
+#include "MayaFlux/IO/Model/AssimpModelWriter.hpp"
 
 #include "MayaFlux/Buffers/Geometry/MeshBuffer.hpp"
 
@@ -796,6 +797,72 @@ TEST_F(MeshAssemblyModelTest, PointsAndLinesGoToPointCloudNetworks)
     ASSERT_EQ(networks.size(), 2U);
     EXPECT_EQ(networks[0]->get_node_count(), 1U);
     EXPECT_EQ(networks[1]->get_node_count(), 4U);
+}
+
+std::shared_ptr<MeshAssemblyContainer> written_and_read(const std::string& gltf)
+{
+    const auto from = path_in_cwd("from.gltf");
+    RoundTrip::write_bytes(from, gltf);
+    IO::ModelReader reader;
+    EXPECT_TRUE(reader.open(from)) << reader.get_last_error();
+    const auto assembly = reader.create_mesh_assembly();
+
+    const auto to = path_in_cwd("to.gltf");
+    IO::AssimpModelWriter writer;
+    EXPECT_TRUE(writer.write(to, assembly)) << writer.get_last_error();
+
+    IO::ModelReader again;
+    EXPECT_TRUE(again.open(to)) << again.get_last_error();
+    return again.create_mesh_assembly();
+}
+
+TEST_F(MeshAssemblyModelTest, AWrittenAssemblyKeepsItsTreeAndSharedGeometry)
+{
+    const auto assembly = written_and_read(shared_wheel_gltf());
+
+    ASSERT_NE(assembly, nullptr);
+    EXPECT_EQ(assembly->get_data().sources.size(), 1U);
+    ASSERT_EQ(assembly->get_total_elements(), 3U);
+    EXPECT_EQ(assembly->placement(1)->parent, std::optional<uint64_t> { 0 });
+    EXPECT_EQ(assembly->placement(2)->parent, std::optional<uint64_t> { 0 });
+    const auto world = assembly->world_transforms();
+    EXPECT_NEAR(world[1][3].y, 5.0F, 1e-4F);
+    EXPECT_NEAR(world[1][3].x, 1.0F, 1e-4F);
+    EXPECT_NEAR(world[2][3].x, -1.0F, 1e-4F);
+}
+
+TEST_F(MeshAssemblyModelTest, AWrittenAssemblyKeepsItsMotion)
+{
+    const auto assembly = written_and_read(sliding_box_gltf());
+
+    ASSERT_NE(assembly, nullptr);
+    ASSERT_EQ(assembly->get_data().motions.size(), 1U);
+    ASSERT_EQ(assembly->get_data().motions[0].channels.size(), 1U);
+    const auto& translation = assembly->get_data().motions[0].channels[0].translation;
+    ASSERT_TRUE(translation);
+    EXPECT_NEAR(translation->sample(0.5).value_or(glm::vec3(-1.0F)).x, 1.0F, 1e-3F);
+}
+
+TEST_F(MeshAssemblyModelTest, AWrittenAssemblyKeepsItsMaterialAndPixels)
+{
+    const auto assembly = written_and_read(textured_box_gltf());
+
+    ASSERT_NE(assembly, nullptr);
+    ASSERT_FALSE(assembly->get_data().materials.empty());
+    const auto placement = assembly->placement(0);
+    ASSERT_TRUE(placement && placement->material);
+    const auto& material = assembly->get_data().materials[*placement->material];
+
+    const auto* surface = material.facets.get<Kakshya::MeshAssemblySurface>();
+    ASSERT_NE(surface, nullptr);
+    EXPECT_TRUE(surface->double_sided);
+    EXPECT_EQ(surface->alpha, Kakshya::MeshAssemblyAlpha::Mask);
+
+    const auto* maps = material.facets.get<Kakshya::MeshAssemblyMaps>();
+    ASSERT_NE(maps, nullptr);
+    ASSERT_TRUE(maps->base_color && maps->base_color->image);
+    EXPECT_EQ(maps->base_color->image->width, 2U);
+    EXPECT_EQ(maps->base_color->image->height, 1U);
 }
 
 TEST_F(MeshAssemblyModelTest, FlatteningBakesTheNodeTreeIntoTheVertices)
