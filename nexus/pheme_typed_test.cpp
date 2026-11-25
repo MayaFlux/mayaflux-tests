@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
+#include "MayaFlux/Nexus/Pheme/FieldTargets.hpp"
 #include "MayaFlux/Nexus/Pheme/Influence.hpp"
 #include "MayaFlux/Nexus/Pheme/Perception.hpp"
 
@@ -31,6 +32,26 @@ namespace {
         EXPECT_EQ(produced, 2);
         EXPECT_EQ(first, (std::vector<int> { 1, 2 }));
         EXPECT_EQ(second, (std::vector<int> { 1, 2 }));
+    }
+
+    TEST(NexusForwardedFieldTest, TheFieldAnswersZeroUntilAnInfluenceSuppliesOne)
+    {
+        auto [field, set] = Nexus::forwarded_field<Kinesis::SpatialField>();
+        const Kinesis::SpatialField held = field;
+        float scale = 2.0F;
+        Influence<Kinesis::SpatialField> wave([&scale](const InfluenceContext&) {
+            return Kinesis::SpatialField { .fn = [s = scale](const glm::vec3& p) { return s * p.x; } };
+        });
+        wave.add_target(set);
+
+        EXPECT_EQ(held({ 3.0F, 0.0F, 0.0F }), 0.0F);
+
+        wave.invoke({});
+        EXPECT_EQ(held({ 3.0F, 0.0F, 0.0F }), 6.0F);
+
+        scale = 5.0F;
+        wave.invoke({});
+        EXPECT_EQ(held({ 3.0F, 0.0F, 0.0F }), 15.0F);
     }
 
     TEST(NexusInfluenceTest, TargetsRunInInsertionOrder)

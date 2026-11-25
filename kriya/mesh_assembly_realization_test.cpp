@@ -692,6 +692,97 @@ namespace {
         EXPECT_EQ(lost.transform_fn()(Kriya::FrameContext {}, frame), frame);
     }
 
+    /** The level's slide played to one second, where the joint and the wall stand at x = 6. */
+    struct SlidLevel {
+        RealizedLevel level;
+        std::shared_ptr<const Kakshya::MeshAssemblyMotionFrames> frames;
+        std::shared_ptr<Kriya::Course> course;
+        std::shared_ptr<const Kakshya::MeshAssemblyLocals> frame;
+
+        explicit SlidLevel(CourseEdge edge = CourseEdge::Once)
+            : frames(Kakshya::MeshAssemblyMotionFrames::create(level.assembly, 0))
+        {
+            Kriya::CourseSetting setting;
+            setting.in = 0.0;
+            setting.out = 2.0;
+            setting.edge = edge;
+            course = Kriya::Course::create(k_level_rate, setting);
+            for (int i = 0; i < 8; ++i) {
+                std::ignore = course->advance();
+            }
+            frame = frames->sample(course->time());
+        }
+
+        [[nodiscard]] Kriya::FrameContext context() const
+        {
+            Kriya::FrameContext made;
+            made.course = course.get();
+            return made;
+        }
+
+        /** Seconds for the rows standing at x = 6, nothing for the rest. */
+        static Kinesis::SpatialField at_six(float seconds)
+        {
+            return { .fn = [seconds](const glm::vec3& p) { return std::abs(p.x - 6.0F) < 0.1F ? seconds : 0.0F; } };
+        }
+    };
+
+    TEST(PlacementTimeOffsetTest, ARowIsTakenFromItsOwnTimeAndItsChildrenFollow)
+    {
+        const SlidLevel slid;
+        ASSERT_NEAR(slid.frame->world[0][3].x, 6.0F, 1e-4F);
+
+        const auto behind = Kriya::placement_time_offset(slid.level.assembly, slid.frames, SlidLevel::at_six(-0.5F))
+                                .transform_fn()(slid.context(), slid.frame);
+        const auto ahead = Kriya::placement_time_offset(slid.level.assembly, slid.frames, SlidLevel::at_six(0.5F))
+                               .transform_fn()(slid.context(), slid.frame);
+
+        ASSERT_NE(behind, nullptr);
+        ASSERT_NE(ahead, nullptr);
+        EXPECT_NEAR(behind->matrices[0][3].x, 8.0F, 1e-4F);
+        EXPECT_NEAR(behind->world[2][3].x, 9.0F, 1e-4F);
+        EXPECT_NEAR(behind->world[3][3].x, 7.0F, 1e-4F);
+        EXPECT_NEAR(behind->world[4][3].x, 0.0F, 1e-4F);
+        EXPECT_NEAR(ahead->matrices[0][3].x, 4.0F, 1e-4F);
+        EXPECT_NEAR(ahead->world[2][3].x, 5.0F, 1e-4F);
+        EXPECT_NEAR(slid.course->time(), 1.0, 1e-9);
+    }
+
+    TEST(PlacementTimeOffsetTest, TheCoursesEdgeAppliesToAnOffsetTime)
+    {
+        const SlidLevel slid(CourseEdge::Loop);
+
+        const auto wrapped = Kriya::placement_time_offset(slid.level.assembly, slid.frames, SlidLevel::at_six(1.5F))
+                                 .transform_fn()(slid.context(), slid.frame);
+
+        ASSERT_NE(wrapped, nullptr);
+        EXPECT_NEAR(wrapped->matrices[0][3].x, 8.0F, 1e-4F);
+    }
+
+    TEST(PlacementTimeOffsetTest, AFrameNoRowIsOffsetInIsHandedOnUnchanged)
+    {
+        const SlidLevel slid;
+        const auto still = Kriya::placement_time_offset(slid.level.assembly, slid.frames, SlidLevel::at_six(0.0F));
+
+        EXPECT_EQ(still.transform_fn()(slid.context(), slid.frame), slid.frame);
+    }
+
+    TEST(PlacementTimeOffsetTest, WithoutOneCourseOrItsArgumentsTheFrameIsUnchanged)
+    {
+        const SlidLevel slid;
+        const auto field = SlidLevel::at_six(-0.5F);
+
+        const auto mixed = Kriya::placement_time_offset(slid.level.assembly, slid.frames, field);
+        const auto no_assembly = Kriya::placement_time_offset(nullptr, slid.frames, field);
+        const auto no_source = Kriya::placement_time_offset(slid.level.assembly, nullptr, field);
+        const auto no_field = Kriya::placement_time_offset(slid.level.assembly, slid.frames, {});
+
+        EXPECT_EQ(mixed.transform_fn()(Kriya::FrameContext {}, slid.frame), slid.frame);
+        EXPECT_EQ(no_assembly.transform_fn()(slid.context(), slid.frame), slid.frame);
+        EXPECT_EQ(no_source.transform_fn()(slid.context(), slid.frame), slid.frame);
+        EXPECT_EQ(no_field.transform_fn()(slid.context(), slid.frame), slid.frame);
+    }
+
     /** Two wheels of rubber that a reader gave a colour, and one of stone it did not. */
     struct SurfaceLevel {
         std::shared_ptr<MeshAssemblyContainer> assembly = std::make_shared<MeshAssemblyContainer>();
