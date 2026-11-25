@@ -83,6 +83,30 @@ layout(location = 0) out vec4 color;
 void main() { color = vec4(texture(tex, vec2(0.5)).r, 0.0, 0.0, 1.0); }
 )";
 
+    /** Covers the target and hands the view matrix's x and y translation on as color. */
+    constexpr const char* k_view_probe_vertex = R"(#version 460
+layout(set = 0, binding = 0) uniform RenderTransformBlock { mat4 view; mat4 projection; mat4 geometry; } vt;
+layout(location = 0) out vec3 probe;
+void main() {
+    vec2 p[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+    probe = vec3(vt.view[3][0], vt.view[3][1], 0.0);
+    gl_Position = vec4(p[gl_VertexIndex], 0.0, 1.0);
+}
+)";
+
+    constexpr const char* k_view_probe_fragment = R"(#version 460
+layout(location = 0) in vec3 probe;
+layout(location = 0) out vec4 color;
+void main() { color = vec4(probe, 1.0); }
+)";
+
+    Kinesis::ViewTransform view_showing(float value)
+    {
+        Kinesis::ViewTransform transform;
+        transform.view[3][0] = value;
+        return transform;
+    }
+
     constexpr const char* k_sample_lod_fragment = R"(#version 460
 layout(set = 1, binding = 0) uniform sampler2D tex;
 layout(location = 0) out vec4 color;
@@ -1697,6 +1721,113 @@ void main() { color = texture(tex, vec2(0.5)); }
     TEST_F(ImageTargetRenderTest, SampledDepthNeedsDepth)
     {
         EXPECT_EQ(loom().create_image_target({ .width = 16, .height = 16, .sample_depth = true }), nullptr);
+    }
+
+    // =========================================================================
+    // A view for each destination
+    // =========================================================================
+
+    TEST_F(ImageTargetRenderTest, TwoDestinationsOfOneProcessorDrawWithTheirOwnViews)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first, k_view_probe_vertex, k_view_probe_fragment);
+        drawable.render->add_target_image(second, drawable.buffer);
+        ASSERT_TRUE(drawable.render->set_destination_view(
+            { .target = first, .transform = view_showing(0.25F), .enable_depth = false, .cull = Portal::Graphics::CullMode::NONE }));
+        ASSERT_TRUE(drawable.render->set_destination_view(
+            { .target = second, .transform = view_showing(0.75F), .enable_depth = false, .cull = Portal::Graphics::CullMode::NONE }));
+
+        cycle();
+
+        EXPECT_NEAR(static_cast<int>(pixel(first, 16, 16).r), 64, 2);
+        EXPECT_NEAR(static_cast<int>(pixel(second, 16, 16).r), 191, 2);
+    }
+
+    TEST_F(ImageTargetRenderTest, ADestinationWithoutItsOwnViewKeepsTheViewOfTheProcessor)
+    {
+        const auto shared = make_target();
+        const auto own = make_target();
+        const Drawable drawable = add_drawable(shared, k_view_probe_vertex, k_view_probe_fragment);
+        drawable.render->add_target_image(own, drawable.buffer);
+        drawable.render->set_view_transform(view_showing(0.5F), false, Portal::Graphics::CullMode::NONE);
+        ASSERT_TRUE(drawable.render->set_destination_view(
+            { .target = own, .transform = view_showing(0.75F), .enable_depth = false, .cull = Portal::Graphics::CullMode::NONE }));
+
+        cycle();
+
+        EXPECT_NEAR(static_cast<int>(pixel(shared, 16, 16).r), 128, 2);
+        EXPECT_NEAR(static_cast<int>(pixel(own, 16, 16).r), 191, 2);
+        EXPECT_FALSE(drawable.render->has_destination_view({ .target = shared }));
+        EXPECT_TRUE(drawable.render->has_destination_view({ .target = own }));
+    }
+
+    TEST_F(ImageTargetRenderTest, ClearingADestinationViewReturnsItToTheViewOfTheProcessor)
+    {
+        const auto target = make_target();
+        const Drawable drawable = add_drawable(target, k_view_probe_vertex, k_view_probe_fragment);
+        drawable.render->set_view_transform(view_showing(0.5F), false, Portal::Graphics::CullMode::NONE);
+        ASSERT_TRUE(drawable.render->set_destination_view(
+            { .target = target, .transform = view_showing(0.25F), .enable_depth = false, .cull = Portal::Graphics::CullMode::NONE }));
+        cycle();
+        ASSERT_NEAR(static_cast<int>(pixel(target, 16, 16).r), 64, 2);
+
+        drawable.render->clear_destination_view({ .target = target });
+        cycle();
+
+        EXPECT_NEAR(static_cast<int>(pixel(target, 16, 16).r), 128, 2);
+        EXPECT_FALSE(drawable.render->has_destination_view({ .target = target }));
+    }
+
+    TEST_F(ImageTargetRenderTest, AViewSourceIsGivenThePixelSizeOfWhatItsDestinationFills)
+    {
+        const auto target = make_target({ .width = 32, .height = 16 });
+        const Drawable drawable = add_drawable(target, k_view_probe_vertex, k_view_probe_fragment);
+        drawable.render->set_target_area(target,
+            { .area = Kinesis::Scissor::from(Kinesis::AABB2D { .min = { -1.F, -1.F }, .max = { 0.F, 1.F } }) });
+        auto seen = std::make_shared<glm::uvec2>(0U, 0U);
+        ASSERT_TRUE(drawable.render->set_destination_view(
+            { .target = target,
+                .source = [seen](glm::uvec2 size) {
+                    *seen = size;
+                    return view_showing(0.25F);
+                },
+                .enable_depth = false,
+                .cull = Portal::Graphics::CullMode::NONE }));
+
+        cycle();
+
+        EXPECT_EQ(*seen, glm::uvec2(16U, 16U));
+        EXPECT_NEAR(static_cast<int>(pixel(target, 8, 8).r), 64, 2);
+    }
+
+    TEST_F(ImageTargetRenderTest, ADestinationViewIsRefusedUnlessItNamesOneDestinationAndOneView)
+    {
+        const auto target = make_target();
+        const auto stranger = make_target();
+        const Drawable drawable = add_drawable(target);
+
+        EXPECT_FALSE(drawable.render->set_destination_view({ .target = target }));
+        EXPECT_FALSE(drawable.render->set_destination_view(
+            { .target = target, .transform = view_showing(0.5F), .source = [](glm::uvec2) { return view_showing(0.5F); } }));
+        EXPECT_FALSE(drawable.render->set_destination_view({ .target = stranger, .transform = view_showing(0.5F) }));
+        EXPECT_FALSE(drawable.render->set_destination_view({ .transform = view_showing(0.5F) }));
+        EXPECT_FALSE(drawable.render->has_destination_view({ .target = target }));
+    }
+
+    TEST_F(ImageTargetRenderTest, ARemovedDestinationDoesNotKeepItsView)
+    {
+        const auto first = make_target();
+        const auto second = make_target();
+        const Drawable drawable = add_drawable(first);
+        drawable.render->add_target_image(second, drawable.buffer);
+        ASSERT_TRUE(drawable.render->set_destination_view(
+            { .target = first, .transform = view_showing(0.5F), .enable_depth = false }));
+
+        drawable.render->remove_target_image(first, drawable.buffer);
+        drawable.render->add_target_image(first, drawable.buffer);
+
+        EXPECT_FALSE(drawable.render->has_destination_view({ .target = first }));
     }
 
     // =========================================================================
