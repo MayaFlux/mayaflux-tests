@@ -6,11 +6,14 @@
 
 #include "MayaFlux/IO/Model/ModelReader.hpp"
 
+#include "MayaFlux/Buffers/Geometry/MeshBuffer.hpp"
+
 #include <assimp/version.h>
 #include "MayaFlux/IO/Spatial/SpatialReader.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
 #include "MayaFlux/Kriya/MotionReflow.hpp"
 #include "MayaFlux/Nodes/Network/MeshNetwork.hpp"
+#include "MayaFlux/Nodes/Network/PointCloudNetwork.hpp"
 #include "MayaFlux/Kakshya/Semantic/MeshAssemblyContainer.hpp"
 #include "MayaFlux/Portal/Graphics/GraphicsUtils.hpp"
 
@@ -123,6 +126,102 @@ namespace {
                R"("nodes":[{"name":"box","mesh":0}],)"
                R"("materials":[{"name":"paint","pbrMetallicRoughness":{"baseColorFactor":[0.5,0.25,0.125,1.0],"metallicFactor":0.3,"roughnessFactor":0.6}}],)"
                R"("meshes":[{"name":"tri","primitives":[{"attributes":{"POSITION":0},"mode":4,"material":0}]}],)"
+               R"("accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]}],)"
+               R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36,"target":34962}],)"
+               R"("buffers":[{"byteLength":36,"uri":"data:application/octet-stream;base64,)"
+            + RoundTrip::base64(payload) + R"("}]})";
+    }
+
+    /** A triangle whose material carries one 2 by 1 image, red then blue, inside the file. */
+    std::string textured_box_gltf()
+    {
+        const std::string payload = float_bytes({ 0, 0, 0, 1, 0, 0, 0, 1, 0 });
+        return R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],)"
+               R"("nodes":[{"name":"box","mesh":0}],)"
+               R"("materials":[{"name":"skin","pbrMetallicRoughness":{"baseColorTexture":{"index":0},)"
+               R"("metallicRoughnessTexture":{"index":0}},"normalTexture":{"index":0},)"
+               R"("emissiveFactor":[0.0,0.5,0.0],"doubleSided":true,"alphaMode":"MASK","alphaCutoff":0.25}],)"
+               R"("textures":[{"source":0}],)"
+               R"("images":[{"uri":"data:image/png;base64,)"
+               R"(iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR4nGP4z8AAQv8BD/kD/YURmXYAAAAASUVORK5CYII="}],)"
+               R"("meshes":[{"name":"tri","primitives":[{"attributes":{"POSITION":0},"mode":4,"material":0}]}],)"
+               R"("accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]}],)"
+               R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36,"target":34962}],)"
+               R"("buffers":[{"byteLength":36,"uri":"data:application/octet-stream;base64,)"
+            + RoundTrip::base64(payload) + R"("}]})";
+    }
+
+    /** A perspective camera on its own node, an orthographic one, and a node with both a mesh and a camera. */
+    std::string camera_gltf()
+    {
+        const std::string payload = float_bytes({ 0, 0, 0, 1, 0, 0, 0, 1, 0 });
+        return R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0,1,2]}],)"
+               R"("nodes":[{"name":"eye","camera":0,"translation":[0,0,5]},{"name":"flat","camera":1},)"
+               R"({"name":"rig","mesh":0,"camera":2,"translation":[2,0,0]}],)"
+               R"("cameras":[)"
+               R"({"type":"perspective","perspective":{"yfov":1.0,"aspectRatio":2.0,"znear":0.5,"zfar":50.0}},)"
+               R"({"type":"orthographic","orthographic":{"xmag":3.0,"ymag":2.0,"znear":0.1,"zfar":10.0}},)"
+               R"({"type":"perspective","perspective":{"yfov":0.5,"aspectRatio":1.0,"znear":0.1,"zfar":10.0}}],)"
+               R"("meshes":[{"name":"tri","primitives":[{"attributes":{"POSITION":0},"mode":4}]}],)"
+               R"("accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]}],)"
+               R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36,"target":34962}],)"
+               R"("buffers":[{"byteLength":36,"uri":"data:application/octet-stream;base64,)"
+            + RoundTrip::base64(payload) + R"("}]})";
+    }
+
+    std::optional<uint64_t> row_named(const MeshAssemblyContainer& assembly, const std::string& name, bool with_lens)
+    {
+        for (uint64_t row = 0; row < assembly.get_total_elements(); ++row) {
+            const auto placement = assembly.placement(row);
+            if (!placement || placement->name != name) {
+                continue;
+            }
+            const bool lens = placement->source && assembly.lens(*placement->source);
+            if (lens == with_lens) {
+                return row;
+            }
+        }
+        return std::nullopt;
+    }
+
+    /** One triangle with two morph targets, keyed from none to full over two seconds, with extras beside it. */
+    std::string morph_gltf()
+    {
+        const std::string payload = float_bytes({ 0, 0, 0, 1, 0, 0, 0, 1, 0,
+            0, 0, 1, 0, 0, 1, 0, 0, 1,
+            1, 0, 0, 1, 0, 0, 1, 0, 0,
+            0.0F, 2.0F,
+            0.0F, 0.0F, 1.0F, 0.5F });
+        return R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],)"
+               R"("nodes":[{"name":"face","mesh":0,"extras":{"tag":"hero"}}],)"
+               R"("meshes":[{"name":"tri","weights":[0.25,0.0],"extras":{"targetNames":["smile","frown"]},)"
+               R"("primitives":[{"attributes":{"POSITION":0},"targets":[{"POSITION":1},{"POSITION":2}]}]}],)"
+               R"("animations":[{"name":"emote","samplers":[{"input":3,"output":4}],)"
+               R"("channels":[{"sampler":0,"target":{"node":0,"path":"weights"}}]}],)"
+               R"("accessors":[)"
+               R"({"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]},)"
+               R"({"bufferView":1,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,1],"max":[0,0,1]},)"
+               R"({"bufferView":2,"componentType":5126,"count":3,"type":"VEC3","min":[1,0,0],"max":[1,0,0]},)"
+               R"({"bufferView":3,"componentType":5126,"count":2,"type":"SCALAR","min":[0],"max":[2]},)"
+               R"({"bufferView":4,"componentType":5126,"count":4,"type":"SCALAR"}],)"
+               R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":36},)"
+               R"({"buffer":0,"byteOffset":72,"byteLength":36},{"buffer":0,"byteOffset":108,"byteLength":8},)"
+               R"({"buffer":0,"byteOffset":116,"byteLength":16}],)"
+               R"("buffers":[{"byteLength":132,"uri":"data:application/octet-stream;base64,)"
+            + RoundTrip::base64(payload) + R"("}]})";
+    }
+
+    /** A spot light four units up, beside a triangle. */
+    std::string lamp_gltf()
+    {
+        const std::string payload = float_bytes({ 0, 0, 0, 1, 0, 0, 0, 1, 0 });
+        return R"({"asset":{"version":"2.0"},"extensionsUsed":["KHR_lights_punctual"],)"
+               R"("extensions":{"KHR_lights_punctual":{"lights":[{"type":"spot","color":[1.0,0.5,0.25],"intensity":2.0,)"
+               R"("spot":{"innerConeAngle":0.25,"outerConeAngle":0.5}}]}},)"
+               R"("scene":0,"scenes":[{"nodes":[0,1]}],)"
+               R"("nodes":[{"name":"lamp","translation":[0,4,0],"extensions":{"KHR_lights_punctual":{"light":0}}},)"
+               R"({"name":"box","mesh":0}],)"
+               R"("meshes":[{"name":"tri","primitives":[{"attributes":{"POSITION":0},"mode":4}]}],)"
                R"("accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]}],)"
                R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36,"target":34962}],)"
                R"("buffers":[{"byteLength":36,"uri":"data:application/octet-stream;base64,)"
@@ -395,6 +494,308 @@ TEST_F(MeshAssemblyModelTest, AMaterialKeepsItsColourAndFactorsInItsFacets)
     EXPECT_NEAR(surface->base_color.b, 0.125F, 1e-4F);
     EXPECT_NEAR(surface->metallic, 0.3F, 1e-4F);
     EXPECT_NEAR(surface->roughness, 0.6F, 1e-4F);
+}
+
+TEST_F(MeshAssemblyModelTest, ATextureTheFileCarriesIsDecodedAndSharedByEveryUse)
+{
+    const auto path = path_in_cwd("skin.gltf");
+    RoundTrip::write_bytes(path, textured_box_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    ASSERT_EQ(assembly->get_data().materials.size(), 1U);
+    const auto& material = assembly->get_data().materials[0];
+    EXPECT_TRUE(material.diffuse_embedded);
+
+    const auto* maps = material.facets.get<Kakshya::MeshAssemblyMaps>();
+    ASSERT_NE(maps, nullptr);
+    ASSERT_TRUE(maps->base_color && maps->normal && maps->metalness && maps->roughness);
+    EXPECT_FALSE(maps->emissive);
+
+    const auto& image = maps->base_color->image;
+    ASSERT_NE(image, nullptr);
+    EXPECT_EQ(image->width, 2U);
+    EXPECT_EQ(image->height, 1U);
+    ASSERT_NE(image->as_uint8(), nullptr);
+    EXPECT_EQ(*image->as_uint8(), (std::vector<uint8_t> { 255, 0, 0, 255, 0, 0, 255, 255 }));
+    EXPECT_EQ(maps->normal->image, image);
+    EXPECT_EQ(maps->metalness->image, image);
+    EXPECT_EQ(maps->roughness->image, image);
+}
+
+TEST_F(MeshAssemblyModelTest, AMaterialKeepsItsEmissionSidednessAndAlphaMode)
+{
+    const auto path = path_in_cwd("skin.gltf");
+    RoundTrip::write_bytes(path, textured_box_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    const auto* surface = assembly->get_data().materials[0].facets.get<Kakshya::MeshAssemblySurface>();
+    ASSERT_NE(surface, nullptr);
+    EXPECT_NEAR(surface->emissive.g, 0.5F, 1e-4F);
+    EXPECT_TRUE(surface->double_sided);
+    EXPECT_EQ(surface->alpha, Kakshya::MeshAssemblyAlpha::Mask);
+    EXPECT_NEAR(surface->alpha_cutoff, 0.25F, 1e-4F);
+}
+
+TEST_F(MeshAssemblyModelTest, ATextureNamedByPathKeepsThePathAndNoPixels)
+{
+    const auto path = path_in_cwd("paint.obj");
+    RoundTrip::write_bytes(path_in_cwd("paint.mtl"), std::string("newmtl wood\nKd 1 1 1\nd 0.5\nmap_Kd wood.png\n"));
+    RoundTrip::write_bytes(path, std::string("mtllib paint.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl wood\nf 1 2 3\n"));
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    const auto placement = assembly->placement(0);
+    ASSERT_TRUE(placement && placement->material);
+    const auto& material = assembly->get_data().materials[*placement->material];
+    EXPECT_EQ(material.diffuse_path, "wood.png");
+    EXPECT_FALSE(material.diffuse_embedded);
+
+    const auto* maps = material.facets.get<Kakshya::MeshAssemblyMaps>();
+    ASSERT_NE(maps, nullptr);
+    ASSERT_TRUE(maps->base_color);
+    EXPECT_EQ(maps->base_color->path, "wood.png");
+    EXPECT_EQ(maps->base_color->image, nullptr);
+
+    const auto* surface = material.facets.get<Kakshya::MeshAssemblySurface>();
+    ASSERT_NE(surface, nullptr);
+    EXPECT_NEAR(surface->base_color.a, 0.5F, 1e-4F);
+}
+
+TEST_F(MeshAssemblyModelTest, APerspectiveCameraBecomesALensOnItsNodeRow)
+{
+    const auto path = path_in_cwd("camera.gltf");
+    RoundTrip::write_bytes(path, camera_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    const auto row = row_named(*assembly, "eye", true);
+    ASSERT_TRUE(row);
+    const auto* lens = assembly->lens(*assembly->placement(*row)->source);
+    EXPECT_NEAR(Kinesis::lens_vertical_fov(*lens), 1.0, 1e-4);
+    EXPECT_NEAR(Kinesis::lens_half_tangent(*lens), 2.0 * std::tan(0.5), 1e-4);
+    EXPECT_NEAR(lens->near, 0.5, 1e-5);
+    EXPECT_NEAR(lens->far, 50.0, 1e-4);
+    EXPECT_NEAR(assembly->world_transforms()[*row][3].z, 5.0F, 1e-5F);
+}
+
+TEST_F(MeshAssemblyModelTest, ACameraBesideAMeshTakesAChildRow)
+{
+    const auto path = path_in_cwd("camera.gltf");
+    RoundTrip::write_bytes(path, camera_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    const auto mesh_row = row_named(*assembly, "rig", false);
+    const auto camera_row = row_named(*assembly, "rig", true);
+    ASSERT_TRUE(mesh_row && camera_row);
+    EXPECT_EQ(assembly->placement(*camera_row)->parent, mesh_row);
+    EXPECT_NEAR(assembly->world_transforms()[*camera_row][3].x, 2.0F, 1e-5F);
+}
+
+TEST_F(MeshAssemblyModelTest, AnOrthographicCameraKeepsItsWidth)
+{
+    const auto path = path_in_cwd("camera.gltf");
+    RoundTrip::write_bytes(path, camera_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    const auto row = row_named(*assembly, "flat", true);
+    ASSERT_TRUE(row);
+    const auto* lens = assembly->lens(*assembly->placement(*row)->source);
+    EXPECT_NEAR(lens->orthographic_width, 6.0, 1e-5);
+    const auto projection = Kinesis::lens_projection(*lens, 1.5F);
+    EXPECT_NEAR(projection[0][0], 2.0F / 6.0F, 1e-5F);
+    EXPECT_NEAR(projection[3][3], 1.0F, 1e-5F);
+}
+
+TEST_F(MeshAssemblyModelTest, MorphTargetsAreKeptWithTheirKeyedWeights)
+{
+    const auto path = path_in_cwd("morph.gltf");
+    RoundTrip::write_bytes(path, morph_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    const auto& data = assembly->get_data();
+    ASSERT_EQ(data.sources.size(), 1U);
+    const auto* morphs = data.sources[0].facets.get<Kakshya::MeshAssemblyMorphs>();
+    ASSERT_NE(morphs, nullptr);
+    ASSERT_EQ(morphs->targets.size(), 2U);
+    EXPECT_EQ(morphs->targets[0].name, "smile");
+    EXPECT_NEAR(morphs->targets[0].weight, 0.25F, 1e-5F);
+    ASSERT_EQ(morphs->targets[0].positions.size(), 3U);
+    for (const auto& position : morphs->targets[0].positions) {
+        EXPECT_NEAR(position.z, 1.0F, 1e-5F);
+    }
+
+    ASSERT_EQ(data.motions.size(), 1U);
+    ASSERT_EQ(data.motions[0].weights.size(), 1U);
+    const auto& weights = data.motions[0].weights[0];
+    ASSERT_EQ(weights.targets.size(), 2U);
+    EXPECT_NEAR(weights.targets[0].sample(1.0).value_or(-1.0F), 0.5F, 1e-5F);
+    EXPECT_NEAR(weights.targets[1].sample(2.0).value_or(-1.0F), 0.5F, 1e-5F);
+    const auto placement = assembly->placement(weights.row);
+    ASSERT_TRUE(placement && placement->source);
+}
+
+TEST_F(MeshAssemblyModelTest, FileMetadataIsKeptAgainstItsRow)
+{
+    const auto path = path_in_cwd("morph.gltf");
+    RoundTrip::write_bytes(path, morph_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    const auto* metadata = assembly->get_data().facets.get<Kakshya::MeshAssemblyMetadata>();
+    ASSERT_NE(metadata, nullptr);
+    const auto tag = std::ranges::find(metadata->entries, "tag", &Kakshya::MeshAssemblyMetadata::Entry::key);
+    ASSERT_NE(tag, metadata->entries.end());
+    EXPECT_TRUE(tag->row.has_value());
+    ASSERT_TRUE(std::holds_alternative<std::string>(tag->value));
+    EXPECT_EQ(std::get<std::string>(tag->value), "hero");
+}
+
+TEST_F(MeshAssemblyModelTest, LinesAndPointsBecomeSpatialSources)
+{
+    const auto path = path_in_cwd("strokes.obj");
+    RoundTrip::write_bytes(path, std::string("v 0 0 0\nv 1 0 0\nv 0 1 0\nl 1 2 3\np 3\n"));
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    size_t points = 0;
+    size_t segment_corners = 0;
+    for (size_t i = 0; i < assembly->get_data().sources.size(); ++i) {
+        const auto* spatial = assembly->spatial(i);
+        ASSERT_NE(spatial, nullptr);
+        if (spatial->topology == Portal::Graphics::PrimitiveTopology::POINT_LIST) {
+            points += spatial->positions.size();
+        } else {
+            EXPECT_EQ(spatial->topology, Portal::Graphics::PrimitiveTopology::LINE_LIST);
+            segment_corners += spatial->positions.size();
+        }
+    }
+    EXPECT_EQ(points, 1U);
+    EXPECT_EQ(segment_corners, 4U);
+}
+
+TEST_F(MeshAssemblyModelTest, ALightBecomesASourcePlacedByItsRow)
+{
+    const auto path = path_in_cwd("lamp.gltf");
+    RoundTrip::write_bytes(path, lamp_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    std::optional<uint64_t> row;
+    for (uint64_t i = 0; i < assembly->get_total_elements(); ++i) {
+        const auto placement = assembly->placement(i);
+        if (placement->source && assembly->light(*placement->source)) {
+            row = i;
+        }
+    }
+    ASSERT_TRUE(row);
+    const auto* light = assembly->light(*assembly->placement(*row)->source);
+    EXPECT_EQ(light->kind, Kakshya::MeshAssemblyLightKind::Spot);
+    EXPECT_NEAR(light->color.r, 2.0F, 1e-4F);
+    EXPECT_NEAR(light->color.g, 1.0F, 1e-4F);
+    EXPECT_NEAR(light->inner_cone, 0.25F, 1e-5F);
+    EXPECT_NEAR(light->outer_cone, 0.5F, 1e-5F);
+    EXPECT_NEAR(assembly->world_transforms()[*row][3].y, 4.0F, 1e-5F);
+}
+
+TEST_F(MeshAssemblyModelTest, EveryMaterialPropertyIsKept)
+{
+    const auto path = path_in_cwd("skin.gltf");
+    RoundTrip::write_bytes(path, textured_box_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+
+    ASSERT_NE(assembly, nullptr);
+    const auto* properties = assembly->get_data().materials[0].facets.get<Kakshya::MeshAssemblyProperties>();
+    ASSERT_NE(properties, nullptr);
+    const auto cutoff = std::ranges::find(
+        properties->entries, "$mat.gltf.alphaCutoff", &Kakshya::MeshAssemblyProperties::Entry::key);
+    ASSERT_NE(cutoff, properties->entries.end());
+    const auto* values = std::get_if<std::vector<float>>(&cutoff->value);
+    ASSERT_TRUE(values && values->size() == 1U);
+    EXPECT_NEAR(values->front(), 0.25F, 1e-5F);
+}
+
+TEST_F(MeshAssemblyModelTest, MeshBuffersAreWhereTheirRowsPlaceThem)
+{
+    const auto path = path_in_cwd("nested.gltf");
+    RoundTrip::write_bytes(path, nested_box_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto buffers = reader.create_mesh_buffers();
+
+    ASSERT_EQ(buffers.size(), 1U);
+    EXPECT_NEAR(first_vertex_x(buffers.front()->get_mesh_data()), 3.0F, 1e-5F);
+}
+
+TEST_F(MeshAssemblyModelTest, ANetworkHoldsTheTreeRowsAndLeavesTheRestToTheAssembly)
+{
+    const auto path = path_in_cwd("camera.gltf");
+    RoundTrip::write_bytes(path, camera_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto assembly = reader.create_mesh_assembly();
+    const auto network = reader.create_mesh_network();
+
+    ASSERT_NE(assembly, nullptr);
+    ASSERT_NE(network, nullptr);
+    ASSERT_EQ(network->slot_count() + 1U, assembly->get_total_elements());
+    for (uint32_t slot = 0; slot < network->slot_count(); ++slot) {
+        EXPECT_EQ(network->get_slot(slot).name, assembly->placement(slot)->name) << slot;
+    }
+    EXPECT_EQ(row_named(*assembly, "rig", true), std::optional<uint64_t> { network->slot_count() });
+}
+
+TEST_F(MeshAssemblyModelTest, PointsAndLinesGoToPointCloudNetworks)
+{
+    const auto path = path_in_cwd("strokes.obj");
+    RoundTrip::write_bytes(path, std::string("v 0 0 0\nv 1 0 0\nv 0 1 0\nl 1 2 3\np 3\n"));
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto networks = reader.create_point_cloud_networks();
+
+    ASSERT_EQ(networks.size(), 2U);
+    EXPECT_EQ(networks[0]->get_node_count(), 1U);
+    EXPECT_EQ(networks[1]->get_node_count(), 4U);
 }
 
 TEST_F(MeshAssemblyModelTest, FlatteningBakesTheNodeTreeIntoTheVertices)
