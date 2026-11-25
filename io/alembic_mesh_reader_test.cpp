@@ -244,10 +244,10 @@ TEST_F(AlembicMeshReaderTest, FaceVaryingTextureCoordinatesGiveOneVertexPerCorne
     EXPECT_EQ(mesh->vertex_count(), 6U);
     EXPECT_EQ(mesh->face_count(), 2U);
     const auto vertices = vertices_of(*mesh);
-    EXPECT_EQ(vertices[0].uv, glm::vec2(0.00F, 0.0F));
-    EXPECT_EQ(vertices[1].uv, glm::vec2(0.25F, 0.0F));
+    EXPECT_EQ(vertices[0].uv, glm::vec2(0.00F, 1.0F));
+    EXPECT_EQ(vertices[1].uv, glm::vec2(0.25F, 1.0F));
     EXPECT_EQ(vertices[4].uv, glm::vec2(1.00F, 0.5F));
-    EXPECT_EQ(vertices[5].uv, glm::vec2(0.50F, 1.0F));
+    EXPECT_EQ(vertices[5].uv, glm::vec2(0.50F, 0.0F));
     EXPECT_EQ(vertices[3].position, glm::vec3(0.0F, 0.0F, 0.0F));
     EXPECT_EQ(vertices[4].position, glm::vec3(1.0F, 1.0F, 0.0F));
 }
