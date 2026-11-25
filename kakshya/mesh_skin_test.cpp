@@ -14,7 +14,6 @@ namespace {
     MeshSkin two_joint_skin(size_t vertices)
     {
         MeshSkin skin;
-        skin.joints = { 1, 2 };
         skin.inverse_bind = { glm::mat4(1.0F), glm::mat4(1.0F) };
         skin.influence_joints.assign(vertices, glm::uvec4(0, 1, 0, 0));
         skin.influence_weights.assign(vertices, glm::vec4(0.5F, 0.5F, 0.0F, 0.0F));
@@ -69,7 +68,7 @@ namespace {
         const auto found = assembly.skin(skinned);
 
         ASSERT_NE(found, nullptr);
-        EXPECT_EQ(found->joints, (std::vector<uint64_t> { 1, 2 }));
+        EXPECT_EQ(found->joint_count(), 2U);
         EXPECT_EQ(assembly.skin(plain), nullptr);
         EXPECT_EQ(assembly.skin(99), nullptr);
     }

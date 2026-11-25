@@ -76,7 +76,7 @@ namespace {
         const auto skin = assembly->skin(0);
 
         ASSERT_NE(skin, nullptr);
-        EXPECT_EQ(skin->joints.size(), 2U);
+        EXPECT_EQ(skin->joint_count(), 2U);
         EXPECT_EQ(skin->inverse_bind.size(), 2U);
         EXPECT_TRUE(skin->valid(3));
     }
@@ -85,11 +85,12 @@ namespace {
     {
         const auto assembly = open_assembly();
         ASSERT_NE(assembly, nullptr);
-        const auto skin = assembly->skin(0);
-        ASSERT_NE(skin, nullptr);
+        ASSERT_EQ(assembly->get_data().skeletons.size(), 1U);
+        const auto& joints = assembly->get_data().skeletons[0];
+        ASSERT_EQ(joints.size(), 2U);
 
-        EXPECT_EQ(assembly->placement(skin->joints[0])->name, "joint_a");
-        EXPECT_EQ(assembly->placement(skin->joints[1])->name, "joint_b");
+        EXPECT_EQ(assembly->placement(joints[0])->name, "joint_a");
+        EXPECT_EQ(assembly->placement(joints[1])->name, "joint_b");
     }
 
     TEST_F(ModelSkinTest, TheInverseBindMatricesAreTheFilesOwn)

@@ -49,7 +49,6 @@ namespace {
         {
             Kakshya::MeshSkin skin;
             for (size_t j = 0; j < joints; ++j) {
-                skin.joints.push_back(j);
                 skin.inverse_bind.push_back(glm::mat4(1.0F));
             }
             skin.influence_joints.assign(vertices, glm::uvec4(0));
@@ -508,7 +507,6 @@ namespace {
         const auto vertices = replay_triangles(1);
         make(*replay_frame(vertices, replay_indices(1)));
         Kakshya::MeshSkin blend;
-        blend.joints = { 0, 1 };
         blend.inverse_bind = { glm::mat4(1.0F), glm::mat4(1.0F) };
         blend.influence_joints = { glm::uvec4(0, 1, 0, 0), glm::uvec4(0), glm::uvec4(0) };
         blend.influence_weights = { glm::vec4(0.5F, 0.5F, 0.0F, 0.0F), glm::vec4(0.25F, 0.0F, 0.0F, 0.0F), glm::vec4(0.0F) };

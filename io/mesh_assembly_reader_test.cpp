@@ -641,14 +641,15 @@ TEST_F(MeshAssemblyModelTest, MorphTargetsAreKeptWithTheirKeyedWeights)
     ASSERT_NE(assembly, nullptr);
     const auto& data = assembly->get_data();
     ASSERT_EQ(data.sources.size(), 1U);
-    const auto* morphs = data.sources[0].facets.get<Kakshya::MeshAssemblyMorphs>();
+    const auto* morphs = data.sources[0].facets.get<Kakshya::MeshMorphTargets>();
     ASSERT_NE(morphs, nullptr);
-    ASSERT_EQ(morphs->targets.size(), 2U);
-    EXPECT_EQ(morphs->targets[0].name, "smile");
-    EXPECT_NEAR(morphs->targets[0].weight, 0.25F, 1e-5F);
-    ASSERT_EQ(morphs->targets[0].positions.size(), 3U);
-    for (const auto& position : morphs->targets[0].positions) {
-        EXPECT_NEAR(position.z, 1.0F, 1e-5F);
+    ASSERT_EQ(morphs->size(), 2U);
+    const auto& [name, shape] = (*morphs)[0];
+    EXPECT_EQ(name, "smile");
+    ASSERT_EQ(shape.size(), 3U);
+    for (const auto& vertex : shape) {
+        EXPECT_NEAR(vertex.weight, 0.25F, 1e-5F);
+        EXPECT_NEAR(vertex.position.z, 1.0F, 1e-5F);
     }
 
     ASSERT_EQ(data.motions.size(), 1U);

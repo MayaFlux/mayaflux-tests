@@ -172,11 +172,12 @@ TEST(MeshAssemblyPlacementTest, TheLayoutIsDerivedFromTheDescribedMembers)
 {
     const auto layout = MeshAssemblyData::placement_layout();
 
-    EXPECT_EQ(layout.fields().size(), 5U);
+    EXPECT_EQ(layout.fields().size(), 6U);
     EXPECT_TRUE(layout.find_field("name").has_value());
     EXPECT_TRUE(layout.find_field("parent").has_value());
     EXPECT_TRUE(layout.find_field("source").has_value());
     EXPECT_TRUE(layout.find_field("material").has_value());
+    EXPECT_TRUE(layout.find_field("skeleton").has_value());
     EXPECT_TRUE(layout.find_field("local").has_value());
     EXPECT_TRUE(layout.same_structure(Kakshya::described_composite_layout<MeshAssemblyPlacement>()));
 }

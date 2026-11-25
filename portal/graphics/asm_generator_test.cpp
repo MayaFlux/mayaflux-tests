@@ -1196,7 +1196,7 @@ namespace {
         return count;
     }
 
-    ShaderSpec skin_asm_spec(uint32_t workgroup = 256, std::size_t push_constants = 4,
+    ShaderSpec skin_asm_spec(uint32_t workgroup = 256, std::size_t push_constants = 5,
         GpuDataFormat joints = GpuDataFormat::UINT32, GpuDataFormat push_format = GpuDataFormat::UINT32,
         bool with_vertices = true)
     {
@@ -1209,7 +1209,9 @@ namespace {
         if (with_vertices) {
             assemble.ssbo("vertices", BindingDirection::InOut, GpuDataFormat::FLOAT32);
         }
-        constexpr std::array<std::string_view, 5> names { "first_vertex", "vertex_count", "stride_words", "palette_base", "extra" };
+        assemble.ssbo("deltas", BindingDirection::Input, GpuDataFormat::FLOAT32)
+            .ssbo("morph_weights", BindingDirection::Input, GpuDataFormat::FLOAT32);
+        constexpr std::array<std::string_view, 6> names { "first_vertex", "vertex_count", "stride_words", "palette_base", "target_count", "extra" };
         for (std::size_t i = 0; i < push_constants; ++i) {
             assemble.pc(std::string(names[i]), push_format);
         }
@@ -1219,16 +1221,16 @@ namespace {
     TEST(SkinAsmTest, TheEntryPointListsEveryBindingAndThePushConstantsInTheInterface)
     {
         EXPECT_TRUE(contains_all(emit_spirv_asm(skin_asm_spec()),
-            { { "OpEntryPoint GLCompute %main \"main\" %gid_var %buf_rest %buf_joints %buf_weights %buf_palette %buf_vertices %pc", "all five bindings and the block" },
+            { { "OpEntryPoint GLCompute %main \"main\" %gid_var %buf_rest %buf_joints %buf_weights %buf_palette %buf_vertices %buf_deltas %buf_morph_weights %pc", "all seven bindings and the block" },
                 { "OpExecutionMode %main LocalSize 256 1 1", "the workgroup size of the spec" },
                 { "%main = OpFunction", "an entry point" } }));
     }
 
-    TEST(SkinAsmTest, ThreadsPastTheVertexCountAreGuardedByOneComparison)
+    TEST(SkinAsmTest, ThreadsPastTheVertexCountAreGuardedAndMorphTargetsAreLooped)
     {
         const std::string text = emit_spirv_asm(skin_asm_spec());
 
-        EXPECT_EQ(skin_count(text, "OpULessThan"), 1U);
+        EXPECT_EQ(skin_count(text, "OpULessThan"), 2U);
         EXPECT_TRUE(contains_all(text,
             { { "OpSelectionMerge %sk_end None", "a structured guard" },
                 { "OpBranchConditional", "the guard branches" },
@@ -1303,15 +1305,15 @@ namespace {
 
     TEST(SkinAsmTest, AMalformedSpecEmitsNoEntryPoint)
     {
-        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 4, GpuDataFormat::UINT32, GpuDataFormat::UINT32, false)),
-            { { "%main = OpFunction", "five bindings are needed" } }));
-        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 4, GpuDataFormat::FLOAT32)),
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 5, GpuDataFormat::UINT32, GpuDataFormat::UINT32, false)),
+            { { "%main = OpFunction", "seven bindings are needed" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 5, GpuDataFormat::FLOAT32)),
             { { "%main = OpFunction", "the joints are words" } }));
-        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 3)),
-            { { "%main = OpFunction", "four push constants are needed" } }));
-        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 5)),
-            { { "%main = OpFunction", "four push constants and no more" } }));
-        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 4, GpuDataFormat::UINT32, GpuDataFormat::FLOAT32)),
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 4)),
+            { { "%main = OpFunction", "five push constants are needed" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 6)),
+            { { "%main = OpFunction", "five push constants and no more" } }));
+        EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(256, 5, GpuDataFormat::UINT32, GpuDataFormat::FLOAT32)),
             { { "%main = OpFunction", "the push constants are words" } }));
         EXPECT_TRUE(contains_none(emit_spirv_asm(skin_asm_spec(0)),
             { { "%main = OpFunction", "a group has at least one invocation" } }));
