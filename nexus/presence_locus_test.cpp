@@ -1,6 +1,9 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include "MayaFlux/Nexus/Principals/Locus.hpp"
 #include "MayaFlux/Nexus/Principals/Presence.hpp"
 
@@ -429,6 +432,55 @@ namespace {
 
         ASSERT_TRUE(locus.orientation().has_value());
         EXPECT_NEAR(glm::length(*locus.orientation()), 1.0F, 1e-5F);
+    }
+
+    TEST_F(NexusLocusTest, TheOrientationsMinusZPointsWhereNavigationLooks)
+    {
+        locus.invoke_perception({});
+
+        const glm::vec3 toward_target = *locus.orientation() * glm::vec3(0.0F, 0.0F, -1.0F);
+        EXPECT_NEAR(toward_target.x, 0.0F, 1e-5F);
+        EXPECT_NEAR(toward_target.y, 0.0F, 1e-5F);
+        EXPECT_NEAR(toward_target.z, -1.0F, 1e-5F);
+
+        locus.nav().yaw = 1.2F;
+        locus.nav().pitch = 0.3F;
+        locus.invoke_perception({});
+
+        const glm::vec3 forward = *locus.orientation() * glm::vec3(0.0F, 0.0F, -1.0F);
+        EXPECT_NEAR(forward.x, std::cos(0.3F) * std::sin(1.2F), 1e-5F);
+        EXPECT_NEAR(forward.y, std::sin(0.3F), 1e-5F);
+        EXPECT_NEAR(forward.z, std::cos(0.3F) * std::cos(1.2F), 1e-5F);
+    }
+
+    TEST_F(NexusLocusTest, TheOrientationCarriesTheRoll)
+    {
+        locus.nav().roll = 0.5F;
+
+        locus.invoke_perception({});
+
+        const glm::vec3 up = *locus.orientation() * glm::vec3(0.0F, 1.0F, 0.0F);
+        EXPECT_NEAR(up.y, std::cos(0.5F), 1e-5F);
+        EXPECT_NEAR(std::abs(up.x), std::sin(0.5F), 1e-5F);
+        EXPECT_NEAR(up.z, 0.0F, 1e-5F);
+    }
+
+    TEST_F(NexusLocusTest, AFollowedViewpointsMinusZIsTheLocusForward)
+    {
+        const auto view = locus.view();
+        const auto path = view->join();
+        ASSERT_TRUE(view->hand_to(path));
+        const glm::mat4 placement = glm::translate(glm::mat4(1.0F), { 1.0F, 2.0F, 3.0F })
+            * glm::rotate(glm::mat4(1.0F), glm::half_pi<float>(), { 0.0F, 1.0F, 0.0F });
+        view->write(path, { placement, view->read().second });
+
+        locus.invoke_perception({});
+
+        const glm::vec3 forward = *locus.orientation() * glm::vec3(0.0F, 0.0F, -1.0F);
+        EXPECT_NEAR(forward.x, -1.0F, 1e-5F);
+        EXPECT_NEAR(forward.y, 0.0F, 1e-5F);
+        EXPECT_NEAR(forward.z, 0.0F, 1e-5F);
+        EXPECT_EQ(*locus.position(), glm::vec3(1.0F, 2.0F, 3.0F));
     }
 
     TEST_F(NexusLocusTest, PerceptionRebuildsTheViewFromTheMovedEye)

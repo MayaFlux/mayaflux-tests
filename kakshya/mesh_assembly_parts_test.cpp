@@ -259,6 +259,24 @@ namespace {
         EXPECT_EQ(parts[0].rows, (Rows { 0 }));
     }
 
+    TEST(MeshAssemblyPartsTest, ALightIsAKindOfRowAndIsInNoPart)
+    {
+        auto assembly = std::make_shared<MeshAssemblyContainer>();
+        const auto light = assembly->add_source({ .geometry = Kakshya::MeshAssemblyLight {}, .name = "sun" });
+        const auto mesh = assembly->add_source({ .geometry = part_triangle(), .name = "tri" });
+        std::ignore = assembly->add_placement({ .name = "sun", .source = light });
+        std::ignore = assembly->add_placement({ .name = "tri", .source = mesh });
+
+        EXPECT_EQ(row_kind(*assembly, 0), MeshAssemblyRowKind::Light);
+        EXPECT_NE(assembly->light(light), nullptr);
+        EXPECT_EQ(assembly->light(mesh), nullptr);
+
+        const auto parts = partition_assembly(*assembly);
+        ASSERT_EQ(parts.size(), 1U);
+        EXPECT_EQ(parts[0].kind, MeshAssemblyRowKind::Mesh);
+        EXPECT_EQ(parts[0].rows, (Rows { 1 }));
+    }
+
     TEST(MeshAssemblyFramesTest, ACameraSourceTakesLensFramesAndNothingElseDoes)
     {
         auto assembly = std::make_shared<MeshAssemblyContainer>();
