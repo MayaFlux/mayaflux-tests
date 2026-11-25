@@ -1,6 +1,7 @@
 #include "../../support/forma_rig.hpp"
 #include "../../support/test_metadata.hpp"
 
+#include "MayaFlux/Kinesis/Spatial/HitTest.hpp"
 #include "MayaFlux/Portal/Forma/Internal/Atelier.hpp"
 #include "MayaFlux/Portal/Forma/Plot/Plot.hpp"
 #include "MayaFlux/Portal/Forma/Primitives/Entry.hpp"
@@ -478,6 +479,135 @@ TEST_F(FormaWindowlessFixture, AFedEventThatIsNotAKeyEventIsIgnored)
     offscreen->ctx().feed_key(Keys::A, Core::WindowEventType::MOUSE_MOTION);
 
     EXPECT_EQ(pressed, 0);
+}
+
+// =============================================================================
+// Under a view
+// =============================================================================
+
+TEST(ViewPlanePointTest, NoViewMovementReturnsTheScreenPosition)
+{
+    const auto point = Kinesis::view_plane_point({ 0.3F, -0.4F }, Kinesis::ViewTransform {});
+
+    ASSERT_TRUE(point.has_value());
+    expect_near(*point, { 0.3F, -0.4F });
+}
+
+TEST(ViewPlanePointTest, ATranslatedAndScaledViewIsInverted)
+{
+    Kinesis::ViewTransform vt;
+    vt.view[0][0] = 2.0F;
+    vt.view[1][1] = 2.0F;
+    vt.view[3][0] = 0.5F;
+
+    const auto point = Kinesis::view_plane_point({ 0.5F, 0.4F }, vt);
+
+    ASSERT_TRUE(point.has_value());
+    expect_near(*point, { 0.0F, 0.2F });
+}
+
+TEST(ViewPlanePointTest, AViewSeeingThePlaneEdgeOnHasNoPoint)
+{
+    Kinesis::ViewTransform vt;
+    vt.view[2][2] = 0.0F;
+    vt.view[0][0] = 0.0F;
+    vt.view[2][0] = 1.0F;
+    vt.view[0][2] = 1.0F;
+
+    EXPECT_FALSE(Kinesis::view_plane_point({ 0.5F, 0.0F }, vt).has_value());
+}
+
+TEST_F(FormaWindowlessFixture, ThePointerIsMappedThroughTheViewForHitsAndCallbacks)
+{
+    const uint32_t id = add_to(*offscreen, { -1.F, -1.F }, { -0.5F, 1.F });
+    glm::vec2 pressed {};
+    int presses = 0;
+    offscreen->ctx().on_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2 ndc) { ++presses; pressed = ndc; });
+    Kinesis::ViewTransform vt;
+    vt.view[3][0] = 0.5F;
+    offscreen->set_view(vt);
+
+    offscreen->ctx().feed_press(25.0, 50.0, MouseButtons::Left);
+    EXPECT_EQ(presses, 0);
+
+    offscreen->ctx().feed_press(75.0, 50.0, MouseButtons::Left);
+    EXPECT_EQ(presses, 1);
+    expect_near(pressed, { -0.75F, 0.F });
+}
+
+TEST_F(FormaWindowlessFixture, RemovingTheViewPutsTheHitRegionsBack)
+{
+    const uint32_t id = add_to(*offscreen, { -1.F, -1.F }, { -0.5F, 1.F });
+    Kinesis::ViewTransform vt;
+    vt.view[3][0] = 0.5F;
+    offscreen->set_view(vt);
+    offscreen->set_view(std::nullopt);
+
+    offscreen->ctx().feed_move(25.0, 50.0);
+
+    EXPECT_EQ(offscreen->ctx().hovered(), id);
+    EXPECT_FALSE(offscreen->view().has_value());
+}
+
+TEST_F(FormaWindowlessFixture, AWindowedSurfaceMapsItsWindowPointerThroughTheViewToo)
+{
+    const uint32_t id = add_to(*host, { -1.F, -1.F }, { -0.5F, 1.F });
+    Kinesis::ViewTransform vt;
+    vt.view[3][0] = 0.5F;
+    host->set_view(vt);
+
+    window->move_to_ndc({ -0.25F, 0.F });
+
+    EXPECT_EQ(host->ctx().hovered(), id);
+}
+
+TEST_F(FormaWindowlessFixture, TheBatchOfASurfaceFollowsTheViewOfItsLayer)
+{
+    const auto batch = Forma::internal::atelier().surface_batch(*offscreen);
+    ASSERT_NE(batch, nullptr);
+    const auto source = batch->get_render_processor()->get_view_transform_source();
+    ASSERT_TRUE(static_cast<bool>(source));
+    EXPECT_EQ(source().view[3][0], 0.F);
+
+    Kinesis::ViewTransform vt;
+    vt.view[3][0] = 0.5F;
+    offscreen->set_view(vt);
+
+    EXPECT_EQ(source().view[3][0], 0.5F);
+}
+
+TEST_F(FormaWindowlessFixture, ASurfaceMadeForAnAreaHasItsSizeAndDrawsIntoIt)
+{
+    const Kinesis::ViewportArea right {
+        .area = Kinesis::Scissor::from(Kinesis::AABB2D { .min = { 0.F, -1.F }, .max = { 1.F, 1.F } })
+    };
+    auto partial = Forma::create_surface(Forma::SurfaceConfig { .image = target, .area = right });
+
+    EXPECT_EQ(partial.extent(), glm::uvec2(100U, 100U));
+    EXPECT_EQ(partial.ctx().extent(), glm::uvec2(100U, 100U));
+
+    const auto batch = Forma::internal::atelier().surface_batch(partial);
+    ASSERT_NE(batch, nullptr);
+    EXPECT_TRUE(batch->get_render_processor()->get_target_area(target) == right);
+}
+
+TEST_F(FormaWindowlessFixture, FedPixelsOfTheImageAreMappedIntoTheAreaOfTheSurface)
+{
+    const Kinesis::ViewportArea right {
+        .area = Kinesis::Scissor::from(Kinesis::AABB2D { .min = { 0.F, -1.F }, .max = { 1.F, 1.F } })
+    };
+    auto partial = Forma::create_surface(Forma::SurfaceConfig { .image = target, .area = right });
+    const uint32_t id = partial.add(Forma::Element {}.with_rect({ -1.F, -1.F }, { 1.F, 1.F })).id();
+    glm::vec2 pressed {};
+    int presses = 0;
+    partial.ctx().on_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2 ndc) { ++presses; pressed = ndc; });
+
+    partial.ctx().feed_press(50.0, 50.0, MouseButtons::Left);
+    EXPECT_EQ(presses, 0);
+
+    partial.ctx().feed_press(150.0, 50.0, MouseButtons::Left);
+    EXPECT_EQ(presses, 1);
+    expect_near(pressed, { 0.F, 0.F });
 }
 
 // =============================================================================

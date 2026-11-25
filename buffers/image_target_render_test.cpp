@@ -1574,15 +1574,15 @@ void main() { color = texture(tex, vec2(0.5)); }
         EXPECT_EQ(pixel(target, 48, 16).g, 255);
     }
 
-    TEST(TargetAreaDescriptionTest, TwoAreasAreEqualWhenLayerAndRegionAre)
+    TEST(ViewportAreaDescriptionTest, TwoAreasAreEqualWhenLayerAndRegionAre)
     {
-        const Portal::Graphics::TargetArea whole {};
-        const Portal::Graphics::TargetArea half { .area = Kinesis::Scissor::from(Kinesis::AABB2D { .min = { -1.F, -1.F }, .max = { 0.F, 1.F } }) };
+        const Kinesis::ViewportArea whole {};
+        const Kinesis::ViewportArea half { .area = Kinesis::Scissor::from(Kinesis::AABB2D { .min = { -1.F, -1.F }, .max = { 0.F, 1.F } }) };
 
-        EXPECT_TRUE(whole == Portal::Graphics::TargetArea {});
+        EXPECT_TRUE(whole == Kinesis::ViewportArea {});
         EXPECT_FALSE(whole == half);
         EXPECT_TRUE(half == half);
-        EXPECT_FALSE(whole == (Portal::Graphics::TargetArea { .layer = 1 }));
+        EXPECT_FALSE(whole == (Kinesis::ViewportArea { .layer = 1 }));
     }
 
     // =========================================================================
