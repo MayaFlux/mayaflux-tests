@@ -156,174 +156,6 @@ namespace {
     }
 
     // ------------------------------------------------------------------
-    // Host path
-    // ------------------------------------------------------------------
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, UnmillableLayoutsProduceNothing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2) });
-        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } };
-        std::vector<uint8_t> dst { 1, 2, 3 };
-
-        VertexLayout unaligned = vertex_layout(3);
-        unaligned.stride_bytes = 34;
-        VertexLayout no_position = vertex_layout(3);
-        no_position.attributes.erase(no_position.attributes.begin());
-        VertexLayout zero_stride = vertex_layout(3);
-        zero_stride.stride_bytes = 0;
-
-        for (const auto* layout : { &unaligned, &no_position, &zero_stride }) {
-            const auto result = Portal::Graphics::mill_on_host(src, *layout, runs, plane_spec(), {}, dst);
-            EXPECT_EQ(result.vertex_count, 0U);
-            EXPECT_TRUE(dst.empty());
-        }
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, NoRunsOrNothingToMillProducesNothing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1) });
-        std::vector<uint8_t> dst;
-
-        EXPECT_EQ(Portal::Graphics::mill_on_host(src, vertex_layout(2), {}, plane_spec(), {}, dst).vertex_count, 0U);
-        const std::vector<DrawRun> too_short { { PrimitiveTopology::TRIANGLE_LIST, 0, 2 } };
-        EXPECT_EQ(Portal::Graphics::mill_on_host(src, vertex_layout(2), too_short, plane_spec(), {}, dst).vertex_count, 0U);
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, TriangleListIsCopiedBitForBitAndTheResultKeepsTheLayout, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const std::vector<Vertex> source { vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2) };
-        const auto src = bytes_of(source);
-        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } };
-        std::vector<uint8_t> dst;
-
-        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(3), runs, plane_spec(), {}, dst);
-
-        EXPECT_EQ(result.vertex_count, 3U);
-        EXPECT_EQ(result.stride_bytes, sizeof(Vertex));
-        EXPECT_EQ(result.attributes.size(), 4U);
-        EXPECT_EQ(dst, src);
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, TriangleStripFlipsEveryOtherTriangle, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) });
-        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4 } };
-        std::vector<uint8_t> dst;
-
-        Portal::Graphics::mill_on_host(src, vertex_layout(4), runs, plane_spec(), {}, dst);
-
-        const std::array<float, 6> expected { 0, 1, 2, 2, 1, 3 };
-        ASSERT_EQ(dst.size(), expected.size() * sizeof(Vertex));
-        for (size_t i = 0; i < expected.size(); ++i) {
-            EXPECT_EQ(at(dst, i).color[0], expected[i]) << "output vertex " << i;
-        }
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, TriangleFanSharesTheFirstVertex, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(1, 1, 2), vertex(0, 1, 3) });
-        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_FAN, 0, 4 } };
-        std::vector<uint8_t> dst;
-
-        Portal::Graphics::mill_on_host(src, vertex_layout(4), runs, plane_spec(), {}, dst);
-
-        const std::array<float, 6> expected { 0, 1, 2, 0, 2, 3 };
-        ASSERT_EQ(dst.size(), expected.size() * sizeof(Vertex));
-        for (size_t i = 0; i < expected.size(); ++i) {
-            EXPECT_EQ(at(dst, i).color[0], expected[i]) << "output vertex " << i;
-        }
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, APointBecomesAQuadAroundItWithTheSourceVertexCopiedToEveryCorner, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(5, 5, 7) });
-        const std::vector<DrawRun> runs { { PrimitiveTopology::POINT_LIST, 0, 1 } };
-        std::vector<uint8_t> dst;
-
-        Portal::Graphics::mill_on_host(src, vertex_layout(1), runs, plane_spec(), {}, dst);
-
-        ASSERT_EQ(dst.size(), 6 * sizeof(Vertex));
-        const std::array<std::pair<float, float>, 6> corners { { { 4, 4 }, { 6, 4 }, { 6, 6 }, { 4, 4 }, { 6, 6 }, { 4, 6 } } };
-        for (size_t i = 0; i < corners.size(); ++i) {
-            const auto v = at(dst, i);
-            EXPECT_TRUE(position_is(v, corners[i].first, corners[i].second)) << "corner " << i;
-            EXPECT_EQ(v.color[0], 7.0F) << "corner " << i;
-            EXPECT_EQ(v.size, 1.0F) << "corner " << i;
-        }
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, ALineSegmentBecomesARibbonWithUvsAlongItsLength, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(2, 0, 1) });
-        const std::vector<DrawRun> runs { { PrimitiveTopology::LINE_LIST, 0, 2 } };
-        std::vector<uint8_t> dst;
-
-        Portal::Graphics::mill_on_host(src, vertex_layout(2), runs, plane_spec(), {}, dst);
-
-        ASSERT_EQ(dst.size(), 6 * sizeof(Vertex));
-        EXPECT_TRUE(position_is(at(dst, 0), 0, -1));
-        EXPECT_TRUE(position_is(at(dst, 1), 0, 1));
-        EXPECT_TRUE(position_is(at(dst, 2), 2, 1));
-        EXPECT_TRUE(position_is(at(dst, 3), 0, -1));
-        EXPECT_TRUE(position_is(at(dst, 4), 2, 1));
-        EXPECT_TRUE(position_is(at(dst, 5), 2, -1));
-        EXPECT_TRUE(uv_is(at(dst, 0), 0, 1));
-        EXPECT_TRUE(uv_is(at(dst, 1), 0, 0));
-        EXPECT_TRUE(uv_is(at(dst, 2), 1, 0));
-        EXPECT_TRUE(uv_is(at(dst, 5), 1, 1));
-        EXPECT_EQ(at(dst, 0).color[0], 0.0F);
-        EXPECT_EQ(at(dst, 5).color[0], 1.0F);
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, TurningOffUvSynthesisKeepsTheSourceUv, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        auto spec = plane_spec();
-        spec.synthesize_uv = false;
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(2, 0, 1) });
-        const std::vector<DrawRun> runs { { PrimitiveTopology::LINE_LIST, 0, 2 } };
-        std::vector<uint8_t> dst;
-
-        Portal::Graphics::mill_on_host(src, vertex_layout(2), runs, spec, {}, dst);
-
-        ASSERT_EQ(dst.size(), 6 * sizeof(Vertex));
-        for (size_t i = 0; i < 6; ++i) {
-            EXPECT_TRUE(uv_is(at(dst, i), 0.125F, 0.875F)) << "vertex " << i;
-        }
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, AZeroLengthSegmentCollapsesToItsStartAndCopiesNoAttributes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(3, 3, 9), vertex(3, 3, 9) });
-        const std::vector<DrawRun> runs { { PrimitiveTopology::LINE_LIST, 0, 2 } };
-        std::vector<uint8_t> dst;
-
-        Portal::Graphics::mill_on_host(src, vertex_layout(2), runs, plane_spec(), {}, dst);
-
-        ASSERT_EQ(dst.size(), 6 * sizeof(Vertex));
-        for (size_t i = 0; i < 6; ++i) {
-            EXPECT_TRUE(position_is(at(dst, i), 3, 3)) << "vertex " << i;
-            EXPECT_EQ(at(dst, i).color[0], 0.0F) << "vertex " << i;
-        }
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, RunsAreMilledInOrderFromTheirOwnOffsets, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(8, 8, 3) });
-        const std::vector<DrawRun> runs {
-            { PrimitiveTopology::TRIANGLE_LIST, 0, 3 },
-            { PrimitiveTopology::POINT_LIST, 3, 1 }
-        };
-        std::vector<uint8_t> dst;
-
-        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(4), runs, plane_spec(), {}, dst);
-
-        EXPECT_EQ(result.vertex_count, 9U);
-        EXPECT_EQ(at(dst, 2).color[0], 2.0F);
-        EXPECT_EQ(at(dst, 3).color[0], 3.0F);
-        EXPECT_TRUE(position_is(at(dst, 3), 7, 7));
-    }
-
-    // ------------------------------------------------------------------
     // Layout translation
     // ------------------------------------------------------------------
 
@@ -406,7 +238,7 @@ namespace {
 
 
     // ------------------------------------------------------------------
-    // Fill emulation and indexed spans, host path
+    // Fill emulation and indexed spans
     // ------------------------------------------------------------------
 
     MAYAFLUX_TEST_WITH(TEST, PrimitiveMillTest, PointFillCountsSixMilledVerticesPerSourceVertex, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
@@ -430,128 +262,6 @@ namespace {
         };
 
         EXPECT_EQ(PrimitiveMill::milled_vertex_count(runs), 18U + 3U + 3U);
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, TriangleListsFetchTheirVerticesThroughTheIndices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) });
-        const std::vector<uint32_t> indices { 3, 0, 2, 1, 2, 3 };
-        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 6 } };
-        std::vector<uint8_t> dst;
-
-        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(4), runs, plane_spec(), {}, dst, indices);
-
-        ASSERT_EQ(result.vertex_count, 6U);
-        const std::array<float, 6> expected { 3, 0, 2, 1, 2, 3 };
-        for (size_t i = 0; i < expected.size(); ++i) {
-            EXPECT_EQ(at(dst, i).color[0], expected[i]) << "output vertex " << i;
-        }
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, StripsAndFansWalkTheIndicesNotTheVertices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) });
-        const std::vector<uint32_t> indices { 3, 2, 1, 0 };
-        std::vector<uint8_t> dst;
-
-        Portal::Graphics::mill_on_host(src, vertex_layout(4),
-            Runs { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4 } }, plane_spec(), {}, dst, indices);
-        const std::array<float, 6> strip { 3, 2, 1, 1, 2, 0 };
-        ASSERT_EQ(dst.size(), strip.size() * sizeof(Vertex));
-        for (size_t i = 0; i < strip.size(); ++i) {
-            EXPECT_EQ(at(dst, i).color[0], strip[i]) << "strip vertex " << i;
-        }
-
-        Portal::Graphics::mill_on_host(src, vertex_layout(4),
-            Runs { { PrimitiveTopology::TRIANGLE_FAN, 0, 4 } }, plane_spec(), {}, dst, indices);
-        const std::array<float, 6> fan { 3, 2, 1, 3, 1, 0 };
-        ASSERT_EQ(dst.size(), fan.size() * sizeof(Vertex));
-        for (size_t i = 0; i < fan.size(); ++i) {
-            EXPECT_EQ(at(dst, i).color[0], fan[i]) << "fan vertex " << i;
-        }
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, PointFillDrawsEveryVertexOfATriangleSpanAsAQuad, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) });
-        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::POINT } };
-        std::vector<uint8_t> dst;
-
-        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(3), runs, plane_spec(), {}, dst);
-
-        ASSERT_EQ(result.vertex_count, 18U);
-        EXPECT_TRUE(position_is(at(dst, 0), -1, -1));
-        EXPECT_TRUE(position_is(at(dst, 6), 9, -1));
-        EXPECT_TRUE(position_is(at(dst, 12), -1, 9));
-        EXPECT_EQ(at(dst, 6).color[0], 1.0F);
-        EXPECT_EQ(at(dst, 12).color[0], 2.0F);
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, PointFillOnAnIndexedSpanQuadsTheIndexedVertices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) });
-        const std::vector<uint32_t> indices { 2, 2, 0 };
-        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::POINT } };
-        std::vector<uint8_t> dst;
-
-        Portal::Graphics::mill_on_host(src, vertex_layout(3), runs, plane_spec(), {}, dst, indices);
-
-        ASSERT_EQ(dst.size(), 18 * sizeof(Vertex));
-        EXPECT_EQ(at(dst, 0).color[0], 2.0F);
-        EXPECT_EQ(at(dst, 6).color[0], 2.0F);
-        EXPECT_EQ(at(dst, 12).color[0], 0.0F);
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, LineFillKeepsTheTrianglesAndMarksEachCornerWithItsBarycentricWeights, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const std::vector<Vertex> source { vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) };
-        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::LINE } };
-        std::vector<uint8_t> dst;
-
-        const auto result = Portal::Graphics::mill_on_host(
-            bytes_of(source), vertex_layout(3), runs, plane_spec(), {}, dst);
-
-        ASSERT_EQ(result.vertex_count, 3U);
-        EXPECT_TRUE(uv_is(at(dst, 0), 21.0F, 0.0F));
-        EXPECT_TRUE(uv_is(at(dst, 1), 20.0F, 1.0F));
-        EXPECT_TRUE(uv_is(at(dst, 2), 20.0F, 0.0F));
-        for (size_t i = 0; i < source.size(); ++i) {
-            EXPECT_TRUE(position_is(at(dst, i), source[i].position[0], source[i].position[1])) << "vertex " << i;
-            EXPECT_EQ(at(dst, i).color[0], source[i].color[0]) << "vertex " << i;
-        }
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, LineFillOnALayoutWithoutUvsLeavesTheTrianglesUntouched, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) });
-        auto layout = vertex_layout(3);
-        layout.attributes.pop_back();
-        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::LINE } };
-        std::vector<uint8_t> dst;
-
-        Portal::Graphics::mill_on_host(src, layout, runs, plane_spec(), {}, dst);
-
-        EXPECT_EQ(dst, src);
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, LineFillKeepsTheRibbonGeometryOfLineSpansAndOnlyMarksTheUv, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(2, 0, 1) });
-        std::vector<uint8_t> plain;
-        std::vector<uint8_t> filled;
-
-        Portal::Graphics::mill_on_host(src, vertex_layout(2),
-            Runs { { PrimitiveTopology::LINE_LIST, 0, 2 } }, plane_spec(), {}, plain);
-        Portal::Graphics::mill_on_host(src, vertex_layout(2),
-            Runs { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::LINE } }, plane_spec(), {}, filled);
-
-        ASSERT_EQ(filled.size(), plain.size());
-        for (size_t i = 0; i < 6; ++i) {
-            const auto a = at(plain, i);
-            const auto b = at(filled, i);
-            EXPECT_TRUE(position_is(b, a.position[0], a.position[1], a.position[2])) << "vertex " << i;
-            EXPECT_GE(b.uv[0], 20.0F) << "vertex " << i;
-        }
     }
 
     // ------------------------------------------------------------------
@@ -645,36 +355,44 @@ namespace {
             return out;
         }
 
-        static void expect_matches_host(
+        static std::vector<uint8_t> milled(
             const std::vector<Vertex>& source,
             const std::vector<DrawRun>& runs,
-            const MillSpec& spec,
-            bool compare_uv,
+            const MillSpec& spec = plane_spec(),
             const std::vector<uint32_t>& indices = {})
         {
             PrimitiveMill mill(spec);
             const auto buffer = indices.empty() ? source_buffer(source) : indexed_source_buffer(source, indices);
-            const uint32_t milled = mill.mill(buffer, runs, MillView {});
-            ASSERT_GT(milled, 0U);
-            ASSERT_NE(mill.output(), nullptr);
+            const uint32_t count = mill.mill(buffer, runs, MillView {});
+            if (count == 0) {
+                return {};
+            }
+            return read_back(mill.output(), static_cast<size_t>(count) * sizeof(Vertex));
+        }
 
-            std::vector<uint8_t> expected;
-            Portal::Graphics::mill_on_host(
-                bytes_of(source), vertex_layout(static_cast<uint32_t>(source.size())), runs, spec, MillView {}, expected, indices);
-            const auto actual = read_back(mill.output(), static_cast<size_t>(milled) * sizeof(Vertex));
+        static std::shared_ptr<VKBuffer> raw_source_buffer(const std::vector<uint8_t>& bytes, const VertexLayout& layout)
+        {
+            auto buffer = std::make_shared<VKBuffer>(bytes.size(), VKBuffer::Usage::HOST_STORAGE, DataModality::VERTEX_POSITIONS_3D);
+            service().initialize_buffer(buffer);
+            std::memcpy(buffer->get_mapped_ptr(), bytes.data(), bytes.size());
+            buffer->set_vertex_layout(layout);
+            return buffer;
+        }
 
-            ASSERT_EQ(actual.size(), expected.size());
-            for (uint32_t i = 0; i < milled; ++i) {
-                const auto a = at(actual, i);
-                const auto e = at(expected, i);
-                EXPECT_TRUE(position_is(a, e.position[0], e.position[1], e.position[2])) << "vertex " << i;
-                EXPECT_EQ(a.color[0], e.color[0]) << "color of vertex " << i;
-                EXPECT_EQ(a.color[1], e.color[1]) << "color of vertex " << i;
-                EXPECT_EQ(a.color[2], e.color[2]) << "color of vertex " << i;
-                EXPECT_EQ(a.size, e.size) << "vertex " << i;
-                if (compare_uv) {
-                    EXPECT_TRUE(uv_is(a, e.uv[0], e.uv[1])) << "vertex " << i;
-                }
+        static void expect_tags(const std::vector<uint8_t>& data, const std::vector<float>& tags)
+        {
+            ASSERT_EQ(data.size(), tags.size() * sizeof(Vertex));
+            for (size_t i = 0; i < tags.size(); ++i) {
+                EXPECT_EQ(at(data, i).color[0], tags[i]) << "output vertex " << i;
+            }
+        }
+
+        static void expect_wire_uvs(const std::vector<uint8_t>& data, size_t count)
+        {
+            const std::array<std::pair<float, float>, 3> corners { { { 21.0F, 0.0F }, { 20.0F, 1.0F }, { 20.0F, 0.0F } } };
+            ASSERT_EQ(data.size(), count * sizeof(Vertex));
+            for (size_t i = 0; i < count; ++i) {
+                EXPECT_TRUE(uv_is(at(data, i), corners[i % 3].first, corners[i % 3].second)) << "output vertex " << i;
             }
         }
 
@@ -691,13 +409,38 @@ namespace {
         EXPECT_EQ(mill.milled_count(), 0U);
     }
 
-    TEST_F(PrimitiveMillDeviceTest, TriangleSpansMatchTheHostPathBitForBit)
+    TEST_F(PrimitiveMillDeviceTest, ATriangleListIsCopiedBitForBitAndTheOutputKeepsTheLayout)
+    {
+        const std::vector<Vertex> source { vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2) };
+        PrimitiveMill mill(plane_spec());
+        const auto buffer = source_buffer(source);
+        ASSERT_EQ(mill.mill(buffer, Runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } }, MillView {}), 3U);
+
+        const auto layout = mill.output()->get_vertex_layout();
+        ASSERT_TRUE(layout.has_value());
+        EXPECT_EQ(layout->vertex_count, 3U);
+        EXPECT_EQ(layout->stride_bytes, sizeof(Vertex));
+        EXPECT_EQ(layout->attributes.size(), 4U);
+        EXPECT_EQ(read_back(mill.output(), 3 * sizeof(Vertex)), bytes_of(source));
+    }
+
+    TEST_F(PrimitiveMillDeviceTest, AStripFlipsEveryOtherTriangleAndAFanSharesTheFirstVertex)
     {
         const std::vector<Vertex> source { vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) };
 
-        expect_matches_host(source, { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } }, plane_spec(), true);
-        expect_matches_host(source, { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4 } }, plane_spec(), true);
-        expect_matches_host(source, { { PrimitiveTopology::TRIANGLE_FAN, 0, 4 } }, plane_spec(), true);
+        expect_tags(milled(source, { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4 } }), { 0, 1, 2, 2, 1, 3 });
+        expect_tags(milled(source, { { PrimitiveTopology::TRIANGLE_FAN, 0, 4 } }), { 0, 1, 2, 0, 2, 3 });
+    }
+
+    TEST_F(PrimitiveMillDeviceTest, RunsAreMilledInOrderFromTheirOwnOffsets)
+    {
+        const auto data = milled({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(8, 8, 3) },
+            { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 }, { PrimitiveTopology::POINT_LIST, 3, 1 } });
+
+        ASSERT_EQ(data.size(), 9 * sizeof(Vertex));
+        EXPECT_EQ(at(data, 2).color[0], 2.0F);
+        EXPECT_EQ(at(data, 3).color[0], 3.0F);
+        EXPECT_TRUE(position_is(at(data, 3), 7, 7));
     }
 
     TEST_F(PrimitiveMillDeviceTest, ExplicitLayoutOverridesTheSourceBuffersLayout)
@@ -726,9 +469,20 @@ namespace {
         }
     }
 
-    TEST_F(PrimitiveMillDeviceTest, PointQuadsMatchTheHostPathInPositionAndAttributes)
+    TEST_F(PrimitiveMillDeviceTest, APointBecomesAQuadAroundItWithTheSourceVertexCopiedToEveryCorner)
     {
-        expect_matches_host({ vertex(5, 5, 7), vertex(-2, 3, 8) }, { { PrimitiveTopology::POINT_LIST, 0, 2 } }, plane_spec(), false);
+        const auto data = milled({ vertex(5, 5, 7) }, { { PrimitiveTopology::POINT_LIST, 0, 1 } });
+
+        ASSERT_EQ(data.size(), 6 * sizeof(Vertex));
+        const std::array<std::pair<float, float>, 6> corners { { { 4, 4 }, { 6, 4 }, { 6, 6 }, { 4, 4 }, { 6, 6 }, { 4, 6 } } };
+        const std::array<std::pair<float, float>, 6> uvs { { { 10, 10 }, { 11, 10 }, { 11, 11 }, { 10, 10 }, { 11, 11 }, { 10, 11 } } };
+        for (size_t i = 0; i < corners.size(); ++i) {
+            const auto v = at(data, i);
+            EXPECT_TRUE(position_is(v, corners[i].first, corners[i].second)) << "corner " << i;
+            EXPECT_TRUE(uv_is(v, uvs[i].first, uvs[i].second)) << "corner " << i;
+            EXPECT_EQ(v.color[0], 7.0F) << "corner " << i;
+            EXPECT_EQ(v.size, 1.0F) << "corner " << i;
+        }
     }
 
     TEST_F(PrimitiveMillDeviceTest, PointCornerUvsLandInTheMarkerRangeAboveTen)
@@ -746,14 +500,63 @@ namespace {
         }
     }
 
-    TEST_F(PrimitiveMillDeviceTest, PointCornerUvsMatchTheHostPath)
+    TEST_F(PrimitiveMillDeviceTest, ALineSegmentBecomesARibbonWithUvsAlongItsLength)
     {
-        expect_matches_host({ vertex(5, 5, 7) }, { { PrimitiveTopology::POINT_LIST, 0, 1 } }, plane_spec(), true);
+        const auto data = milled({ vertex(0, 0, 0), vertex(2, 0, 1) }, { { PrimitiveTopology::LINE_LIST, 0, 2 } });
+
+        ASSERT_EQ(data.size(), 6 * sizeof(Vertex));
+        EXPECT_TRUE(position_is(at(data, 0), 0, -1));
+        EXPECT_TRUE(position_is(at(data, 1), 0, 1));
+        EXPECT_TRUE(position_is(at(data, 2), 2, 1));
+        EXPECT_TRUE(position_is(at(data, 3), 0, -1));
+        EXPECT_TRUE(position_is(at(data, 4), 2, 1));
+        EXPECT_TRUE(position_is(at(data, 5), 2, -1));
+        EXPECT_TRUE(uv_is(at(data, 0), 0, 1));
+        EXPECT_TRUE(uv_is(at(data, 1), 0, 0));
+        EXPECT_TRUE(uv_is(at(data, 2), 1, 0));
+        EXPECT_TRUE(uv_is(at(data, 5), 1, 1));
+        EXPECT_EQ(at(data, 0).color[0], 0.0F);
+        EXPECT_EQ(at(data, 5).color[0], 1.0F);
     }
 
-    TEST_F(PrimitiveMillDeviceTest, AnIsolatedRibbonSegmentMatchesTheHostPath)
+    TEST_F(PrimitiveMillDeviceTest, TurningOffUvSynthesisKeepsTheSourceUv)
     {
-        expect_matches_host({ vertex(0, 0, 0), vertex(2, 0, 1) }, { { PrimitiveTopology::LINE_LIST, 0, 2 } }, plane_spec(), true);
+        auto spec = plane_spec();
+        spec.synthesize_uv = false;
+        const auto data = milled({ vertex(0, 0, 0), vertex(2, 0, 1) }, { { PrimitiveTopology::LINE_LIST, 0, 2 } }, spec);
+
+        ASSERT_EQ(data.size(), 6 * sizeof(Vertex));
+        for (size_t i = 0; i < 6; ++i) {
+            EXPECT_TRUE(uv_is(at(data, i), 0.125F, 0.875F)) << "vertex " << i;
+        }
+    }
+
+    TEST_F(PrimitiveMillDeviceTest, AZeroLengthSegmentCollapsesToItsStart)
+    {
+        const auto data = milled({ vertex(3, 3, 9), vertex(3, 3, 9) }, { { PrimitiveTopology::LINE_LIST, 0, 2 } });
+
+        ASSERT_EQ(data.size(), 6 * sizeof(Vertex));
+        for (size_t i = 0; i < 6; ++i) {
+            EXPECT_TRUE(position_is(at(data, i), 3, 3)) << "vertex " << i;
+        }
+    }
+
+    TEST_F(PrimitiveMillDeviceTest, UnalignedStridelessOrPositionlessLayoutsMillNothing)
+    {
+        PrimitiveMill mill(plane_spec());
+        const auto buffer = source_buffer({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2) });
+        const Runs runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } };
+
+        VertexLayout unaligned = vertex_layout(3);
+        unaligned.stride_bytes = 34;
+        VertexLayout no_position = vertex_layout(3);
+        no_position.attributes.erase(no_position.attributes.begin());
+        VertexLayout zero_stride = vertex_layout(3);
+        zero_stride.stride_bytes = 0;
+
+        EXPECT_EQ(mill.mill(buffer, runs, MillView {}, unaligned), 0U);
+        EXPECT_EQ(mill.mill(buffer, runs, MillView {}, no_position), 0U);
+        EXPECT_EQ(mill.mill(buffer, runs, MillView {}, zero_stride), 0U);
     }
 
     TEST_F(PrimitiveMillDeviceTest, UnmillableSourcesAndBadRunsMillNothing)
@@ -877,13 +680,16 @@ namespace {
     }
 
 
-    TEST_F(PrimitiveMillDeviceTest, IndexedTriangleSpansMatchTheHostPath)
+    TEST_F(PrimitiveMillDeviceTest, IndexedSpansWalkTheIndicesNotTheVertices)
     {
         const std::vector<Vertex> source { vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) };
 
-        expect_matches_host(source, { { PrimitiveTopology::TRIANGLE_LIST, 0, 6 } }, plane_spec(), true, { 3, 0, 2, 1, 2, 3 });
-        expect_matches_host(source, { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4 } }, plane_spec(), true, { 3, 2, 1, 0 });
-        expect_matches_host(source, { { PrimitiveTopology::TRIANGLE_FAN, 0, 4 } }, plane_spec(), true, { 3, 2, 1, 0 });
+        expect_tags(milled(source, { { PrimitiveTopology::TRIANGLE_LIST, 0, 6 } }, plane_spec(), { 3, 0, 2, 1, 2, 3 }),
+            { 3, 0, 2, 1, 2, 3 });
+        expect_tags(milled(source, { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4 } }, plane_spec(), { 3, 2, 1, 0 }),
+            { 3, 2, 1, 1, 2, 0 });
+        expect_tags(milled(source, { { PrimitiveTopology::TRIANGLE_FAN, 0, 4 } }, plane_spec(), { 3, 2, 1, 0 }),
+            { 3, 2, 1, 3, 1, 0 });
     }
 
     TEST_F(PrimitiveMillDeviceTest, IndexedTriangleRunsAreBoundedByTheIndexCountAndOtherRunsByTheVertexCount)
@@ -898,25 +704,34 @@ namespace {
         EXPECT_EQ(mill.mill(buffer, Runs { { PrimitiveTopology::LINE_LIST, 0, 6 } }, MillView {}), 18U);
     }
 
-    TEST_F(PrimitiveMillDeviceTest, PointFillOfTriangleSpansMatchesTheHostPath)
+    TEST_F(PrimitiveMillDeviceTest, PointFillDrawsEveryVertexOfATriangleSpanAsAQuad)
     {
         const std::vector<Vertex> source { vertex(0, 0, 0), vertex(10, 0, 1), vertex(0, 10, 2) };
-        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::POINT } };
+        const Runs runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::POINT } };
 
-        expect_matches_host(source, runs, plane_spec(), true);
-        expect_matches_host(source, runs, plane_spec(), true, { 2, 2, 0 });
+        const auto data = milled(source, runs);
+        ASSERT_EQ(data.size(), 18 * sizeof(Vertex));
+        EXPECT_TRUE(position_is(at(data, 0), -1, -1));
+        EXPECT_TRUE(position_is(at(data, 6), 9, -1));
+        EXPECT_TRUE(position_is(at(data, 12), -1, 9));
+        EXPECT_EQ(at(data, 6).color[0], 1.0F);
+        EXPECT_EQ(at(data, 12).color[0], 2.0F);
+
+        const auto indexed = milled(source, runs, plane_spec(), { 2, 2, 0 });
+        ASSERT_EQ(indexed.size(), 18 * sizeof(Vertex));
+        EXPECT_EQ(at(indexed, 0).color[0], 2.0F);
+        EXPECT_EQ(at(indexed, 6).color[0], 2.0F);
+        EXPECT_EQ(at(indexed, 12).color[0], 0.0F);
     }
 
-    TEST_F(PrimitiveMillDeviceTest, LineFillOfTriangleSpansMatchesTheHostPath)
+    TEST_F(PrimitiveMillDeviceTest, LineFillMarksTheCornersOfStripAndIndexedSpans)
     {
         const std::vector<Vertex> source { vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2), vertex(1, 1, 3) };
 
-        expect_matches_host(source,
-            { { PrimitiveTopology::TRIANGLE_LIST, 0, 3, PolygonMode::LINE } }, plane_spec(), true);
-        expect_matches_host(source,
-            { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4, PolygonMode::LINE } }, plane_spec(), true);
-        expect_matches_host(source,
-            { { PrimitiveTopology::TRIANGLE_LIST, 0, 6, PolygonMode::LINE } }, plane_spec(), true, { 3, 0, 2, 1, 2, 3 });
+        expect_wire_uvs(milled(source, { { PrimitiveTopology::TRIANGLE_STRIP, 0, 4, PolygonMode::LINE } }), 6);
+        expect_wire_uvs(milled(source, { { PrimitiveTopology::TRIANGLE_LIST, 0, 6, PolygonMode::LINE } },
+                            plane_spec(), { 3, 0, 2, 1, 2, 3 }),
+            6);
     }
 
     TEST_F(PrimitiveMillDeviceTest, LineFillWritesTheBarycentricMarkersIntoTheUvSlot)
@@ -932,6 +747,8 @@ namespace {
         EXPECT_TRUE(uv_is(at(data, 0), 21.0F, 0.0F));
         EXPECT_TRUE(uv_is(at(data, 1), 20.0F, 1.0F));
         EXPECT_TRUE(uv_is(at(data, 2), 20.0F, 0.0F));
+        EXPECT_TRUE(position_is(at(data, 1), 10, 0));
+        EXPECT_EQ(at(data, 1).color[0], 1.0F);
     }
 
     TEST_F(PrimitiveMillDeviceTest, LineFillOnALayoutWithoutUvsFallsBackToPlainTriangles)
@@ -1019,62 +836,46 @@ namespace {
                                              << y << ", " << z << ", " << w << ")";
     }
 
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, LineRibbonInLineFillCarriesTheWireMarkerPerTriangle, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    TEST_F(PrimitiveMillDeviceTest, ALineSpanInLineFillKeepsItsRibbonAndCarriesTheWireMarkers)
     {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(4, 0, 1) });
-        std::vector<uint8_t> dst;
-        const Runs runs { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::LINE } };
-        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(2), runs, plane_spec(), {}, dst);
+        const std::vector<Vertex> source { vertex(0, 0, 0), vertex(4, 0, 1) };
 
-        ASSERT_EQ(result.vertex_count, 6U);
-        const std::array<std::pair<float, float>, 3> corners { { { 21.0F, 0.0F }, { 20.0F, 1.0F }, { 20.0F, 0.0F } } };
+        const auto plain = milled(source, { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::FILL } });
+        const auto wired = milled(source, { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::LINE } });
+
+        expect_wire_uvs(wired, 6);
+        ASSERT_EQ(plain.size(), wired.size());
         for (size_t i = 0; i < 6; ++i) {
-            EXPECT_TRUE(uv_is(at(dst, i), corners[i % 3].first, corners[i % 3].second)) << "vertex " << i;
+            const auto p = at(plain, i);
+            EXPECT_LT(p.uv[0], 2.0F) << "vertex " << i;
+            EXPECT_TRUE(position_is(at(wired, i), p.position[0], p.position[1], p.position[2])) << "vertex " << i;
         }
     }
 
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, LineRibbonInFillKeepsItsRibbonUv, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    TEST_F(PrimitiveMillDeviceTest, ALineSpanInPointFillBecomesOnePointQuadPerVertex)
     {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(4, 0, 1) });
-        std::vector<uint8_t> dst;
-        const Runs runs { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::FILL } };
-        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(2), runs, plane_spec(), {}, dst);
+        const auto data = milled({ vertex(0, 0, 0), vertex(4, 0, 1) },
+            { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::POINT } });
 
-        ASSERT_EQ(result.vertex_count, 6U);
-        for (size_t i = 0; i < 6; ++i) {
-            EXPECT_LT(at(dst, i).uv[0], 2.0F) << "vertex " << i;
-        }
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, LineRunInPointFillBecomesOnePointQuadPerVertex, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        const auto src = bytes_of({ vertex(0, 0, 0), vertex(4, 0, 1) });
-        std::vector<uint8_t> dst;
-        const Runs runs { { PrimitiveTopology::LINE_LIST, 0, 2, PolygonMode::POINT } };
-        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(2), runs, plane_spec(), {}, dst);
-
-        ASSERT_EQ(result.vertex_count, 12U);
+        ASSERT_EQ(data.size(), 12 * sizeof(Vertex));
         for (size_t i = 0; i < 12; ++i) {
-            const auto v = at(dst, i);
-            EXPECT_GE(v.uv[0], 10.0F) << "vertex " << i;
-            EXPECT_LT(v.uv[0], 20.0F) << "vertex " << i;
+            EXPECT_GE(at(data, i).uv[0], 10.0F) << "vertex " << i;
+            EXPECT_LT(at(data, i).uv[0], 20.0F) << "vertex " << i;
         }
     }
 
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, BillboardPointKeepsTheCenterAndStoresTheCornerOffsetInTheTangent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    TEST_F(PrimitiveMillDeviceTest, BillboardPointKeepsTheCenterAndStoresTheCornerOffsetInTheTangent)
     {
-        const auto src = tangent_bytes({ { 3.0F, 2.0F, 0.0F } });
-        std::vector<uint8_t> dst;
-        const Runs runs { { PrimitiveTopology::POINT_LIST, 0, 1 } };
-        const auto result = Portal::Graphics::mill_on_host(
-            src, tangent_layout(1), runs, billboard_spec(), {}, dst);
+        PrimitiveMill mill(billboard_spec());
+        const auto buffer = raw_source_buffer(tangent_bytes({ { 3.0F, 2.0F, 0.0F } }), tangent_layout(1));
+        ASSERT_EQ(mill.mill(buffer, Runs { { PrimitiveTopology::POINT_LIST, 0, 1 } }, MillView {}), 6U);
+        const auto data = read_back(mill.output(), 6 * sizeof(TangentVertex));
 
-        ASSERT_EQ(result.vertex_count, 6U);
         const std::array<std::pair<float, float>, 6> offsets { {
             { -1.0F, -1.0F }, { 1.0F, -1.0F }, { 1.0F, 1.0F },
             { -1.0F, -1.0F }, { 1.0F, 1.0F }, { -1.0F, 1.0F } } };
         for (size_t i = 0; i < 6; ++i) {
-            const auto v = tangent_at(dst, i);
+            const auto v = tangent_at(data, i);
             EXPECT_NEAR(v.position[0], 3.0F, 1e-4F) << "vertex " << i;
             EXPECT_NEAR(v.position[1], 2.0F, 1e-4F) << "vertex " << i;
             EXPECT_TRUE(tangent_is(v, offsets[i].first, offsets[i].second, 0.0F, 0.0F)) << "vertex " << i;
@@ -1083,114 +884,79 @@ namespace {
         }
     }
 
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, BillboardRibbonKeepsItsEndpointsAndStoresDirectionAndSignedHalfWidth, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    TEST_F(PrimitiveMillDeviceTest, BillboardRibbonKeepsItsEndpointsAndStoresDirectionAndSignedHalfWidth)
     {
-        const auto src = tangent_bytes({ { 0.0F, 0.0F, 0.0F }, { 4.0F, 0.0F, 0.0F } });
-        std::vector<uint8_t> dst;
-        const Runs runs { { PrimitiveTopology::LINE_LIST, 0, 2 } };
-        const auto result = Portal::Graphics::mill_on_host(
-            src, tangent_layout(2), runs, billboard_spec(), {}, dst);
+        PrimitiveMill mill(billboard_spec());
+        const auto buffer = raw_source_buffer(
+            tangent_bytes({ { 0.0F, 0.0F, 0.0F }, { 4.0F, 0.0F, 0.0F } }), tangent_layout(2));
+        ASSERT_EQ(mill.mill(buffer, Runs { { PrimitiveTopology::LINE_LIST, 0, 2 } }, MillView {}), 6U);
+        const auto data = read_back(mill.output(), 6 * sizeof(TangentVertex));
 
-        ASSERT_EQ(result.vertex_count, 6U);
         const std::array<float, 6> x { 0.0F, 0.0F, 4.0F, 0.0F, 4.0F, 4.0F };
         const std::array<float, 6> half_width { -1.0F, 1.0F, 1.0F, -1.0F, 1.0F, -1.0F };
         for (size_t i = 0; i < 6; ++i) {
-            const auto v = tangent_at(dst, i);
-            EXPECT_TRUE(position_is(*reinterpret_cast<const Vertex*>(&v), x[i], 0.0F)) << "vertex " << i;
+            const auto v = tangent_at(data, i);
+            EXPECT_NEAR(v.position[0], x[i], 1e-4F) << "vertex " << i;
+            EXPECT_NEAR(v.position[1], 0.0F, 1e-4F) << "vertex " << i;
             EXPECT_TRUE(tangent_is(v, 1.0F, 0.0F, 0.0F, half_width[i])) << "vertex " << i;
         }
     }
 
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, BillboardDegenerateRibbonSegmentClearsTheTangent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    TEST_F(PrimitiveMillDeviceTest, BillboardDegenerateRibbonSegmentClearsTheTangent)
     {
-        const auto src = tangent_bytes({ { 1.0F, 1.0F, 0.0F }, { 1.0F, 1.0F, 0.0F } });
-        std::vector<uint8_t> dst;
-        const Runs runs { { PrimitiveTopology::LINE_LIST, 0, 2 } };
-        Portal::Graphics::mill_on_host(src, tangent_layout(2), runs, billboard_spec(), {}, dst);
+        PrimitiveMill mill(billboard_spec());
+        const auto buffer = raw_source_buffer(
+            tangent_bytes({ { 1.0F, 1.0F, 0.0F }, { 1.0F, 1.0F, 0.0F } }), tangent_layout(2));
+        ASSERT_EQ(mill.mill(buffer, Runs { { PrimitiveTopology::LINE_LIST, 0, 2 } }, MillView {}), 6U);
+        const auto data = read_back(mill.output(), 6 * sizeof(TangentVertex));
 
-        for (size_t i = 0; i < 6; ++i)
-            EXPECT_TRUE(tangent_is(tangent_at(dst, i), 0.0F, 0.0F, 0.0F, 0.0F)) << "vertex " << i;
+        for (size_t i = 0; i < 6; ++i) {
+            EXPECT_TRUE(tangent_is(tangent_at(data, i), 0.0F, 0.0F, 0.0F, 0.0F)) << "vertex " << i;
+        }
     }
 
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, BillboardLeavesTrianglePassthroughTangentsAlone, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    TEST_F(PrimitiveMillDeviceTest, BillboardLeavesTrianglePassthroughTangentsAlone)
     {
-        const auto src = tangent_bytes({ { 0.0F, 0.0F, 0.0F }, { 4.0F, 0.0F, 0.0F }, { 0.0F, 4.0F, 0.0F } });
-        std::vector<uint8_t> dst;
-        const Runs runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } };
-        const auto result = Portal::Graphics::mill_on_host(
-            src, tangent_layout(3), runs, billboard_spec(), {}, dst);
+        PrimitiveMill mill(billboard_spec());
+        const auto buffer = raw_source_buffer(
+            tangent_bytes({ { 0.0F, 0.0F, 0.0F }, { 4.0F, 0.0F, 0.0F }, { 0.0F, 4.0F, 0.0F } }), tangent_layout(3));
+        ASSERT_EQ(mill.mill(buffer, Runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } }, MillView {}), 3U);
+        const auto data = read_back(mill.output(), 3 * sizeof(TangentVertex));
 
-        ASSERT_EQ(result.vertex_count, 3U);
         for (size_t i = 0; i < 3; ++i) {
-            EXPECT_TRUE(tangent_is(tangent_at(dst, i), k_source_tangent[0], k_source_tangent[1],
+            EXPECT_TRUE(tangent_is(tangent_at(data, i), k_source_tangent[0], k_source_tangent[1],
                 k_source_tangent[2], k_source_tangent[3]))
                 << "vertex " << i;
         }
     }
 
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, WithoutTheBillboardFlagPointQuadsAreExpandedAndTheTangentIsKept, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    TEST_F(PrimitiveMillDeviceTest, WorldPlaneExpandsPointQuadsAndKeepsTheTangentWithOrWithoutTheBillboardFlag)
     {
-        auto spec = billboard_spec();
-        spec.billboard_instances = false;
-        spec.ribbon = MillSpec::Ribbon::WorldPlane;
-        const auto src = tangent_bytes({ { 3.0F, 2.0F, 0.0F } });
-        std::vector<uint8_t> dst;
-        const Runs runs { { PrimitiveTopology::POINT_LIST, 0, 1 } };
-        Portal::Graphics::mill_on_host(src, tangent_layout(1), runs, spec, {}, dst);
+        for (const bool flag : { false, true }) {
+            auto spec = billboard_spec();
+            spec.ribbon = MillSpec::Ribbon::WorldPlane;
+            spec.billboard_instances = flag;
+            PrimitiveMill mill(spec);
+            const auto buffer = raw_source_buffer(tangent_bytes({ { 3.0F, 2.0F, 0.0F } }), tangent_layout(1));
+            ASSERT_EQ(mill.mill(buffer, Runs { { PrimitiveTopology::POINT_LIST, 0, 1 } }, MillView {}), 6U);
+            const auto data = read_back(mill.output(), 6 * sizeof(TangentVertex));
 
-        EXPECT_NEAR(tangent_at(dst, 0).position[0], 2.0F, 1e-4F);
-        EXPECT_NEAR(tangent_at(dst, 0).position[1], 1.0F, 1e-4F);
-        EXPECT_NEAR(tangent_at(dst, 2).position[0], 4.0F, 1e-4F);
-        EXPECT_NEAR(tangent_at(dst, 2).position[1], 3.0F, 1e-4F);
-        EXPECT_TRUE(tangent_is(tangent_at(dst, 1), k_source_tangent[0], k_source_tangent[1],
-            k_source_tangent[2], k_source_tangent[3]));
+            EXPECT_NEAR(tangent_at(data, 0).position[0], 2.0F, 1e-4F) << "flag " << flag;
+            EXPECT_NEAR(tangent_at(data, 0).position[1], 1.0F, 1e-4F) << "flag " << flag;
+            EXPECT_NEAR(tangent_at(data, 2).position[0], 4.0F, 1e-4F) << "flag " << flag;
+            EXPECT_NEAR(tangent_at(data, 2).position[1], 3.0F, 1e-4F) << "flag " << flag;
+            EXPECT_TRUE(tangent_is(tangent_at(data, 1), k_source_tangent[0], k_source_tangent[1],
+                k_source_tangent[2], k_source_tangent[3]))
+                << "flag " << flag;
+        }
     }
 
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, WorldPlaneIgnoresTheBillboardFlag, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    TEST_F(PrimitiveMillDeviceTest, BillboardOnALayoutWithoutATangentFallsBackToExpandedGeometry)
     {
-        auto spec = billboard_spec();
-        spec.ribbon = MillSpec::Ribbon::WorldPlane;
-        const auto src = tangent_bytes({ { 3.0F, 2.0F, 0.0F } });
-        std::vector<uint8_t> dst;
-        const Runs runs { { PrimitiveTopology::POINT_LIST, 0, 1 } };
-        Portal::Graphics::mill_on_host(src, tangent_layout(1), runs, spec, {}, dst);
+        const auto data = milled({ vertex(3, 2, 0) }, { { PrimitiveTopology::POINT_LIST, 0, 1 } }, billboard_spec());
 
-        EXPECT_NEAR(tangent_at(dst, 0).position[0], 2.0F, 1e-4F);
-        EXPECT_TRUE(tangent_is(tangent_at(dst, 0), k_source_tangent[0], k_source_tangent[1],
-            k_source_tangent[2], k_source_tangent[3]));
-    }
-
-    MAYAFLUX_TEST_WITH(TEST, MillOnHostTest, BillboardOnALayoutWithoutATangentFallsBackToExpandedGeometry, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
-    {
-        auto spec = billboard_spec();
-        spec.ribbon = MillSpec::Ribbon::WorldFacing;
-        const auto src = bytes_of({ vertex(3, 2, 0) });
-        std::vector<uint8_t> dst;
-        const Runs runs { { PrimitiveTopology::POINT_LIST, 0, 1 } };
-        const auto result = Portal::Graphics::mill_on_host(src, vertex_layout(1), runs, spec, {}, dst);
-
-        ASSERT_EQ(result.vertex_count, 6U);
-        EXPECT_FALSE(position_is(at(dst, 0), 3.0F, 2.0F));
-    }
-
-    TEST_F(PrimitiveMillDeviceTest, BillboardPointsAndRibbonsMatchTheHostPath)
-    {
-        const auto src = tangent_bytes({ { 3.0F, 2.0F, 0.0F }, { 7.0F, 2.0F, 0.0F }, { 0.0F, 0.0F, 0.0F }, { 4.0F, 0.0F, 0.0F } });
-        auto buffer = std::make_shared<VKBuffer>(src.size(), VKBuffer::Usage::HOST_STORAGE, DataModality::VERTEX_POSITIONS_3D);
-        service().initialize_buffer(buffer);
-        std::memcpy(buffer->get_mapped_ptr(), src.data(), src.size());
-        buffer->set_vertex_layout(tangent_layout(4));
-
-        const Runs runs { { PrimitiveTopology::POINT_LIST, 0, 2 }, { PrimitiveTopology::LINE_LIST, 2, 2 } };
-        PrimitiveMill mill(billboard_spec());
-        const uint32_t milled = mill.mill(buffer, runs, MillView {});
-        ASSERT_EQ(milled, 18U);
-
-        std::vector<uint8_t> host;
-        Portal::Graphics::mill_on_host(src, tangent_layout(4), runs, billboard_spec(), MillView {}, host);
-
-        const auto device = read_back(mill.output(), static_cast<size_t>(milled) * sizeof(TangentVertex));
-        EXPECT_EQ(device, host);
+        ASSERT_EQ(data.size(), 6 * sizeof(Vertex));
+        EXPECT_FALSE(position_is(at(data, 0), 3.0F, 2.0F));
     }
 
 } // namespace
