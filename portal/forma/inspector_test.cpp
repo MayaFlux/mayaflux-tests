@@ -177,6 +177,32 @@ TEST_F(FormaInspectorTest, AnyNullManagerIsRefused)
     EXPECT_THROW(Forma::Inspector(nodes, rig_buffers, frames.scheduler, nullptr), std::invalid_argument);
 }
 
+TEST_F(FormaInspectorTest, OnASurfaceWithoutAWindowTheRowsDrawIntoItsImageAndArea)
+{
+    const auto target = Portal::Graphics::get_texture_manager().create_image_target({ .width = 128, .height = 128 });
+    ASSERT_NE(target, nullptr);
+    const Kinesis::ViewportArea right {
+        .area = Kinesis::Scissor::from(Kinesis::AABB2D { .min = { 0.F, -1.F }, .max = { 1.F, 1.F } })
+    };
+    auto windowless_layer = std::make_shared<Forma::Layer>();
+    auto windowless_ctx = std::make_shared<Forma::Context>(windowless_layer, target, right);
+    Forma::Surface windowless { Forma::SurfaceConfig {
+        .image = target, .area = right, .layer = windowless_layer, .ctx = windowless_ctx } };
+
+    const auto result = inspector.node(std::make_shared<Nodes::Constant>(1.0), windowless, cursor);
+
+    ASSERT_EQ(result.group.rows.size(), 1U);
+    const auto buffers = rig_buffers->get_graphics_buffers(Buffers::ProcessingToken::GRAPHICS_BACKEND);
+    ASSERT_FALSE(buffers.empty());
+    for (const auto& buffer : buffers) {
+        const auto config = buffer->get_render_config();
+        EXPECT_EQ(config.target_window, nullptr);
+        ASSERT_EQ(config.target_images.size(), 1U);
+        EXPECT_EQ(config.target_images.front(), target);
+        EXPECT_TRUE(buffer->get_render_processor()->get_target_area(target) == right);
+    }
+}
+
 TEST_F(FormaInspectorTest, ANodeShowsItsOutputRowAndRelatesTheRowToTheHeader)
 {
     auto node = std::make_shared<Nodes::Constant>(1.0);

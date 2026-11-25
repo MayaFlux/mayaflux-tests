@@ -151,6 +151,19 @@ TEST_F(FormaWindowlessFixture, ALabelPlacedWithoutAWindowSizesItsTextFromTheImag
     EXPECT_NO_THROW(offscreen->ctx().feed_move(1.0, 1.0));
 }
 
+TEST_F(FormaWindowlessFixture, APromptAskedOnASurfaceWithoutAWindowCommitsFromFedKeys)
+{
+    const auto buffer = std::make_shared<Buffers::FormaBuffer>(4096, Portal::Graphics::PrimitiveTopology::TRIANGLE_LIST);
+    std::vector<std::optional<std::string>> results;
+
+    ASSERT_NO_THROW((void)Forma::internal::ask_in(*offscreen, buffer, 48, "abc", {},
+        [&results](std::optional<std::string> result) { results.push_back(std::move(result)); }));
+    offscreen->ctx().feed_key(Keys::Enter, Core::WindowEventType::KEY_PRESSED);
+
+    ASSERT_EQ(results.size(), 1U);
+    EXPECT_EQ(results.front(), std::optional<std::string>("abc"));
+}
+
 TEST_F(FormaWindowlessFixture, ANullImageIsRefusedByAContextWithoutAWindow)
 {
     EXPECT_THROW(Forma::Context(std::make_shared<Forma::Layer>(), nullptr), std::invalid_argument);
