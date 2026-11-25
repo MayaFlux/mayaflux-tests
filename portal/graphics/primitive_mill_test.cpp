@@ -821,6 +821,42 @@ namespace {
         EXPECT_NE(mill.output(), nullptr);
     }
 
+    TEST_F(PrimitiveMillDeviceTest, ReleaseFreesEveryBufferOfTheOutputRing)
+    {
+        PrimitiveMill mill(plane_spec(), 2);
+        const auto buffer = source_buffer({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2) });
+        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } };
+        ASSERT_EQ(mill.mill(buffer, runs, MillView {}), 3U);
+        const auto first = mill.output();
+        ASSERT_EQ(mill.mill(buffer, runs, MillView {}), 3U);
+        const auto second = mill.output();
+        ASSERT_NE(first, second);
+        ASSERT_TRUE(first->is_initialized());
+        ASSERT_TRUE(second->is_initialized());
+
+        mill.release();
+
+        EXPECT_FALSE(first->is_initialized());
+        EXPECT_FALSE(second->is_initialized());
+        EXPECT_TRUE(buffer->is_initialized());
+    }
+
+    TEST_F(PrimitiveMillDeviceTest, DestroyingAMillFreesItsOutput)
+    {
+        const auto buffer = source_buffer({ vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 1, 2) });
+        const std::vector<DrawRun> runs { { PrimitiveTopology::TRIANGLE_LIST, 0, 3 } };
+        std::shared_ptr<VKBuffer> output;
+
+        {
+            PrimitiveMill mill(plane_spec());
+            ASSERT_EQ(mill.mill(buffer, runs, MillView {}), 3U);
+            output = mill.output();
+            ASSERT_TRUE(output->is_initialized());
+        }
+
+        EXPECT_FALSE(output->is_initialized());
+    }
+
     TEST_F(PrimitiveMillDeviceTest, ANewSpecTakesEffectOnTheNextMill)
     {
         PrimitiveMill mill(plane_spec());
