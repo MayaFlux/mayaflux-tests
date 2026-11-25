@@ -17,6 +17,7 @@
 #include "MayaFlux/Buffers/Staging/StagingUtils.hpp"
 #include "MayaFlux/Nodes/Graphics/GeometryLeafNode.hpp"
 #include "MayaFlux/Nodes/Graphics/GeometryWriterNode.hpp"
+#include "MayaFlux/Nodes/Graphics/MeshWriterNode.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexLayout.hpp"
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 #include "MayaFlux/Portal/Graphics/RenderFlow.hpp"
@@ -72,6 +73,33 @@ std::vector<uint8_t> concatenate(
     for (const auto& node : nodes) {
         const auto data = node->get_vertex_data();
         bytes.insert(bytes.end(), data.begin(), data.end());
+    }
+    return bytes;
+}
+
+std::shared_ptr<Nodes::GpuSync::MeshWriterNode> composite_quad()
+{
+    std::vector<Nodes::MeshVertex> corners(4);
+    corners[0].position = { -0.5F, -0.5F, 0.0F };
+    corners[1].position = { 0.5F, -0.5F, 0.0F };
+    corners[2].position = { 0.5F, 0.5F, 0.0F };
+    corners[3].position = { -0.5F, 0.5F, 0.0F };
+
+    auto node = std::make_shared<Nodes::GpuSync::MeshWriterNode>(16);
+    node->set_mesh(corners, std::vector<uint32_t> { 0, 1, 2, 2, 3, 0 });
+    node->compute_frame();
+    return node;
+}
+
+std::vector<uint8_t> records_in_order(
+    const Nodes::GpuSync::GeometryWriterNode& node, std::initializer_list<uint32_t> order)
+{
+    const auto data = node.get_vertex_data();
+    const size_t stride = node.get_vertex_stride();
+    std::vector<uint8_t> bytes;
+    for (const uint32_t index : order) {
+        const auto record = data.subspan(index * stride, stride);
+        bytes.insert(bytes.end(), record.begin(), record.end());
     }
     return bytes;
 }
@@ -337,6 +365,44 @@ TEST_F(CompositeGeometryBufferDeviceTest, AggregateGrowthPreservesEveryVertexAcr
     const auto expected = concatenate({ large });
     EXPECT_GT(buffer->get_size_bytes(), initial_capacity);
     EXPECT_EQ(read_bytes(expected.size()), expected);
+}
+
+TEST_F(CompositeGeometryBufferDeviceTest, AnIndexedTriangleCollectionIsUploadedOneVertexPerIndex)
+{
+    auto quad = composite_quad();
+    auto points = geometry({ { 7, 8, 9 }, { 10, 11, 12 } });
+    add("quad", quad, PrimitiveTopology::TRIANGLE_LIST);
+    add("points", points, PrimitiveTopology::POINT_LIST);
+
+    process();
+
+    auto expected = records_in_order(*quad, { 0, 1, 2, 2, 3, 0 });
+    const auto tail = concatenate({ points });
+    expected.insert(expected.end(), tail.begin(), tail.end());
+    EXPECT_EQ(read_bytes(expected.size()), expected);
+
+    const auto quad_collection = buffer->get_collection("quad");
+    const auto point_collection = buffer->get_collection("points");
+    ASSERT_TRUE(quad_collection.has_value());
+    ASSERT_TRUE(point_collection.has_value());
+    EXPECT_EQ(quad_collection->vertex_count, 6U);
+    EXPECT_EQ(point_collection->vertex_offset, 6U);
+    EXPECT_EQ(point_collection->vertex_count, 2U);
+    ASSERT_TRUE(quad_collection->vertex_layout.has_value());
+    EXPECT_EQ(quad_collection->vertex_layout->vertex_count, 6U);
+    EXPECT_FALSE(buffer->has_index_buffer());
+}
+
+TEST_F(CompositeGeometryBufferDeviceTest, AnIndexedNodeUnderAPointTopologyKeepsItsOwnVertices)
+{
+    auto quad = composite_quad();
+    add("corners", quad, PrimitiveTopology::POINT_LIST);
+
+    process();
+
+    const auto expected = records_in_order(*quad, { 0, 1, 2, 3 });
+    EXPECT_EQ(read_bytes(expected.size()), expected);
+    EXPECT_EQ(buffer->get_collection("corners")->vertex_count, 4U);
 }
 
 MAYAFLUX_TEST_WITH(TEST_F, CompositeGeometryBufferDeviceTest, PerCollectionRenderConfigSelectsIndependentMillingAndShaders, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
