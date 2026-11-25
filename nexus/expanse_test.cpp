@@ -73,6 +73,47 @@ namespace {
         EXPECT_FALSE(box.contains({ 0.0F, -1.01F, 0.0F }));
     }
 
+    // =========================================================================
+    // Rays
+    // =========================================================================
+
+    TEST(NexusExpanseRayTest, ABoxAnswersWhereARayEntersIt)
+    {
+        const Expanse box(unit_box());
+
+        const auto hit = box.intersect({ .origin = { -5.0F, 0.0F, 0.0F }, .direction = { 1.0F, 0.0F, 0.0F } });
+
+        ASSERT_TRUE(hit.has_value());
+        EXPECT_FLOAT_EQ(*hit, 4.0F);
+        EXPECT_FALSE(box.intersect({ .origin = { -5.0F, 3.0F, 0.0F }, .direction = { 1.0F, 0.0F, 0.0F } }).has_value());
+    }
+
+    TEST(NexusExpanseRayTest, APredicateAloneAnswersNothing)
+    {
+        const Expanse half([](const glm::vec3& p) { return p.x > 0.0F; });
+
+        EXPECT_FALSE(half.intersect({ .origin = { -5.0F, 0.0F, 0.0F }, .direction = { 1.0F, 0.0F, 0.0F } }).has_value());
+    }
+
+    TEST(NexusExpanseRayTest, APredicateWithABoxStillAnswersNothing)
+    {
+        Expanse both([](const glm::vec3& p) { return p.x > 0.0F; });
+        both.set(Nexus::ExpanseControls { .bounds = unit_box() });
+        ASSERT_TRUE(both.bounds().has_value());
+
+        EXPECT_FALSE(both.intersect({ .origin = { -5.0F, 0.0F, 0.0F }, .direction = { 1.0F, 0.0F, 0.0F } }).has_value());
+    }
+
+    TEST(NexusExpanseRayTest, ReachIsTheSphereAroundTheBox)
+    {
+        const Expanse box(AABB3D::from_center({ 1.0F, 2.0F, 3.0F }, { 2.0F, 3.0F, 6.0F }));
+
+        const auto [centre, radius] = box.reach();
+
+        EXPECT_EQ(centre, glm::vec3(1.0F, 2.0F, 3.0F));
+        EXPECT_FLOAT_EQ(radius, 7.0F);
+    }
+
     TEST(NexusExpanseContainsTest, PredicateOnly)
     {
         const Expanse half([](const glm::vec3& p) { return p.x > 0.0F; });

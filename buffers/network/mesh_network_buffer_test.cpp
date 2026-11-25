@@ -16,6 +16,7 @@
 #include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
 #include "MayaFlux/Kinesis/Tendency/DualField.hpp"
 #include "MayaFlux/Kinesis/Tendency/ShaderCompat.hpp"
+#include "MayaFlux/Nexus/Pheme/Survey.hpp"
 #include "MayaFlux/Nodes/Graphics/MeshWriterNode.hpp"
 #include "MayaFlux/Nodes/Network/MeshNetwork.hpp"
 #include "MayaFlux/Nodes/Network/Operators/GpuFieldOperator.hpp"
@@ -566,6 +567,43 @@ namespace {
             EXPECT_NEAR(uploaded[i].position.x, rest[i].position.x + 0.25F, 1e-5F) << "vertex " << i;
             EXPECT_EQ(uploaded[i].position.y, rest[i].position.y) << "vertex " << i;
         }
+    }
+
+    TEST_F(MeshNetworkBufferDeviceTest, SurveyReadsOneFieldDrivenSlotFromItsOwnRecords)
+    {
+        auto second = triangle(0.2F, { 0, 1, 0 });
+        for (auto& v : second)
+            v.position.y += 2.0F;
+
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("first", make_mesh(triangle(0.2F, { 1, 0, 0 }), { 0, 1, 2 }));
+        network->add_slot("second", make_mesh(second, { 0, 1, 2 }));
+        network->get_slot(1).local_transform[3] = glm::vec4(10.0F, 0.0F, 0.0F, 1.0F);
+        network->process_batch(1);
+        auto field_op = network->get_operator_chain()->emplace<GpuFieldOperator>(
+            Kakshya::VertexLayout::for_meshes(sizeof(MeshVertex)));
+        field_op->bind(FieldTarget::POSITION, fields::shift_x);
+        attach(network);
+        setup_rendering();
+        ASSERT_TRUE(has_field_pass());
+        buffer->process_default();
+        buffer->get_processing_chain()->process(buffer);
+
+        const auto slot = Nexus::read_bounds(buffer, 1U);
+        const auto corner = Nexus::read_anchor(buffer, 2U, 1U);
+        const auto whole = Nexus::read_bounds(buffer);
+
+        ASSERT_TRUE(slot.has_value());
+        ASSERT_TRUE(corner.has_value());
+        ASSERT_TRUE(whole.has_value());
+        EXPECT_NEAR(slot->min.x, 0.0F, 1e-5F);
+        EXPECT_NEAR(slot->max.x, 0.5F, 1e-5F);
+        EXPECT_NEAR(slot->min.y, 1.75F, 1e-5F);
+        EXPECT_NEAR(slot->max.y, 2.25F, 1e-5F);
+        EXPECT_NEAR(corner->x, 0.25F, 1e-5F);
+        EXPECT_NEAR(corner->y, 2.25F, 1e-5F);
+        EXPECT_NEAR(whole->min.x, 0.0F, 1e-5F);
+        EXPECT_NEAR(whole->max.x, 10.5F, 1e-5F);
     }
 
     TEST_F(MeshNetworkBufferDeviceTest, AFieldOperatorWithTheWrongLayoutSizeWiresNoPass)

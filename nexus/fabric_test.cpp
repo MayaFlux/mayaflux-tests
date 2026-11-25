@@ -543,6 +543,27 @@ namespace {
         std::vector<uint32_t> exited;
     };
 
+    TEST_F(NexusFabricExpanseTest, TheNearestHitIsTheExpanseTheRayReachesFirst)
+    {
+        const auto far = add_box(AABB3D::from_center({ 10.0F, 0.0F, 0.0F }, glm::vec3(1.0F)));
+        const auto near = add_box(AABB3D::from_center({ 5.0F, 0.0F, 0.0F }, glm::vec3(1.0F)));
+        add_box(AABB3D::from_center({ 0.0F, 5.0F, 0.0F }, glm::vec3(1.0F)));
+
+        const auto hit = fabric.nearest_hit({ .origin = { 0.0F, 0.0F, 0.0F }, .direction = { 1.0F, 0.0F, 0.0F } });
+
+        ASSERT_TRUE(hit.has_value());
+        EXPECT_EQ(hit->first, near->id());
+        EXPECT_FLOAT_EQ(hit->second, 4.0F);
+    }
+
+    TEST_F(NexusFabricExpanseTest, ARayThatReachesNothingHasNoHit)
+    {
+        add_box(AABB3D::from_center({ 5.0F, 0.0F, 0.0F }, glm::vec3(1.0F)));
+        fabric.add_expanse(std::make_shared<Expanse>([](const glm::vec3&) { return true; }));
+
+        EXPECT_FALSE(fabric.nearest_hit({ .origin = { 0.0F, 0.0F, 0.0F }, .direction = { -1.0F, 0.0F, 0.0F } }).has_value());
+    }
+
     TEST_F(NexusFabricExpanseTest, AddReturnsTheExpanseIdAndRegistersIt)
     {
         const auto expanse = std::make_shared<Expanse>(AABB3D::from_center(glm::vec3(0.0F), glm::vec3(1.0F)));

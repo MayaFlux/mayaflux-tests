@@ -12,6 +12,7 @@
 #include "MayaFlux/Buffers/Network/MeshNetworkBuffer.hpp"
 #include "MayaFlux/Buffers/Network/NetworkGeometryBuffer.hpp"
 #include "MayaFlux/Buffers/Network/RecordedGeometryBuffer.hpp"
+#include "MayaFlux/Kakshya/NDData/MeshSkin.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
 #include "MayaFlux/Nexus/Pheme/Survey.hpp"
 #include "MayaFlux/Nodes/Graphics/MeshWriterNode.hpp"
@@ -435,6 +436,153 @@ namespace {
         const auto bounds = Nexus::read_bounds(buffer);
         ASSERT_TRUE(bounds.has_value());
         expect_near(bounds->max, { 1.0F, 0.0F, 0.0F });
+    }
+
+
+    // =========================================================================
+    // One slot
+    // =========================================================================
+
+    std::shared_ptr<Buffers::MeshNetworkBuffer> two_slot_mesh_buffer()
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("near", quad_node({ 0.0F, 0.0F, 0.0F }));
+        network->add_slot("far", quad_node({ 0.0F, 3.0F, 0.0F }));
+        network->get_slot(1).local_transform = glm::translate(glm::mat4(1.0F), { 10.0F, 0.0F, 0.0F });
+        network->process_batch(1);
+        return std::make_shared<Buffers::MeshNetworkBuffer>(network);
+    }
+
+    TEST(NexusSurveySlotTest, AMeshSlotIsBoundedInItsOwnCoordinates)
+    {
+        const auto bounds = Nexus::read_bounds(two_slot_mesh_buffer(), 1U);
+
+        ASSERT_TRUE(bounds.has_value());
+        expect_near(bounds->min, { -0.2F, 2.8F, 0.0F });
+        expect_near(bounds->max, { 0.2F, 3.2F, 0.0F });
+    }
+
+    TEST(NexusSurveySlotTest, AMeshSlotAnchorsAtItsOwnCentreAndVertices)
+    {
+        const auto buffer = two_slot_mesh_buffer();
+
+        const auto centre = Nexus::read_anchor(buffer, std::nullopt, 1U);
+        const auto corner = Nexus::read_anchor(buffer, 2U, 1U);
+
+        ASSERT_TRUE(centre.has_value());
+        ASSERT_TRUE(corner.has_value());
+        expect_near(*centre, { 0.0F, 3.0F, 0.0F });
+        expect_near(*corner, { 0.2F, 3.2F, 0.0F });
+        EXPECT_FALSE(Nexus::read_anchor(buffer, 4U, 1U).has_value());
+    }
+
+    TEST(NexusSurveySlotTest, TheSlotPlacementTakesItsReadingWhereTheSlotDraws)
+    {
+        const auto buffer = two_slot_mesh_buffer();
+        const auto anchor = Nexus::read_anchor(buffer, std::nullopt, 1U);
+        ASSERT_TRUE(anchor.has_value());
+
+        const glm::vec3 drawn = glm::vec3(Nexus::read_placement(buffer, 1U) * glm::vec4(*anchor, 1.0F));
+
+        expect_near(drawn, { 10.0F, 3.0F, 0.0F });
+        EXPECT_EQ(Nexus::read_placement(buffer), glm::mat4(1.0F));
+    }
+
+    TEST(NexusSurveySlotTest, AChildSlotIsPlacedThroughItsParent)
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("parent", quad_node({ 0.0F, 0.0F, 0.0F }));
+        network->add_slot("child", quad_node({ 0.0F, 0.0F, 0.0F }), 0U);
+        network->get_slot(0).local_transform = glm::translate(glm::mat4(1.0F), { 5.0F, 0.0F, 0.0F });
+        network->get_slot(1).local_transform = glm::translate(glm::mat4(1.0F), { 0.0F, 3.0F, 0.0F });
+        network->process_batch(1);
+        const auto buffer = std::make_shared<Buffers::MeshNetworkBuffer>(network);
+
+        expect_near(glm::vec3(Nexus::read_placement(buffer, 1U)[3]), { 5.0F, 3.0F, 0.0F });
+    }
+
+    TEST(NexusSurveySlotTest, AMeshSlotOutOfRangeCannotBeRead)
+    {
+        const auto buffer = two_slot_mesh_buffer();
+
+        EXPECT_FALSE(Nexus::read_bounds(buffer, 2U).has_value());
+        EXPECT_FALSE(Nexus::read_anchor(buffer, std::nullopt, 2U).has_value());
+        EXPECT_EQ(Nexus::read_placement(buffer, 2U), glm::mat4(1.0F));
+    }
+
+    TEST(NexusSurveySlotTest, AJointSlotHasAPlacementButNothingToRead)
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        network->add_slot("joint", nullptr);
+        network->add_slot("mesh", quad_node({ 0.0F, 0.0F, 0.0F }), 0U);
+        network->get_slot(0).local_transform = glm::translate(glm::mat4(1.0F), { 0.0F, 0.0F, 7.0F });
+        network->process_batch(1);
+        const auto buffer = std::make_shared<Buffers::MeshNetworkBuffer>(network);
+
+        EXPECT_FALSE(Nexus::read_bounds(buffer, 0U).has_value());
+        EXPECT_FALSE(Nexus::read_anchor(buffer, std::nullopt, 0U).has_value());
+        expect_near(glm::vec3(Nexus::read_placement(buffer, 0U)[3]), { 0.0F, 0.0F, 7.0F });
+    }
+
+    TEST_F(NexusSurveyInstanceBufferTest, OneInstanceIsReadInTheTemplatesCoordinates)
+    {
+        add(glm::translate(glm::mat4(1.0F), { 10.0F, 0.0F, 0.0F }));
+        add(glm::translate(glm::mat4(1.0F), { -10.0F, 5.0F, 0.0F }));
+        const auto instances = buffer();
+
+        const auto bounds = Nexus::read_bounds(instances, 1U);
+        const auto centre = Nexus::read_anchor(instances, std::nullopt, 1U);
+        const auto corner = Nexus::read_anchor(instances, 2U, 1U);
+
+        ASSERT_TRUE(bounds.has_value());
+        ASSERT_TRUE(centre.has_value());
+        ASSERT_TRUE(corner.has_value());
+        expect_near(bounds->min, { -0.2F, -0.2F, 0.0F });
+        expect_near(bounds->max, { 0.2F, 0.2F, 0.0F });
+        expect_near(*centre, { 0.0F, 0.0F, 0.0F });
+        expect_near(*corner, { 0.2F, 0.2F, 0.0F });
+        expect_near(glm::vec3(Nexus::read_placement(instances, 1U)[3]), { -10.0F, 5.0F, 0.0F });
+    }
+
+    TEST_F(NexusSurveyInstanceBufferTest, AnInstanceOutOfRangeCannotBeRead)
+    {
+        add(glm::mat4(1.0F));
+        const auto instances = buffer();
+
+        EXPECT_FALSE(Nexus::read_bounds(instances, 1U).has_value());
+        EXPECT_FALSE(Nexus::read_anchor(instances, std::nullopt, 1U).has_value());
+        EXPECT_FALSE(Nexus::read_anchor(instances, 0U, 1U).has_value());
+    }
+
+    TEST_F(NexusSurveyInstanceBufferTest, ASkinnedInstanceCoversItsJointsWithoutItsTransform)
+    {
+        const uint32_t slot = add(glm::translate(glm::mat4(1.0F), { 10.0F, 0.0F, 0.0F }));
+        auto skin = std::make_shared<Kakshya::MeshSkin>();
+        skin->inverse_bind = { glm::mat4(1.0F) };
+        network->get_slot(slot).skin = skin;
+        network->get_slot(slot).palette = { glm::translate(glm::mat4(1.0F), { 0.0F, 5.0F, 0.0F }) };
+
+        const auto bounds = Nexus::read_bounds(buffer(), slot);
+
+        ASSERT_TRUE(bounds.has_value());
+        expect_near(bounds->min, { -0.2F, -0.2F, 0.0F });
+        expect_near(bounds->max, { 0.2F, 5.2F, 0.0F });
+    }
+
+    TEST(NexusSurveySlotTest, ASlotMeansNothingToABufferWithoutSlots)
+    {
+        auto node = std::make_shared<Nodes::GpuSync::PointCollectionNode>(std::vector<Kakshya::PointVertex> {
+            { .position = { 0.0F, 0.0F, 0.0F } },
+            { .position = { 4.0F, 0.0F, 0.0F } },
+        });
+        node->compute_frame();
+        const auto buffer = std::make_shared<Buffers::GeometryBuffer>(node);
+
+        const auto anchor = Nexus::read_anchor(buffer, std::nullopt, 3U);
+
+        ASSERT_TRUE(anchor.has_value());
+        expect_near(*anchor, { 2.0F, 0.0F, 0.0F });
+        EXPECT_EQ(Nexus::read_placement(buffer, 3U), glm::mat4(1.0F));
     }
 
 }

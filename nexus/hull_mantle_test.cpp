@@ -8,12 +8,17 @@
 #include "../support/nexus_support.hpp"
 
 #include "MayaFlux/Buffers/Geometry/MeshBuffer.hpp"
+#include "MayaFlux/Buffers/Network/InstanceNetworkBuffer.hpp"
+#include "MayaFlux/Buffers/Network/MeshNetworkBuffer.hpp"
 #include "MayaFlux/Buffers/Network/NetworkGeometryBuffer.hpp"
 #include "MayaFlux/Buffers/Shaders/RenderProcessor.hpp"
 #include "MayaFlux/Nexus/Expanses/Hull.hpp"
 #include "MayaFlux/Nexus/Expanses/Mantle.hpp"
 #include "MayaFlux/Nexus/Pheme/Attachment.hpp"
 #include "MayaFlux/Nexus/Principals/Agent.hpp"
+#include "MayaFlux/Nodes/Graphics/MeshWriterNode.hpp"
+#include "MayaFlux/Nodes/Network/InstanceNetwork.hpp"
+#include "MayaFlux/Nodes/Network/MeshNetwork.hpp"
 #include "MayaFlux/Nodes/Network/Operators/PhysicsOperator.hpp"
 #include "MayaFlux/Nodes/Network/ParticleNetwork.hpp"
 
@@ -218,6 +223,128 @@ namespace {
         place(glm::mat4(1.0F));
         hull.evaluate(1U, snapshot);
         EXPECT_EQ(exited, (std::vector<uint32_t> { 7U }));
+    }
+
+    // =========================================================================
+    // Hull around one slot
+    // =========================================================================
+
+    std::shared_ptr<Nodes::GpuSync::MeshWriterNode> cube_corner_node()
+    {
+        std::vector<Nodes::MeshVertex> vertices(4);
+        vertices[0].position = { 0.0F, 0.0F, 0.0F };
+        vertices[1].position = { 4.0F, 0.0F, 0.0F };
+        vertices[2].position = { 0.0F, 4.0F, 0.0F };
+        vertices[3].position = { 0.0F, 0.0F, 4.0F };
+        const std::vector<uint32_t> indices { 0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3 };
+        auto node = std::make_shared<Nodes::GpuSync::MeshWriterNode>(vertices.size());
+        node->set_mesh(vertices, indices);
+        node->compute_frame();
+        return node;
+    }
+
+    std::shared_ptr<Nodes::Network::MeshNetwork> two_bodies()
+    {
+        auto network = std::make_shared<Nodes::Network::MeshNetwork>();
+        network->add_slot("first", cube_corner_node());
+        network->add_slot("second", cube_corner_node());
+        network->get_slot(1).local_transform = glm::translate(glm::mat4(1.0F), { 20.0F, 0.0F, 0.0F });
+        network->process_batch(1);
+        return network;
+    }
+
+    TEST_F(NexusHullTest, WrapsOneSlotOfAMeshNetwork)
+    {
+        const auto meshes = std::make_shared<Buffers::MeshNetworkBuffer>(two_bodies());
+
+        const Hull second(meshes, {}, {}, 1U);
+
+        EXPECT_TRUE(second.contains({ 22.0F, 2.0F, 2.0F }));
+        EXPECT_FALSE(second.contains({ 2.0F, 2.0F, 2.0F }));
+    }
+
+    TEST_F(NexusHullTest, FollowsItsSlotWithoutARefit)
+    {
+        const auto network = two_bodies();
+        const auto meshes = std::make_shared<Buffers::MeshNetworkBuffer>(network);
+        const Hull second(meshes, {}, {}, 1U);
+
+        network->get_slot(1).local_transform = glm::translate(glm::mat4(1.0F), { 40.0F, 0.0F, 0.0F });
+        network->process_batch(1);
+
+        EXPECT_TRUE(second.contains({ 42.0F, 2.0F, 2.0F }));
+        EXPECT_FALSE(second.contains({ 22.0F, 2.0F, 2.0F }));
+    }
+
+    TEST_F(NexusHullTest, ASlotIsPlacedInsideTheBuffersOwnTransform)
+    {
+        const auto meshes = std::make_shared<Buffers::MeshNetworkBuffer>(two_bodies());
+        meshes->set_render_processor(renderer);
+        place(glm::translate(glm::mat4(1.0F), { 0.0F, 100.0F, 0.0F }));
+
+        const Hull second(meshes, {}, {}, 1U);
+
+        EXPECT_TRUE(second.contains({ 22.0F, 102.0F, 2.0F }));
+        EXPECT_FALSE(second.contains({ 22.0F, 2.0F, 2.0F }));
+        meshes->set_render_processor(nullptr);
+    }
+
+    TEST_F(NexusHullTest, WrapsOneInstanceAndFollowsIt)
+    {
+        auto network = std::make_shared<Nodes::Network::InstanceNetwork>();
+        network->add_slot("first", cube_corner_node());
+        network->add_slot("second", cube_corner_node());
+        network->get_slot(1).transform = glm::translate(glm::mat4(1.0F), { 20.0F, 0.0F, 0.0F });
+        const auto instances = std::make_shared<Buffers::InstanceNetworkBuffer>(network);
+        const Hull second(instances, {}, {}, 1U);
+        ASSERT_TRUE(second.contains({ 22.0F, 2.0F, 2.0F }));
+        ASSERT_FALSE(second.contains({ 2.0F, 2.0F, 2.0F }));
+
+        network->get_slot(1).transform = glm::translate(glm::mat4(1.0F), { 0.0F, 30.0F, 0.0F });
+
+        EXPECT_TRUE(second.contains({ 2.0F, 32.0F, 2.0F }));
+        EXPECT_FALSE(second.contains({ 22.0F, 2.0F, 2.0F }));
+    }
+
+    TEST_F(NexusHullTest, ASlotOutOfRangeContainsNothing)
+    {
+        const auto meshes = std::make_shared<Buffers::MeshNetworkBuffer>(two_bodies());
+
+        const Hull missing(meshes, {}, {}, 5U);
+
+        EXPECT_FALSE(missing.contains({ 2.0F, 2.0F, 2.0F }));
+        EXPECT_FALSE(missing.intersect({ .origin = { -5.0F, 1.0F, 1.0F }, .direction = { 1.0F, 0.0F, 0.0F } }).has_value());
+    }
+
+    TEST_F(NexusHullTest, ARayDistanceIsMeasuredWhereTheBufferIsDrawn)
+    {
+        place(glm::translate(glm::mat4(1.0F), { 10.0F, 0.0F, 0.0F }) * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F)));
+        const Hull hull(buffer);
+
+        const auto hit = hull.intersect({ .origin = { 0.0F, 2.0F, 2.0F }, .direction = { 1.0F, 0.0F, 0.0F } });
+
+        ASSERT_TRUE(hit.has_value());
+        EXPECT_NEAR(*hit, 10.0F, k_tolerance);
+    }
+
+    TEST_F(NexusHullTest, ARayMeetsARotatedBuffersOwnBox)
+    {
+        place(glm::rotate(glm::mat4(1.0F), glm::half_pi<float>(), { 0.0F, 0.0F, 1.0F }));
+        const Hull hull(buffer);
+
+        const auto hit = hull.intersect({ .origin = { -10.0F, 2.0F, 2.0F }, .direction = { 1.0F, 0.0F, 0.0F } });
+
+        ASSERT_TRUE(hit.has_value());
+        EXPECT_NEAR(*hit, 6.0F, k_tolerance);
+        EXPECT_FALSE(hull.intersect({ .origin = { 2.0F, 2.0F, -10.0F }, .direction = { 0.0F, 0.0F, 1.0F } }).has_value());
+    }
+
+    TEST_F(NexusHullTest, ARayFindsNothingInAFlattenedBuffer)
+    {
+        place(glm::scale(glm::mat4(1.0F), { 1.0F, 1.0F, 0.0F }));
+        const Hull hull(buffer);
+
+        EXPECT_FALSE(hull.intersect({ .origin = { 2.0F, 2.0F, -5.0F }, .direction = { 0.0F, 0.0F, 1.0F } }).has_value());
     }
 
     // =========================================================================

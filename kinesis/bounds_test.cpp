@@ -1,6 +1,8 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include "MayaFlux/Kinesis/Spatial/Bounds.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
@@ -11,7 +13,9 @@ using Kinesis::AABB2D;
 using Kinesis::AABB3D;
 using Kinesis::Align;
 using Kinesis::BoundingSphere;
+using Kinesis::Ray;
 using Kinesis::Side;
+using Kinesis::transform_ray;
 
 namespace {
 
@@ -174,6 +178,88 @@ TEST(BoundingSphereTest, AMissAndATangentRay)
 
     EXPECT_FALSE(sphere.overlaps_ray({ .origin = { 0.F, 0.F, 0.F }, .direction = { 0.F, 0.F, 1.F } }));
     EXPECT_TRUE(sphere.overlaps_ray({ .origin = { 1.F, 0.F, 0.F }, .direction = { 0.F, 0.F, 1.F } }));
+}
+
+// =============================================================================
+// Ray against a box
+// =============================================================================
+
+TEST(AABB3DRayTest, ARayEntersTheNearFace)
+{
+    const AABB3D box { .min = { -1.F, -1.F, 4.F }, .max = { 1.F, 1.F, 6.F } };
+
+    const auto entry = box.ray_entry({ .origin = { 0.F, 0.F, 0.F }, .direction = { 0.F, 0.F, 1.F } });
+
+    ASSERT_TRUE(entry.has_value());
+    EXPECT_FLOAT_EQ(*entry, 4.F);
+}
+
+TEST(AABB3DRayTest, ARayStartingInsideEntersAtZero)
+{
+    const AABB3D box { .min = { -1.F, -1.F, -1.F }, .max = { 1.F, 1.F, 1.F } };
+
+    const auto entry = box.ray_entry({ .origin = { 0.5F, 0.F, 0.F }, .direction = { 0.F, 1.F, 0.F } });
+
+    ASSERT_TRUE(entry.has_value());
+    EXPECT_FLOAT_EQ(*entry, 0.F);
+}
+
+TEST(AABB3DRayTest, ABoxBehindTheRayIsMissed)
+{
+    const AABB3D box { .min = { -1.F, -1.F, 4.F }, .max = { 1.F, 1.F, 6.F } };
+
+    EXPECT_FALSE(box.ray_entry({ .origin = { 0.F, 0.F, 0.F }, .direction = { 0.F, 0.F, -1.F } }).has_value());
+}
+
+TEST(AABB3DRayTest, ARayAlongAnAxisOutsideTheSlabIsMissed)
+{
+    const AABB3D box { .min = { -1.F, -1.F, 4.F }, .max = { 1.F, 1.F, 6.F } };
+
+    EXPECT_FALSE(box.ray_entry({ .origin = { 2.F, 0.F, 0.F }, .direction = { 0.F, 0.F, 1.F } }).has_value());
+    EXPECT_TRUE(box.ray_entry({ .origin = { 1.F, 0.F, 0.F }, .direction = { 0.F, 0.F, 1.F } }).has_value());
+}
+
+TEST(AABB3DRayTest, ADiagonalRayThatPassesBesideTheBoxIsMissed)
+{
+    const AABB3D box { .min = { 2.F, -1.F, 0.F }, .max = { 3.F, 1.F, 1.F } };
+
+    EXPECT_FALSE(box.ray_entry({ .origin = { 0.F, 0.F, 0.5F }, .direction = glm::normalize(glm::vec3(1.F, 2.F, 0.F)) }).has_value());
+}
+
+TEST(AABB3DRayTest, AFlatBoxIsHitThroughItsPlane)
+{
+    const AABB3D box { .min = { -1.F, -1.F, 3.F }, .max = { 1.F, 1.F, 3.F } };
+
+    const auto entry = box.ray_entry({ .origin = { 0.F, 0.F, 0.F }, .direction = { 0.F, 0.F, 1.F } });
+
+    ASSERT_TRUE(entry.has_value());
+    EXPECT_FLOAT_EQ(*entry, 3.F);
+}
+
+TEST(AABB3DRayTest, TheEntryIsCountedInUnitsOfTheDirection)
+{
+    const AABB3D box { .min = { -1.F, -1.F, 4.F }, .max = { 1.F, 1.F, 6.F } };
+
+    const auto entry = box.ray_entry({ .origin = { 0.F, 0.F, 0.F }, .direction = { 0.F, 0.F, 2.F } });
+
+    ASSERT_TRUE(entry.has_value());
+    EXPECT_FLOAT_EQ(*entry, 2.F);
+}
+
+TEST(TransformRayTest, TheParameterNamesTheSamePointInBothSpaces)
+{
+    const Ray ray { .origin = { 1.F, 2.F, 3.F }, .direction = { 0.F, 0.F, 1.F } };
+    const glm::mat4 transform = glm::translate(glm::mat4(1.F), { 5.F, 0.F, 0.F })
+        * glm::scale(glm::mat4(1.F), { 2.F, 3.F, 4.F });
+
+    const Ray there = transform_ray(transform, ray);
+    const glm::vec3 image = glm::vec3(transform * glm::vec4(ray.origin + ray.direction * 7.F, 1.F));
+    const glm::vec3 walked = there.origin + there.direction * 7.F;
+
+    EXPECT_FLOAT_EQ(walked.x, image.x);
+    EXPECT_FLOAT_EQ(walked.y, image.y);
+    EXPECT_FLOAT_EQ(walked.z, image.z);
+    EXPECT_FLOAT_EQ(glm::length(there.direction), 4.F);
 }
 
 // =============================================================================
