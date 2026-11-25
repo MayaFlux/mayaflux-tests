@@ -72,8 +72,23 @@ void main() {
         using ComputeProcessor::ComputeProcessor;
 
         std::vector<ComputePipelineID> pipeline_ids;
+        size_t before_calls {};
+        size_t after_calls {};
+        bool allow_execution { true };
 
     protected:
+        bool on_before_execute(Portal::Graphics::CommandBufferID cmd_id, const std::shared_ptr<VKBuffer>& buffer) override
+        {
+            ++before_calls;
+            return allow_execution && ComputeProcessor::on_before_execute(cmd_id, buffer);
+        }
+
+        void on_after_execute(Portal::Graphics::CommandBufferID cmd_id, const std::shared_ptr<VKBuffer>& buffer) override
+        {
+            ++after_calls;
+            ComputeProcessor::on_after_execute(cmd_id, buffer);
+        }
+
         void on_pipeline_created(ComputePipelineID id) override
         {
             pipeline_ids.push_back(id);
@@ -169,6 +184,39 @@ void main() {
 
         EXPECT_EQ(contents(*processor, "data", 4), (std::vector<float> { 5.0F, 8.0F, 11.0F, 14.0F }));
         EXPECT_EQ(processor->pipeline_ids.size(), 1U);
+    }
+
+    TEST_F(ComputeProcessorDeviceTest, EachHookRunsOncePerProcessCycle)
+    {
+        TemporaryShader shader(this, k_scale_shader);
+        auto processor = scale_processor(shader);
+        auto buffer = tracked_buffer({ 1.0F, 2.0F, 3.0F, 4.0F });
+        processor->bind_buffer("data", buffer);
+        processor->set_push_constant_data(std::array<float, 2> { 3.0F, 2.0F });
+
+        processor->processing_function(buffer);
+        processor->processing_function(buffer);
+
+        EXPECT_EQ(processor->before_calls, 2U);
+        EXPECT_EQ(processor->after_calls, 2U);
+    }
+
+    TEST_F(ComputeProcessorDeviceTest, ARefusedCycleDispatchesNothing)
+    {
+        TemporaryShader shader(this, k_scale_shader);
+        auto processor = scale_processor(shader);
+        auto buffer = tracked_buffer({ 1.0F, 2.0F, 3.0F, 4.0F });
+        processor->bind_buffer("data", buffer);
+        processor->set_push_constant_data(std::array<float, 2> { 3.0F, 2.0F });
+        processor->processing_function(buffer);
+        const auto after_first = contents(*processor, "data", 4);
+
+        processor->allow_execution = false;
+        processor->processing_function(buffer);
+
+        EXPECT_EQ(contents(*processor, "data", 4), after_first);
+        EXPECT_EQ(processor->before_calls, 2U);
+        EXPECT_EQ(processor->after_calls, 1U);
     }
 
     TEST_F(ComputeProcessorDeviceTest, BufferPushConstantFragmentMergesOverTheProcessorConstants)

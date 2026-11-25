@@ -221,6 +221,58 @@ namespace {
         EXPECT_EQ(buffer->get_live_vertex_count(), k_plane_vertices);
     }
 
+    TEST_F(ComputeMeshBufferDeviceTest, AnEmptySurfaceIsNotDrawnUntilItHasVerticesAgain)
+    {
+        attach(fields::plane.cpu);
+        const auto render = buffer->get_render_processor();
+        run_mesh();
+        ASSERT_TRUE(render->is_visible(buffer));
+
+        buffer->set_field(Kinesis::SpatialField { .fn = [](const glm::vec3&) { return 5.0F; } });
+        run_mesh();
+        ASSERT_EQ(buffer->get_live_vertex_count(), 0U);
+        EXPECT_FALSE(render->is_visible(buffer));
+
+        buffer->set_field(fields::plane.cpu);
+        run_mesh();
+        EXPECT_TRUE(render->is_visible(buffer));
+    }
+
+    TEST_F(ComputeMeshBufferDeviceTest, ADrawHiddenByTheCallerStaysHiddenAcrossRemeshes)
+    {
+        attach(fields::plane.cpu);
+        const auto render = buffer->get_render_processor();
+        run_mesh();
+        render->set_visible(false, buffer);
+
+        buffer->set_field(Kinesis::SpatialField { .fn = [](const glm::vec3&) { return 5.0F; } });
+        run_mesh();
+        buffer->set_field(fields::plane.cpu);
+        run_mesh();
+
+        EXPECT_FALSE(render->is_visible(buffer));
+    }
+
+    TEST_F(ComputeMeshBufferDeviceTest, ACpuFieldIsEvaluatedOncePerCornerForEachRemesh)
+    {
+        constexpr uint32_t corners = (k_resolution + 1) * (k_resolution + 1) * (k_resolution + 1);
+        const auto samples = std::make_shared<std::atomic<uint32_t>>(0U);
+        attach(Kinesis::SpatialField { .fn = [samples](const glm::vec3& p) {
+            samples->fetch_add(1U, std::memory_order_relaxed);
+            return p.x - 0.25F;
+        } });
+
+        run_mesh();
+        EXPECT_EQ(samples->load(), corners);
+
+        run_mesh();
+        EXPECT_EQ(samples->load(), corners);
+
+        buffer->set_dirty();
+        run_mesh();
+        EXPECT_EQ(samples->load(), 2 * corners);
+    }
+
     TEST_F(ComputeMeshBufferDeviceTest, CpuModeWiresOnlyTheMeshStage)
     {
         attach(fields::plane.cpu);
