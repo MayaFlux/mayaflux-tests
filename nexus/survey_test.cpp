@@ -569,6 +569,35 @@ namespace {
         expect_near(bounds->max, { 0.2F, 5.2F, 0.0F });
     }
 
+    TEST_F(NexusSurveyInstanceBufferTest, AMorphedInstanceIsBoundedWithItsTargetsApplied)
+    {
+        const uint32_t rest = add(glm::mat4(1.0F));
+        const uint32_t raised = add(glm::translate(glm::mat4(1.0F), { 10.0F, 0.0F, 0.0F }));
+        const auto node = quad_node({ 0.0F, 0.0F, 0.0F });
+        auto target = node->get_mesh_vertices();
+        for (auto& vertex : target) {
+            vertex.position.y += 4.0F;
+        }
+        auto morphs = std::make_shared<Kakshya::MeshMorphTargets>();
+        morphs->emplace_back("raise", target);
+        network->get_slot(rest).morphs = morphs;
+        network->get_slot(raised).morph_weights = { 0.5F };
+
+        const auto shaped = Nexus::read_bounds(buffer(), raised);
+        const auto unshaped = Nexus::read_bounds(buffer(), rest);
+        const auto whole = Nexus::read_bounds(buffer());
+
+        ASSERT_TRUE(shaped.has_value());
+        ASSERT_TRUE(unshaped.has_value());
+        ASSERT_TRUE(whole.has_value());
+        expect_near(shaped->min, { -0.2F, 1.8F, 0.0F });
+        expect_near(shaped->max, { 0.2F, 2.2F, 0.0F });
+        expect_near(unshaped->min, { -0.2F, -0.2F, 0.0F });
+        expect_near(unshaped->max, { 0.2F, 0.2F, 0.0F });
+        expect_near(whole->min, { -0.2F, -0.2F, 0.0F });
+        expect_near(whole->max, { 10.2F, 2.2F, 0.0F });
+    }
+
     TEST(NexusSurveySlotTest, ASlotMeansNothingToABufferWithoutSlots)
     {
         auto node = std::make_shared<Nodes::GpuSync::PointCollectionNode>(std::vector<Kakshya::PointVertex> {
