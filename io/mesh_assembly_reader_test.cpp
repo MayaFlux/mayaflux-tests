@@ -586,8 +586,8 @@ TEST_F(MeshAssemblyModelTest, APerspectiveCameraBecomesALensOnItsNodeRow)
     const auto row = row_named(*assembly, "eye", true);
     ASSERT_TRUE(row);
     const auto* lens = assembly->lens(*assembly->placement(*row)->source);
-    EXPECT_NEAR(Kinesis::lens_vertical_fov(*lens), 1.0, 1e-4);
-    EXPECT_NEAR(Kinesis::lens_half_tangent(*lens), 2.0 * std::tan(0.5), 1e-4);
+    EXPECT_NEAR(Kinesis::frustum_vertical_fov(Kakshya::frustum_of(*lens)), 1.0, 1e-4);
+    EXPECT_NEAR(Kakshya::lens_half_tangent(*lens), 2.0 * std::tan(0.5), 1e-4);
     EXPECT_NEAR(lens->near, 0.5, 1e-5);
     EXPECT_NEAR(lens->far, 50.0, 1e-4);
     EXPECT_NEAR(assembly->world_transforms()[*row][3].z, 5.0F, 1e-5F);
@@ -624,7 +624,7 @@ TEST_F(MeshAssemblyModelTest, AnOrthographicCameraKeepsItsWidth)
     ASSERT_TRUE(row);
     const auto* lens = assembly->lens(*assembly->placement(*row)->source);
     EXPECT_NEAR(lens->orthographic_width, 6.0, 1e-5);
-    const auto projection = Kinesis::lens_projection(*lens, 1.5F);
+    const auto projection = Kinesis::frustum_projection(Kakshya::frustum_of(*lens), 1.5F);
     EXPECT_NEAR(projection[0][0], 2.0F / 6.0F, 1e-5F);
     EXPECT_NEAR(projection[3][3], 1.0F, 1e-5F);
 }

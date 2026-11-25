@@ -268,9 +268,9 @@ TEST_F(AlembicModelWriterTest, ASubdivisionCageKeepsItsCreases)
 TEST_F(AlembicModelWriterTest, CamerasAndLightsComeBack)
 {
     auto assembly = std::make_shared<MeshAssemblyContainer>();
-    Kinesis::Lens lens;
+    Kakshya::MeshAssemblyLens lens;
     lens.focal_length = 50.0;
-    lens.window = { .left = -0.5, .right = 1.5, .bottom = -0.5, .top = 0.75 };
+    lens.window = { .min = { -0.5F, -0.5F }, .max = { 1.5F, 0.75F } };
     lens.near = 0.5;
     lens.far = 250.0;
     lens.orthographic_width = 4.0;
@@ -290,10 +290,10 @@ TEST_F(AlembicModelWriterTest, CamerasAndLightsComeBack)
     const auto* held = read->lens(*read->placement(0)->source);
     ASSERT_NE(held, nullptr);
     EXPECT_DOUBLE_EQ(held->focal_length, 50.0);
-    EXPECT_NEAR(held->window.left, -0.5, 1.0e-9);
-    EXPECT_NEAR(held->window.right, 1.5, 1.0e-9);
-    EXPECT_NEAR(held->window.bottom, -0.5, 1.0e-9);
-    EXPECT_NEAR(held->window.top, 0.75, 1.0e-9);
+    EXPECT_NEAR(held->window.min.x, -0.5, 1.0e-9);
+    EXPECT_NEAR(held->window.max.x, 1.5, 1.0e-9);
+    EXPECT_NEAR(held->window.min.y, -0.5, 1.0e-9);
+    EXPECT_NEAR(held->window.max.y, 0.75, 1.0e-9);
     EXPECT_DOUBLE_EQ(held->far, 250.0);
     EXPECT_DOUBLE_EQ(held->orthographic_width, 4.0);
 

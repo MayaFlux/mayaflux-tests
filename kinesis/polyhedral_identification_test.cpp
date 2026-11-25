@@ -173,7 +173,7 @@ TEST(PolyhedralWeldTest, DuplicatedCubeCornersMergeBackToEightVertices)
         separate.push_back(cube.positions[vertex]);
     }
 
-    const auto welded = Kinesis::weld_positions(separate, 1.0e-4F);
+    const auto welded = Kinesis::merge_coincident_positions(separate, 1.0e-4F);
 
     ASSERT_TRUE(welded.has_value());
     EXPECT_EQ(welded->source_vertex.size(), 8U);
@@ -190,7 +190,7 @@ TEST(PolyhedralWeldTest, MergedVerticesAreNumberedByTheirLowestPointInOrder)
         glm::vec3(5.0F, 0.0F, 0.0F), glm::vec3(0.0F), glm::vec3(5.0F, 0.0F, 0.00005F), glm::vec3(0.0F, 0.00002F, 0.0F), glm::vec3(9.0F)
     };
 
-    const auto welded = Kinesis::weld_positions(points, 1.0e-4F);
+    const auto welded = Kinesis::merge_coincident_positions(points, 1.0e-4F);
 
     ASSERT_TRUE(welded.has_value());
     EXPECT_EQ(welded->source_vertex, (std::vector<uint32_t> { 0, 1, 4 }));
@@ -201,7 +201,7 @@ TEST(PolyhedralWeldTest, ClosenessChainsThroughNeighbours)
 {
     const std::vector<glm::vec3> chain { glm::vec3(0.0F), glm::vec3(0.00009F, 0.0F, 0.0F), glm::vec3(0.00018F, 0.0F, 0.0F) };
 
-    const auto welded = Kinesis::weld_positions(chain, 1.0e-4F);
+    const auto welded = Kinesis::merge_coincident_positions(chain, 1.0e-4F);
 
     ASSERT_TRUE(welded.has_value());
     EXPECT_EQ(welded->source_vertex.size(), 1U);
@@ -211,7 +211,7 @@ TEST(PolyhedralWeldTest, PointsFartherApartThanTheToleranceStaySeparate)
 {
     const std::vector<glm::vec3> points { glm::vec3(0.0F), glm::vec3(0.0003F, 0.0F, 0.0F) };
 
-    const auto welded = Kinesis::weld_positions(points, 1.0e-4F);
+    const auto welded = Kinesis::merge_coincident_positions(points, 1.0e-4F);
 
     ASSERT_TRUE(welded.has_value());
     EXPECT_EQ(welded->source_vertex.size(), 2U);
@@ -224,7 +224,7 @@ TEST(PolyhedralWeldTest, NeighbouringCellsAreSearchedInEveryDirection)
         glm::vec3(1.01F, 0.99F, 1.01F), glm::vec3(0.99F, 1.01F, 0.99F)
     };
 
-    const auto welded = Kinesis::weld_positions(points, 0.05F);
+    const auto welded = Kinesis::merge_coincident_positions(points, 0.05F);
 
     ASSERT_TRUE(welded.has_value());
     EXPECT_EQ(welded->source_vertex.size(), 1U);
@@ -236,7 +236,7 @@ TEST(PolyhedralWeldTest, AToleranceOfZeroMergesOnlyEqualPositionsAndTreatsNegati
         glm::vec3(0.0F), glm::vec3(-0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 0.0F, 1.0e-7F), glm::vec3(0.0F)
     };
 
-    const auto welded = Kinesis::weld_positions(points, 0.0F);
+    const auto welded = Kinesis::merge_coincident_positions(points, 0.0F);
 
     ASSERT_TRUE(welded.has_value());
     EXPECT_EQ(welded->vertex_map, (std::vector<uint32_t> { 0, 0, 1, 0 }));
@@ -247,8 +247,8 @@ TEST(PolyhedralWeldTest, APointThatIsNotFiniteMergesWithNothing)
     const float nan = std::numeric_limits<float>::quiet_NaN();
     const std::vector<glm::vec3> points { glm::vec3(nan, 0.0F, 0.0F), glm::vec3(nan, 0.0F, 0.0F), glm::vec3(1.0F) };
 
-    const auto exact = Kinesis::weld_positions(points, 0.0F);
-    const auto within = Kinesis::weld_positions(points, 0.1F);
+    const auto exact = Kinesis::merge_coincident_positions(points, 0.0F);
+    const auto within = Kinesis::merge_coincident_positions(points, 0.1F);
 
     ASSERT_TRUE(exact.has_value());
     ASSERT_TRUE(within.has_value());
@@ -260,9 +260,9 @@ TEST(PolyhedralWeldTest, ANegativeOrNonFiniteToleranceIsRefused)
 {
     const std::vector<glm::vec3> points { glm::vec3(0.0F) };
 
-    EXPECT_FALSE(Kinesis::weld_positions(points, -1.0F).has_value());
-    EXPECT_FALSE(Kinesis::weld_positions(points, std::numeric_limits<float>::infinity()).has_value());
-    EXPECT_FALSE(Kinesis::weld_positions(points, std::numeric_limits<float>::quiet_NaN()).has_value());
+    EXPECT_FALSE(Kinesis::merge_coincident_positions(points, -1.0F).has_value());
+    EXPECT_FALSE(Kinesis::merge_coincident_positions(points, std::numeric_limits<float>::infinity()).has_value());
+    EXPECT_FALSE(Kinesis::merge_coincident_positions(points, std::numeric_limits<float>::quiet_NaN()).has_value());
 }
 
 TEST(PolyhedralWeldTest, AGridOfDuplicatedPointsWeldsInParallelSizedInput)
@@ -274,7 +274,7 @@ TEST(PolyhedralWeldTest, AGridOfDuplicatedPointsWeldsInParallelSizedInput)
         separate.push_back(grid.positions[vertex]);
     }
 
-    const auto welded = Kinesis::weld_positions(separate, 0.25F);
+    const auto welded = Kinesis::merge_coincident_positions(separate, 0.25F);
 
     ASSERT_TRUE(welded.has_value());
     EXPECT_EQ(welded->source_vertex.size(), grid.positions.size());

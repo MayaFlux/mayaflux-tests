@@ -778,7 +778,7 @@ namespace {
     TEST(MeshAssemblyRealizationTest, ACameraRowMakesNoPartOfItsOwn)
     {
         auto assembly = std::make_shared<MeshAssemblyContainer>();
-        const auto lens = assembly->add_source({ .geometry = Kinesis::Lens {}, .name = "lens" });
+        const auto lens = assembly->add_source({ .geometry = Kakshya::MeshAssemblyLens {}, .name = "lens" });
         const auto mesh = assembly->add_source({ .geometry = level_triangle(), .name = "tri" });
         ASSERT_TRUE(assembly->add_placement({ .name = "camera", .source = lens }).has_value());
         ASSERT_TRUE(assembly->add_placement({ .name = "tri", .source = mesh }).has_value());

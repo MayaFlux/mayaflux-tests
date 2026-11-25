@@ -138,10 +138,10 @@ namespace {
         EXPECT_DOUBLE_EQ(lens->far, 500.0);
         EXPECT_DOUBLE_EQ(lens->f_stop, 2.8);
         EXPECT_DOUBLE_EQ(lens->focus_distance, 7.0);
-        EXPECT_NEAR(lens->window.left, -1.0, 1e-9);
-        EXPECT_NEAR(lens->window.right, 1.1, 1e-9);
-        EXPECT_NEAR(lens->window.top, 2.0 / 3.0, 1e-9);
-        EXPECT_NEAR(lens->window.bottom, -2.0 / 3.0, 1e-9);
+        EXPECT_NEAR(lens->window.min.x, -1.0, 1e-6);
+        EXPECT_NEAR(lens->window.max.x, 1.1, 1e-6);
+        EXPECT_NEAR(lens->window.max.y, 2.0 / 3.0, 1e-6);
+        EXPECT_NEAR(lens->window.min.y, -2.0 / 3.0, 1e-6);
     }
 
     TEST_F(AlembicCameraTest, ASampleThatIsNotThereIsRefusedWithAReason)

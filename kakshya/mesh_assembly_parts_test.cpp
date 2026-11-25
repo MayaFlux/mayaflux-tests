@@ -242,7 +242,7 @@ namespace {
     TEST(MeshAssemblyPartsTest, ACameraIsAKindOfRowAndHasAPartOfItsOwn)
     {
         auto assembly = std::make_shared<MeshAssemblyContainer>();
-        const auto lens = assembly->add_source({ .geometry = Kinesis::Lens {}, .name = "lens" });
+        const auto lens = assembly->add_source({ .geometry = Kakshya::MeshAssemblyLens {}, .name = "lens" });
         const auto mesh = assembly->add_source({ .geometry = part_triangle(), .name = "tri" });
         std::ignore = assembly->add_placement({ .name = "camera", .source = lens });
         std::ignore = assembly->add_placement({ .name = "tri", .source = mesh });
@@ -262,9 +262,9 @@ namespace {
     TEST(MeshAssemblyFramesTest, ACameraSourceTakesLensFramesAndNothingElseDoes)
     {
         auto assembly = std::make_shared<MeshAssemblyContainer>();
-        const auto lens = assembly->add_source({ .geometry = Kinesis::Lens {}, .name = "lens" });
+        const auto lens = assembly->add_source({ .geometry = Kakshya::MeshAssemblyLens {}, .name = "lens" });
         const auto mesh = assembly->add_source({ .geometry = part_triangle(), .name = "tri" });
-        const auto frames = ResidentFrames<Kinesis::Lens>::create(*Kinesis::TimeSampling::uniform(1.0), std::vector<Kinesis::Lens> { Kinesis::Lens {}, Kinesis::Lens {} });
+        const auto frames = ResidentFrames<Kakshya::MeshAssemblyLens>::create(*Kinesis::TimeSampling::uniform(1.0), std::vector<Kakshya::MeshAssemblyLens> { Kakshya::MeshAssemblyLens {}, Kakshya::MeshAssemblyLens {} });
 
         EXPECT_TRUE(assembly->set_lens_frames(lens, frames));
         EXPECT_FALSE(assembly->set_lens_frames(mesh, frames));

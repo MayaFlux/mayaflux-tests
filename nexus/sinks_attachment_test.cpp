@@ -1096,7 +1096,7 @@ namespace {
             locus = std::make_unique<Nexus::Locus>(
                 Kinesis::NavigationConfig {}, 4.0F,
                 [](const PerceptionContext&) { },
-                [this](const InfluenceContext&) { seen_at_influence = first->get_view_transform().has_value(); });
+                [this](const InfluenceContext&) { seen_at_influence = first->get_view_cell() != nullptr; });
         }
 
         std::shared_ptr<Buffers::RenderProcessor> first;
@@ -1131,17 +1131,13 @@ namespace {
         EXPECT_EQ(locus->view_targets().front(), second);
     }
 
-    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, InfluenceGivesEveryTargetTheCurrentView, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, EveryTargetDrawsFromTheLocusViewpoint, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         locus->add_view_target(first);
         locus->add_view_target(second);
 
-        locus->invoke_influence(InfluenceContext {});
-
         for (const auto& target : { first, second }) {
-            ASSERT_TRUE(target->get_view_transform().has_value());
-            EXPECT_EQ(target->get_view_transform()->view, locus->current_view().view);
-            EXPECT_EQ(target->get_view_transform()->projection, locus->current_view().projection);
+            EXPECT_EQ(target->get_view_cell(), locus->view());
         }
     }
 
@@ -1151,13 +1147,11 @@ namespace {
         locus->add_view_target(second);
         locus->remove_view_target(second);
 
-        locus->invoke_influence(InfluenceContext {});
-
-        EXPECT_TRUE(first->get_view_transform().has_value());
-        EXPECT_FALSE(second->get_view_transform().has_value());
+        EXPECT_EQ(first->get_view_cell(), locus->view());
+        EXPECT_EQ(second->get_view_cell(), nullptr);
     }
 
-    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, TheViewIsPushedBeforeTheInfluenceFunctionRuns, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, TheViewIsBoundWhenTheInfluenceFunctionRuns, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         locus->add_view_target(first);
 
@@ -1166,18 +1160,15 @@ namespace {
         EXPECT_TRUE(seen_at_influence);
     }
 
-    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, ATurnedLocusPushesTheNewView, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    MAYAFLUX_TEST_WITH(TEST_F, NexusLocusViewTest, ATurnedLocusMovesTheViewpoint, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         locus->add_view_target(first);
-        locus->invoke_influence(InfluenceContext {});
-        const auto before = first->get_view_transform()->view;
+        const auto before = locus->view()->read().first;
 
         locus->nav().yaw += 0.5F;
         locus->invoke_perception(PerceptionContext {});
-        locus->invoke_influence(InfluenceContext {});
 
-        EXPECT_NE(first->get_view_transform()->view, before);
-        EXPECT_EQ(first->get_view_transform()->view, locus->current_view().view);
+        EXPECT_NE(locus->view()->read().first, before);
     }
 
 }
