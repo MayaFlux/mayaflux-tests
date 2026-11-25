@@ -455,7 +455,7 @@ namespace {
         }
     }
 
-    TEST_F(VolumeFileTest, TheHalfFloatOptionIsCurrentlyIgnored)
+    TEST_F(VolumeFileTest, TheHalfFloatOptionStoresValuesAtHalfPrecision)
     {
         const auto lattice = make_lattice({ 4, 4, 4 }, glm::vec3(0.0F), glm::vec3(4.0F));
         const auto source = volume_of(lattice, { scalar_field("fine", lattice, [](size_t i) {
@@ -467,7 +467,13 @@ namespace {
         const auto loaded = round_trip(source, options);
 
         ASSERT_TRUE(loaded.has_value());
-        EXPECT_EQ(*loaded->fields.front().as_scalar(), *source.fields.front().as_scalar());
+        const auto& values = *loaded->fields.front().as_scalar();
+        const auto& original = *source.fields.front().as_scalar();
+        ASSERT_EQ(values.size(), original.size());
+        EXPECT_NE(values, original);
+        for (size_t i = 0; i < values.size(); ++i) {
+            EXPECT_NEAR(values[i], original[i], std::ldexp(1.0F, -13)) << i;
+        }
     }
 
     class VolumeCompressionTest
@@ -776,7 +782,7 @@ namespace {
         EXPECT_NE(reader.get_last_error().find("No file open"), std::string::npos);
     }
 
-    TEST_F(VolumeFileTest, Int32GridIsNarrowedToFloatWithAPrecisionWarning)
+    TEST_F(VolumeFileTest, Int32GridKeepsItsIntegers)
     {
         const std::vector<glm::ivec3> coords { { 1, 2, 3 }, { 4, 5, 6 } };
         const std::array<int32_t, 2> values { 7, 16777217 };
@@ -790,7 +796,6 @@ namespace {
                 .values = values.data(),
                 .background = &background,
                 .transform = unit_scale_transform }));
-        LogCapture::clear();
 
         IO::VolumeReader reader;
         const auto loaded = reader.load(path);
@@ -799,15 +804,14 @@ namespace {
         EXPECT_EQ(loaded->lattice.resolution, glm::uvec3(8, 8, 8));
         EXPECT_TRUE(near(loaded->lattice.bounds.min, glm::vec3(-0.5F)));
         EXPECT_TRUE(near(loaded->lattice.bounds.max, glm::vec3(7.5F)));
-        const auto& cells = *loaded->fields.front().as_scalar();
-        EXPECT_EQ(cells[loaded->lattice.index({ 1, 2, 3 })], 7.0F);
-        EXPECT_NEAR(cells[loaded->lattice.index({ 4, 5, 6 })], 16777217.0F, 1.0F);
-        EXPECT_EQ(cells[loaded->lattice.index({ 0, 0, 0 })], -2.0F);
-        EXPECT_EQ(cells[loaded->lattice.index({ 7, 7, 7 })], -2.0F);
-        EXPECT_TRUE(LogCapture::contains("lost precision"));
+        const auto& cells = std::get<std::vector<int32_t>>(loaded->fields.front().values);
+        EXPECT_EQ(cells[loaded->lattice.index({ 1, 2, 3 })], 7);
+        EXPECT_EQ(cells[loaded->lattice.index({ 4, 5, 6 })], 16777217);
+        EXPECT_EQ(cells[loaded->lattice.index({ 0, 0, 0 })], -2);
+        EXPECT_EQ(cells[loaded->lattice.index({ 7, 7, 7 })], -2);
     }
 
-    TEST_F(VolumeFileTest, Int32GridThatFitsFloatIsNarrowedLosslessly)
+    TEST_F(VolumeFileTest, AnIntegerFieldNarrowsToFloatOnRequest)
     {
         const std::vector<glm::ivec3> coords { { 0, 0, 0 }, { 1, 0, 0 } };
         const std::array<int32_t, 2> values { 7, 9 };
@@ -821,17 +825,15 @@ namespace {
                 .values = values.data(),
                 .background = &background,
                 .transform = unit_scale_transform }));
-        LogCapture::clear();
 
         IO::VolumeReader reader;
         const auto loaded = reader.load(path);
 
         ASSERT_TRUE(loaded.has_value());
-        const auto& cells = *loaded->fields.front().as_scalar();
+        const auto narrowed = loaded->fields.front().narrowed();
+        const auto& cells = std::get<std::vector<float>>(narrowed);
         EXPECT_EQ(cells[loaded->lattice.index({ 0, 0, 0 })], 7.0F);
         EXPECT_EQ(cells[loaded->lattice.index({ 1, 0, 0 })], 9.0F);
-        EXPECT_TRUE(LogCapture::contains("losslessly"));
-        EXPECT_FALSE(LogCapture::contains("lost precision"));
     }
 
     TEST_F(VolumeFileTest, AffineTransformGridUsesTheMatrixDiagonalAndLastColumn)
@@ -1132,7 +1134,7 @@ namespace {
         EXPECT_EQ(std::count_if(cells.begin(), cells.end(), [](float v) { return v != 0.0F; }), 2);
     }
 
-    TEST_F(VolumeFileTest, GridsWithDifferentVoxelSizesInOneFileWarnAndStillLoad)
+    TEST_F(VolumeFileTest, GridsWithDifferentVoxelSizesInOneFileAreResampled)
     {
         const std::vector<glm::ivec3> coords { { 1, 1, 1 }, { 2, 2, 2 } };
         const std::array<float, 2> values { 1.0F, 2.0F };
@@ -1158,10 +1160,10 @@ namespace {
 
         ASSERT_TRUE(loaded.has_value()) << reader.get_last_error();
         EXPECT_EQ(loaded->fields.size(), 2U);
-        EXPECT_TRUE(LogCapture::contains("not be aligned"));
+        EXPECT_TRUE(LogCapture::contains("was resampled"));
     }
 
-    TEST_F(VolumeFileTest, DoubleGridValuesBeyondFloatRangeCurrentlyOverflowToSignedInfinity)
+    TEST_F(VolumeFileTest, DoubleGridValuesBeyondFloatRangeStayDouble)
     {
         const std::vector<glm::ivec3> coords { { 0, 0, 0 }, { 1, 0, 0 }, { 2, 0, 0 }, { 3, 0, 0 }, { 4, 0, 0 } };
         const std::array<double, 5> values { 0.1, 1.0e300, -1.0e300, 1.0e-300, 1152921504606846976.0 };
@@ -1175,22 +1177,15 @@ namespace {
                 .values = values.data(),
                 .background = &background,
                 .transform = unit_scale_transform }));
-        LogCapture::clear();
 
         IO::VolumeReader reader;
         const auto loaded = reader.load(path);
 
         ASSERT_TRUE(loaded.has_value()) << reader.get_last_error();
-        const auto& cells = *loaded->fields.front().as_scalar();
-        const float inf = std::numeric_limits<float>::infinity();
-        EXPECT_EQ(cells[loaded->lattice.index({ 1, 0, 0 })], inf);
-        EXPECT_EQ(cells[loaded->lattice.index({ 2, 0, 0 })], -inf);
-        EXPECT_TRUE(std::isfinite(cells[loaded->lattice.index({ 0, 0, 0 })]));
-        EXPECT_TRUE(std::isfinite(cells[loaded->lattice.index({ 3, 0, 0 })]));
-        EXPECT_TRUE(std::isfinite(cells[loaded->lattice.index({ 4, 0, 0 })]));
-        EXPECT_NEAR(cells[loaded->lattice.index({ 0, 0, 0 })], 0.1F, 1e-7F);
-        EXPECT_NEAR(cells[loaded->lattice.index({ 4, 0, 0 })], 1152921504606846976.0F, 1.0e10F);
-        EXPECT_TRUE(LogCapture::contains("lost precision"));
+        const auto& cells = std::get<std::vector<double>>(loaded->fields.front().values);
+        for (size_t i = 0; i < values.size(); ++i) {
+            EXPECT_EQ(cells[loaded->lattice.index({ static_cast<uint32_t>(i), 0, 0 })], values[i]) << i;
+        }
     }
 
 }
