@@ -208,6 +208,21 @@ namespace {
         EXPECT_TRUE(std::equal(b.begin(), b.end(), all.begin() + static_cast<std::ptrdiff_t>(a.size())));
     }
 
+    TEST(AssemblyOperatorTest, ItemsAreReadableInInsertionOrderWithTheirIndices)
+    {
+        AssemblyOperator op;
+        auto points = op.add_geometry(positions(3));
+        auto mesh = op.add_geometry(quad_mesh());
+
+        const auto& items = op.get_items();
+
+        ASSERT_EQ(items.size(), 2U);
+        EXPECT_EQ(items[0].get(), points.get());
+        EXPECT_EQ(items[1].get(), mesh.get());
+        EXPECT_FALSE(items[0]->has_indices());
+        EXPECT_EQ(items[1]->get_index_count(), 6U);
+    }
+
     TEST(AssemblyOperatorTest, ProcessRecomputesAnEditedItem)
     {
         AssemblyOperator op;
