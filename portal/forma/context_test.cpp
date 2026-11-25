@@ -1337,16 +1337,16 @@ TEST_F(FormaContextTest, AFilterWithNoEventTypeReceivesEveryEventItsOtherFieldsA
     EXPECT_GE(calls, 2);
 }
 
-TEST_F(FormaContextTest, ReceivesRefusesKeyEventsWithoutAKeyAndEventsAnElementNeverGets)
+TEST_F(FormaContextTest, ReceivesAcceptsKeyEventsWithOrWithoutAKeyAndRefusesEventsAnElementNeverGets)
 {
     using Forma::Context;
 
     EXPECT_TRUE(Context::receives(filter_for(WindowEventType::MOUSE_BUTTON_PRESSED)));
     EXPECT_TRUE(Context::receives(filter_for(WindowEventType::KEY_PRESSED, std::nullopt, Keys::A)));
     EXPECT_TRUE(Context::receives(Vruta::WindowEventFilter {}));
-    EXPECT_FALSE(Context::receives(filter_for(WindowEventType::KEY_PRESSED)));
-    EXPECT_FALSE(Context::receives(filter_for(WindowEventType::KEY_RELEASED)));
-    EXPECT_FALSE(Context::receives(filter_for(WindowEventType::KEY_REPEAT)));
+    EXPECT_TRUE(Context::receives(filter_for(WindowEventType::KEY_PRESSED)));
+    EXPECT_TRUE(Context::receives(filter_for(WindowEventType::KEY_RELEASED)));
+    EXPECT_TRUE(Context::receives(filter_for(WindowEventType::KEY_REPEAT)));
     EXPECT_FALSE(Context::receives(filter_for(WindowEventType::WINDOW_RESIZED)));
     EXPECT_FALSE(Context::receives(filter_for(WindowEventType::CUSTOM)));
 }
@@ -1356,12 +1356,81 @@ TEST_F(FormaContextTest, SubscribeReturnsFalseAndSubscribesNothingForARefusedFil
     const uint32_t id = left_half();
     int calls = 0;
 
-    EXPECT_FALSE(ctx->subscribe(id, filter_for(WindowEventType::KEY_PRESSED), count_into(calls)));
     EXPECT_FALSE(ctx->subscribe(id, filter_for(WindowEventType::WINDOW_RESIZED), count_into(calls)));
     EXPECT_FALSE(ctx->subscribe(id, filter_for(WindowEventType::MOUSE_ENTERED), nullptr));
 
     window->move_to_ndc(k_left);
     EXPECT_EQ(calls, 0);
+}
+
+TEST_F(FormaContextTest, AKeySubscriptionNamingNoKeyReceivesEveryKeyOfTheFocusedElement)
+{
+    const uint32_t id = left_half();
+    std::vector<int> keys;
+    Vruta::WindowEventFilter filter;
+    filter.event_type = WindowEventType::KEY_PRESSED;
+    ASSERT_TRUE(ctx->subscribe(id, filter, [&](uint32_t, const Core::WindowEvent& event, glm::vec2) {
+        keys.push_back(std::get<Core::WindowEvent::KeyData>(event.data).key);
+    }));
+
+    window->key_down(Keys::A);
+    EXPECT_TRUE(keys.empty());
+
+    focus(id, k_left);
+    window->key_down(Keys::A);
+    window->key_down(Keys::B);
+
+    ASSERT_EQ(keys.size(), 2U);
+    EXPECT_EQ(keys.front(), static_cast<int>(Keys::A));
+    EXPECT_EQ(keys.back(), static_cast<int>(Keys::B));
+}
+
+TEST_F(FormaContextTest, ANamedAndAnUnnamedKeySubscriptionEachReceiveAKeyOnce)
+{
+    const uint32_t id = left_half();
+    int named = 0;
+    int unnamed = 0;
+    ASSERT_TRUE(ctx->subscribe(id, filter_for(WindowEventType::KEY_PRESSED, std::nullopt, Keys::A), count_into(named)));
+    ASSERT_TRUE(ctx->subscribe(id, filter_for(WindowEventType::KEY_PRESSED), count_into(unnamed)));
+    focus(id, k_left);
+
+    window->key_down(Keys::A);
+    EXPECT_EQ(named, 1);
+    EXPECT_EQ(unnamed, 1);
+
+    window->key_down(Keys::B);
+    EXPECT_EQ(named, 1);
+    EXPECT_EQ(unnamed, 2);
+}
+
+TEST_F(FormaContextTest, DestroyingTheContextCancelsAnUnnamedKeySubscription)
+{
+    const uint32_t id = left_half();
+    int calls = 0;
+    ASSERT_TRUE(ctx->subscribe(id, filter_for(WindowEventType::KEY_PRESSED), count_into(calls)));
+    const std::string name = "ctx_any_key_" + std::to_string(static_cast<int>(WindowEventType::KEY_PRESSED));
+    ASSERT_NE(manager->get_event(name), nullptr);
+
+    ctx.reset();
+
+    EXPECT_EQ(manager->get_event(name), nullptr);
+}
+
+TEST_F(FormaContextTest, APointerSubscriptionCanRequireModifiers)
+{
+    const uint32_t id = left_half();
+    int with_ctrl = 0;
+    Vruta::WindowEventFilter filter;
+    filter.event_type = WindowEventType::MOUSE_BUTTON_PRESSED;
+    filter.modifiers = IO::Modifiers::Ctrl;
+    ASSERT_TRUE(ctx->subscribe(id, filter, count_into(with_ctrl)));
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+    EXPECT_EQ(with_ctrl, 0);
+
+    window->press(MouseButtons::Left, IO::Modifiers::Ctrl);
+    EXPECT_EQ(with_ctrl, 1);
 }
 
 }

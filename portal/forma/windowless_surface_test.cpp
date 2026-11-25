@@ -774,6 +774,117 @@ TEST_F(FormaRoutedInputFixture, TheHostElementLosingFocusClearsFocusInTheImageSu
     EXPECT_FALSE(offscreen->ctx().focused().has_value());
 }
 
+TEST_F(FormaRoutedInputFixture, KeysReachTheImageElementWhileTheHostElementHasFocus)
+{
+    int pressed = 0;
+    int released = 0;
+    int held = 0;
+    offscreen->ctx().on_press(inner, Keys::A, [&](uint32_t) { ++pressed; });
+    offscreen->ctx().on_release(inner, Keys::A, [&](uint32_t) { ++released; });
+    offscreen->ctx().on_held(inner, Keys::A, [&](uint32_t) { ++held; });
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(MouseButtons::Left);
+
+    window->key_down(Keys::A);
+    window->key_repeat(Keys::A);
+    window->key_up(Keys::A);
+
+    EXPECT_EQ(pressed, 1);
+    EXPECT_EQ(held, 2);
+    EXPECT_EQ(released, 1);
+}
+
+TEST_F(FormaRoutedInputFixture, AChordMatchesThroughTheRouting)
+{
+    int chord = 0;
+    offscreen->ctx().on_press(inner, Keys::V | Modifiers::Ctrl, [&](uint32_t) { ++chord; });
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(MouseButtons::Left);
+
+    window->key_down(Keys::V);
+    EXPECT_EQ(chord, 0);
+    window->key_down(Keys::V, Modifiers::Ctrl);
+    EXPECT_EQ(chord, 1);
+}
+
+TEST_F(FormaRoutedInputFixture, AModifierHeldBeforeTheElementHadFocusIsSeenAtTheClick)
+{
+    Modifiers seen = Modifiers::None;
+    offscreen->ctx().on_press(inner, MouseButtons::Left, [&](uint32_t, glm::vec2) { seen = offscreen->ctx().modifiers(); });
+
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(MouseButtons::Left, Modifiers::Shift);
+
+    EXPECT_EQ(seen, Modifiers::Shift);
+}
+
+TEST_F(FormaRoutedInputFixture, ARoutedPointerSubscriptionCanRequireModifiers)
+{
+    int with_ctrl = 0;
+    Vruta::WindowEventFilter filter;
+    filter.event_type = Core::WindowEventType::MOUSE_BUTTON_PRESSED;
+    filter.modifiers = Modifiers::Ctrl;
+    ASSERT_TRUE(offscreen->ctx().subscribe(inner, filter, [&](uint32_t, const Core::WindowEvent&, glm::vec2) { ++with_ctrl; }));
+    window->move_to_ndc({ 0.F, 0.F });
+
+    window->press(MouseButtons::Left);
+    EXPECT_EQ(with_ctrl, 0);
+    window->press(MouseButtons::Left, Modifiers::Ctrl);
+    EXPECT_EQ(with_ctrl, 1);
+}
+
+TEST_F(FormaRoutedInputFixture, KeysStopWhenTheHostElementLosesFocus)
+{
+    int pressed = 0;
+    offscreen->ctx().on_press(inner, Keys::A, [&](uint32_t) { ++pressed; });
+    const uint32_t elsewhere = add_to(*host, { 0.6F, 0.6F }, { 0.9F, 0.9F });
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(MouseButtons::Left);
+    window->move_to_ndc({ 0.75F, 0.75F });
+    window->press(MouseButtons::Left);
+    ASSERT_EQ(host->ctx().focused(), elsewhere);
+
+    window->key_down(Keys::A);
+
+    EXPECT_EQ(pressed, 0);
+}
+
+TEST_F(FormaRoutedInputFixture, ANamedKeySubscriptionOnTheHostElementDoesNotDoubleTheRoutedKey)
+{
+    int routed = 0;
+    int named = 0;
+    offscreen->ctx().on_press(inner, Keys::A, [&](uint32_t) { ++routed; });
+    Vruta::WindowEventFilter filter;
+    filter.event_type = Core::WindowEventType::KEY_PRESSED;
+    filter.key_code = Keys::A;
+    ASSERT_TRUE(host->ctx().subscribe(shown, filter, [&](uint32_t, const Core::WindowEvent&, glm::vec2) { ++named; }));
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(MouseButtons::Left);
+
+    window->key_down(Keys::A);
+
+    EXPECT_EQ(routed, 1);
+    EXPECT_EQ(named, 1);
+}
+
+TEST_F(FormaRoutedInputFixture, KeysAndModifiersPassThroughASurfaceNestedInARoutedOne)
+{
+    const auto deeper_target = Portal::Graphics::get_texture_manager().create_image_target({ .width = 64, .height = 64 });
+    ASSERT_NE(deeper_target, nullptr);
+    auto deeper = Forma::create_surface(Forma::SurfaceConfig { .image = deeper_target });
+    const uint32_t deepest = deeper.add(Forma::Element {}.with_rect({ -1.F, -1.F }, { 1.F, 1.F })).id();
+    ASSERT_TRUE(deeper.route_input_from(*offscreen, inner));
+    int chord = 0;
+    deeper.ctx().on_press(deepest, Keys::V | Modifiers::Ctrl, [&](uint32_t) { ++chord; });
+
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(MouseButtons::Left);
+    window->key_down(Keys::V, Modifiers::Ctrl);
+
+    EXPECT_EQ(chord, 1);
+    EXPECT_EQ(deeper.ctx().modifiers(), Modifiers::Ctrl);
+}
+
 TEST_F(FormaRoutedInputFixture, AMovedHostElementIsFollowedByTheMapping)
 {
     glm::vec2 seen {};
