@@ -50,10 +50,10 @@ namespace {
         EXPECT_FALSE(emitter.color().has_value());
         EXPECT_FALSE(emitter.size().has_value());
 
-        emitter.set({ .intensity = 0.5F });
-        emitter.set({ .radius = 3.0F });
-        emitter.set({ .color = glm::vec3 { 0.1F, 0.2F, 0.3F } });
-        emitter.set({ .size = 9.0F });
+        emitter.set(Nexus::EmitterControls { .intensity = 0.5F });
+        emitter.set(Nexus::EmitterControls { .radius = 3.0F });
+        emitter.set(Nexus::EmitterControls { .color = glm::vec3 { 0.1F, 0.2F, 0.3F } });
+        emitter.set(Nexus::EmitterControls { .size = 9.0F });
 
         EXPECT_FLOAT_EQ(emitter.intensity(), 0.5F);
         EXPECT_FLOAT_EQ(emitter.radius(), 3.0F);
@@ -62,8 +62,8 @@ namespace {
         ASSERT_TRUE(emitter.size().has_value());
         EXPECT_FLOAT_EQ(*emitter.size(), 9.0F);
 
-        emitter.set({ .color = Nexus::Quantity::unset() });
-        emitter.set({ .size = Nexus::Quantity::unset() });
+        emitter.set(Nexus::EmitterControls { .color = Nexus::Quantity::unset() });
+        emitter.set(Nexus::EmitterControls { .size = Nexus::Quantity::unset() });
         EXPECT_FALSE(emitter.color().has_value());
         EXPECT_FALSE(emitter.size().has_value());
     }
@@ -182,7 +182,7 @@ namespace {
         Sensor sensor(1.0F);
 
         sensor.set({ .position = glm::vec3 { 1.0F, 0.0F, -1.0F } });
-        sensor.set({ .query_radius = 6.0F });
+        sensor.set(Nexus::SensorControls { .query_radius = 6.0F });
 
         ASSERT_TRUE(sensor.position().has_value());
         EXPECT_EQ(*sensor.position(), glm::vec3(1.0F, 0.0F, -1.0F));
@@ -286,7 +286,7 @@ namespace {
         agent.set({ .position = glm::vec3 { 1.0F, 2.0F, 3.0F } });
         const glm::quat q = glm::angleAxis(glm::radians(90.0F), glm::vec3(0.0F, 1.0F, 0.0F));
         agent.set({ .orientation = q });
-        agent.set({ .query_radius = 8.0F });
+        agent.set(Nexus::AgentControls { .query_radius = 8.0F });
 
         ASSERT_TRUE(agent.position().has_value());
         EXPECT_EQ(*agent.position(), glm::vec3(1.0F, 2.0F, 3.0F));
@@ -309,10 +309,10 @@ namespace {
         EXPECT_FALSE(agent.color().has_value());
         EXPECT_FALSE(agent.size().has_value());
 
-        agent.set({ .intensity = 0.5F });
-        agent.set({ .radius = 3.0F });
-        agent.set({ .color = glm::vec3 { 0.1F, 0.2F, 0.3F } });
-        agent.set({ .size = 9.0F });
+        agent.set(Nexus::AgentControls { .intensity = 0.5F });
+        agent.set(Nexus::AgentControls { .radius = 3.0F });
+        agent.set(Nexus::AgentControls { .color = glm::vec3 { 0.1F, 0.2F, 0.3F } });
+        agent.set(Nexus::AgentControls { .size = 9.0F });
 
         EXPECT_FLOAT_EQ(agent.intensity(), 0.5F);
         EXPECT_FLOAT_EQ(agent.radius(), 3.0F);
@@ -320,8 +320,8 @@ namespace {
         ASSERT_TRUE(agent.size().has_value());
         EXPECT_FLOAT_EQ(*agent.size(), 9.0F);
 
-        agent.set({ .color = Nexus::Quantity::unset() });
-        agent.set({ .size = Nexus::Quantity::unset() });
+        agent.set(Nexus::AgentControls { .color = Nexus::Quantity::unset() });
+        agent.set(Nexus::AgentControls { .size = Nexus::Quantity::unset() });
         EXPECT_FALSE(agent.color().has_value());
         EXPECT_FALSE(agent.size().has_value());
     }

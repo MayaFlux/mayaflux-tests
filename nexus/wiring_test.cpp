@@ -20,6 +20,7 @@ namespace {
     using Nexus::Emitter;
     using Nexus::Fabric;
     using Nexus::InfluenceContext;
+    using Nexus::PlacementControls;
     using Nexus::PerceptionContext;
     using Nexus::Sensor;
     using Nexus::Wiring;
@@ -412,6 +413,68 @@ namespace {
         EXPECT_EQ(fabric.wiring_for(emitter->id())->position_fn_name(), "walk");
     }
 
+    TEST_F(NexusWiringTest, ACommitDrivenWiringIsPlacedBeforeItIsIndexed)
+    {
+        const auto emitter = make_counting_emitter();
+        const glm::quat turn(0.5F, 0.5F, 0.5F, 0.5F);
+        fabric.wire(emitter)
+            .place_from("anchor", [turn] { return PlacementControls { .position = glm::vec3(3.0F), .orientation = turn }; })
+            .finalise();
+
+        fabric.commit();
+
+        EXPECT_EQ(fired, 1);
+        EXPECT_EQ(last.position, glm::vec3(3.0F));
+        EXPECT_EQ(last.orientation, turn);
+        EXPECT_EQ(fabric.within_radius(glm::vec3(3.0F), 0.5F).size(), 1U);
+        EXPECT_EQ(fabric.wiring_for(emitter->id())->position_fn_name(), "anchor");
+    }
+
+    TEST_F(NexusWiringTest, AMemberASourceLeavesEmptyStaysAsItWas)
+    {
+        const auto emitter = make_counting_emitter();
+        const glm::quat turn(0.5F, 0.5F, 0.5F, 0.5F);
+        emitter->set({ .orientation = turn });
+        fabric.wire(emitter).place_from([] { return PlacementControls { .position = glm::vec3(1.0F) }; }).finalise();
+
+        fabric.fire(emitter->id());
+
+        EXPECT_EQ(emitter->position(), glm::vec3(1.0F));
+        EXPECT_EQ(emitter->orientation(), turn);
+    }
+
+    TEST_F(NexusWiringTest, ASourceWinsOverMoveTo)
+    {
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter)
+            .move_to(glm::vec3(1.0F, 0.0F, 0.0F), 0.01)
+            .position_from([] { return glm::vec3(9.0F); })
+            .finalise();
+
+        run_samples(1000);
+
+        EXPECT_EQ(fired, 1);
+        EXPECT_EQ(last.position, glm::vec3(9.0F));
+    }
+
+    TEST_F(NexusWiringTest, CancelWiringStopsThePlacementSource)
+    {
+        int asked {};
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter)
+            .position_from([&asked] {
+                ++asked;
+                return glm::vec3(1.0F);
+            })
+            .finalise();
+
+        fabric.cancel_wiring(emitter->id());
+        fabric.fire(emitter->id());
+
+        EXPECT_EQ(fired, 1);
+        EXPECT_EQ(asked, 0);
+    }
+
     TEST_F(NexusWiringTest, MoveToChoreographsPositionsWithTheirDelays)
     {
         const auto emitter = make_counting_emitter();
@@ -574,6 +637,140 @@ namespace {
         EXPECT_EQ(detached, 1);
     }
 
+    class NexusWiringEndingTest : public NexusWiringTest {
+    protected:
+        std::function<void()> note_completion()
+        {
+            return [this] { order.emplace_back("complete"); };
+        }
+
+        std::function<void()> note_detach()
+        {
+            return [this] { order.emplace_back("detach"); };
+        }
+
+        const std::vector<std::string> ran_out { "complete", "detach" };
+        const std::vector<std::string> taken_away { "detach" };
+        std::vector<std::string> order;
+    };
+
+    TEST_F(NexusWiringEndingTest, UsingUpTimesCompletesThenDetachesOnce)
+    {
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).every(0.001).times(3).on_complete(note_completion()).on_detach(note_detach()).finalise();
+
+        step_samples(k_interval_samples * 10);
+        EXPECT_EQ(order, ran_out);
+
+        fabric.remove(emitter->id());
+        run_samples(k_interval_samples);
+        EXPECT_EQ(order, ran_out);
+    }
+
+    TEST_F(NexusWiringEndingTest, AnExpiredDurationCompletes)
+    {
+        fabric.wire(make_counting_emitter())
+            .every(0.001)
+            .for_duration(0.005)
+            .on_complete(note_completion())
+            .on_detach(note_detach())
+            .finalise();
+
+        step_samples(k_interval_samples * 30);
+
+        EXPECT_EQ(order, ran_out);
+    }
+
+    TEST_F(NexusWiringEndingTest, ARepeatedChoreographyCompletesAfterItsLastStep)
+    {
+        fabric.wire(make_counting_emitter())
+            .move_to(glm::vec3(1.0F), 0.01)
+            .move_to(glm::vec3(2.0F), 0.01)
+            .times(2)
+            .on_complete(note_completion())
+            .on_detach(note_detach())
+            .finalise();
+
+        run_samples(700);
+        EXPECT_TRUE(order.empty());
+
+        run_samples(5000);
+        EXPECT_EQ(fired, 4);
+        EXPECT_EQ(order, ran_out);
+    }
+
+    TEST_F(NexusWiringEndingTest, AReturningRoutineCompletes)
+    {
+        int runs {};
+        fabric.wire(make_counting_emitter())
+            .use([&runs]() { return counting_routine(&runs); })
+            .on_complete(note_completion())
+            .on_detach(note_detach())
+            .finalise();
+
+        run_samples(10);
+
+        EXPECT_EQ(runs, 1);
+        EXPECT_EQ(order, ran_out);
+    }
+
+    TEST_F(NexusWiringEndingTest, CancelWiringDetachesWithoutCompleting)
+    {
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).every(0.001).on_complete(note_completion()).on_detach(note_detach()).finalise();
+        run_samples(1);
+
+        fabric.cancel_wiring(emitter->id());
+        fabric.cancel_wiring(emitter->id());
+        run_samples(k_interval_samples * 10);
+
+        EXPECT_EQ(order, taken_away);
+    }
+
+    TEST_F(NexusWiringEndingTest, RemoveDetachesWithoutCompleting)
+    {
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).every(0.001).times(50).on_complete(note_completion()).on_detach(note_detach()).finalise();
+        run_samples(1);
+
+        fabric.remove(emitter->id());
+        run_samples(k_interval_samples * 100);
+
+        EXPECT_EQ(order, taken_away);
+    }
+
+    TEST_F(NexusWiringEndingTest, DestroyingTheFabricDetachesWithoutCompleting)
+    {
+        {
+            Fabric local(frames.scheduler, events, buffers, 1.0F);
+            local.wire(make_counting_emitter()).on_complete(note_completion()).on_detach(note_detach()).finalise();
+        }
+
+        EXPECT_EQ(order, taken_away);
+    }
+
+    TEST_F(NexusWiringEndingTest, TimesOfOneOnEveryNeverCompletes)
+    {
+        fabric.wire(make_counting_emitter()).every(0.001).times(1).on_complete(note_completion()).finalise();
+
+        step_samples(k_interval_samples * 5);
+
+        EXPECT_TRUE(order.empty());
+    }
+
+    TEST_F(NexusWiringEndingTest, ABindDetachRunsBeforeOnDetach)
+    {
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter)
+            .bind([] { }, [this] { order.emplace_back("bound"); })
+            .on_detach(note_detach())
+            .finalise();
+
+        fabric.remove(emitter->id());
+
+        EXPECT_EQ(order, (std::vector<std::string> { "bound", "detach" }));
+    }
+
     class NexusWiringTriggerTest : public NexusWiringTest {
     protected:
         std::shared_ptr<ScriptedWindow> window = std::make_shared<ScriptedWindow>(400U, 300U);
@@ -595,6 +792,26 @@ namespace {
         window->key_down(IO::Keys::D);
 
         EXPECT_EQ(seen, (std::vector<int> { static_cast<int>(IO::Keys::A), static_cast<int>(IO::Keys::D) }));
+    }
+
+    TEST_F(NexusWiringTriggerTest, ATriggerCompletesWhenItsTimesAreUsedUp)
+    {
+        int completed {};
+        int detached {};
+        fabric.wire(make_counting_emitter())
+            .on(window, IO::Keys::Space)
+            .times(2)
+            .on_complete([&completed] { ++completed; })
+            .on_detach([&detached] { ++detached; })
+            .finalise();
+
+        window->key_down(IO::Keys::Space);
+        EXPECT_EQ(completed, 0);
+
+        window->key_down(IO::Keys::Space);
+        window->key_down(IO::Keys::Space);
+        EXPECT_EQ(completed, 1);
+        EXPECT_EQ(detached, 1);
     }
 
     TEST_F(NexusWiringTriggerTest, TimesIsSharedAcrossTheTriggersOfOneWiring)

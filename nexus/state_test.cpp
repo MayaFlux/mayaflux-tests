@@ -182,10 +182,10 @@ namespace {
         ASSERT_TRUE(schema.has_value());
         const auto& controls = schema->entities[0].controls;
         EXPECT_FALSE(controls.contains("position"));
-        EXPECT_FALSE(controls.contains("color"));
-        EXPECT_FALSE(controls.contains("size"));
-        EXPECT_TRUE(controls.contains("intensity"));
-        EXPECT_TRUE(controls.contains("radius"));
+        EXPECT_FALSE(controls.contains("EmitterControls.color"));
+        EXPECT_FALSE(controls.contains("EmitterControls.size"));
+        EXPECT_TRUE(controls.contains("EmitterControls.intensity"));
+        EXPECT_TRUE(controls.contains("EmitterControls.radius"));
     }
 
     TEST_F(NexusStateTest, EveryControlAnEntityHoldsIsWrittenByNameAndPicturedInTheImage)
@@ -200,7 +200,7 @@ namespace {
 
         ASSERT_TRUE(schema.has_value());
         EXPECT_EQ(schema->entities[0].controls.at("position"), "1 2 3");
-        EXPECT_EQ(schema->entities[0].controls.at("query_radius"), "3");
+        EXPECT_EQ(schema->entities[0].controls.at("AgentControls.query_radius"), "3");
         EXPECT_EQ(schema->entities[1].controls.at("position"), "5 6 7");
 
         const auto image = IO::ImageReader::load(snap_base + ".exr", 0);
@@ -216,7 +216,8 @@ namespace {
     {
         auto agent = std::make_shared<Agent>(3.0F);
         const glm::quat turn = glm::normalize(glm::quat(0.9F, 0.1F, 0.2F, 0.3F));
-        agent->set({ .position = glm::vec3(0.123456F, -4.5F, 7.0F), .orientation = turn, .color = glm::vec3(0.25F, 0.5F, 0.75F) });
+        agent->set({ .position = glm::vec3(0.123456F, -4.5F, 7.0F), .orientation = turn });
+        agent->set(Nexus::AgentControls { .color = glm::vec3(0.25F, 0.5F, 0.75F) });
         source.wire(agent).finalise();
         ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
 
@@ -412,13 +413,13 @@ namespace {
     TEST_F(NexusStateTest, ReconstructRebuildsPositionsAndParameters)
     {
         auto full = add_emitter(source, glm::vec3(1.0F, 2.0F, 3.0F));
-        full->set({ .intensity = 0.5F });
-        full->set({ .radius = 2.0F });
-        full->set({ .color = glm::vec3(0.1F, 0.2F, 0.3F) });
-        full->set({ .size = 4.0F });
+        full->set(Nexus::EmitterControls { .intensity = 0.5F });
+        full->set(Nexus::EmitterControls { .radius = 2.0F });
+        full->set(Nexus::EmitterControls { .color = glm::vec3(0.1F, 0.2F, 0.3F) });
+        full->set(Nexus::EmitterControls { .size = 4.0F });
         auto plain = add_emitter(source, glm::vec3(-4.0F, 5.0F, 6.0F));
-        plain->set({ .intensity = 2.0F });
-        plain->set({ .radius = 1.0F });
+        plain->set(Nexus::EmitterControls { .intensity = 2.0F });
+        plain->set(Nexus::EmitterControls { .radius = 1.0F });
         auto sensor = std::make_shared<Sensor>(3.0F);
         sensor->set({ .position = glm::vec3(7.0F, 8.0F, 9.0F) });
         source.wire(sensor).finalise();
@@ -426,10 +427,10 @@ namespace {
         agent->set({ .position = glm::vec3(9.0F, -9.0F, 0.5F) });
         const glm::quat spin = glm::angleAxis(glm::radians(90.0F), glm::vec3(0.0F, 1.0F, 0.0F));
         agent->set({ .orientation = spin });
-        agent->set({ .intensity = 0.25F });
-        agent->set({ .radius = 7.0F });
-        agent->set({ .color = glm::vec3(1.0F, 0.0F, 0.5F) });
-        agent->set({ .size = 2.0F });
+        agent->set(Nexus::AgentControls { .intensity = 0.25F });
+        agent->set(Nexus::AgentControls { .radius = 7.0F });
+        agent->set(Nexus::AgentControls { .color = glm::vec3(1.0F, 0.0F, 0.5F) });
+        agent->set(Nexus::AgentControls { .size = 2.0F });
         source.wire(agent).finalise();
         ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
 
@@ -617,7 +618,7 @@ namespace {
     TEST_F(NexusStateTest, ReconstructPatchesEntitiesThatAlreadyExistById)
     {
         auto saved = add_emitter(source, glm::vec3(1.0F, 2.0F, 3.0F));
-        saved->set({ .intensity = 0.75F });
+        saved->set(Nexus::EmitterControls { .intensity = 0.75F });
         auto sensor = std::make_shared<Sensor>(4.0F);
         sensor->set({ .position = glm::vec3(5.0F) });
         source.wire(sensor).finalise();
@@ -896,7 +897,7 @@ namespace {
     TEST_F(NexusStateTest, DecodePatchesExistingEntitiesAndCountsTheMissing)
     {
         auto first = add_emitter(source, glm::vec3(1.0F));
-        first->set({ .intensity = 0.5F });
+        first->set(Nexus::EmitterControls { .intensity = 0.5F });
         add_emitter(source, glm::vec3(2.0F));
         ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
         auto live = add_emitter(target, glm::vec3(50.0F));

@@ -386,10 +386,10 @@ namespace {
         InfluenceContext seen;
         const auto emitter = add_emitter(glm::vec3(1.0F, 2.0F, 3.0F),
             [&seen](const InfluenceContext& ctx) { seen = ctx; });
-        emitter->set({ .intensity = 0.5F });
-        emitter->set({ .radius = 3.0F });
-        emitter->set({ .color = glm::vec3(0.1F, 0.2F, 0.3F) });
-        emitter->set({ .size = 7.0F });
+        emitter->set(Nexus::EmitterControls { .intensity = 0.5F });
+        emitter->set(Nexus::EmitterControls { .radius = 3.0F });
+        emitter->set(Nexus::EmitterControls { .color = glm::vec3(0.1F, 0.2F, 0.3F) });
+        emitter->set(Nexus::EmitterControls { .size = 7.0F });
 
         fabric.commit();
 
@@ -499,7 +499,7 @@ namespace {
             [&perceived](const PerceptionContext& ctx) { perceived = ctx; },
             [&influenced](const InfluenceContext& ctx) { influenced = ctx; });
         agent->set({ .orientation = glm::angleAxis(glm::radians(90.0F), glm::vec3(0.0F, 1.0F, 0.0F)) });
-        agent->set({ .intensity = 0.25F });
+        agent->set(Nexus::AgentControls { .intensity = 0.25F });
 
         fabric.commit();
 

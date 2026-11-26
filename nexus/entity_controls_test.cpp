@@ -25,6 +25,7 @@ namespace {
     using Nexus::Fabric;
     using Nexus::Locus;
     using Nexus::LocusControls;
+    using Nexus::PlacementControls;
     using Nexus::Presence;
     using Nexus::PresenceControls;
     using Nexus::Quantity;
@@ -54,7 +55,8 @@ namespace {
     {
         Emitter emitter;
 
-        emitter.set(EmitterControls { .position = glm::vec3(1.0F, 2.0F, 3.0F), .intensity = 0.5 });
+        emitter.set({ .position = glm::vec3(1.0F, 2.0F, 3.0F) });
+        emitter.set(EmitterControls { .intensity = 0.5 });
 
         EXPECT_EQ(emitter.position(), glm::vec3(1.0F, 2.0F, 3.0F));
         EXPECT_FLOAT_EQ(emitter.intensity(), 0.5F);
@@ -65,9 +67,11 @@ namespace {
     TEST(NexusEmitterControlsTest, AnUnsetMemberIsTakenAway)
     {
         Emitter emitter;
-        emitter.set(EmitterControls { .position = glm::vec3(1.0F), .color = glm::vec3(0.1F, 0.2F, 0.3F), .size = 4.0 });
+        emitter.set({ .position = glm::vec3(1.0F) });
+        emitter.set(EmitterControls { .color = glm::vec3(0.1F, 0.2F, 0.3F), .size = 4.0 });
 
-        emitter.set(EmitterControls { .position = Quantity::unset(), .color = Quantity::unset() });
+        emitter.set({ .position = Quantity::unset() });
+        emitter.set(EmitterControls { .color = Quantity::unset() });
 
         EXPECT_FALSE(emitter.position().has_value());
         EXPECT_FALSE(emitter.color().has_value());
@@ -80,7 +84,7 @@ namespace {
         Emitter emitter;
         emitter.set(EmitterControls { .radius = 2.5 });
 
-        auto copy = emitter.get();
+        auto copy = emitter.get<EmitterControls>();
         copy.radius = 9.0;
 
         EXPECT_FLOAT_EQ(copy.radius.value<float>(), 9.0F);
@@ -95,7 +99,8 @@ namespace {
         std::vector<std::string> names;
         emitter.store().for_each([&names](std::string_view name, const Quantity&) { names.emplace_back(name); });
 
-        const std::vector<std::string> expected { "position", "intensity", "radius", "color", "size" };
+        const std::vector<std::string> expected { "position", "orientation", "EmitterControls.intensity",
+            "EmitterControls.radius", "EmitterControls.color", "EmitterControls.size" };
         EXPECT_EQ(names, expected);
     }
 
@@ -127,7 +132,8 @@ namespace {
         Sensor sensor(2.0F);
         EXPECT_FLOAT_EQ(sensor.query_radius(), 2.0F);
 
-        sensor.set(SensorControls { .position = glm::vec3(1.0F), .query_radius = 5.0 });
+        sensor.set({ .position = glm::vec3(1.0F) });
+        sensor.set(SensorControls { .query_radius = 5.0 });
 
         EXPECT_FLOAT_EQ(sensor.query_radius(), 5.0F);
         EXPECT_EQ(sensor.position(), glm::vec3(1.0F));
@@ -139,7 +145,7 @@ namespace {
         EXPECT_FALSE(agent.orientation().has_value());
         EXPECT_FLOAT_EQ(agent.query_radius(), 3.0F);
 
-        agent.set(AgentControls { .orientation = glm::quat(0.5F, 0.1F, 0.2F, 0.3F) });
+        agent.set({ .orientation = glm::quat(0.5F, 0.1F, 0.2F, 0.3F) });
 
         const auto orientation = agent.orientation();
         ASSERT_TRUE(orientation.has_value());
@@ -147,7 +153,7 @@ namespace {
         EXPECT_FLOAT_EQ(orientation->x, 0.1F);
         EXPECT_FLOAT_EQ(orientation->z, 0.3F);
 
-        agent.set(AgentControls { .orientation = Quantity::unset() });
+        agent.set({ .orientation = Quantity::unset() });
         EXPECT_FALSE(agent.orientation().has_value());
     }
 
@@ -212,17 +218,70 @@ namespace {
         EXPECT_FALSE(locus.timestep().has_value());
     }
 
+    TEST(NexusPlacementControlsTest, EveryPrincipalHoldsAPositionAndAnOrientation)
+    {
+        Emitter emitter;
+        Sensor sensor(1.0F);
+        Agent agent(1.0F);
+        const glm::quat turn(0.5F, 0.5F, 0.5F, 0.5F);
+
+        emitter.set({ .orientation = turn });
+        sensor.set({ .orientation = turn });
+        agent.set({ .orientation = turn });
+
+        EXPECT_EQ(emitter.orientation(), turn);
+        EXPECT_EQ(sensor.orientation(), turn);
+        EXPECT_EQ(agent.orientation(), turn);
+        EXPECT_EQ(emitter.get().orientation.value<glm::quat>(), turn);
+    }
+
+    TEST_F(NexusEntityControlsTest, APlacementSetOnAFabricReachesEveryPrincipal)
+    {
+        const auto emitter = std::make_shared<Emitter>();
+        const auto sensor = std::make_shared<Sensor>(1.0F);
+        const auto agent = std::make_shared<Agent>(1.0F);
+        fabric.wire(emitter).finalise();
+        fabric.wire(sensor).finalise();
+        fabric.wire(agent).finalise();
+
+        fabric.set_all(PlacementControls { .position = glm::vec3(1.0F, 2.0F, 3.0F) });
+
+        EXPECT_EQ(emitter->position(), glm::vec3(1.0F, 2.0F, 3.0F));
+        EXPECT_EQ(sensor->position(), glm::vec3(1.0F, 2.0F, 3.0F));
+        EXPECT_EQ(agent->position(), glm::vec3(1.0F, 2.0F, 3.0F));
+    }
+
+    TEST_F(NexusEntityControlsTest, EveryContextCarriesTheOrientation)
+    {
+        std::optional<glm::quat> emitted;
+        std::optional<glm::quat> sensed;
+        const auto emitter = std::make_shared<Emitter>(
+            [&emitted](const Nexus::InfluenceContext& ctx) { emitted = ctx.orientation; });
+        const auto sensor = std::make_shared<Sensor>(
+            1.0F, [&sensed](const Nexus::PerceptionContext& ctx) { sensed = ctx.orientation; });
+        const glm::quat turn(0.5F, 0.5F, 0.5F, 0.5F);
+        emitter->set({ .orientation = turn });
+        sensor->set({ .orientation = turn });
+        fabric.wire(emitter).finalise();
+        fabric.wire(sensor).finalise();
+
+        fabric.commit();
+
+        EXPECT_EQ(emitted, turn);
+        EXPECT_EQ(sensed, turn);
+    }
+
     TEST_F(NexusEntityControlsTest, AFabricIndexesAnEntityOnceItsPositionIsSet)
     {
         const auto sensor = std::make_shared<Sensor>(10.0F);
         const auto emitter = std::make_shared<Emitter>();
         fabric.wire(sensor).finalise();
         fabric.wire(emitter).finalise();
-        sensor->set(SensorControls { .position = glm::vec3(0.0F) });
+        sensor->set({ .position = glm::vec3(0.0F) });
         fabric.commit();
         EXPECT_TRUE(fabric.within_radius(glm::vec3(0.0F), 1.0F).size() == 1U);
 
-        emitter->set(EmitterControls { .position = glm::vec3(0.5F, 0.0F, 0.0F) });
+        emitter->set({ .position = glm::vec3(0.5F, 0.0F, 0.0F) });
         fabric.commit();
         EXPECT_EQ(fabric.within_radius(glm::vec3(0.0F), 1.0F).size(), 2U);
     }
@@ -230,12 +289,12 @@ namespace {
     TEST_F(NexusEntityControlsTest, AnUnsetPositionTakesAnEntityOutOfTheIndex)
     {
         const auto emitter = std::make_shared<Emitter>();
-        emitter->set(EmitterControls { .position = glm::vec3(0.0F) });
+        emitter->set({ .position = glm::vec3(0.0F) });
         fabric.wire(emitter).finalise();
         fabric.commit();
         ASSERT_EQ(fabric.within_radius(glm::vec3(0.0F), 1.0F).size(), 1U);
 
-        emitter->set(EmitterControls { .position = Quantity::unset() });
+        emitter->set({ .position = Quantity::unset() });
         fabric.commit();
 
         EXPECT_TRUE(fabric.within_radius(glm::vec3(0.0F), 1.0F).empty());
@@ -246,7 +305,8 @@ namespace {
         std::optional<Nexus::InfluenceContext> seen;
         const auto emitter = std::make_shared<Emitter>(
             [&seen](const Nexus::InfluenceContext& ctx) { seen = ctx; });
-        emitter->set(EmitterControls { .position = glm::vec3(1.0F, 2.0F, 3.0F), .intensity = 0.6, .color = glm::vec3(0.5F) });
+        emitter->set({ .position = glm::vec3(1.0F, 2.0F, 3.0F) });
+        emitter->set(EmitterControls { .intensity = 0.6, .color = glm::vec3(0.5F) });
         fabric.wire(emitter).finalise();
 
         fabric.fire(emitter->id());

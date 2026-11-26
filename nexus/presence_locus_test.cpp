@@ -66,13 +66,13 @@ namespace {
     {
         EXPECT_FLOAT_EQ(presence->falloff_radius(), 4.0F);
 
-        presence->set({ .query_radius = 6.0F });
+        presence->set(Nexus::AgentControls { .query_radius = 6.0F });
         EXPECT_FLOAT_EQ(presence->falloff_radius(), 6.0F);
 
         presence->set(Nexus::PresenceControls { .falloff_radius = 2.0F });
         EXPECT_FLOAT_EQ(presence->falloff_radius(), 2.0F);
 
-        presence->set({ .query_radius = 9.0F });
+        presence->set(Nexus::AgentControls { .query_radius = 9.0F });
         EXPECT_FLOAT_EQ(presence->falloff_radius(), 2.0F);
     }
 
@@ -129,7 +129,7 @@ namespace {
 
     TEST_F(NexusPresenceTest, ZeroFalloffRadiusKeepsOnlyCoincidentNeighboursAtFullWeight)
     {
-        presence->set({ .query_radius = 0.0F });
+        presence->set(Nexus::AgentControls { .query_radius = 0.0F });
 
         perceive({ { 1, 0.0F }, { 2, 0.25F } });
 
