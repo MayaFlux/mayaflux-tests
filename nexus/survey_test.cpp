@@ -569,6 +569,39 @@ namespace {
         expect_near(bounds->max, { 0.2F, 5.2F, 0.0F });
     }
 
+    TEST_F(NexusSurveyInstanceBufferTest, ATrackedSkinnedInstanceMovesWithItsPalette)
+    {
+        const uint32_t slot = add(glm::translate(glm::mat4(1.0F), { 10.0F, 0.0F, 0.0F }));
+        auto skin = std::make_shared<Kakshya::MeshSkin>();
+        skin->inverse_bind = { glm::mat4(1.0F) };
+        skin->influence_joints.assign(4, glm::uvec4(0U));
+        skin->influence_weights.assign(4, glm::vec4(0.5F, 0.0F, 0.0F, 0.0F));
+        network->get_slot(slot).skin = skin;
+        const auto instances = buffer();
+        const auto anchor = Nexus::track_anchor(instances, slot);
+
+        const auto bound = anchor();
+        network->get_slot(slot).palette = { glm::translate(glm::mat4(1.0F), { 0.0F, 4.0F, 0.0F }) };
+        const auto posed = anchor();
+
+        ASSERT_TRUE(bound.has_value());
+        ASSERT_TRUE(posed.has_value());
+        expect_near(*bound, { 0.0F, 0.0F, 0.0F });
+        expect_near(*posed, { 0.0F, 2.0F, 0.0F });
+    }
+
+    TEST_F(NexusSurveyInstanceBufferTest, ATrackedUnskinnedInstanceKeepsItsAnchor)
+    {
+        const uint32_t slot = add(glm::translate(glm::mat4(1.0F), { 10.0F, 0.0F, 0.0F }));
+        const auto instances = buffer();
+        const auto anchor = Nexus::track_anchor(instances, slot);
+
+        const auto read = anchor();
+
+        ASSERT_TRUE(read.has_value());
+        expect_near(*read, { 0.0F, 0.0F, 0.0F });
+    }
+
     TEST_F(NexusSurveyInstanceBufferTest, AMorphedInstanceIsBoundedWithItsTargetsApplied)
     {
         const uint32_t rest = add(glm::mat4(1.0F));

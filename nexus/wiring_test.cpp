@@ -282,6 +282,19 @@ namespace {
         EXPECT_NO_THROW(fabric.cancel_wiring(999));
     }
 
+    TEST_F(NexusWiringTest, CancelWiringStopsCommitFromFiring)
+    {
+        const auto emitter = make_counting_emitter();
+        fabric.wire(emitter).finalise();
+        fabric.commit();
+        ASSERT_EQ(fired, 1);
+
+        fabric.cancel_wiring(emitter->id());
+        fabric.commit();
+
+        EXPECT_EQ(fired, 1);
+    }
+
     TEST_F(NexusWiringTest, CancelledEntitiesCanStillBeFiredById)
     {
         const auto emitter = make_counting_emitter();
@@ -470,6 +483,7 @@ namespace {
 
         fabric.cancel_wiring(emitter->id());
         fabric.fire(emitter->id());
+        fabric.commit();
 
         EXPECT_EQ(fired, 1);
         EXPECT_EQ(asked, 0);
