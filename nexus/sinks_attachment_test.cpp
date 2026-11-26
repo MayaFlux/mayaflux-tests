@@ -7,6 +7,7 @@
 #include "../support/nexus_support.hpp"
 
 #include "../support/scoped_working_dir.hpp"
+#include "MayaFlux/Nexus/Pheme/InfluenceList.hpp"
 #include "MayaFlux/Kriya/MotionReflow.hpp"
 #include "MayaFlux/Kakshya/Semantic/MeshAssemblyContainer.hpp"
 #include "MayaFlux/Buffers/Network/RecordedGeometryBuffer.hpp"
@@ -1504,6 +1505,43 @@ namespace {
         second(locals, Kriya::FrameContext {});
 
         expect_near(drawn_origin(), { 4.0F, 0.0F, 0.0F });
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, EachTargetOfAnInfluenceListHoldsItsOwnPlaceUntilDropped, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        const Nexus::InfluenceList list(2);
+        const auto words = [&list] { return static_cast<const uint8_t*>(list.buffer()->get_mapped_ptr()); };
+        const auto count = [&words] {
+            uint32_t value = 0;
+            std::memcpy(&value, words(), sizeof(value));
+            return value;
+        };
+        const auto intensity = [&words](uint32_t place) {
+            Nexus::InfluenceBlock block;
+            std::memcpy(&block, words() + 16 + place * sizeof(block), sizeof(block));
+            return block.intensity;
+        };
+
+        Nexus::InfluenceBlock block;
+        block.intensity = 3.0F;
+        auto first = list.target();
+        auto second = list.target();
+        first(block);
+        block.intensity = 5.0F;
+        second(block);
+
+        EXPECT_EQ(count(), 2U);
+        EXPECT_FLOAT_EQ(intensity(0), 3.0F);
+        EXPECT_FLOAT_EQ(intensity(1), 5.0F);
+
+        list.target()(block);
+        EXPECT_FLOAT_EQ(intensity(0), 3.0F);
+
+        first = {};
+        EXPECT_FLOAT_EQ(intensity(0), 0.0F);
+        auto reused = list.target();
+        reused(block);
+        EXPECT_FLOAT_EQ(intensity(0), 5.0F);
     }
 }
 }

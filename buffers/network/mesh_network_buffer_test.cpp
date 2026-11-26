@@ -6,6 +6,7 @@
 #include "../../support/scripted_window.hpp"
 #include "../../support/vulkan_test_support.hpp"
 
+#include "MayaFlux/Nexus/Pheme/InfluenceList.hpp"
 #include "MayaFlux/Buffers/BufferProcessingChain.hpp"
 #include "MayaFlux/Buffers/Geometry/MeshBuffer.hpp"
 #include "MayaFlux/Buffers/Network/MeshNetworkBuffer.hpp"
@@ -1090,6 +1091,36 @@ namespace {
         presenter.processing_function(root);
 
         EXPECT_LT(pixel_at_ndc(-0.5F, 0.0F)[1], 40U);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, MeshNetworkBufferPresentationTest, AnInfluenceListLightsASurfaceWithEveryPlace, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
+    {
+        MeshNetworkBuffer::RenderConfig config;
+        config.target_window = window;
+        config.fragment_shader = "mesh_network_lit_list.frag.spv";
+        buffer->setup_rendering(config);
+        const auto render = buffer->get_render_processor();
+        ASSERT_NE(render, nullptr);
+        const Nexus::InfluenceList list(4);
+        list.bind(render);
+
+        Nexus::InfluenceBlock influence;
+        influence.position = { -0.5F, 0.0F, 0.5F };
+        influence.radius = 5.0F;
+        influence.color = { 0.0F, 1.0F, 0.0F };
+        const auto green = list.target();
+        green(influence);
+        influence.color = { 0.0F, 0.0F, 1.0F };
+        const auto blue = list.target();
+        blue(influence);
+
+        root->process_default();
+        Buffers::PresentProcessor presenter;
+        presenter.processing_function(root);
+
+        const auto left = pixel_at_ndc(-0.5F, 0.0F);
+        EXPECT_GT(left[1], 150U);
+        EXPECT_GT(left[0], 150U);
     }
 
     MAYAFLUX_TEST_WITH(TEST_F, MeshNetworkBufferPresentationTest, AnInfluenceBehindASurfaceLeavesItUnlit, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))

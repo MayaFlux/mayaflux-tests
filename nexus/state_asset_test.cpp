@@ -249,6 +249,76 @@ namespace {
         EXPECT_EQ(slot.palette[0], posed);
     }
 
+    TEST_F(NexusStateAssetTest, AnInstanceSnapshotKeepsEveryJointInItsPlace)
+    {
+        const std::array<glm::vec3, 3> corners { glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(1.0F, 0.0F, 0.0F),
+            glm::vec3(0.0F, 1.0F, 0.0F) };
+        auto node = std::make_shared<Nodes::GpuSync::MeshWriterNode>(3U);
+        std::vector<Nodes::MeshVertex> vertices(3);
+        for (size_t v = 0; v < vertices.size(); ++v) {
+            vertices[v].position = corners[v];
+            vertices[v].normal = { 0.0F, 0.0F, 1.0F };
+        }
+        node->set_mesh(vertices, std::vector<uint32_t> { 0, 1, 2 });
+        node->compute_frame();
+
+        const auto at = [](float x) {
+            glm::mat4 matrix(1.0F);
+            matrix[3] = glm::vec4(x, 0.0F, 0.0F, 1.0F);
+            return matrix;
+        };
+        const std::array<uint32_t, 3> joint_of { 3U, 2U, 0U };
+
+        auto skin = std::make_shared<Kakshya::MeshSkin>();
+        skin->inverse_bind = { at(1.0F), at(2.0F), at(3.0F), at(4.0F) };
+        for (const uint32_t joint : joint_of) {
+            skin->influence_joints.emplace_back(joint, 0U, 0U, 0U);
+            skin->influence_weights.emplace_back(1.0F, 0.0F, 0.0F, 0.0F);
+        }
+
+        auto network = std::make_shared<Nodes::Network::InstanceNetwork>();
+        network->add_slot("one", node);
+        network->get_slot(0).skin = skin;
+        network->get_slot(0).palette = { at(10.0F), at(20.0F), at(30.0F), at(40.0F) };
+
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->buffers["crowd"] = std::make_shared<Buffers::InstanceNetworkBuffer>(network);
+        source.wire(std::make_shared<Nexus::Emitter>()).finalise();
+        Nexus::StateEncoder encoder(bindings);
+        ASSERT_TRUE(encoder.encode(source, base)) << encoder.last_error();
+
+        Nexus::StateDecoder decoder;
+        const auto result = decoder.reconstruct(target, base);
+
+        ASSERT_TRUE(result.buffers.contains("crowd"))
+            << (result.warnings.empty() ? std::string {} : result.warnings.front());
+        const auto loaded = std::dynamic_pointer_cast<Buffers::InstanceNetworkBuffer>(result.buffers.at("crowd"));
+        ASSERT_NE(loaded, nullptr);
+        const auto& slot = loaded->get_network()->get_slot(0);
+        ASSERT_NE(slot.skin, nullptr);
+        ASSERT_EQ(slot.skin->joint_count(), 4U);
+        ASSERT_EQ(slot.palette.size(), 4U);
+
+        const auto mesh = std::dynamic_pointer_cast<Nodes::GpuSync::MeshWriterNode>(slot.node);
+        ASSERT_NE(mesh, nullptr);
+        const auto& read = mesh->get_mesh_vertices();
+        ASSERT_EQ(read.size(), 3U);
+        ASSERT_EQ(slot.skin->influence_joints.size(), 3U);
+
+        for (size_t v = 0; v < read.size(); ++v) {
+            const auto corner = std::ranges::find_if(corners, [&](const glm::vec3& position) {
+                return glm::distance(position, read[v].position) < 1e-4F;
+            });
+            ASSERT_NE(corner, corners.end());
+            const uint32_t expected = joint_of[static_cast<size_t>(corner - corners.begin())];
+            const uint32_t joint = slot.skin->influence_joints[v].x;
+
+            ASSERT_LT(joint, 4U);
+            EXPECT_FLOAT_EQ(slot.skin->inverse_bind[joint][3].x, static_cast<float>(expected + 1U));
+            EXPECT_FLOAT_EQ(slot.palette[joint][3].x, static_cast<float>((expected + 1U) * 10U));
+        }
+    }
+
     TEST_F(NexusStateAssetTest, ANetworkGeometrySnapshotLoadsBackAsItsSavedPoints)
     {
         auto particles = std::make_shared<Nodes::Network::ParticleNetwork>(

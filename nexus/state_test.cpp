@@ -1570,5 +1570,35 @@ namespace {
         ASSERT_TRUE(hunger.has_value());
         EXPECT_FLOAT_EQ(hunger.value<float>(), 0.5F);
     }
+
+    TEST_F(NexusStateTest, ALocusFollowingAnotherFollowsItAgainWithItsOffset)
+    {
+        const auto make = [] {
+            return std::make_shared<Locus>(Kinesis::NavigationConfig {}, 1.0F,
+                [](const PerceptionContext&) { }, [](const InfluenceContext&) { });
+        };
+        const auto leader = make();
+        const auto follower = make();
+        source.wire(std::shared_ptr<Agent>(leader)).finalise();
+        source.wire(std::shared_ptr<Agent>(follower)).finalise();
+        const glm::mat4 offset = glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 0.0F, 3.0F));
+        ASSERT_TRUE(follower->follow(leader->view(), offset));
+        ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
+
+        restore(target, snap_base);
+
+        const auto ids = target.all_ids();
+        ASSERT_EQ(ids.size(), 2U);
+        std::vector<std::shared_ptr<Locus>> restored;
+        for (const uint32_t id : ids) {
+            restored.push_back(std::dynamic_pointer_cast<Locus>(target.get_agent(id)));
+            ASSERT_NE(restored.back(), nullptr);
+        }
+        const auto again = restored[0]->is_following() ? restored[0] : restored[1];
+        const auto lead = again == restored[0] ? restored[1] : restored[0];
+        ASSERT_TRUE(again->following().has_value());
+        EXPECT_EQ(again->following()->first, lead->view());
+        EXPECT_EQ(again->following()->second, offset);
+    }
 }
 }

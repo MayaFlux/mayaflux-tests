@@ -4,6 +4,7 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "MayaFlux/Kinesis/Viewport/NavigationState.hpp"
 #include "MayaFlux/Nexus/Principals/Locus.hpp"
 #include "MayaFlux/Nexus/Principals/Presence.hpp"
 
@@ -545,5 +546,79 @@ namespace {
         EXPECT_EQ(*named.position(), glm::vec3(0.0F, 0.0F, 5.0F));
     }
 
+    namespace {
+
+        std::shared_ptr<Nexus::Locus> following_locus()
+        {
+            return std::make_shared<Nexus::Locus>(
+                Kinesis::NavigationConfig {}, 1.0F, Nexus::Agent::PerceptionFn {}, Nexus::Agent::InfluenceFn {});
+        }
+
+        Kinesis::Viewpoint placed_view(float x, float y = 0.0F)
+        {
+            return { glm::translate(glm::mat4(1.0F), glm::vec3(x, y, 0.0F)), Kinesis::Frustum {} };
+        }
+
+    }
+
+    TEST(NexusViewFollowTest, MixingViewpointsRunsFromOneToTheOther)
+    {
+        auto far = placed_view(4.0F);
+        far.second.far = 200.0;
+        auto near = placed_view(0.0F);
+        near.second.far = 100.0;
+
+        const auto middle = Kinesis::mix_viewpoints(near, far, 0.5F);
+
+        EXPECT_NEAR(middle.first[3].x, 2.0F, 1e-5F);
+        EXPECT_NEAR(middle.second.far, 150.0, 1e-9);
+        EXPECT_NEAR(Kinesis::mix_viewpoints(near, far, 7.0F).first[3].x, 4.0F, 1e-5F);
+    }
+
+    TEST(NexusViewFollowTest, AFollowedViewIsOffsetInItsOwnFrameAndReleasedByUnfollow)
+    {
+        const auto leader = following_locus();
+        const auto follower = following_locus();
+        const auto cell = std::make_shared<Memory::OwnedCell<Kinesis::Viewpoint>>(placed_view(5.0F));
+
+        ASSERT_TRUE(follower->follow(cell, glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 2.0F, 0.0F))));
+
+        EXPECT_NEAR(follower->view()->read().first[3].x, 5.0F, 1e-5F);
+        EXPECT_NEAR(follower->view()->read().first[3].y, 2.0F, 1e-5F);
+        ASSERT_TRUE(follower->following().has_value());
+        EXPECT_EQ(follower->following()->first, cell);
+
+        follower->unfollow();
+
+        EXPECT_FALSE(follower->is_following());
+        EXPECT_TRUE(follower->view()->drives(follower->driver()));
+        EXPECT_FALSE(follower->follow(follower->view()));
+    }
+
+    TEST(NexusViewFollowTest, AFunctionBlendsTwoViewsByItsWeight)
+    {
+        const auto follower = following_locus();
+        const auto weight = std::make_shared<float>(0.25F);
+
+        ASSERT_TRUE(follower->follow([weight] {
+            return Kinesis::mix_viewpoints(placed_view(0.0F), placed_view(8.0F), *weight);
+        }));
+
+        EXPECT_NEAR(follower->view()->read().first[3].x, 2.0F, 1e-5F);
+        *weight = 0.75F;
+        EXPECT_NEAR(follower->view()->read().first[3].x, 6.0F, 1e-5F);
+    }
+
+    TEST(NexusViewFollowTest, TwoViewsFollowingEachOtherStillAnswer)
+    {
+        const auto first = following_locus();
+        const auto second = following_locus();
+        ASSERT_TRUE(first->follow(second->view()));
+        ASSERT_TRUE(second->follow(first->view()));
+
+        const auto view = first->view()->read();
+
+        EXPECT_TRUE(std::isfinite(view.first[3].x));
+    }
 }
 }
