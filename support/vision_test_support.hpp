@@ -3,6 +3,7 @@
 #include "gpu_dispatch_test_support.hpp"
 
 #include "MayaFlux/Kakshya/NDData/NDData.hpp"
+#include "MayaFlux/Kakshya/Source/CameraContainer.hpp"
 #include "MayaFlux/Kakshya/Source/TextureContainer.hpp"
 #include "MayaFlux/Portal/Graphics/SamplerForge.hpp"
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
@@ -517,6 +518,62 @@ inline Yantra::VisionAnalyzerConfig analyzer_config(
 inline std::shared_ptr<Kakshya::TextureContainer> as_container(const ImageHandle& image)
 {
     return std::make_shared<Kakshya::TextureContainer>(image, Portal::Graphics::ImageFormat::RGBA32F);
+}
+
+/**
+ * @brief size x size 16-bit camera frame in millimetres, R16 or DEPTH16: an
+ *        8 x 8 square at (8, 8) is 1000 mm away, everything else 3000 mm.
+ */
+inline std::shared_ptr<Kakshya::CameraContainer> depth_camera(uint32_t size, Kakshya::ImageFormat format)
+{
+    auto camera = std::make_shared<Kakshya::CameraContainer>(size, size, format);
+    auto* slot = camera->mutable_frame_ptr();
+    if (!slot)
+        return nullptr;
+
+    std::vector<uint16_t> depth(static_cast<size_t>(size) * size, 3000);
+    for (uint32_t y = 8; y < 16; ++y) {
+        for (uint32_t x = 8; x < 16; ++x)
+            depth[static_cast<size_t>(y) * size + x] = 1000;
+    }
+    std::memcpy(slot, depth.data(), depth.size() * sizeof(uint16_t));
+    return camera;
+}
+
+/**
+ * @brief Whether this device can copy format from the host. Vision uploads
+ *        a container frame by host image copy, which a device may offer for
+ *        some formats only: lavapipe has none for DEPTH16.
+ */
+inline bool host_uploadable(Kakshya::ImageFormat format)
+{
+    auto& loom = Portal::Graphics::TextureLoom::instance();
+    auto probe = loom.create_2d(1, 1, format, nullptr);
+    const bool uploadable = probe && probe->supports_host_transfer();
+    loom.release_image(probe);
+    return uploadable;
+}
+
+/**
+ * @brief Names the R16 and DEPTH16 instances of a test parameterised on the
+ *        frame format.
+ */
+inline std::string sixteen_bit_name(const ::testing::TestParamInfo<Kakshya::ImageFormat>& info)
+{
+    return info.param == Kakshya::ImageFormat::DEPTH16 ? "DEPTH16" : "R16";
+}
+
+/**
+ * @brief Threshold keeping channel 0 between lo_mm and hi_mm, for a 16-bit
+ *        frame read as millimetres over 65535.
+ */
+inline Kinesis::Vision::ThresholdParams depth_band(float lo_mm, float hi_mm)
+{
+    return {
+        .value = 0.0F,
+        .channels = Kinesis::Vision::ChannelMask::Ch0,
+        .bands = { { { .lo = lo_mm / 65535.0F, .hi = hi_mm / 65535.0F } } },
+    };
 }
 
 /**
