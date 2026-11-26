@@ -527,7 +527,54 @@ namespace {
         ASSERT_EQ(fresh->markers().size(), 1U);
         EXPECT_EQ(fresh->markers().front().name, "chorus");
 
-        EXPECT_TRUE(has_warning(decoder.reconstruct(target, snap_base).warnings, "course 'walk' is not bound"));
+        const auto made = decoder.reconstruct(target, snap_base);
+        ASSERT_TRUE(made.courses.contains("walk"));
+        const auto walk = made.courses.at("walk");
+        static_cast<void>(walk->advance(false));
+        EXPECT_NEAR(walk->time(), 3.0, 1e-9);
+        EXPECT_NEAR(walk->setting().speed, 2.0, 1e-9);
+        EXPECT_EQ(walk->markers().size(), 1U);
+    }
+
+    TEST_F(NexusStateTest, ACourseResumesItsDirectionCountsFadeAndWhatItFollows)
+    {
+        const Kriya::CourseSetting setting { .in = 0.0, .out = 1.0, .edge = Kriya::CourseEdge::PingPong };
+        auto lead = Kriya::Course::create(8.0, setting);
+        auto tail = Kriya::Course::create(8.0, { .in = 0.0, .out = 4.0, .edge = Kriya::CourseEdge::Hold });
+        ASSERT_TRUE(tail->follow(lead, 0.5));
+        ASSERT_TRUE(lead->fade_weight(0.0, 4.0));
+        for (int i = 0; i < 12; ++i) {
+            static_cast<void>(lead->advance(lead->advanced()));
+            static_cast<void>(tail->advance(tail->advanced()));
+        }
+
+        auto saving = std::make_shared<Nexus::State::Bindings>();
+        saving->courses["lead"] = lead;
+        saving->courses["tail"] = tail;
+        StateEncoder named(saving);
+        ASSERT_TRUE(named.encode(source, snap_base)) << named.last_error();
+        const auto loaded = decoder.reconstruct(target, snap_base);
+        ASSERT_TRUE(loaded.courses.contains("lead") && loaded.courses.contains("tail"));
+        const auto again = loaded.courses.at("lead");
+        const auto follower = loaded.courses.at("tail");
+
+        for (int i = 0; i < 2; ++i) {
+            static_cast<void>(lead->advance());
+            static_cast<void>(tail->advance());
+            static_cast<void>(again->advance(i > 0));
+            static_cast<void>(follower->advance(i > 0));
+        }
+        static_cast<void>(again->advance());
+        static_cast<void>(follower->advance());
+
+        EXPECT_NEAR(again->time(), lead->time(), 1e-9);
+        EXPECT_EQ(again->crossings(), lead->crossings());
+        EXPECT_EQ(again->playback().reversed, lead->playback().reversed);
+        EXPECT_LT(again->weight(), 1.0);
+        EXPECT_GT(again->playback().fade_seconds, 0.0);
+        ASSERT_TRUE(follower->following().has_value());
+        EXPECT_EQ(follower->following()->first, again);
+        EXPECT_NEAR(follower->time(), again->time() + 0.5, 1e-9);
     }
 
     TEST_F(NexusStateTest, RegisteredClassesControlStructsSetupsAndSharedViewsComeBack)
@@ -1454,6 +1501,74 @@ namespace {
         EXPECT_EQ(restored->attenuation(), glm::vec3(1.0F, 2.0F, 3.0F));
     }
 
+    TEST_F(NexusStateTest, ACourseEventTriggerIsSavedAndFiresTheRestoredEntity)
+    {
+        auto course = Kriya::Course::create(8.0, { .in = 0.0, .out = 1.0, .edge = Kriya::CourseEdge::Loop });
+        auto lamp = std::make_shared<Emitter>();
+        source.wire(lamp).on(course->subscribe(Kriya::CourseEventKind::Marked)).finalise();
+        auto saving = std::make_shared<Nexus::State::Bindings>();
+        saving->courses["walk"] = course;
+        StateEncoder named(saving);
+        ASSERT_TRUE(named.encode(source, snap_base)) << named.last_error();
 
+        const auto schema = read_schema(snap_base);
+        ASSERT_TRUE(schema.has_value());
+        const auto& wiring = schema->entities.at(0).wiring;
+        ASSERT_EQ(wiring.triggers.size(), 1U);
+        EXPECT_EQ(wiring.triggers[0].kind, Nexus::State::TriggerKind::Course);
+        EXPECT_EQ(wiring.triggers[0].source, "walk");
+        EXPECT_EQ(wiring.triggers[0].course_event, Kriya::CourseEventKind::Marked);
+        EXPECT_TRUE(wiring.lost.empty());
+
+        StateDecoder loader(saving);
+        const auto result = loader.reconstruct(target, snap_base);
+        EXPECT_TRUE(result.warnings.empty()) << (result.warnings.empty() ? std::string {} : result.warnings.front());
+        ASSERT_TRUE(named.encode(target, again_base)) << named.last_error();
+        EXPECT_EQ(read_schema(again_base)->entities.at(0).wiring.triggers.size(), 1U);
+    }
+
+    TEST_F(NexusStateTest, PatchingWiresAnEntityAgainWhenItsWiringDiffers)
+    {
+        auto lamp = std::make_shared<Emitter>();
+        source.wire(lamp).every(0.5).finalise();
+        ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
+        auto live = std::make_shared<Emitter>();
+        target.wire(live).finalise();
+        ASSERT_EQ(live->id(), lamp->id());
+
+        const auto result = decoder.reconstruct(target, snap_base);
+
+        EXPECT_EQ(result.patched, 1);
+        ASSERT_TRUE(encoder.encode(target, again_base)) << encoder.last_error();
+        const auto saved = read_schema(snap_base);
+        const auto again = read_schema(again_base);
+        ASSERT_TRUE(saved && again);
+        EXPECT_TRUE(again->entities.at(0).wiring == saved->entities.at(0).wiring);
+    }
+
+    TEST_F(NexusTapestryStateTest, PatchingATapestryExpanseRestoresItsControls)
+    {
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->register_controls<StateExtraControls>();
+        const auto make = [&] {
+            return std::make_shared<Tapestry>(frames.scheduler, events, buffers);
+        };
+        const auto saved = make();
+        static_cast<void>(saved->create_fabric("stage"));
+        const auto room = saved->create_expanse<Expanse>("room", box(2.0F));
+        room->extend<StateExtraControls>().hunger.assign(Nexus::Quantity(0.5F));
+        const auto live = make();
+        const auto kept = live->create_expanse<Expanse>("room", box(1.0F));
+        const auto directory = (std::filesystem::current_path() / "rooms").string();
+
+        StateEncoder named(bindings);
+        ASSERT_TRUE(named.encode(*saved, directory)) << named.last_error();
+        StateDecoder loader(bindings);
+        static_cast<void>(loader.reconstruct(*live, directory));
+
+        const auto hunger = kept->extend<StateExtraControls>().hunger;
+        ASSERT_TRUE(hunger.has_value());
+        EXPECT_FLOAT_EQ(hunger.value<float>(), 0.5F);
+    }
 }
 }

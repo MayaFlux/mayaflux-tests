@@ -592,6 +592,56 @@ namespace {
         expect_near(*posed, { 0.0F, 2.0F, 0.0F });
     }
 
+    TEST_F(NexusSurveyInstanceBufferTest, ATrackedMorphedInstanceMovesWithItsWeights)
+    {
+        const uint32_t slot = add(glm::mat4(1.0F));
+        const auto node = quad_node({ 0.0F, 0.0F, 0.0F });
+        auto target = node->get_mesh_vertices();
+        for (auto& vertex : target) {
+            vertex.position.z += 4.0F;
+        }
+        network->get_slot(0).node = node;
+        network->get_slot(0).morphs = std::make_shared<const Kakshya::MeshMorphTargets>(
+            Kakshya::MeshMorphTargets { { "lift", target } });
+        const auto instances = buffer();
+        const auto anchor = Nexus::track_anchor(instances, slot);
+
+        const auto unweighted = anchor();
+        network->get_slot(slot).morph_weights = { 0.5F };
+        const auto weighted = anchor();
+
+        ASSERT_TRUE(unweighted.has_value());
+        ASSERT_TRUE(weighted.has_value());
+        expect_near(*unweighted, { 0.0F, 0.0F, 0.0F });
+        expect_near(*weighted, { 0.0F, 0.0F, 2.0F });
+    }
+
+    TEST(NexusSurveySlotTest, ATrackedMorphedMeshSlotStartsFromTheTargetsOwnWeights)
+    {
+        auto network = std::make_shared<MeshNetwork>();
+        const auto node = quad_node({ 0.0F, 0.0F, 0.0F });
+        auto target = node->get_mesh_vertices();
+        for (auto& vertex : target) {
+            vertex.position.z += 4.0F;
+            vertex.weight = 0.25F;
+        }
+        network->add_slot("face", node);
+        network->get_slot(0).morphs = std::make_shared<const Kakshya::MeshMorphTargets>(
+            Kakshya::MeshMorphTargets { { "lift", target } });
+        network->process_batch(1);
+        const auto buffer = std::make_shared<Buffers::MeshNetworkBuffer>(network);
+        const auto anchor = Nexus::track_anchor(buffer, 0U);
+
+        const auto own = anchor();
+        network->get_slot(0).morph_weights = { 1.0F };
+        const auto driven = anchor();
+
+        ASSERT_TRUE(own.has_value());
+        ASSERT_TRUE(driven.has_value());
+        expect_near(*own, { 0.0F, 0.0F, 1.0F });
+        expect_near(*driven, { 0.0F, 0.0F, 4.0F });
+    }
+
     TEST_F(NexusSurveyInstanceBufferTest, ATrackedUnskinnedInstanceKeepsItsAnchor)
     {
         const uint32_t slot = add(glm::translate(glm::mat4(1.0F), { 10.0F, 0.0F, 0.0F }));

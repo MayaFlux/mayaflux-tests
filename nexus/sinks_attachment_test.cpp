@@ -7,6 +7,8 @@
 #include "../support/nexus_support.hpp"
 
 #include "../support/scoped_working_dir.hpp"
+#include "MayaFlux/IO/Image/STBImageWriter.hpp"
+#include "MayaFlux/Buffers/Textures/TextureBuffer.hpp"
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Buffers/BufferProcessingChain.hpp"
@@ -1292,5 +1294,142 @@ namespace {
         loom.shutdown();
     }
 
+    MAYAFLUX_TEST_WITH(TEST_F, NexusStateDeviceTest, ARenderSinkKeepsItsConfigAndAViewOfItComesBack, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->windows["main"] = window;
+        Nexus::Fabric source { scheduler, events, manager_handle, 1.0F };
+        auto lamp = std::make_shared<Nexus::Emitter>();
+        source.wire(lamp).finalise();
+        auto config = render_config();
+        config.topology = Portal::Graphics::PrimitiveTopology::LINE_LIST;
+        lamp->render(manager, config);
+        auto locus = std::make_shared<Nexus::Locus>(
+            Kinesis::NavigationConfig {}, 4.0F, [](const PerceptionContext&) { }, [](const InfluenceContext&) { });
+        source.wire(std::shared_ptr<Nexus::Agent>(locus)).finalise();
+        locus->add_view_target(lamp->render_sinks().front().renderer);
+
+        const auto first = (std::filesystem::current_path() / "sinks").string();
+        const auto second = (std::filesystem::current_path() / "sinks_again").string();
+        Nexus::StateEncoder encoder(bindings);
+        ASSERT_TRUE(encoder.encode(source, first)) << encoder.last_error();
+        Nexus::Fabric target { scheduler, events, manager_handle, 1.0F };
+        Nexus::StateDecoder decoder(bindings);
+        static_cast<void>(decoder.reconstruct(target, first));
+        ASSERT_TRUE(encoder.encode(target, second)) << encoder.last_error();
+
+        IO::JSONSerializer serializer;
+        const auto again = serializer.read<Nexus::State::FabricSchema>(second + ".json");
+        ASSERT_TRUE(again.has_value());
+        ASSERT_EQ(again->entities.size(), 2U);
+        ASSERT_EQ(again->entities[0].render_sinks.size(), 1U);
+        EXPECT_EQ(again->entities[0].render_sinks[0].topology, Portal::Graphics::PrimitiveTopology::LINE_LIST);
+        EXPECT_EQ(again->entities[0].render_sinks[0].vertex_shader, "line.vert.spv");
+        EXPECT_EQ(again->entities[1].view_sinks.size(), 1U);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusStateDeviceTest, SinkArgumentsAndImageTargetsAreSavedAndRestored, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        auto& loom = Portal::Graphics::get_texture_manager();
+        loom.shutdown();
+        ASSERT_TRUE(loom.initialize(std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) { })));
+        {
+            const auto off = loom.create_image_target({ .width = 16, .height = 16 });
+            ASSERT_NE(off, nullptr);
+            auto bindings = std::make_shared<Nexus::State::Bindings>();
+            bindings->targets["off"] = off;
+            Nexus::Fabric source { scheduler, events, manager_handle, 1.0F };
+            auto lamp = std::make_shared<Nexus::Emitter>();
+            source.wire(lamp).finalise();
+            auto config = render_config();
+            config.target_window = nullptr;
+            config.target_images = { off };
+            lamp->render(manager, config, Reflect::FunctionCall { "paint", { { "amount", "3" } } },
+                [](const InfluenceContext&) { });
+
+            const auto base = (std::filesystem::current_path() / "targets").string();
+            Nexus::StateEncoder encoder(bindings);
+            ASSERT_TRUE(encoder.encode(source, base)) << encoder.last_error();
+
+            IO::JSONSerializer serializer;
+            const auto saved = serializer.read<Nexus::State::FabricSchema>(base + ".json");
+            ASSERT_TRUE(saved.has_value());
+            const auto& sink = saved->entities.at(0).render_sinks.at(0);
+            EXPECT_EQ(sink.fn_name, "paint");
+            EXPECT_EQ(sink.arguments.at("amount"), "3");
+            EXPECT_EQ(sink.targets, (std::vector<std::string> { "off" }));
+
+            Nexus::Fabric target { scheduler, events, manager_handle, 1.0F };
+            Nexus::StateDecoder decoder(bindings);
+            static_cast<void>(decoder.reconstruct(target, base));
+            const auto restored = target.get_emitter(target.all_ids().at(0));
+            ASSERT_NE(restored, nullptr);
+            ASSERT_EQ(restored->render_sinks().size(), 1U);
+            EXPECT_EQ(restored->render_sinks()[0].images, config.target_images);
+        }
+        loom.shutdown();
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusStateDeviceTest, PatchingReplacesSinksThatDiffer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->windows["main"] = window;
+        Nexus::Fabric source { scheduler, events, manager_handle, 1.0F };
+        auto saved = std::make_shared<Nexus::Emitter>();
+        source.wire(saved).finalise();
+        auto lines = render_config();
+        lines.topology = Portal::Graphics::PrimitiveTopology::LINE_LIST;
+        saved->render(manager, lines);
+
+        Nexus::Fabric target { scheduler, events, manager_handle, 1.0F };
+        auto live = std::make_shared<Nexus::Emitter>();
+        target.wire(live).finalise();
+        live->render(manager, render_config());
+        ASSERT_EQ(live->id(), saved->id());
+
+        const auto base = (std::filesystem::current_path() / "patched").string();
+        Nexus::StateEncoder encoder(bindings);
+        ASSERT_TRUE(encoder.encode(source, base)) << encoder.last_error();
+        Nexus::StateDecoder decoder(bindings);
+        static_cast<void>(decoder.reconstruct(target, base));
+
+        ASSERT_EQ(live->render_sinks().size(), 1U);
+        EXPECT_EQ(live->render_sinks()[0].buf->get_render_config().topology,
+            Portal::Graphics::PrimitiveTopology::LINE_LIST);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusStateDeviceTest, ATextureSnapshotLoadsBackWithItsSize, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        IO::STBImageWriter::register_with_registry();
+        auto& loom = Portal::Graphics::get_texture_manager();
+        loom.shutdown();
+        ASSERT_TRUE(loom.initialize(std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) { })));
+        {
+            const std::vector<uint8_t> pixels(4U * 2U * 4U, 128U);
+            auto texture = std::make_shared<Buffers::TextureBuffer>(
+                4U, 2U, Portal::Graphics::ImageFormat::RGBA8, pixels.data());
+            manager.add_buffer(texture, Buffers::ProcessingToken::GRAPHICS_BACKEND);
+            ASSERT_NE(texture->get_gpu_texture(), nullptr);
+            auto bindings = std::make_shared<Nexus::State::Bindings>();
+            bindings->buffers["skin"] = texture;
+            Nexus::Fabric source { scheduler, events, manager_handle, 1.0F };
+            source.wire(std::make_shared<Nexus::Emitter>()).finalise();
+            const auto base = (std::filesystem::current_path() / "painted").string();
+            Nexus::StateEncoder encoder(bindings);
+            ASSERT_TRUE(encoder.encode(source, base)) << encoder.last_error();
+
+            Nexus::Fabric target { scheduler, events, manager_handle, 1.0F };
+            Nexus::StateDecoder decoder;
+            const auto result = decoder.reconstruct(target, base);
+
+            ASSERT_TRUE(result.buffers.contains("skin"))
+                << (result.warnings.empty() ? std::string {} : result.warnings.front());
+            const auto loaded = std::dynamic_pointer_cast<Buffers::TextureBuffer>(result.buffers.at("skin"));
+            ASSERT_NE(loaded, nullptr);
+            EXPECT_EQ(loaded->get_width(), 4U);
+            EXPECT_EQ(loaded->get_height(), 2U);
+        }
+        loom.shutdown();
+    }
 }
 }

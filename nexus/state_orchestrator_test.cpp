@@ -499,6 +499,32 @@ namespace {
         EXPECT_NEAR(agent->position()->y, 5.0F + 1.0F / 3.0F, 1e-3F);
     }
 
+    TEST(NexusStateOrchestratorTest, AMotionCarriesAPrincipalWhoseRowNothingDraws)
+    {
+        const OrchestratedRoom room;
+        const auto times = Kinesis::TimeSampling::acyclic({ 0.0, 1.0 }).value();
+        const auto rise = Kinesis::TimedValues<glm::vec3>::create(
+            { .times = times, .values = { glm::vec3(0.0F, 2.0F, 0.0F), glm::vec3(0.0F, 6.0F, 0.0F) } });
+        ASSERT_TRUE(room.assembly->add_motion({ .name = "rise", .channels = { { .row = 2, .translation = rise } } }).has_value());
+
+        FrameScheduler frames;
+        StateOrchestrator orchestrator { frames.scheduler };
+        const auto [realization, rows] = orchestrator.orchestrate(room.assembly);
+        ASSERT_EQ(rows.size(), 3U);
+        const auto lamp = std::get<std::shared_ptr<Emitter>>(rows[1].second);
+        const auto eye = std::get<std::shared_ptr<Agent>>(rows[2].second);
+        const auto eye_before = eye->position();
+        const auto [placing, deforming, streaming] = orchestrator.motion_from(realization, 0, Kriya::CourseEdge::Hold, false, rows);
+        ASSERT_NE(placing, nullptr);
+
+        frames.tick(600);
+
+        ASSERT_TRUE(lamp->position().has_value());
+        EXPECT_NEAR(lamp->position()->x, 10.0F, 1e-3F);
+        EXPECT_NEAR(lamp->position()->y, 6.0F, 1e-3F);
+        EXPECT_EQ(eye->position(), eye_before);
+    }
+
     TEST(NexusStateOrchestratorTest, AWrittenModelAndArchiveOrchestrateFromTheirFiles)
     {
         ScopedWorkingDir cwd;
@@ -526,6 +552,52 @@ namespace {
         }
     }
 
+    TEST(NexusStateOrchestratorTest, ASavedMotionStartsAgainWithItsCoursesAndWhatItCarries)
+    {
+        ScopedWorkingDir cwd;
+        IO::EXRWriter::register_with_registry();
+        IO::AssimpModelWriter::register_with_registry();
+        const OrchestratedRoom room;
+        const auto times = Kinesis::TimeSampling::acyclic({ 0.0, 1.0 }).value();
+        const auto rise = Kinesis::TimedValues<glm::vec3>::create(
+            { .times = times, .values = { glm::vec3(0.0F, 2.0F, 0.0F), glm::vec3(0.0F, 6.0F, 0.0F) } });
+        ASSERT_TRUE(room.assembly->add_motion({ .name = "rise", .channels = { { .row = 2, .translation = rise } } }).has_value());
 
+        FrameScheduler first;
+        const auto tapestry = std::make_shared<Nexus::Tapestry>(first.scheduler,
+            std::make_shared<Vruta::EventManager>(), std::make_shared<Buffers::BufferManager>());
+        const auto bindings = std::make_shared<Nexus::State::Bindings>();
+        StateOrchestrator orchestrator { first.scheduler, tapestry };
+        orchestrator.set_bindings(bindings);
+        const auto [realization, rows] = orchestrator.orchestrate(room.assembly);
+        const auto reflows = orchestrator.motion_from(realization, 0, Kriya::CourseEdge::Hold, false, rows);
+        first.tick(4);
+        ASSERT_TRUE(bindings->motions.contains("motion_0"));
+        ASSERT_TRUE(bindings->courses.contains("motion_0_0"));
+        const auto directory = (std::filesystem::current_path() / "moving").string();
+        ASSERT_TRUE(save_state(tapestry, directory, bindings));
+
+        FrameScheduler second;
+        const auto fresh = std::make_shared<Nexus::Tapestry>(second.scheduler,
+            std::make_shared<Vruta::EventManager>(), std::make_shared<Buffers::BufferManager>());
+        const auto loaded = load_state(fresh, directory);
+
+        ASSERT_TRUE(loaded.motions.contains("motion_0"))
+            << (loaded.warnings.empty() ? std::string {} : loaded.warnings.front());
+        ASSERT_TRUE(loaded.courses.contains("motion_0_0"));
+        second.tick(600);
+
+        ASSERT_EQ(fresh->all_fabrics().size(), 1U);
+        const auto fabric = fresh->all_fabrics().front();
+        std::shared_ptr<Emitter> lamp;
+        for (const uint32_t id : fabric->all_ids()) {
+            if (auto found = fabric->get_emitter(id)) {
+                lamp = found;
+            }
+        }
+        ASSERT_NE(lamp, nullptr);
+        ASSERT_TRUE(lamp->position().has_value());
+        EXPECT_NEAR(lamp->position()->y, 6.0F, 1e-3F);
+    }
 }
 }
