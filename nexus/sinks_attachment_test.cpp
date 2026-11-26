@@ -7,6 +7,9 @@
 #include "../support/nexus_support.hpp"
 
 #include "../support/scoped_working_dir.hpp"
+#include "MayaFlux/Kriya/MotionReflow.hpp"
+#include "MayaFlux/Kakshya/Semantic/MeshAssemblyContainer.hpp"
+#include "MayaFlux/Buffers/Network/RecordedGeometryBuffer.hpp"
 #include "MayaFlux/IO/Image/STBImageWriter.hpp"
 #include "MayaFlux/Buffers/Textures/TextureBuffer.hpp"
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
@@ -1430,6 +1433,77 @@ namespace {
             EXPECT_EQ(loaded->get_height(), 2U);
         }
         loom.shutdown();
+    }
+
+    class NexusPlacementTest : public NexusDeviceTest {
+    protected:
+        void SetUp() override
+        {
+            NexusDeviceTest::SetUp();
+            if (IsSkipped())
+                return;
+            buffer = std::make_shared<Buffers::RecordedGeometryBuffer>(
+                4, Portal::Graphics::PrimitiveTopology::POINT_LIST, Kinesis::SamplerBounds {});
+            renderer = std::make_shared<Buffers::RenderProcessor>(Buffers::ShaderConfig { "triangle.vert.spv" });
+            buffer->set_render_processor(renderer);
+        }
+
+        [[nodiscard]] glm::vec3 drawn_origin() const
+        {
+            return glm::vec3(renderer->get_geometry_transform_source()() * glm::vec4(0.0F, 0.0F, 0.0F, 1.0F));
+        }
+
+        [[nodiscard]] static glm::mat4 moved(float x, float y, float z)
+        {
+            return glm::translate(glm::mat4(1.0F), { x, y, z });
+        }
+
+        std::shared_ptr<Buffers::RecordedGeometryBuffer> buffer;
+        std::shared_ptr<Buffers::RenderProcessor> renderer;
+    };
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusPlacementTest, APlacementSitsInsideAFixedTransformAndIsAppliedOnce, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        renderer->set_geometry_transform(glm::scale(glm::mat4(1.0F), glm::vec3(2.0F)));
+
+        buffer->set_placement(moved(1.0F, 0.0F, 0.0F));
+        buffer->set_placement(moved(0.0F, 3.0F, 0.0F));
+
+        expect_near(drawn_origin(), { 0.0F, 6.0F, 0.0F });
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusPlacementTest, APlacementKeepsAnAttachmentMadeBeforeOrAfterIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        const auto geometry = std::make_shared<Buffers::MeshBuffer>(triangle_mesh());
+        auto before = Nexus::make_attachment(geometry, {}, std::nullopt);
+        before.buf = buffer;
+        auto after = before;
+        before.transform = std::make_shared<glm::mat4>(moved(0.0F, 0.0F, 5.0F));
+        after.transform = std::make_shared<glm::mat4>(moved(0.0F, 7.0F, 0.0F));
+
+        Nexus::place_attachment(before);
+        buffer->set_placement(moved(1.0F, 0.0F, 0.0F));
+        expect_near(drawn_origin(), { 1.0F, 0.0F, 5.0F });
+
+        Nexus::place_attachment(after);
+        buffer->set_placement(moved(2.0F, 0.0F, 0.0F));
+        expect_near(drawn_origin(), { 2.0F, 7.0F, 5.0F });
+
+        Nexus::release_attachment(before);
+        expect_near(drawn_origin(), { 2.0F, 7.0F, 0.0F });
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusPlacementTest, TwoPlacementSinksOnOneBufferPlaceItOnce, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        auto locals = std::make_shared<Kakshya::MeshAssemblyLocals>();
+        locals->world = { moved(4.0F, 0.0F, 0.0F) };
+        const auto first = Kriya::placement_sink(buffer, 0);
+        const auto second = Kriya::placement_sink(buffer, 0);
+
+        first(locals, Kriya::FrameContext {});
+        second(locals, Kriya::FrameContext {});
+
+        expect_near(drawn_origin(), { 4.0F, 0.0F, 0.0F });
     }
 }
 }

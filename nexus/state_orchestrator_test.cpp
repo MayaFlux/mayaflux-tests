@@ -4,6 +4,7 @@
 #include "../support/frame_scheduler.hpp"
 
 #include "../support/scoped_working_dir.hpp"
+#include "MayaFlux/Transitive/IO/JSONSerializer.hpp"
 #include "MayaFlux/Nodes/Network/MeshNetwork.hpp"
 #include "MayaFlux/Nexus/Tapestry.hpp"
 #include "MayaFlux/IO/Model/AssimpModelWriter.hpp"
@@ -598,6 +599,57 @@ namespace {
         ASSERT_NE(lamp, nullptr);
         ASSERT_TRUE(lamp->position().has_value());
         EXPECT_NEAR(lamp->position()->y, 6.0F, 1e-3F);
+    }
+
+    TEST(NexusStateOrchestratorTest, TheRealizeCallAndBoundsAreSavedWithEachPartAndAskedForOnLoad)
+    {
+        ScopedWorkingDir cwd;
+        IO::EXRWriter::register_with_registry();
+        IO::AssimpModelWriter::register_with_registry();
+        const OrchestratedRoom room;
+        const auto path = (std::filesystem::current_path() / "room.glb").string();
+        {
+            IO::AssimpModelWriter writer;
+            ASSERT_TRUE(writer.write(path, std::shared_ptr<const MeshAssemblyContainer>(room.assembly)))
+                << writer.get_last_error();
+        }
+
+        const auto bindings = std::make_shared<Nexus::State::Bindings>();
+        const auto tapestry = std::make_shared<Nexus::Tapestry>(std::make_shared<Vruta::TaskScheduler>(48000),
+            std::make_shared<Vruta::EventManager>(), std::make_shared<Buffers::BufferManager>());
+        StateOrchestrator orchestrator { nullptr, tapestry };
+        orchestrator.set_bindings(bindings);
+        const Kinesis::SamplerBounds box { .min = glm::vec3(-3.0F), .max = glm::vec3(3.0F) };
+        Kriya::MeshAssemblyRealizeOptions options;
+        options.bounds = box;
+        orchestrator.set_realize_options(Reflect::FunctionCall { "stage_options", {} }, options);
+        static_cast<void>(orchestrator.orchestrate(path));
+        const auto directory = (std::filesystem::current_path() / "realized").string();
+        ASSERT_TRUE(save_state(tapestry, directory, bindings));
+
+        IO::JSONSerializer serializer;
+        const auto schema = serializer.read<Nexus::State::TapestrySchema>(directory + "/tapestry.json");
+        ASSERT_TRUE(schema.has_value());
+        size_t parts = 0;
+        for (const auto& asset : schema->assets) {
+            if (asset.form != Nexus::State::AssetForm::Part) {
+                continue;
+            }
+            ++parts;
+            EXPECT_EQ(asset.realize.name, "stage_options");
+            EXPECT_EQ(asset.bounds_min, box.min);
+            EXPECT_EQ(asset.bounds_max, box.max);
+        }
+        EXPECT_GT(parts, 0U);
+
+        const auto fresh = std::make_shared<Nexus::Tapestry>(std::make_shared<Vruta::TaskScheduler>(48000),
+            std::make_shared<Vruta::EventManager>(), std::make_shared<Buffers::BufferManager>());
+        const auto loaded = load_state(fresh, directory);
+
+        EXPECT_TRUE(std::ranges::any_of(loaded.warnings, [](const std::string& warning) {
+            return warning.find("realize options of") != std::string::npos
+                && warning.find("stage_options") != std::string::npos;
+        }));
     }
 }
 }

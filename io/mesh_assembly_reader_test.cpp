@@ -1126,5 +1126,34 @@ TEST_F(MeshAssemblyModelTest, APlacedMorphTargetWithAZeroNormalStaysFinite)
     }
 }
 
+/** One triangle shown twice, the second turned half round so the two share an edge. */
+std::string shared_edge_gltf()
+{
+    const std::string payload = float_bytes({ 0, 0, 0, 1, 0, 0, 0, 1, 0 });
+    return R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0,1]}],)"
+           R"("nodes":[{"name":"lower","mesh":0},{"name":"upper","mesh":0,"translation":[1,1,0],"rotation":[0,0,1,0]}],)"
+           R"("meshes":[{"name":"tri","primitives":[{"attributes":{"POSITION":0},"mode":4}]}],)"
+           R"("accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]}],)"
+           R"("bufferViews":[{"buffer":0,"byteLength":36,"target":34962}],)"
+           R"("buffers":[{"byteLength":36,"uri":"data:application/octet-stream;base64,)"
+        + RoundTrip::base64(payload) + R"("}]})";
+}
 
+TEST_F(MeshAssemblyModelTest, FlatteningJoinsVerticesAcrossTheNodesItMerges)
+{
+    const auto path = path_in_cwd("shared_edge.gltf");
+    RoundTrip::write_bytes(path, shared_edge_gltf());
+    IO::ModelReader reader;
+    reader.set_flatten(true);
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto buffers = reader.create_mesh_buffers();
+
+    size_t vertices = 0;
+    for (const auto& buffer : buffers) {
+        vertices += std::get<std::vector<uint8_t>>(buffer->get_mesh_data().vertex_variant).size()
+            / sizeof(Kakshya::MeshVertex);
+    }
+    EXPECT_EQ(vertices, 4U);
+}
 }

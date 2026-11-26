@@ -6,6 +6,9 @@
 #include "../support/scoped_working_dir.hpp"
 
 #include "../buffers/compute/volume_grid_fixture.hpp"
+#include "MayaFlux/Kakshya/NDData/MeshSkin.hpp"
+#include "MayaFlux/Buffers/Geometry/ComputeMeshBuffer.hpp"
+#include "MayaFlux/Buffers/BufferProcessingChain.hpp"
 #include "MayaFlux/Nodes/Network/ParticleNetwork.hpp"
 #include "MayaFlux/Nodes/Network/Operators/PhysicsOperator.hpp"
 #include "MayaFlux/Nodes/Graphics/PointCollectionNode.hpp"
@@ -192,6 +195,60 @@ namespace {
         EXPECT_EQ(loaded->get_network()->get_slot(1).tint, glm::vec3(0.25F, 0.5F, 0.75F));
     }
 
+    TEST_F(NexusStateAssetTest, AnInstanceTemplateKeepsItsSkinMorphsAndEachPose)
+    {
+        auto node = std::make_shared<Nodes::GpuSync::MeshWriterNode>(3U);
+        std::vector<Nodes::MeshVertex> vertices(3);
+        vertices[1].position = { 1.0F, 0.0F, 0.0F };
+        vertices[2].position = { 0.0F, 1.0F, 0.0F };
+        for (auto& vertex : vertices) {
+            vertex.normal = { 0.0F, 0.0F, 1.0F };
+        }
+        node->set_mesh(vertices, std::vector<uint32_t> { 0, 1, 2 });
+        node->compute_frame();
+
+        auto skin = std::make_shared<Kakshya::MeshSkin>();
+        skin->inverse_bind = { glm::mat4(1.0F) };
+        skin->influence_joints.assign(3, glm::uvec4(0U));
+        skin->influence_weights.assign(3, glm::vec4(1.0F, 0.0F, 0.0F, 0.0F));
+        auto shape = node->get_mesh_vertices();
+        for (auto& vertex : shape) {
+            vertex.position.z += 1.0F;
+        }
+
+        auto network = std::make_shared<Nodes::Network::InstanceNetwork>();
+        network->add_slot("one", node);
+        network->get_slot(0).skin = skin;
+        network->get_slot(0).morphs = std::make_shared<const Kakshya::MeshMorphTargets>(
+            Kakshya::MeshMorphTargets { { "lift", shape } });
+        network->get_slot(0).morph_weights = { 0.5F };
+        glm::mat4 posed(1.0F);
+        posed[3] = glm::vec4(0.0F, 2.0F, 0.0F, 1.0F);
+        network->get_slot(0).palette = { posed };
+
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->buffers["crowd"] = std::make_shared<Buffers::InstanceNetworkBuffer>(network);
+        source.wire(std::make_shared<Nexus::Emitter>()).finalise();
+        Nexus::StateEncoder encoder(bindings);
+        ASSERT_TRUE(encoder.encode(source, base)) << encoder.last_error();
+
+        Nexus::StateDecoder decoder;
+        const auto result = decoder.reconstruct(target, base);
+
+        ASSERT_TRUE(result.buffers.contains("crowd"))
+            << (result.warnings.empty() ? std::string {} : result.warnings.front());
+        const auto loaded = std::dynamic_pointer_cast<Buffers::InstanceNetworkBuffer>(result.buffers.at("crowd"));
+        ASSERT_NE(loaded, nullptr);
+        const auto& slot = loaded->get_network()->get_slot(0);
+        ASSERT_NE(slot.skin, nullptr);
+        EXPECT_EQ(slot.skin->joint_count(), 1U);
+        ASSERT_NE(slot.morphs, nullptr);
+        EXPECT_EQ(slot.morphs->size(), 1U);
+        EXPECT_EQ(slot.morph_weights, (std::vector<float> { 0.5F }));
+        ASSERT_EQ(slot.palette.size(), 1U);
+        EXPECT_EQ(slot.palette[0], posed);
+    }
+
     TEST_F(NexusStateAssetTest, ANetworkGeometrySnapshotLoadsBackAsItsSavedPoints)
     {
         auto particles = std::make_shared<Nodes::Network::ParticleNetwork>(
@@ -285,6 +342,44 @@ namespace {
         EXPECT_EQ(loaded->get_bounds().min, volume->get_bounds().min);
         EXPECT_EQ(loaded->get_bounds().max, volume->get_bounds().max);
         manager->remove_buffer(loaded, Buffers::ProcessingToken::GRAPHICS_BACKEND);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusStateVolumeTest, AComputeMeshSnapshotLoadsBackAsItsSurface, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        IO::AssimpModelWriter::register_with_registry();
+        auto computed = std::make_shared<Buffers::ComputeMeshBuffer>(Buffers::ComputeMeshBuffer::Config {
+            .source = Kinesis::SpatialField { .fn = [](const glm::vec3& p) { return p.x - 0.25F; } },
+            .resolution_x = 4,
+            .resolution_y = 4,
+            .resolution_z = 4,
+        });
+        service->initialize_buffer(computed);
+        ASSERT_TRUE(computed->is_initialized());
+        computed->setup_processors(Buffers::ProcessingToken::GRAPHICS_BACKEND);
+        computed->process_default();
+        computed->get_processing_chain()->process(computed);
+        ASSERT_TRUE(computed->get_live_vertex_count().value_or(0U) > 0U);
+
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->buffers["surface"] = computed;
+        Nexus::Fabric source { frames.scheduler, events, manager, 1.0F };
+        Nexus::Fabric target { frames.scheduler, events, manager, 1.0F };
+        source.wire(std::make_shared<Nexus::Emitter>()).finalise();
+        const auto base = (std::filesystem::current_path() / "surface_state").string();
+        Nexus::StateEncoder encoder(bindings);
+        ASSERT_TRUE(encoder.encode(source, base)) << encoder.last_error();
+
+        Nexus::StateDecoder decoder;
+        const auto result = decoder.reconstruct(target, base);
+
+        ASSERT_TRUE(result.buffers.contains("surface"))
+            << (result.warnings.empty() ? std::string {} : result.warnings.front());
+        const auto loaded = std::dynamic_pointer_cast<Buffers::MeshBuffer>(result.buffers.at("surface"));
+        ASSERT_NE(loaded, nullptr);
+        EXPECT_GT(loaded->get_index_count(), 0U);
+
+        computed->set_default_processor(nullptr);
+        service->destroy_buffer(computed);
     }
 }
 }
