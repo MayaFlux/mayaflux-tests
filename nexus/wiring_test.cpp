@@ -1022,6 +1022,21 @@ namespace {
         EXPECT_EQ(fired, 2);
     }
 
+    TEST_F(NexusWiringTriggerTest, ABroadcastValueArrivesBeforeTheFiringItCauses)
+    {
+        const auto source = std::make_shared<Vruta::BroadcastSource<int>>();
+        std::vector<std::pair<int, int>> seen;
+        fabric.wire(make_counting_emitter())
+            .on(source, [this, &seen](const int& value) { seen.emplace_back(value, fired); })
+            .finalise();
+
+        source->signal(7);
+        source->signal(9);
+
+        EXPECT_EQ(seen, (std::vector<std::pair<int, int>> { { 7, 0 }, { 9, 1 } }));
+        EXPECT_EQ(fired, 2);
+    }
+
     TEST_F(NexusWiringTriggerTest, ABroadcastTriggerFiresExactlyTimesThenStops)
     {
         const auto source = std::make_shared<Vruta::BroadcastSource<int>>();

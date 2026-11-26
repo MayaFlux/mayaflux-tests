@@ -484,5 +484,33 @@ namespace {
         run(*course, 8);
     }
 
+    TEST(CourseTest, AWeightFadeMovesInEqualStepsAndArrivesExactly)
+    {
+        const auto course = make(over(0.0, 10.0), true);
+        ASSERT_TRUE(course->fade_weight(0.0, 0.5));
+
+        std::vector<double> weights;
+        for (int i = 0; i < 6; ++i) {
+            static_cast<void>(course->advance());
+            weights.push_back(course->weight());
+        }
+
+        EXPECT_EQ(weights, (std::vector<double> { 0.75, 0.5, 0.25, 0.0, 0.0, 0.0 }));
+    }
+
+    TEST(CourseTest, AWeightWrittenDuringAFadeEndsItAndBadFadesAreRefused)
+    {
+        const auto course = make(over(0.0, 10.0));
+        EXPECT_FALSE(course->fade_weight(-1.0, 1.0));
+        EXPECT_FALSE(course->fade_weight(1.0, -1.0));
+        ASSERT_TRUE(course->fade_weight(0.0, 1.0));
+        static_cast<void>(course->advance());
+
+        course->weight(0.5);
+        run(*course, 4);
+
+        EXPECT_DOUBLE_EQ(course->weight(), 0.5);
+    }
+
 }
 }
