@@ -17,8 +17,15 @@ inline std::string described_call_route(int count, float gain = 1.F,
         + (voice ? voice->label : "none") + " " + (source ? std::to_string(source()) : "none");
 }
 
+/** @brief A callable made from arguments, which is what a table is for. */
+inline std::function<int()> described_call_scaled(int value, int scale = 2)
+{
+    return [value, scale] { return value * scale; };
+}
+
 }
 
 MF_DESCRIBE_FUNCTION(&MayaFlux::Test::described_call_route)
+MF_DESCRIBE_FUNCTION(&MayaFlux::Test::described_call_scaled)
 
 #include "described_call_support.signatures.hpp"

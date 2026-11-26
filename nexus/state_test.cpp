@@ -1,4 +1,6 @@
 #include "gtest/gtest.h"
+#include "MayaFlux/Kriya/Course.hpp"
+#include "../support/state_call_support.hpp"
 #include "../support/test_metadata.hpp"
 
 #include "../support/frame_scheduler.hpp"
@@ -18,7 +20,45 @@
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))
 
 namespace MayaFlux::Test {
+
+struct StateExtraControls {
+    Nexus::Quantity hunger;
+};
+
+}
+
+namespace MayaFlux::Reflect::Generated {
+
+template <>
+struct Description<::MayaFlux::Test::StateExtraControls> {
+    static constexpr std::string_view name = "MayaFlux::Test::StateExtraControls";
+
+    static constexpr auto members()
+    {
+        return std::tuple { Member<&::MayaFlux::Test::StateExtraControls::hunger> { "hunger" } };
+    }
+};
+
+}
+
+namespace MayaFlux::Test {
 namespace {
+
+    class StateFence : public Nexus::Expanse {
+    public:
+        StateFence()
+            : Nexus::Expanse(Kinesis::AABB3D::from_center(glm::vec3(0.0F), glm::vec3(1.0F)))
+        {
+        }
+    };
+
+    class StateWolf : public Nexus::Agent {
+    public:
+        StateWolf()
+            : Nexus::Agent(1.0F)
+        {
+        }
+    };
 
     using Kinesis::AABB3D;
     using Nexus::Agent;
@@ -33,7 +73,8 @@ namespace {
     using Nexus::StateDecoder;
     using Nexus::StateEncoder;
     using Nexus::Tapestry;
-    using Nexus::State::WiringKind;
+    using Nexus::State::FactoryKind;
+    using Nexus::State::TriggerKind;
 
     Vruta::SoundRoutine counting_routine(int* counter)
     {
@@ -294,10 +335,11 @@ namespace {
         ASSERT_TRUE(schema.has_value());
         ASSERT_EQ(schema->entities.size(), 6U);
 
-        EXPECT_EQ(schema->entities[0].wiring.kind, WiringKind::CommitDriven);
+        const auto& commit_record = schema->entities[0].wiring;
+        EXPECT_FALSE(commit_record.interval || commit_record.bound);
+        EXPECT_TRUE(commit_record.triggers.empty() && commit_record.steps.empty() && commit_record.lost.empty());
 
         const auto& every_record = schema->entities[1].wiring;
-        EXPECT_EQ(every_record.kind, WiringKind::Every);
         ASSERT_TRUE(every_record.interval.has_value());
         EXPECT_DOUBLE_EQ(*every_record.interval, 0.25);
         ASSERT_TRUE(every_record.duration.has_value());
@@ -306,45 +348,252 @@ namespace {
         EXPECT_EQ(*every_record.times, 4U);
 
         const auto& steps_record = schema->entities[2].wiring;
-        EXPECT_EQ(steps_record.kind, WiringKind::MoveTo);
-        ASSERT_TRUE(steps_record.steps.has_value());
-        ASSERT_EQ(steps_record.steps->size(), 2U);
-        EXPECT_DOUBLE_EQ((*steps_record.steps)[1].delay_seconds, 1.5);
+        ASSERT_EQ(steps_record.steps.size(), 2U);
+        EXPECT_DOUBLE_EQ(steps_record.steps[1].delay_seconds, 1.5);
 
         const auto& bind_record = schema->entities[3].wiring;
-        EXPECT_EQ(bind_record.kind, WiringKind::Bind);
-        EXPECT_EQ(bind_record.attach_fn_name, "on");
-        EXPECT_EQ(bind_record.detach_fn_name, "off");
+        EXPECT_TRUE(bind_record.bound);
+        EXPECT_EQ(bind_record.bind_attach.name, "on");
+        EXPECT_EQ(bind_record.bind_detach.name, "off");
 
-        EXPECT_EQ(schema->entities[4].wiring.kind, WiringKind::Unsupported);
+        EXPECT_FALSE(schema->entities[4].wiring.lost.empty());
 
         const auto& factory_record = schema->entities[5].wiring;
-        EXPECT_EQ(factory_record.kind, WiringKind::Factory);
-        EXPECT_EQ(factory_record.factory_name, "make");
+        EXPECT_EQ(factory_record.factory_kind, FactoryKind::Sound);
+        EXPECT_EQ(factory_record.factory.name, "make");
     }
 
-    TEST_F(NexusStateTest, KeyWiringRecordsItsKeyAndModifiers)
+    TEST_F(NexusStateTest, KeyWiringRecordsItsKeyModifiersAndWindowName)
     {
         auto window = std::make_shared<ScriptedWindow>(400U, 300U);
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->windows["main"] = window;
+        StateEncoder named(bindings);
 
         source.wire(std::make_shared<Emitter>()).on(window, IO::Keys::Space).finalise();
         source.wire(std::make_shared<Emitter>()).on(window, IO::Keys::S | IO::Modifiers::Ctrl).finalise();
 
-        ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
+        ASSERT_TRUE(named.encode(source, snap_base)) << named.last_error();
         const auto schema = read_schema(snap_base);
 
         ASSERT_TRUE(schema.has_value());
         ASSERT_EQ(schema->entities.size(), 2U);
 
-        const auto& plain = schema->entities[0].wiring;
-        EXPECT_EQ(plain.kind, WiringKind::Key);
+        ASSERT_EQ(schema->entities[0].wiring.triggers.size(), 1U);
+        const auto& plain = schema->entities[0].wiring.triggers[0];
+        EXPECT_EQ(plain.kind, TriggerKind::Key);
+        EXPECT_EQ(plain.source, "main");
         EXPECT_EQ(plain.key, IO::Keys::Space);
-        EXPECT_FALSE(plain.key_modifiers.has_value());
+        EXPECT_FALSE(plain.modifiers.has_value());
 
-        const auto& chord = schema->entities[1].wiring;
-        EXPECT_EQ(chord.kind, WiringKind::Key);
+        ASSERT_EQ(schema->entities[1].wiring.triggers.size(), 1U);
+        const auto& chord = schema->entities[1].wiring.triggers[0];
         EXPECT_EQ(chord.key, IO::Keys::S);
-        EXPECT_EQ(chord.key_modifiers, IO::Modifiers::Ctrl);
+        EXPECT_EQ(chord.modifiers, IO::Modifiers::Ctrl);
+    }
+
+    TEST_F(NexusStateTest, ATriggerOnAnUnboundWindowIsListedAsLost)
+    {
+        auto window = std::make_shared<ScriptedWindow>(400U, 300U);
+        source.wire(std::make_shared<Emitter>()).on(window, IO::Keys::Space).finalise();
+        ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
+
+        const auto result = decoder.reconstruct(target, snap_base);
+
+        EXPECT_TRUE(has_warning(result.warnings, "no bound name"));
+        EXPECT_TRUE(has_warning(result.warnings, "commit_driven instead"));
+    }
+
+    TEST_F(NexusStateTest, FunctionsWithArgumentsTriggersAndEndingsRoundTripThroughBindings)
+    {
+        auto window = std::make_shared<ScriptedWindow>(400U, 300U);
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->windows["main"] = window;
+        bindings->functions.expose<&state_call_influence>();
+        bindings->functions.expose<&state_call_note>();
+        bindings->functions.expose<&state_call_scrolled>();
+
+        const Reflect::FunctionCall influence { "state_call_influence", { { "amount", "5" } } };
+        const Reflect::FunctionCall release { "state_call_note", { { "amount", "7" } } };
+        const Reflect::FunctionCall scroll { "state_call_scrolled", { { "amount", "3" } } };
+
+        auto emitter = std::make_shared<Emitter>("state_call_influence", state_call_influence(5));
+        emitter->set_fn_call(influence);
+        source.wire(emitter)
+            .on(window, IO::Keys::Space, false, release, state_call_note(7))
+            .on_scroll(window, scroll, state_call_scrolled(3))
+            .on_complete(release, state_call_note(7))
+            .times(4)
+            .finalise();
+
+        StateEncoder named(bindings);
+        ASSERT_TRUE(named.encode(source, snap_base)) << named.last_error();
+        StateDecoder loader(bindings);
+        const auto result = loader.reconstruct(target, snap_base);
+
+        EXPECT_TRUE(result.warnings.empty()) << (result.warnings.empty() ? std::string {} : result.warnings.front());
+        const auto restored = target.get_emitter(first_id(target));
+        ASSERT_NE(restored, nullptr);
+        EXPECT_EQ(restored->fn_call(), influence);
+        state_call_total() = 0;
+        restored->invoke(InfluenceContext {});
+        EXPECT_EQ(state_call_total(), 5);
+
+        const auto* wiring = target.wiring_for(first_id(target));
+        ASSERT_NE(wiring, nullptr);
+        EXPECT_EQ(wiring->triggers().size(), 2U);
+        EXPECT_EQ(wiring->complete_call(), release);
+        EXPECT_EQ(wiring->times_count(), 4U);
+
+        ASSERT_TRUE(named.encode(target, again_base)) << named.last_error();
+        const auto schema = read_schema(again_base);
+        ASSERT_TRUE(schema.has_value());
+        const auto& again = schema->entities[0].wiring;
+        ASSERT_EQ(again.triggers.size(), 2U);
+        EXPECT_EQ(again.triggers[0].callback.name, "state_call_note");
+        EXPECT_EQ(again.triggers[1].kind, TriggerKind::Scroll);
+        EXPECT_EQ(again.triggers[1].callback.arguments.at("amount"), "3");
+        EXPECT_TRUE(again.lost.empty());
+    }
+
+    TEST_F(NexusStateTest, ADeclaredFileIsReferredToInsteadOfBeingSnapshotted)
+    {
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->buffers["wolf"] = nullptr;
+        bindings->assets["wolf"] = { .file = "res/wolf.glb", .row = 3 };
+        add_emitter(source);
+
+        StateEncoder named(bindings);
+        ASSERT_TRUE(named.encode(source, snap_base)) << named.last_error();
+        const auto schema = read_schema(snap_base);
+
+        ASSERT_TRUE(schema.has_value());
+        ASSERT_EQ(schema->assets.size(), 1U);
+        EXPECT_EQ(schema->assets[0].name, "wolf");
+        EXPECT_EQ(schema->assets[0].file, "res/wolf.glb");
+        EXPECT_EQ(schema->assets[0].form, Nexus::State::AssetForm::Part);
+        EXPECT_EQ(schema->assets[0].index, 3U);
+        EXPECT_FALSE(schema->assets[0].snapshot);
+        EXPECT_FALSE(std::filesystem::exists(std::filesystem::current_path() / "assets"));
+    }
+
+    TEST_F(NexusStateTest, AnAssetThatCannotBeLoadedIsReportedAndABoundNameIsNotLoaded)
+    {
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->buffers["wolf"] = nullptr;
+        bindings->assets["wolf"] = { .file = "absent.glb" };
+        add_emitter(source);
+        StateEncoder named(bindings);
+        ASSERT_TRUE(named.encode(source, snap_base)) << named.last_error();
+
+        StateDecoder bound(bindings);
+        const auto kept = bound.reconstruct(target, snap_base);
+        const auto missing = decoder.reconstruct(target, snap_base);
+
+        EXPECT_FALSE(has_warning(kept.warnings, "asset 'wolf'"));
+        EXPECT_TRUE(has_warning(missing.warnings, "asset 'wolf' could not be loaded"));
+        EXPECT_TRUE(missing.buffers.empty());
+    }
+
+    TEST_F(NexusStateTest, ABoundCourseGetsItsPlaybackBack)
+    {
+        const Kriya::CourseSetting setting { .in = 0.0, .out = 10.0, .edge = Kriya::CourseEdge::Loop };
+        auto played = Kriya::Course::create(60.0, setting, true);
+        auto fresh = Kriya::Course::create(60.0, setting, false);
+        ASSERT_TRUE(played && fresh);
+        played->speed(2.0);
+        played->range(1.0, 8.0);
+        played->seek(3.0);
+        played->add_marker("chorus", 4.0);
+        static_cast<void>(played->advance(false));
+
+        auto saving = std::make_shared<Nexus::State::Bindings>();
+        saving->courses["walk"] = played;
+        StateEncoder named(saving);
+        ASSERT_TRUE(named.encode(source, snap_base)) << named.last_error();
+
+        auto loading = std::make_shared<Nexus::State::Bindings>();
+        loading->courses["walk"] = fresh;
+        StateDecoder loader(loading);
+        const auto result = loader.reconstruct(target, snap_base);
+        static_cast<void>(fresh->advance(false));
+
+        EXPECT_TRUE(result.warnings.empty()) << (result.warnings.empty() ? std::string {} : result.warnings.front());
+        EXPECT_TRUE(fresh->paused());
+        EXPECT_NEAR(fresh->time(), 3.0, 1e-9);
+        EXPECT_NEAR(fresh->setting().speed, 2.0, 1e-9);
+        EXPECT_NEAR(fresh->setting().in, 1.0, 1e-9);
+        EXPECT_NEAR(fresh->setting().out, 8.0, 1e-9);
+        ASSERT_EQ(fresh->markers().size(), 1U);
+        EXPECT_EQ(fresh->markers().front().name, "chorus");
+
+        EXPECT_TRUE(has_warning(decoder.reconstruct(target, snap_base).warnings, "course 'walk' is not bound"));
+    }
+
+    TEST_F(NexusStateTest, RegisteredClassesControlStructsSetupsAndSharedViewsComeBack)
+    {
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->functions.expose<&state_call_typed>();
+        bindings->register_controls<StateExtraControls>();
+        bindings->register_class<StateWolf>("wolf", [] { return std::make_shared<StateWolf>(); });
+
+        auto wolf = std::make_shared<StateWolf>();
+        static_cast<void>(wolf->extend<StateExtraControls>());
+        wolf->set(StateExtraControls { .hunger = 0.75F });
+        const Reflect::FunctionCall typed { "state_call_typed", { { "amount", "9" } } };
+        wolf->configure(typed, state_call_typed(9));
+        source.wire(wolf).finalise();
+
+        const auto navigation = [] {
+            return std::make_shared<Locus>(Kinesis::NavigationConfig {}, 1.0F,
+                [](const PerceptionContext&) { }, [](const InfluenceContext&) { });
+        };
+        auto first = navigation();
+        auto second = navigation();
+        source.wire(first).finalise();
+        source.wire(second).finalise();
+        second->set_view(first->view());
+
+        StateEncoder named(bindings);
+        ASSERT_TRUE(named.encode(source, snap_base)) << named.last_error();
+        StateDecoder loader(bindings);
+        const auto result = loader.reconstruct(target, snap_base);
+
+        const auto ids = target.all_ids();
+        ASSERT_EQ(ids.size(), 3U);
+        const auto restored = std::dynamic_pointer_cast<StateWolf>(target.get_agent(ids[0]));
+        ASSERT_NE(restored, nullptr);
+        EXPECT_NEAR(restored->get<StateExtraControls>().hunger.value<float>(), 0.75F, 1e-5F);
+        ASSERT_EQ(restored->configurations().size(), 1U);
+        EXPECT_EQ(restored->configurations().front(), typed);
+        state_call_total() = 0;
+        restored->invoke_influence(InfluenceContext {});
+        EXPECT_EQ(state_call_total(), 9);
+
+        const auto a = std::dynamic_pointer_cast<Locus>(target.get_agent(ids[1]));
+        const auto b = std::dynamic_pointer_cast<Locus>(target.get_agent(ids[2]));
+        ASSERT_TRUE(a && b);
+        ASSERT_NE(a->view(), nullptr);
+        EXPECT_EQ(a->view(), b->view());
+    }
+
+    TEST_F(NexusStateTest, ARegisteredExpanseClassIsNotMatchedToAPlainOne)
+    {
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->register_class<StateFence>("fence", [] { return std::make_shared<StateFence>(); });
+        source.add_expanse(std::make_shared<StateFence>());
+        StateEncoder named(bindings);
+        ASSERT_TRUE(named.encode(source, snap_base)) << named.last_error();
+        target.add_expanse(std::make_shared<Expanse>(box(1.0F)));
+        StateDecoder loader(bindings);
+
+        const auto first = loader.reconstruct(target, snap_base);
+        const auto second = loader.reconstruct(target, snap_base);
+
+        EXPECT_EQ(first.constructed, 1);
+        EXPECT_EQ(second.patched, 1);
+        EXPECT_EQ(second.constructed, 0);
+        EXPECT_EQ(target.all_expanse_ids().size(), 2U);
     }
 
     TEST_F(NexusStateTest, LocusAndPresenceRecordTheirSubkinds)
@@ -367,7 +616,7 @@ namespace {
         ASSERT_TRUE(schema->entities[0].locus_nav.has_value());
         EXPECT_EQ(schema->entities[0].locus_nav->eye, glm::vec3(1.0F, 2.0F, 3.0F));
         EXPECT_EQ(schema->entities[1].subkind, "presence");
-        EXPECT_EQ(schema->entities[1].radiate_fn_name, "spread");
+        EXPECT_EQ(schema->entities[1].radiate.name, "spread");
         EXPECT_EQ(schema->entities[1].controls.at("PresenceControls.falloff_curve"),
             std::to_string(static_cast<int>(Presence::FalloffCurve::Cosine)));
         EXPECT_EQ(schema->entities[1].controls.at("PresenceControls.falloff_radius"), "2");
@@ -403,10 +652,10 @@ namespace {
 
         ASSERT_TRUE(schema.has_value());
         ASSERT_EQ(schema->expanses.size(), 2U);
-        EXPECT_TRUE(schema->expanses[0].fn_name.empty());
+        EXPECT_TRUE(schema->expanses[0].contains.name.empty());
         ASSERT_TRUE(schema->expanses[0].bounds_min.has_value());
         EXPECT_EQ(*schema->expanses[0].bounds_min, glm::vec3(-1.0F));
-        EXPECT_EQ(schema->expanses[1].fn_name, "left");
+        EXPECT_EQ(schema->expanses[1].contains.name, "left");
         EXPECT_FALSE(schema->expanses[1].bounds_min.has_value());
     }
 
@@ -563,7 +812,6 @@ namespace {
 
         ASSERT_TRUE(schema.has_value());
         const auto& wiring = schema->entities[0].wiring;
-        EXPECT_EQ(wiring.kind, WiringKind::Every);
         EXPECT_DOUBLE_EQ(*wiring.interval, 0.05);
         EXPECT_DOUBLE_EQ(*wiring.duration, 1.0);
         ASSERT_TRUE(wiring.interval_token.has_value());
@@ -597,7 +845,7 @@ namespace {
         const auto result = decoder.reconstruct(target, snap_base);
         target.commit();
 
-        EXPECT_TRUE(has_warning(result.warnings, "bind callables cannot be restored"));
+        EXPECT_TRUE(has_warning(result.warnings, "commit_driven instead"));
         EXPECT_EQ(target_pulse, 1);
         const auto* wiring = target.wiring_for(first_id(target));
         ASSERT_NE(wiring, nullptr);
@@ -612,7 +860,7 @@ namespace {
 
         const auto result = decoder.reconstruct(target, snap_base);
 
-        EXPECT_TRUE(has_warning(result.warnings, "factory 'make' cannot be restored"));
+        EXPECT_TRUE(has_warning(result.warnings, "factory: unknown 'make'"));
     }
 
     TEST_F(NexusStateTest, ReconstructPatchesEntitiesThatAlreadyExistById)
@@ -675,7 +923,7 @@ namespace {
         source.wire(locus).finalise();
         ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
 
-        const auto result = decoder.reconstruct(target, snap_base);
+        restore(target, snap_base);
 
         const auto restored = std::dynamic_pointer_cast<Locus>(target.get_agent(first_id(target)));
         ASSERT_NE(restored, nullptr);
@@ -686,7 +934,6 @@ namespace {
         EXPECT_NEAR(restored->nav().yaw, locus->nav().yaw, 1e-4F);
         EXPECT_NEAR(restored->nav().pitch, locus->nav().pitch, 1e-4F);
         EXPECT_NEAR(restored->aspect(), 2.0F, 1e-5F);
-        EXPECT_TRUE(has_warning(result.warnings, "view_targets must be reconnected"));
     }
 
     TEST_F(NexusStateTest, APresenceRoundTripsItsFalloffAndNames)
@@ -806,7 +1053,7 @@ namespace {
 
         const auto result = decoder.reconstruct(target, snap_base);
 
-        EXPECT_FALSE(has_warning(result.warnings, "not in registry"));
+        EXPECT_FALSE(has_warning(result.warnings, "unknown"));
         ASSERT_EQ(target.all_expanse_ids().size(), 1U);
         const auto restored = target.get_expanse(target.all_expanse_ids().front());
         EXPECT_EQ(restored->fn_name(), "left");
@@ -828,7 +1075,7 @@ namespace {
 
         const auto result = decoder.reconstruct(target, snap_base);
 
-        EXPECT_FALSE(has_warning(result.warnings, "not in registry"));
+        EXPECT_FALSE(has_warning(result.warnings, "unknown"));
         ASSERT_EQ(target.all_expanse_ids().size(), 1U);
         const auto restored = target.get_expanse(target.all_expanse_ids().front());
         ASSERT_TRUE(static_cast<bool>(restored->on_enter_fn()));
@@ -864,7 +1111,7 @@ namespace {
 
         EXPECT_EQ(result.skipped, 1);
         EXPECT_TRUE(target.all_expanse_ids().empty());
-        EXPECT_TRUE(has_warning(result.warnings, "not in registry"));
+        EXPECT_TRUE(has_warning(result.warnings, "no predicate"));
     }
 
     TEST_F(NexusStateTest, AnEquivalentExpanseAlreadyOnTheFabricIsPatchedNotDuplicated)
@@ -889,7 +1136,7 @@ namespace {
 
         const auto result = decoder.reconstruct(target, snap_base);
 
-        EXPECT_TRUE(has_warning(result.warnings, "crossing 'arrive' not in registry"));
+        EXPECT_TRUE(has_warning(result.warnings, "on_enter: unknown 'arrive'"));
         ASSERT_EQ(target.all_expanse_ids().size(), 1U);
         EXPECT_EQ(target.get_expanse(target.all_expanse_ids().front())->on_enter_fn_name(), "arrive");
     }
