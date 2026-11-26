@@ -260,16 +260,23 @@ namespace {
             std::make_shared<Vruta::TaskScheduler>(48000),
             std::make_shared<Vruta::EventManager>(),
             std::make_shared<Buffers::BufferManager>());
-        int wired {};
+        std::vector<std::optional<uint64_t>> wired;
         StateOrchestrator orchestrator { nullptr, tapestry };
-        orchestrator.set_wiring_rule([&wired](Nexus::Wiring&) { ++wired; });
+        orchestrator.set_wiring_rule([&wired](Nexus::Wiring&, std::optional<uint64_t> row) { wired.push_back(row); });
 
         const auto [realization, rows] = orchestrator.orchestrate(room.assembly);
 
         ASSERT_EQ(rows.size(), 3U);
         ASSERT_NE(orchestrator.fabric(), nullptr);
         EXPECT_EQ(orchestrator.fabric()->all_ids().size(), 3U);
-        EXPECT_EQ(wired, 3);
+        ASSERT_EQ(wired.size(), 3U);
+        for (size_t i = 0; i < rows.size(); ++i) {
+            EXPECT_EQ(wired[i], rows[i].first);
+            const uint32_t id = std::visit([](const auto& ptr) { return ptr->id(); }, rows[i].second);
+            EXPECT_EQ(StateOrchestrator::row_with_id(rows, id), rows[i].first);
+        }
+        EXPECT_FALSE(StateOrchestrator::row_with_id(rows, 0));
+        EXPECT_FALSE(StateOrchestrator::row_with_id(rows, 1000));
 
         const auto agent = std::get<std::shared_ptr<Agent>>(rows[0].second);
         agent->set({ .position = glm::vec3(-5.0F) });
