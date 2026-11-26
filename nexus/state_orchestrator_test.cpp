@@ -381,5 +381,31 @@ namespace {
         EXPECT_TRUE(streaming.empty());
     }
 
+    TEST(NexusStateOrchestratorTest, TheMaterialResolverIsAskedForEachMaterialDrawn)
+    {
+        const auto assembly = std::make_shared<MeshAssemblyContainer>();
+        const auto shape = Kakshya::MeshData::from_positions(
+            std::vector<glm::vec3> { { 0.0F, 0.0F, 0.0F }, { 1.0F, 0.0F, 0.0F }, { 0.0F, 1.0F, 0.0F } },
+            std::vector<uint32_t> { 0, 1, 2 })
+                               .value();
+        const auto tri = assembly->add_source({ .geometry = shape, .name = "tri" });
+        const auto skin = assembly->add_material({ .name = "skin", .diffuse_path = "skin.png" });
+        std::ignore = assembly->add_placement({ .name = "left", .source = tri, .material = skin });
+        std::ignore = assembly->add_placement({ .name = "right", .source = tri, .material = skin });
+
+        std::vector<std::string> asked;
+        StateOrchestrator orchestrator { nullptr };
+        orchestrator.set_material_resolver(
+            [&asked](const Kakshya::MeshAssemblyMaterial& material) -> std::shared_ptr<Core::VKImage> {
+                asked.push_back(material.name);
+                return nullptr;
+            });
+
+        const auto [realization, rows] = orchestrator.orchestrate(assembly);
+
+        ASSERT_NE(realization, nullptr);
+        EXPECT_EQ(asked, (std::vector<std::string> { "skin" }));
+    }
+
 }
 }
