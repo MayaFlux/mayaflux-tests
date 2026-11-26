@@ -142,4 +142,36 @@ TEST_F(ApiStagecraftTest, AFabricFromACreatedTapestryReleasesTheSinksOfARemovedE
     EXPECT_EQ(sinks_on(0), before);
 }
 
+TEST_F(ApiStagecraftTest, CreateOrchestratorReturnsUnwiredPrincipalsWithoutATapestry)
+{
+    const auto orchestrator = MayaFlux::create_orchestrator();
+
+    ASSERT_NE(orchestrator, nullptr);
+    const auto lamp = orchestrator->emitter_from(Kakshya::MeshAssemblyLight {}, glm::mat4(1.0F));
+
+    ASSERT_NE(lamp, nullptr);
+    EXPECT_EQ(lamp->id(), 0U);
+    EXPECT_EQ(orchestrator->fabric(), nullptr);
+}
+
+TEST_F(ApiStagecraftTest, ACreatedOrchestratorWiresIntoItsTapestry)
+{
+    const auto tapestry = MayaFlux::create_tapestry();
+    const auto orchestrator = MayaFlux::create_orchestrator(tapestry);
+
+    const auto lamp = orchestrator->emitter_from(Kakshya::MeshAssemblyLight {}, glm::mat4(1.0F));
+
+    ASSERT_NE(orchestrator->fabric(), nullptr);
+    EXPECT_EQ(orchestrator->fabric()->get_emitter(lamp->id()), lamp);
+}
+
+TEST_F(ApiStagecraftTest, ChoosingAModelWithoutAnOrchestratorAsksNothing)
+{
+    const auto [assembly, realization, rows] = MayaFlux::orchestrate_chosen_model(nullptr);
+
+    EXPECT_EQ(assembly, nullptr);
+    EXPECT_EQ(realization, nullptr);
+    EXPECT_TRUE(rows.empty());
+}
+
 }
