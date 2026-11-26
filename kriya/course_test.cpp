@@ -512,5 +512,22 @@ namespace {
         EXPECT_DOUBLE_EQ(course->weight(), 0.5);
     }
 
+    TEST(CourseTest, AScrubbedCourseGoesWhereItsPlayheadSaysBothWays)
+    {
+        const auto course = make(over(0.0, 10.0, CourseEdge::Hold));
+        double playhead = 3.0;
+        EXPECT_FALSE(course->scrub({}));
+        ASSERT_TRUE(course->scrub([&playhead] { return playhead; }));
+
+        std::vector<double> times;
+        for (const double value : { 3.0, 20.0, 1.0, std::numeric_limits<double>::quiet_NaN(), -4.0, 6.0 }) {
+            playhead = value;
+            static_cast<void>(course->advance());
+            times.push_back(course->time());
+        }
+
+        EXPECT_EQ(times, (std::vector<double> { 3.0, 10.0, 1.0, 1.0, 0.0, 6.0 }));
+    }
+
 }
 }
