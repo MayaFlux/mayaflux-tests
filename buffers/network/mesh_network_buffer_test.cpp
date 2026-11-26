@@ -1045,6 +1045,53 @@ namespace {
         EXPECT_GT(left[1], 150U);
     }
 
+    MAYAFLUX_TEST_WITH(TEST_F, MeshNetworkBufferPresentationTest, AConeTurnedAwayLeavesASurfaceUnlit, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
+    {
+        MeshNetworkBuffer::RenderConfig config;
+        config.target_window = window;
+        config.fragment_shader = "mesh_network_lit.frag.spv";
+        buffer->setup_rendering(config);
+        const auto render = buffer->get_render_processor();
+        ASSERT_NE(render, nullptr);
+        Nexus::InfluenceBlock influence;
+        influence.position = { -0.5F, 0.0F, 0.5F };
+        influence.color = { 0.0F, 1.0F, 0.0F };
+        influence.radius = 5.0F;
+        influence.direction = { 0.0F, 0.0F, 1.0F };
+        influence.cone_outer = 0.5F;
+        Nexus::bind_influence_block(render)(influence);
+
+        root->process_default();
+        Buffers::PresentProcessor presenter;
+        presenter.processing_function(root);
+
+        const auto left = pixel_at_ndc(-0.5F, 0.0F);
+        EXPECT_GT(left[2], 200U);
+        EXPECT_LT(left[1], 40U);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, MeshNetworkBufferPresentationTest, AttenuationDividesWhatArrives, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
+    {
+        MeshNetworkBuffer::RenderConfig config;
+        config.target_window = window;
+        config.fragment_shader = "mesh_network_lit.frag.spv";
+        buffer->setup_rendering(config);
+        const auto render = buffer->get_render_processor();
+        ASSERT_NE(render, nullptr);
+        Nexus::InfluenceBlock influence;
+        influence.position = { -0.5F, 0.0F, 0.5F };
+        influence.color = { 0.0F, 1.0F, 0.0F };
+        influence.radius = 5.0F;
+        influence.attenuation = { 100.0F, 0.0F, 0.0F };
+        Nexus::bind_influence_block(render)(influence);
+
+        root->process_default();
+        Buffers::PresentProcessor presenter;
+        presenter.processing_function(root);
+
+        EXPECT_LT(pixel_at_ndc(-0.5F, 0.0F)[1], 40U);
+    }
+
     MAYAFLUX_TEST_WITH(TEST_F, MeshNetworkBufferPresentationTest, AnInfluenceBehindASurfaceLeavesItUnlit, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
     {
         MeshNetworkBuffer::RenderConfig config;

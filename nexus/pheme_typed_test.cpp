@@ -1,6 +1,9 @@
 #include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
 
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/quaternion.hpp>
+
 #include "MayaFlux/Nexus/Pheme/FieldTargets.hpp"
 #include "MayaFlux/Nexus/Pheme/Influence.hpp"
 #include "MayaFlux/Nexus/Pheme/Perception.hpp"
@@ -149,13 +152,42 @@ namespace {
 
     TEST(NexusInfluenceBlockTest, LayoutMatchesTheShaderBlock)
     {
-        EXPECT_EQ(sizeof(InfluenceBlock), 48U);
+        EXPECT_EQ(sizeof(InfluenceBlock), 80U);
         EXPECT_EQ(alignof(InfluenceBlock), 16U);
         EXPECT_EQ(offsetof(InfluenceBlock, position), 0U);
         EXPECT_EQ(offsetof(InfluenceBlock, intensity), 12U);
         EXPECT_EQ(offsetof(InfluenceBlock, color), 16U);
         EXPECT_EQ(offsetof(InfluenceBlock, radius), 28U);
         EXPECT_EQ(offsetof(InfluenceBlock, size), 32U);
+        EXPECT_EQ(offsetof(InfluenceBlock, direction), 48U);
+        EXPECT_EQ(offsetof(InfluenceBlock, cone_inner), 60U);
+        EXPECT_EQ(offsetof(InfluenceBlock, attenuation), 64U);
+        EXPECT_EQ(offsetof(InfluenceBlock, cone_outer), 76U);
+    }
+
+    TEST(NexusInfluenceBlockTest, WithoutAConeOrAttenuationTheBlockChangesNothing)
+    {
+        const InfluenceBlock block = InfluenceBlock::from(InfluenceContext {});
+
+        EXPECT_EQ(block.direction, glm::vec3(0.0F, 0.0F, -1.0F));
+        EXPECT_EQ(block.attenuation, glm::vec3(1.0F, 0.0F, 0.0F));
+        EXPECT_FLOAT_EQ(block.cone_outer, 0.0F);
+    }
+
+    TEST(NexusInfluenceBlockTest, FromTakesTheDirectionFromTheOrientationAndCarriesTheCone)
+    {
+        InfluenceContext ctx;
+        ctx.orientation = glm::angleAxis(glm::half_pi<float>(), glm::vec3(0.0F, 1.0F, 0.0F));
+        ctx.cone = glm::vec2(0.2F, 0.4F);
+        ctx.attenuation = glm::vec3(0.0F, 0.0F, 1.0F);
+
+        const InfluenceBlock block = InfluenceBlock::from(ctx);
+
+        EXPECT_NEAR(block.direction.x, -1.0F, 1e-5F);
+        EXPECT_NEAR(block.direction.z, 0.0F, 1e-5F);
+        EXPECT_FLOAT_EQ(block.cone_inner, 0.2F);
+        EXPECT_FLOAT_EQ(block.cone_outer, 0.4F);
+        EXPECT_EQ(block.attenuation, glm::vec3(0.0F, 0.0F, 1.0F));
     }
 
     TEST(NexusPerceptionTest, SourceRunsOncePerInvokeAndEveryTargetGetsTheValue)

@@ -100,7 +100,8 @@ namespace {
         emitter.store().for_each([&names](std::string_view name, const Quantity&) { names.emplace_back(name); });
 
         const std::vector<std::string> expected { "position", "orientation", "EmitterControls.intensity",
-            "EmitterControls.radius", "EmitterControls.color", "EmitterControls.size" };
+            "EmitterControls.radius", "EmitterControls.color", "EmitterControls.size", "EmitterControls.cone",
+            "EmitterControls.attenuation" };
         EXPECT_EQ(names, expected);
     }
 

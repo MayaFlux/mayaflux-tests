@@ -1084,4 +1084,47 @@ TEST_F(MeshAssemblyAlembicTest, ATransformMatrixPlacesTheChildrenAsItsTranslatio
     EXPECT_EQ(reader.transform_time("base/arm", 2), std::optional<double> { 2.0 });
 }
 
+/** A triangle moved one unit along x with one morph target that cancels every normal. */
+std::string flattening_morph_gltf()
+{
+    const std::string payload = float_bytes({ 0, 0, 0, 1, 0, 0, 0, 1, 0,
+        0, 0, 1, 0, 0, 1, 0, 0, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, -1, 0, 0, -1, 0, 0, -1 });
+    return R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],)"
+           R"("nodes":[{"name":"face","mesh":0,"translation":[1,0,0]}],)"
+           R"("meshes":[{"name":"tri","weights":[0.0],)"
+           R"("primitives":[{"attributes":{"POSITION":0,"NORMAL":1},"targets":[{"POSITION":2,"NORMAL":3}]}]}],)"
+           R"("accessors":[)"
+           R"({"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]},)"
+           R"({"bufferView":1,"componentType":5126,"count":3,"type":"VEC3"},)"
+           R"({"bufferView":2,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[0,0,0]},)"
+           R"({"bufferView":3,"componentType":5126,"count":3,"type":"VEC3"}],)"
+           R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":36},)"
+           R"({"buffer":0,"byteOffset":72,"byteLength":36},{"buffer":0,"byteOffset":108,"byteLength":36}],)"
+           R"("buffers":[{"byteLength":144,"uri":"data:application/octet-stream;base64,)"
+        + RoundTrip::base64(payload) + R"("}]})";
+}
+
+TEST_F(MeshAssemblyModelTest, APlacedMorphTargetWithAZeroNormalStaysFinite)
+{
+    const auto path = path_in_cwd("flat_morph.gltf");
+    RoundTrip::write_bytes(path, flattening_morph_gltf());
+    IO::ModelReader reader;
+    ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
+
+    const auto buffers = reader.create_mesh_buffers();
+
+    ASSERT_EQ(buffers.size(), 1U);
+    const auto& morphs = buffers.front()->get_morphs();
+    ASSERT_NE(morphs, nullptr);
+    ASSERT_EQ(morphs->size(), 1U);
+    for (const auto& vertex : (*morphs)[0].second) {
+        EXPECT_TRUE(std::isfinite(vertex.normal.x) && std::isfinite(vertex.normal.y) && std::isfinite(vertex.normal.z));
+        EXPECT_TRUE(std::isfinite(vertex.tangent.x) && std::isfinite(vertex.tangent.y) && std::isfinite(vertex.tangent.z));
+        EXPECT_GE(vertex.position.x, 1.0F);
+    }
+}
+
+
 }

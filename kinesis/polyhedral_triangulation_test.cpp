@@ -131,6 +131,29 @@ TEST(PolyhedralTriangulationTest, AConcaveFaceInATiltedPlaneTriangulatesTheSame)
     }
 }
 
+TEST(PolyhedralTriangulationTest, AQuadThatCrossesItselfStillBecomesTwoTriangles)
+{
+    const auto surface = Polyhedral::single_face(
+        { glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(4.0F, 1.0F, 0.0F), glm::vec3(4.0F, 0.0F, 0.0F), glm::vec3(0.0F, 2.0F, 0.0F) });
+    const auto shorter = triangulate(surface);
+    const auto first = triangulate(surface, false);
+
+    EXPECT_TRUE(shorter.failed_faces.empty());
+    EXPECT_EQ(shorter.indices.size(), 6U);
+    EXPECT_EQ(shorter.triangle_face, (std::vector<uint32_t> { 0, 0 }));
+    EXPECT_EQ(first.indices, (std::vector<uint32_t> { 0, 1, 2, 0, 2, 3 }));
+}
+
+TEST(PolyhedralTriangulationTest, ABowtieWhoseHalvesCancelIsNotMistakenForAFaceWithNoArea)
+{
+    const auto surface = Polyhedral::single_face(
+        { glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(1.0F, 1.0F, 0.0F), glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F) });
+    const auto result = triangulate(surface);
+
+    EXPECT_TRUE(result.failed_faces.empty());
+    EXPECT_EQ(result.indices.size(), 6U);
+}
+
 TEST(PolyhedralTriangulationTest, FacesThatCannotBeTriangulatedAreReportedAndLeftOut)
 {
     Polyhedral::Surface surface;

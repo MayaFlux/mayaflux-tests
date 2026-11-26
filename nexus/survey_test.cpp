@@ -7,6 +7,8 @@
 #include "../buffers/compute/volume_grid_fixture.hpp"
 #include "../support/nexus_support.hpp"
 
+#include "MayaFlux/Nexus/Pheme/Attachment.hpp"
+#include "MayaFlux/Buffers/Geometry/MeshBuffer.hpp"
 #include "MayaFlux/Buffers/Geometry/GeometryBuffer.hpp"
 #include "MayaFlux/Buffers/Network/InstanceNetworkBuffer.hpp"
 #include "MayaFlux/Buffers/Network/MeshNetworkBuffer.hpp"
@@ -646,6 +648,55 @@ namespace {
         expect_near(*anchor, { 2.0F, 0.0F, 0.0F });
         EXPECT_EQ(Nexus::read_placement(buffer, 3U), glm::mat4(1.0F));
     }
+
+    TEST(NexusSurveySlotTest, AnAttachmentAnchorsAtTheSlotItNames)
+    {
+        const auto buffer = two_slot_mesh_buffer();
+
+        const auto attachment = Nexus::make_attachment(buffer, Nexus::AttachConfig { .slot = 1U }, std::nullopt);
+
+        expect_near(attachment.anchor, { 0.0F, 3.0F, 0.0F });
+    }
+
+    TEST(NexusSurveyDeformedTest, ASkinnedMeshBufferAnchorsUnderItsPalette)
+    {
+        const auto buffer = std::make_shared<Buffers::MeshBuffer>(triangle_mesh());
+        auto skin = std::make_shared<Kakshya::MeshSkin>();
+        skin->inverse_bind = { glm::mat4(1.0F) };
+        skin->influence_joints.assign(3, glm::uvec4(0U));
+        skin->influence_weights.assign(3, glm::vec4(1.0F, 0.0F, 0.0F, 0.0F));
+        buffer->set_skin(skin, { glm::translate(glm::mat4(1.0F), { 0.0F, 0.0F, 2.0F }) });
+
+        const auto anchor = Nexus::track_anchor(buffer)();
+
+        ASSERT_TRUE(anchor.has_value());
+        expect_near(*anchor, { 4.0F / 3.0F, 4.0F / 3.0F, 2.0F });
+    }
+
+    TEST(NexusSurveyDeformedTest, MorphTargetsMoveTheAnchorByTheirWeightsBeforeTheSkin)
+    {
+        const auto buffer = std::make_shared<Buffers::MeshBuffer>(triangle_mesh());
+        std::vector<Kakshya::MeshVertex> shape(3);
+        shape[0].position = { 0.0F, 0.0F, 4.0F };
+        shape[1].position = { 4.0F, 0.0F, 4.0F };
+        shape[2].position = { 0.0F, 4.0F, 4.0F };
+        for (auto& vertex : shape) {
+            vertex.weight = 0.5F;
+        }
+        auto skin = std::make_shared<Kakshya::MeshSkin>();
+        skin->inverse_bind = { glm::mat4(1.0F) };
+        skin->influence_joints.assign(3, glm::uvec4(0U));
+        skin->influence_weights.assign(3, glm::vec4(1.0F, 0.0F, 0.0F, 0.0F));
+        buffer->set_skin(skin, { glm::scale(glm::mat4(1.0F), glm::vec3(2.0F)) });
+        buffer->set_morphs(std::make_shared<const Kakshya::MeshMorphTargets>(
+            Kakshya::MeshMorphTargets { { "lift", shape } }));
+
+        const auto anchor = Nexus::track_anchor(buffer)();
+
+        ASSERT_TRUE(anchor.has_value());
+        expect_near(*anchor, { 8.0F / 3.0F, 8.0F / 3.0F, 4.0F });
+    }
+
 
 }
 }

@@ -1,31 +1,40 @@
-#include "gtest/gtest.h"
 #include "../support/test_metadata.hpp"
-
+#include "gtest/gtest.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include "../support/nexus_support.hpp"
 
+#include "../support/scoped_working_dir.hpp"
 #include "MayaFlux/Buffers/AudioBuffer.hpp"
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Buffers/BufferProcessingChain.hpp"
 #include "MayaFlux/Buffers/Geometry/MeshBuffer.hpp"
 #include "MayaFlux/Buffers/Shaders/RenderProcessor.hpp"
 #include "MayaFlux/Buffers/VKBuffer.hpp"
+#include "MayaFlux/Core/Backends/Graphics/Vulkan/VKImage.hpp"
+#include "MayaFlux/IO/Detail/IOTransitions.hpp"
+#include "MayaFlux/IO/Image/EXRWriter.hpp"
+#include "MayaFlux/Kakshya/NDData/MeshAssemblyData.hpp"
 #include "MayaFlux/Kakshya/NDData/MeshData.hpp"
 #include "MayaFlux/Kakshya/NDData/VertexFormats.hpp"
+#include "MayaFlux/Nexus/Expanses/Hull.hpp"
+#include "MayaFlux/Nexus/Expanses/Mantle.hpp"
 #include "MayaFlux/Nexus/Fabric.hpp"
 #include "MayaFlux/Nexus/Pheme/Attachment.hpp"
 #include "MayaFlux/Nexus/Pheme/Sinks.hpp"
 #include "MayaFlux/Nexus/Pheme/Survey.hpp"
 #include "MayaFlux/Nexus/Principals/Agent.hpp"
 #include "MayaFlux/Nexus/Principals/Locus.hpp"
+#include "MayaFlux/Nexus/State/Decoder.hpp"
+#include "MayaFlux/Nexus/State/Encoder.hpp"
 #include "MayaFlux/Nexus/Tapestry.hpp"
 #include "MayaFlux/Portal/Graphics/GraphicsUtils.hpp"
 #include "MayaFlux/Portal/Graphics/ImageTarget.hpp"
 #include "MayaFlux/Portal/Graphics/ShaderFoundry.hpp"
 #include "MayaFlux/Portal/Graphics/TextureLoom.hpp"
+#include "MayaFlux/Transitive/IO/JSONSerializer.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
 
@@ -1169,6 +1178,118 @@ namespace {
         locus->invoke_perception(PerceptionContext {});
 
         EXPECT_NE(locus->view()->read().first, before);
+    }
+
+    class NexusStateDeviceTest : public NexusDeviceTest {
+    protected:
+        void SetUp() override
+        {
+            NexusDeviceTest::SetUp();
+            if (IsSkipped())
+                return;
+            IO::EXRWriter::register_with_registry();
+        }
+
+        [[nodiscard]] std::shared_ptr<Buffers::MeshBuffer> drawn_mesh() const
+        {
+            auto buffer = std::make_shared<Buffers::MeshBuffer>(solid_mesh());
+            buffer->set_render_processor(
+                std::make_shared<Buffers::RenderProcessor>(Buffers::ShaderConfig { "triangle.vert.spv" }));
+            return buffer;
+        }
+
+        ScopedWorkingDir cwd;
+        std::shared_ptr<Vruta::TaskScheduler> scheduler = std::make_shared<Vruta::TaskScheduler>(48000);
+        std::shared_ptr<Vruta::EventManager> events = std::make_shared<Vruta::EventManager>();
+    };
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusStateDeviceTest, AttachmentsSinksViewsAndBodiesAreRestored, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        auto bindings = std::make_shared<Nexus::State::Bindings>();
+        bindings->windows["main"] = window;
+        for (const char* name : { "held", "viewed", "hulled", "worn" }) {
+            bindings->buffers[name] = drawn_mesh();
+            bindings->assets[name] = { .file = "unused.glb" };
+        }
+
+        Nexus::Fabric source { scheduler, events, manager_handle, 1.0F };
+        auto agent = std::make_shared<Nexus::Agent>(1.0F);
+        source.wire(agent).finalise();
+        agent->attach(bindings->buffers["held"], { .index = 1U, .slot = 0U, .on_move = AttachConfig::OnMove::Carry });
+        auto locus = std::make_shared<Nexus::Locus>(
+            Kinesis::NavigationConfig {}, 4.0F, [](const PerceptionContext&) { }, [](const InfluenceContext&) { });
+        source.wire(std::shared_ptr<Nexus::Agent>(locus)).finalise();
+        locus->add_view_target(bindings->buffers["viewed"]->get_render_processor());
+        auto lamp = std::make_shared<Nexus::Emitter>();
+        source.wire(lamp).finalise();
+        lamp->render(manager, render_config());
+        source.add_expanse(std::make_shared<Nexus::Hull>(bindings->buffers["hulled"]));
+        source.add_expanse(std::make_shared<Nexus::Mantle>(
+            Kinesis::AABB3D::from_center(glm::vec3(0.0F), glm::vec3(1.0F)), bindings->buffers["worn"]));
+
+        const auto first = (std::filesystem::current_path() / "first").string();
+        const auto second = (std::filesystem::current_path() / "second").string();
+        Nexus::StateEncoder encoder(bindings);
+        ASSERT_TRUE(encoder.encode(source, first)) << encoder.last_error();
+
+        Nexus::Fabric target { scheduler, events, manager_handle, 1.0F };
+        Nexus::StateDecoder decoder(bindings);
+        static_cast<void>(decoder.reconstruct(target, first));
+        ASSERT_TRUE(encoder.encode(target, second)) << encoder.last_error();
+
+        IO::JSONSerializer serializer;
+        const auto saved = serializer.read<Nexus::State::FabricSchema>(first + ".json");
+        const auto again = serializer.read<Nexus::State::FabricSchema>(second + ".json");
+        ASSERT_TRUE(saved && again);
+        ASSERT_EQ(again->entities.size(), saved->entities.size());
+        for (size_t i = 0; i < saved->entities.size(); ++i) {
+            const auto& before = saved->entities[i];
+            const auto& after = again->entities[i];
+            ASSERT_EQ(after.attach.has_value(), before.attach.has_value());
+            if (before.attach) {
+                EXPECT_EQ(after.attach->buffer, "held");
+                EXPECT_EQ(after.attach->index, 1U);
+                EXPECT_EQ(after.attach->slot, 0U);
+                EXPECT_EQ(after.attach->on_move, AttachConfig::OnMove::Carry);
+            }
+            EXPECT_EQ(after.view_targets, before.view_targets);
+            EXPECT_EQ(after.render_sinks.size(), before.render_sinks.size());
+        }
+        ASSERT_EQ(saved->expanses.size(), 2U);
+        ASSERT_EQ(again->expanses.size(), 2U);
+        for (size_t i = 0; i < saved->expanses.size(); ++i) {
+            EXPECT_EQ(again->expanses[i].subkind, saved->expanses[i].subkind);
+            EXPECT_EQ(again->expanses[i].buffer, saved->expanses[i].buffer);
+        }
+    }
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusStateDeviceTest, AnEmbeddedTextureIsBoundThroughTheMaterialResolver, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        auto& loom = Portal::Graphics::get_texture_manager();
+        loom.shutdown();
+        ASSERT_TRUE(loom.initialize(std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) { })));
+        {
+            auto pixels = std::make_shared<Kakshya::ImageData>();
+            pixels->width = 2;
+            pixels->height = 1;
+            pixels->channels = 4;
+            pixels->format = Kakshya::ImageFormat::RGBA8;
+            pixels->pixels = std::vector<uint8_t> { 255, 0, 0, 255, 0, 0, 255, 255 };
+
+            Kakshya::MeshAssemblyMaps maps;
+            maps.base_color = Kakshya::MeshAssemblyTexture { .path = "*0", .image = pixels };
+            Kakshya::MeshAssemblyMaterial material { .name = "skin", .diffuse_path = "*0", .diffuse_embedded = true };
+            material.facets.set(std::move(maps));
+
+            const auto resolver = IO::Detail::make_material_resolver("scene.glb");
+            const auto image = resolver(material);
+
+            ASSERT_NE(image, nullptr);
+            EXPECT_EQ(image->get_width(), 2U);
+            EXPECT_EQ(image->get_height(), 1U);
+            EXPECT_EQ(resolver(material), image);
+        }
+        loom.shutdown();
     }
 
 }

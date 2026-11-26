@@ -387,6 +387,44 @@ namespace {
         EXPECT_EQ(follower->setting().time_map, nullptr);
     }
 
+    TEST(CourseFollowTest, AnUnfollowedCourseCarriesOnFromWhereItWas)
+    {
+        const auto leader = Course::create(k_hook_rate, hook_over(0.0, 4.0, CourseEdge::Hold));
+        const auto follower = Course::create(k_hook_rate, hook_over(0.0, 4.0, CourseEdge::Hold));
+        ASSERT_TRUE(follower->follow(leader, 2.0));
+        for (int i = 0; i < 3; ++i) {
+            hook_step(*leader);
+            hook_step(*follower);
+        }
+        const double held = follower->time();
+
+        follower->unfollow();
+        hook_step(*follower);
+
+        EXPECT_DOUBLE_EQ(follower->time(), held + 1.0 / k_hook_rate);
+        hook_step(*follower);
+        EXPECT_DOUBLE_EQ(follower->time(), held + 2.0 / k_hook_rate);
+    }
+
+    TEST(CourseFollowTest, APausedCourseHoldsItsPlaceWhenUnfollowed)
+    {
+        const auto leader = Course::create(k_hook_rate, hook_over(0.0, 4.0, CourseEdge::Hold));
+        const auto follower = Course::create(k_hook_rate, hook_over(0.0, 4.0, CourseEdge::Hold));
+        ASSERT_TRUE(follower->follow(leader, 2.0));
+        for (int i = 0; i < 3; ++i) {
+            hook_step(*leader);
+            hook_step(*follower);
+        }
+        follower->pause();
+        hook_step(*follower);
+        const double held = follower->time();
+
+        follower->unfollow();
+        hook_step(*follower, 3);
+
+        EXPECT_DOUBLE_EQ(follower->time(), held);
+    }
+
     TEST(CourseFollowTest, SeekingAFollowerIsRefusedWhileItFollows)
     {
         const auto leader = Course::create(k_hook_rate, hook_over(0.0, 1.0));

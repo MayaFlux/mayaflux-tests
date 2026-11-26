@@ -1435,5 +1435,25 @@ namespace {
         EXPECT_TRUE(restored->all_fabrics().empty());
     }
 
+    TEST_F(NexusStateTest, ConeAndAttenuationReachTheInfluenceAndAreSaved)
+    {
+        auto seen = std::make_shared<InfluenceContext>();
+        auto lamp = std::make_shared<Emitter>("cone_probe", [seen](const InfluenceContext& ctx) { *seen = ctx; });
+        lamp->set(Nexus::EmitterControls { .cone = glm::vec2(0.25F, 0.5F), .attenuation = glm::vec3(1.0F, 2.0F, 3.0F) });
+        source.wire(lamp).finalise();
+        source.fire(lamp->id());
+
+        ASSERT_TRUE(encoder.encode(source, snap_base)) << encoder.last_error();
+        restore(target, snap_base);
+
+        EXPECT_EQ(seen->cone, glm::vec2(0.25F, 0.5F));
+        EXPECT_EQ(seen->attenuation, glm::vec3(1.0F, 2.0F, 3.0F));
+        const auto restored = target.get_emitter(first_id(target));
+        ASSERT_NE(restored, nullptr);
+        EXPECT_EQ(restored->cone(), glm::vec2(0.25F, 0.5F));
+        EXPECT_EQ(restored->attenuation(), glm::vec3(1.0F, 2.0F, 3.0F));
+    }
+
+
 }
 }

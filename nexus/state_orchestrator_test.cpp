@@ -3,11 +3,19 @@
 
 #include "../support/frame_scheduler.hpp"
 
+#include "../support/scoped_working_dir.hpp"
+#include "MayaFlux/Nodes/Network/MeshNetwork.hpp"
+#include "MayaFlux/Nexus/Tapestry.hpp"
+#include "MayaFlux/IO/Model/AssimpModelWriter.hpp"
+#include "MayaFlux/IO/Model/AlembicModelWriter.hpp"
+#include "MayaFlux/IO/Image/EXRWriter.hpp"
+#include "MayaFlux/API/Stagecraft.hpp"
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Buffers/Network/MeshNetworkBuffer.hpp"
 #include "MayaFlux/Kriya/Course.hpp"
 #include "MayaFlux/Kakshya/Semantic/MeshAssemblyContainer.hpp"
 #include "MayaFlux/Nexus/Principals/Presence.hpp"
+#include "MayaFlux/Nexus/State/Bindings.hpp"
 #include "MayaFlux/Nexus/State/Orchestrator.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
 #include "MayaFlux/Vruta/Scheduler.hpp"
@@ -413,6 +421,111 @@ namespace {
         ASSERT_NE(realization, nullptr);
         EXPECT_EQ(asked, (std::vector<std::string> { "skin" }));
     }
+
+    TEST(NexusStateOrchestratorTest, ASpotLightBringsItsConeAndAttenuation)
+    {
+        StateOrchestrator orchestrator { nullptr };
+
+        const auto spot = orchestrator.emitter_from(
+            Kakshya::MeshAssemblyLight { .kind = Kakshya::MeshAssemblyLightKind::Spot,
+                .attenuation = glm::vec3(0.0F, 0.0F, 1.0F),
+                .inner_cone = 0.2F,
+                .outer_cone = 0.4F },
+            glm::mat4(1.0F));
+        const auto plain = orchestrator.emitter_from(Kakshya::MeshAssemblyLight {}, glm::mat4(1.0F));
+
+        EXPECT_EQ(spot->cone(), glm::vec2(0.2F, 0.4F));
+        EXPECT_EQ(spot->attenuation(), glm::vec3(0.0F, 0.0F, 1.0F));
+        EXPECT_FALSE(plain->cone().has_value());
+        EXPECT_FALSE(plain->attenuation().has_value());
+    }
+
+    TEST(NexusStateOrchestratorTest, SavedBindingsComeBackThroughSaveAndLoad)
+    {
+        ScopedWorkingDir cwd;
+        IO::EXRWriter::register_with_registry();
+        IO::AssimpModelWriter::register_with_registry();
+        const auto make_tapestry = [] {
+            return std::make_shared<Nexus::Tapestry>(
+                std::make_shared<Vruta::TaskScheduler>(48000),
+                std::make_shared<Vruta::EventManager>(),
+                std::make_shared<Buffers::BufferManager>());
+        };
+        const auto tapestry = make_tapestry();
+        const auto bindings = std::make_shared<Nexus::State::Bindings>();
+        const OrchestratedRoom room;
+        StateOrchestrator orchestrator { nullptr, tapestry };
+        orchestrator.set_bindings(bindings);
+        const auto [realization, rows] = orchestrator.orchestrate(room.assembly);
+        EXPECT_TRUE(bindings->functions.contains("follow_buffer"));
+        const auto directory = (std::filesystem::current_path() / "scene").string();
+
+        ASSERT_TRUE(save_state(tapestry, directory, bindings));
+        const auto fresh = make_tapestry();
+        const auto loaded = load_state(fresh, directory, bindings);
+
+        EXPECT_EQ(loaded.constructed, static_cast<int>(rows.size()));
+        EXPECT_EQ(loaded.skipped, 0);
+    }
+
+    TEST(NexusStateOrchestratorTest, AMotionMovesThePrincipalThatFollowsItsRow)
+    {
+        const OrchestratedRoom room;
+        const auto times = Kinesis::TimeSampling::acyclic({ 0.0, 1.0 }).value();
+        const auto rise = Kinesis::TimedValues<glm::vec3>::create(
+            { .times = times, .values = { glm::vec3(0.0F, 1.0F, 0.0F), glm::vec3(0.0F, 5.0F, 0.0F) } });
+        ASSERT_TRUE(room.assembly->add_motion({ .name = "rise", .channels = { { .row = 1, .translation = rise } } }).has_value());
+
+        FrameScheduler frames;
+        const auto tapestry = std::make_shared<Nexus::Tapestry>(
+            frames.scheduler,
+            std::make_shared<Vruta::EventManager>(),
+            std::make_shared<Buffers::BufferManager>());
+        StateOrchestrator orchestrator { frames.scheduler, tapestry };
+        const auto [realization, rows] = orchestrator.orchestrate(room.assembly);
+        ASSERT_FALSE(rows.empty());
+        const auto agent = std::get<std::shared_ptr<Agent>>(rows[0].second);
+        const auto [placing, deforming, streaming] = orchestrator.motion_from(realization, 0, Kriya::CourseEdge::Hold);
+        ASSERT_NE(placing, nullptr);
+
+        frames.tick(600);
+        const auto [buffer, slot] = StateOrchestrator::buffer_of(realization, 1);
+        if (const auto meshes = std::dynamic_pointer_cast<Buffers::MeshNetworkBuffer>(buffer)) {
+            meshes->get_network()->process_batch(1);
+        }
+        orchestrator.fabric()->fire(agent->id());
+
+        ASSERT_TRUE(agent->position().has_value());
+        EXPECT_NEAR(agent->position()->y, 5.0F + 1.0F / 3.0F, 1e-3F);
+    }
+
+    TEST(NexusStateOrchestratorTest, AWrittenModelAndArchiveOrchestrateFromTheirFiles)
+    {
+        ScopedWorkingDir cwd;
+        const OrchestratedRoom room;
+        const std::shared_ptr<const MeshAssemblyContainer> assembly = room.assembly;
+
+        for (const std::string name : { "room.glb", "room.abc" }) {
+            const auto path = (std::filesystem::current_path() / name).string();
+            if (path.ends_with(".abc")) {
+                IO::AlembicModelWriter writer;
+                ASSERT_TRUE(writer.write(path, assembly)) << writer.get_last_error();
+            } else {
+                IO::AssimpModelWriter writer;
+                ASSERT_TRUE(writer.write(path, assembly)) << writer.get_last_error();
+            }
+
+            StateOrchestrator orchestrator { nullptr };
+            const auto [read, realization, rows] = orchestrator.orchestrate(path);
+
+            ASSERT_NE(read, nullptr) << name;
+            ASSERT_NE(realization, nullptr) << name;
+            EXPECT_TRUE(std::ranges::any_of(rows, [](const auto& row) {
+                return std::holds_alternative<std::shared_ptr<Agent>>(row.second);
+            })) << name;
+        }
+    }
+
 
 }
 }
