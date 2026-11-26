@@ -19,25 +19,25 @@ namespace {
 
     using Blocks = std::vector<std::vector<double>>;
 
-    constexpr uint32_t k_rate = 48000;
-    constexpr uint64_t k_stream_blocks = 4;
+    constexpr uint32_t k_tap_set_rate = 48000;
+    constexpr uint64_t k_tap_set_stream_blocks = 4;
 
-    double sample(uint64_t index, uint32_t channel = 0)
+    double tap_set_sample(uint64_t index, uint32_t channel = 0)
     {
         return 1.0 + static_cast<double>(index) + 10000.0 * static_cast<double>(channel);
     }
 
-    std::vector<double> ramp_blocks(uint64_t first_block, uint64_t blocks, uint64_t block, uint32_t channel = 0)
+    std::vector<double> tap_set_ramp_blocks(uint64_t first_block, uint64_t blocks, uint64_t block, uint32_t channel = 0)
     {
         std::vector<double> values;
         values.reserve(blocks * block);
         for (uint64_t i = first_block * block; i < (first_block + blocks) * block; ++i) {
-            values.push_back(sample(i, channel));
+            values.push_back(tap_set_sample(i, channel));
         }
         return values;
     }
 
-    std::vector<double> scaled(std::vector<double> values, double gain)
+    std::vector<double> tap_set_scaled(std::vector<double> values, double gain)
     {
         for (double& value : values) {
             value *= gain;
@@ -45,14 +45,14 @@ namespace {
         return values;
     }
 
-    std::vector<double> sum(const std::vector<double>& a, const std::vector<double>& b)
+    std::vector<double> tap_set_sum(const std::vector<double>& a, const std::vector<double>& b)
     {
         std::vector<double> total(a.size());
         std::ranges::transform(a, b, total.begin(), std::plus<> {});
         return total;
     }
 
-    void expect_near(const std::vector<double>& actual, const std::vector<double>& expected)
+    void tap_set_expect_near(const std::vector<double>& actual, const std::vector<double>& expected)
     {
         ASSERT_EQ(actual.size(), expected.size());
         for (size_t i = 0; i < actual.size(); ++i) {
@@ -84,7 +84,7 @@ namespace {
     protected:
         void SetUp() override
         {
-            scheduler = std::make_shared<Vruta::TaskScheduler>(k_rate);
+            scheduler = std::make_shared<Vruta::TaskScheduler>(k_tap_set_rate);
             manager = std::make_shared<Buffers::BufferManager>();
             block = Buffers::s_preferred_buffer_size;
             stream = make_stream(1);
@@ -101,11 +101,11 @@ namespace {
 
         [[nodiscard]] std::shared_ptr<DynamicSoundStream> make_stream(uint32_t channels) const
         {
-            auto result = std::make_shared<DynamicSoundStream>(k_rate, channels);
+            auto result = std::make_shared<DynamicSoundStream>(k_tap_set_rate, channels);
             result->get_structure().organization = OrganizationStrategy::PLANAR;
             std::vector<std::vector<double>> columns;
             for (uint32_t c = 0; c < channels; ++c) {
-                columns.push_back(ramp_blocks(0, k_stream_blocks, block, c));
+                columns.push_back(tap_set_ramp_blocks(0, k_tap_set_stream_blocks, block, c));
             }
             std::vector<std::span<const double>> spans(columns.begin(), columns.end());
             result->write_frames(std::move(spans), 0);
@@ -114,9 +114,9 @@ namespace {
 
         [[nodiscard]] std::shared_ptr<DynamicSoundStream> make_appended_stream() const
         {
-            auto result = std::make_shared<DynamicSoundStream>(k_rate, 1);
+            auto result = std::make_shared<DynamicSoundStream>(k_tap_set_rate, 1);
             result->get_structure().organization = OrganizationStrategy::PLANAR;
-            const auto ramp = ramp_blocks(0, k_stream_blocks, block);
+            const auto ramp = tap_set_ramp_blocks(0, k_tap_set_stream_blocks, block);
             result->append_frames(ramp, 0);
             return result;
         }
@@ -189,7 +189,7 @@ namespace {
 
         [[nodiscard]] double blocks_in_seconds(double blocks) const
         {
-            return blocks * static_cast<double>(block) / static_cast<double>(k_rate);
+            return blocks * static_cast<double>(block) / static_cast<double>(k_tap_set_rate);
         }
 
         uint64_t block {};
@@ -240,11 +240,11 @@ namespace {
         auto taps = builder().tap();
         const TapSet started = start(taps);
 
-        const auto heard = listen(started, 0, k_stream_blocks + 2);
+        const auto heard = listen(started, 0, k_tap_set_stream_blocks + 2);
 
-        ASSERT_EQ(heard.size(), k_stream_blocks + 2);
+        ASSERT_EQ(heard.size(), k_tap_set_stream_blocks + 2);
         for (size_t i = 0; i < heard.size(); ++i) {
-            expect_near(heard[i], ramp_blocks(i % k_stream_blocks, 1, block));
+            tap_set_expect_near(heard[i], tap_set_ramp_blocks(i % k_tap_set_stream_blocks, 1, block));
         }
     }
 
@@ -253,13 +253,13 @@ namespace {
         auto taps = builder().loop(false).tap();
         const TapSet started = start(taps);
 
-        const auto heard = listen(started, 0, k_stream_blocks + 2);
+        const auto heard = listen(started, 0, k_tap_set_stream_blocks + 2);
 
-        for (size_t i = 0; i < k_stream_blocks; ++i) {
-            expect_near(heard[i], ramp_blocks(i, 1, block));
+        for (size_t i = 0; i < k_tap_set_stream_blocks; ++i) {
+            tap_set_expect_near(heard[i], tap_set_ramp_blocks(i, 1, block));
         }
-        EXPECT_EQ(heard[k_stream_blocks], silence());
-        EXPECT_EQ(heard[k_stream_blocks + 1], silence());
+        EXPECT_EQ(heard[k_tap_set_stream_blocks], silence());
+        EXPECT_EQ(heard[k_tap_set_stream_blocks + 1], silence());
     }
 
     TEST_F(TapSetTest, ADoubleSpeedTapReadsEveryOtherFrame)
@@ -272,11 +272,11 @@ namespace {
         std::vector<double> first;
         std::vector<double> second;
         for (uint64_t n = 0; n < block; ++n) {
-            first.push_back(sample(2 * n));
-            second.push_back(sample(2 * (block + n)));
+            first.push_back(tap_set_sample(2 * n));
+            second.push_back(tap_set_sample(2 * (block + n)));
         }
-        expect_near(heard[0], first);
-        expect_near(heard[1], second);
+        tap_set_expect_near(heard[0], first);
+        tap_set_expect_near(heard[1], second);
     }
 
     TEST_F(TapSetTest, ABackwardTapReadsFromTheEndOfTheRegionDownwards)
@@ -288,13 +288,13 @@ namespace {
 
         std::vector<double> first;
         std::vector<double> second;
-        const uint64_t last = k_stream_blocks * block - 1;
+        const uint64_t last = k_tap_set_stream_blocks * block - 1;
         for (uint64_t n = 0; n < block; ++n) {
-            first.push_back(sample(last - n));
-            second.push_back(sample(last - block - n));
+            first.push_back(tap_set_sample(last - n));
+            second.push_back(tap_set_sample(last - block - n));
         }
-        expect_near(heard[0], first);
-        expect_near(heard[1], second);
+        tap_set_expect_near(heard[0], first);
+        tap_set_expect_near(heard[1], second);
     }
 
     TEST_F(TapSetTest, ANegativeSpeedIsTheSameAsBackward)
@@ -308,7 +308,7 @@ namespace {
 
         ASSERT_EQ(a.size(), 2U);
         for (size_t i = 0; i < 2; ++i) {
-            expect_near(a[0][i], a[1][i]);
+            tap_set_expect_near(a[0][i], a[1][i]);
         }
         EXPECT_NE(a[0][0], silence());
     }
@@ -320,8 +320,8 @@ namespace {
 
         const auto heard = listen(started, 0, 2);
 
-        expect_near(heard[0], scaled(ramp_blocks(0, 1, block), 0.25));
-        expect_near(heard[1], scaled(ramp_blocks(1, 1, block), 0.25));
+        tap_set_expect_near(heard[0], tap_set_scaled(tap_set_ramp_blocks(0, 1, block), 0.25));
+        tap_set_expect_near(heard[1], tap_set_scaled(tap_set_ramp_blocks(1, 1, block), 0.25));
     }
 
     TEST_F(TapSetTest, ChangingTheLevelWhilePlayingTakesEffectOnTheNextBlock)
@@ -333,9 +333,9 @@ namespace {
         started.level(0, 0.5);
         const auto later = listen(started, 0, 2);
 
-        expect_near(heard[1], ramp_blocks(1, 1, block));
-        expect_near(later[0], scaled(ramp_blocks(2, 1, block), 0.5));
-        expect_near(later[1], scaled(ramp_blocks(3, 1, block), 0.5));
+        tap_set_expect_near(heard[1], tap_set_ramp_blocks(1, 1, block));
+        tap_set_expect_near(later[0], tap_set_scaled(tap_set_ramp_blocks(2, 1, block), 0.5));
+        tap_set_expect_near(later[1], tap_set_scaled(tap_set_ramp_blocks(3, 1, block), 0.5));
     }
 
     TEST_F(TapSetTest, ZeroSpeedHoldsTheTapOnTheFrameItReached)
@@ -348,7 +348,7 @@ namespace {
         const auto held = listen(started, 0, 3);
 
         for (const auto& heard : held) {
-            expect_near(heard, std::vector<double>(block, sample(2 * block)));
+            tap_set_expect_near(heard, std::vector<double>(block, tap_set_sample(2 * block)));
         }
     }
 
@@ -363,9 +363,9 @@ namespace {
 
         std::vector<double> expected;
         for (uint64_t n = 0; n < block; ++n) {
-            expected.push_back(sample(2 * block + 2 * n));
+            expected.push_back(tap_set_sample(2 * block + 2 * n));
         }
-        expect_near(faster[0], expected);
+        tap_set_expect_near(faster[0], expected);
     }
 
     TEST_F(TapSetTest, ANegativeSpeedWhilePlayingReversesFromWhereTheTapIs)
@@ -379,9 +379,9 @@ namespace {
 
         std::vector<double> expected;
         for (uint64_t n = 0; n < block; ++n) {
-            expected.push_back(sample(2 * block - n));
+            expected.push_back(tap_set_sample(2 * block - n));
         }
-        expect_near(reversed[0], expected);
+        tap_set_expect_near(reversed[0], expected);
     }
 
     TEST_F(TapSetTest, ATapEntersAfterItsDelayAndStartsFromTheBeginning)
@@ -397,8 +397,8 @@ namespace {
         EXPECT_GE(entered, entry - 2);
         EXPECT_LE(entered, entry + 3);
         ASSERT_LT(entered + 1, heard[1].size());
-        expect_near(heard[1][entered], ramp_blocks(0, 1, block));
-        expect_near(heard[1][entered + 1], ramp_blocks(1, 1, block));
+        tap_set_expect_near(heard[1][entered], tap_set_ramp_blocks(0, 1, block));
+        tap_set_expect_near(heard[1][entered + 1], tap_set_ramp_blocks(1, 1, block));
     }
 
     TEST_F(TapSetTest, EntriesHappenInTimeOrderWhateverTheDeclarationOrder)
@@ -430,7 +430,7 @@ namespace {
 
         size_t joined = heard.size();
         for (size_t i = 0; i < heard.size(); ++i) {
-            if (differs(heard[i], ramp_blocks(i % k_stream_blocks, 1, block))) {
+            if (differs(heard[i], tap_set_ramp_blocks(i % k_tap_set_stream_blocks, 1, block))) {
                 joined = i;
                 break;
             }
@@ -438,8 +438,8 @@ namespace {
         EXPECT_GE(joined, entry - 2);
         EXPECT_LE(joined, entry + 3);
         ASSERT_LT(joined + 1, heard.size());
-        expect_near(heard[joined], sum(ramp_blocks(joined % k_stream_blocks, 1, block), ramp_blocks(0, 1, block)));
-        expect_near(heard[joined + 1], sum(ramp_blocks((joined + 1) % k_stream_blocks, 1, block), ramp_blocks(1, 1, block)));
+        tap_set_expect_near(heard[joined], tap_set_sum(tap_set_ramp_blocks(joined % k_tap_set_stream_blocks, 1, block), tap_set_ramp_blocks(0, 1, block)));
+        tap_set_expect_near(heard[joined + 1], tap_set_sum(tap_set_ramp_blocks((joined + 1) % k_tap_set_stream_blocks, 1, block), tap_set_ramp_blocks(1, 1, block)));
     }
 
     TEST_F(TapSetTest, TapsOnTheSameChannelShareOnePipelineAndSumTheirOutput)
@@ -450,8 +450,8 @@ namespace {
         const auto heard = listen(started, 1, 2);
 
         EXPECT_EQ(started.sampler(0), started.sampler(1));
-        expect_near(heard[0], scaled(ramp_blocks(0, 1, block), 2.0));
-        expect_near(heard[1], scaled(ramp_blocks(1, 1, block), 2.0));
+        tap_set_expect_near(heard[0], tap_set_scaled(tap_set_ramp_blocks(0, 1, block), 2.0));
+        tap_set_expect_near(heard[1], tap_set_scaled(tap_set_ramp_blocks(1, 1, block), 2.0));
     }
 
     TEST_F(TapSetTest, TapsOnDifferentChannelsHaveTheirOwnPipelines)
@@ -470,8 +470,8 @@ namespace {
         const auto heard = listen_to({ started.sampler(0, 0), started.sampler(0, 1) }, 2);
 
         for (size_t i = 0; i < 2; ++i) {
-            expect_near(heard[0][i], ramp_blocks(i, 1, block));
-            expect_near(heard[1][i], ramp_blocks(i, 1, block));
+            tap_set_expect_near(heard[0][i], tap_set_ramp_blocks(i, 1, block));
+            tap_set_expect_near(heard[1][i], tap_set_ramp_blocks(i, 1, block));
         }
     }
 
@@ -484,8 +484,8 @@ namespace {
         const auto heard = listen_to({ started.sampler(0, 0), started.sampler(0, 1) }, 2);
 
         for (size_t i = 0; i < 2; ++i) {
-            expect_near(heard[0][i], ramp_blocks(i, 1, block, 0));
-            expect_near(heard[1][i], ramp_blocks(i, 1, block, 1));
+            tap_set_expect_near(heard[0][i], tap_set_ramp_blocks(i, 1, block, 0));
+            tap_set_expect_near(heard[1][i], tap_set_ramp_blocks(i, 1, block, 1));
         }
     }
 
@@ -497,8 +497,8 @@ namespace {
 
         const auto heard = listen_to({ started.sampler(0, 0), started.sampler(0, 1) }, 1);
 
-        expect_near(heard[0][0], ramp_blocks(0, 1, block, 1));
-        expect_near(heard[1][0], ramp_blocks(0, 1, block, 1));
+        tap_set_expect_near(heard[0][0], tap_set_ramp_blocks(0, 1, block, 1));
+        tap_set_expect_near(heard[1][0], tap_set_ramp_blocks(0, 1, block, 1));
     }
 
     TEST_F(TapSetTest, TheOutputsOfATapChangeSpeedTogether)
@@ -512,8 +512,8 @@ namespace {
         const auto held = listen_to(outputs, 2);
 
         for (size_t i = 0; i < 2; ++i) {
-            expect_near(held[0][i], std::vector<double>(block, sample(2 * block)));
-            expect_near(held[1][i], std::vector<double>(block, sample(2 * block)));
+            tap_set_expect_near(held[0][i], std::vector<double>(block, tap_set_sample(2 * block)));
+            tap_set_expect_near(held[1][i], std::vector<double>(block, tap_set_sample(2 * block)));
         }
     }
 
@@ -524,10 +524,10 @@ namespace {
 
         const auto heard = listen(started, 0, 4);
 
-        expect_near(heard[0], ramp_blocks(1, 1, block));
-        expect_near(heard[1], ramp_blocks(2, 1, block));
-        expect_near(heard[2], ramp_blocks(1, 1, block));
-        expect_near(heard[3], ramp_blocks(2, 1, block));
+        tap_set_expect_near(heard[0], tap_set_ramp_blocks(1, 1, block));
+        tap_set_expect_near(heard[1], tap_set_ramp_blocks(2, 1, block));
+        tap_set_expect_near(heard[2], tap_set_ramp_blocks(1, 1, block));
+        tap_set_expect_near(heard[3], tap_set_ramp_blocks(2, 1, block));
     }
 
     TEST_F(TapSetTest, ARegionPlayedOnceEndsOnItsLastFrame)
@@ -537,8 +537,8 @@ namespace {
 
         const auto heard = listen(started, 0, 4);
 
-        expect_near(heard[0], ramp_blocks(1, 1, block));
-        expect_near(heard[1], ramp_blocks(2, 1, block));
+        tap_set_expect_near(heard[0], tap_set_ramp_blocks(1, 1, block));
+        tap_set_expect_near(heard[1], tap_set_ramp_blocks(2, 1, block));
         EXPECT_EQ(heard[2], silence());
         EXPECT_EQ(heard[3], silence());
     }
@@ -552,9 +552,9 @@ namespace {
 
         std::vector<double> expected;
         for (uint64_t n = 0; n < block; ++n) {
-            expected.push_back(sample(3 * block - 1 - n));
+            expected.push_back(tap_set_sample(3 * block - 1 - n));
         }
-        expect_near(heard[0], expected);
+        tap_set_expect_near(heard[0], expected);
     }
 
     TEST_F(TapSetTest, ARegionPastTheEndOfTheStreamIsClampedToIt)
@@ -562,10 +562,10 @@ namespace {
         auto taps = builder().tap().region(0, 100 * block);
         const TapSet started = start(taps);
 
-        const auto heard = listen(started, 0, k_stream_blocks + 1);
+        const auto heard = listen(started, 0, k_tap_set_stream_blocks + 1);
 
-        expect_near(heard[k_stream_blocks - 1], ramp_blocks(k_stream_blocks - 1, 1, block));
-        expect_near(heard[k_stream_blocks], ramp_blocks(0, 1, block));
+        tap_set_expect_near(heard[k_tap_set_stream_blocks - 1], tap_set_ramp_blocks(k_tap_set_stream_blocks - 1, 1, block));
+        tap_set_expect_near(heard[k_tap_set_stream_blocks], tap_set_ramp_blocks(0, 1, block));
     }
 
     TEST_F(TapSetTest, ARepeatingTapRestartsFromTheRegionStartEveryPeriod)
@@ -575,12 +575,12 @@ namespace {
 
         const auto heard = listen(started, 0, 6);
 
-        expect_near(heard[0], ramp_blocks(0, 1, block));
-        expect_near(heard[1], ramp_blocks(1, 1, block));
-        expect_near(heard[2], ramp_blocks(0, 1, block));
-        expect_near(heard[3], ramp_blocks(1, 1, block));
-        expect_near(heard[4], ramp_blocks(0, 1, block));
-        expect_near(heard[5], ramp_blocks(1, 1, block));
+        tap_set_expect_near(heard[0], tap_set_ramp_blocks(0, 1, block));
+        tap_set_expect_near(heard[1], tap_set_ramp_blocks(1, 1, block));
+        tap_set_expect_near(heard[2], tap_set_ramp_blocks(0, 1, block));
+        tap_set_expect_near(heard[3], tap_set_ramp_blocks(1, 1, block));
+        tap_set_expect_near(heard[4], tap_set_ramp_blocks(0, 1, block));
+        tap_set_expect_near(heard[5], tap_set_ramp_blocks(1, 1, block));
     }
 
     TEST_F(TapSetTest, AShrinkingRepeatLengthShortensEachRestart)
@@ -592,11 +592,11 @@ namespace {
 
         const auto heard = listen(started, 0, 5);
 
-        expect_near(heard[0], ramp_blocks(0, 1, block));
-        expect_near(heard[1], ramp_blocks(1, 1, block));
-        expect_near(heard[2], ramp_blocks(0, 1, block));
-        expect_near(heard[3], ramp_blocks(0, 1, block));
-        expect_near(heard[4], ramp_blocks(0, 1, block));
+        tap_set_expect_near(heard[0], tap_set_ramp_blocks(0, 1, block));
+        tap_set_expect_near(heard[1], tap_set_ramp_blocks(1, 1, block));
+        tap_set_expect_near(heard[2], tap_set_ramp_blocks(0, 1, block));
+        tap_set_expect_near(heard[3], tap_set_ramp_blocks(0, 1, block));
+        tap_set_expect_near(heard[4], tap_set_ramp_blocks(0, 1, block));
     }
 
     TEST_F(TapSetTest, ALaggedTapTrailsTheWriteHeadByTheGivenTime)
@@ -607,10 +607,10 @@ namespace {
 
         const auto heard = listen(started, 0, 4);
 
-        expect_near(heard[0], ramp_blocks(1, 1, block));
-        expect_near(heard[1], ramp_blocks(2, 1, block));
-        expect_near(heard[2], ramp_blocks(3, 1, block));
-        expect_near(heard[3], ramp_blocks(0, 1, block));
+        tap_set_expect_near(heard[0], tap_set_ramp_blocks(1, 1, block));
+        tap_set_expect_near(heard[1], tap_set_ramp_blocks(2, 1, block));
+        tap_set_expect_near(heard[2], tap_set_ramp_blocks(3, 1, block));
+        tap_set_expect_near(heard[3], tap_set_ramp_blocks(0, 1, block));
     }
 
     TEST_F(TapSetTest, ALagShorterThanTwoBlocksIsRaisedToTwoBlocks)
@@ -621,9 +621,9 @@ namespace {
 
         const auto heard = listen(started, 0, 3);
 
-        expect_near(heard[0], ramp_blocks(2, 1, block));
-        expect_near(heard[1], ramp_blocks(3, 1, block));
-        expect_near(heard[2], ramp_blocks(0, 1, block));
+        tap_set_expect_near(heard[0], tap_set_ramp_blocks(2, 1, block));
+        tap_set_expect_near(heard[1], tap_set_ramp_blocks(3, 1, block));
+        tap_set_expect_near(heard[2], tap_set_ramp_blocks(0, 1, block));
     }
 
     TEST_F(TapSetTest, ALagFollowingATimeMapGlidesToTheNewLagAcrossTheBlockBeforeTheChange)
@@ -638,10 +638,10 @@ namespace {
 
         std::vector<double> glide;
         for (uint64_t n = 0; n < block; ++n) {
-            glide.push_back(sample(block + 2 * n));
+            glide.push_back(tap_set_sample(block + 2 * n));
         }
-        expect_near(heard[0], glide);
-        expect_near(heard[1], ramp_blocks(3, 1, block));
+        tap_set_expect_near(heard[0], glide);
+        tap_set_expect_near(heard[1], tap_set_ramp_blocks(3, 1, block));
     }
 
     TEST_F(TapSetTest, SpeedHasNoEffectOnALaggedTap)
@@ -653,8 +653,8 @@ namespace {
         started.speed(0, 0.0);
         const auto heard = listen(started, 0, 2);
 
-        expect_near(heard[0], ramp_blocks(1, 1, block));
-        expect_near(heard[1], ramp_blocks(2, 1, block));
+        tap_set_expect_near(heard[0], tap_set_ramp_blocks(1, 1, block));
+        tap_set_expect_near(heard[1], tap_set_ramp_blocks(2, 1, block));
     }
 
     TEST_F(TapSetTest, StoppingSilencesEveryTapAtOnce)
@@ -697,8 +697,8 @@ namespace {
         original.reset();
         const auto heard = listen(copy, 0, 2);
 
-        expect_near(heard[0], ramp_blocks(1, 1, block));
-        expect_near(heard[1], ramp_blocks(2, 1, block));
+        tap_set_expect_near(heard[0], tap_set_ramp_blocks(1, 1, block));
+        tap_set_expect_near(heard[1], tap_set_ramp_blocks(2, 1, block));
     }
 
 } // namespace

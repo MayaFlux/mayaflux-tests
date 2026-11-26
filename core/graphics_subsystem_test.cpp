@@ -26,8 +26,8 @@ namespace {
     using namespace std::chrono_literals;
     using Core::GlobalGraphicsConfig;
 
-    constexpr uint32_t k_sample_rate = 48000;
-    constexpr uint32_t k_buffer_size = 512;
+    constexpr uint32_t k_graphics_subsystem_sample_rate = 48000;
+    constexpr uint32_t k_graphics_subsystem_buffer_size = 512;
     constexpr uint32_t k_target_fps = 120;
 
     template <typename Predicate>
@@ -59,8 +59,8 @@ namespace {
     public:
         explicit GraphicsSubsystemRig(const GlobalGraphicsConfig& config = subsystem_config())
             : nodes(std::make_shared<Nodes::NodeGraphManager>())
-            , buffers(std::make_shared<Buffers::BufferManager>(1, 0, k_sample_rate, k_buffer_size))
-            , tasks(std::make_shared<Vruta::TaskScheduler>(k_sample_rate))
+            , buffers(std::make_shared<Buffers::BufferManager>(1, 0, k_graphics_subsystem_sample_rate, k_graphics_subsystem_buffer_size))
+            , tasks(std::make_shared<Vruta::TaskScheduler>(k_graphics_subsystem_sample_rate))
             , subsystem(std::make_unique<Core::GraphicsSubsystem>(config))
             , handle(buffers, nodes, tasks, nullptr, nullptr, subsystem->get_tokens())
         {
@@ -147,8 +147,8 @@ TEST(GraphicsSubsystemTest, EachProcessTickProcessesTheParallelUnit)
     GraphicsSubsystemRig rig;
     ASSERT_NO_THROW(rig.subsystem->initialize(rig.handle));
 
-    auto child = std::make_shared<Buffers::AudioBuffer>(0, k_buffer_size);
-    child->resize(k_buffer_size);
+    auto child = std::make_shared<Buffers::AudioBuffer>(0, k_graphics_subsystem_buffer_size);
+    child->resize(k_graphics_subsystem_buffer_size);
     std::ranges::fill(child->get_data(), 0.4);
     rig.buffers->add_buffer(child, Buffers::ProcessingToken::AUDIO_PARALLEL, 0);
 
@@ -167,8 +167,8 @@ TEST(GraphicsSubsystemTest, ProcessLeavesTheBackendUnitAlone)
     GraphicsSubsystemRig rig;
     ASSERT_NO_THROW(rig.subsystem->initialize(rig.handle));
 
-    auto backend_child = std::make_shared<Buffers::AudioBuffer>(0, k_buffer_size);
-    backend_child->resize(k_buffer_size);
+    auto backend_child = std::make_shared<Buffers::AudioBuffer>(0, k_graphics_subsystem_buffer_size);
+    backend_child->resize(k_graphics_subsystem_buffer_size);
     std::ranges::fill(backend_child->get_data(), 0.9);
     rig.buffers->add_buffer(backend_child, Buffers::ProcessingToken::AUDIO_BACKEND, 0);
 

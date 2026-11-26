@@ -15,7 +15,7 @@ using Portal::Graphics::PrimitiveTopology;
 
 namespace {
 
-    Forma::GeometryFn<float> counting_geometry(std::shared_ptr<int> calls, std::optional<AABB2D> hint = {})
+    Forma::GeometryFn<float> forma_api_counting_geometry(std::shared_ptr<int> calls, std::optional<AABB2D> hint = {})
     {
         return [calls = std::move(calls), hint](float, std::vector<uint8_t>& bytes, Forma::Element& element) {
             ++*calls;
@@ -104,7 +104,7 @@ TEST_F(FormaApiTest, DestroyRemovesTheElementItsRelatedElementsAndTheirBindings)
 {
     auto surface = make_surface("api-destroy");
     auto calls = std::make_shared<int>(0);
-    auto mapped = Forma::create_element<float>(surface, counting_geometry(calls, k_origin_hint), 0.F);
+    auto mapped = Forma::create_element<float>(surface, forma_api_counting_geometry(calls, k_origin_hint), 0.F);
     const uint32_t child = surface.add(Forma::Element {}.with_bounds({ .min = { 0.6F, 0.6F }, .max = { 0.9F, 0.9F } }));
     surface.layer().relate(mapped.element.id, child);
 
@@ -142,7 +142,7 @@ TEST_F(FormaApiTest, CreateWiresTheFormOnceAfterSyncingItsBoundsToTheLayer)
     auto calls = std::make_shared<int>(0);
     int wired = 0;
     uint32_t wired_id = 0;
-    Forma::Geometry::Form<float> form { counting_geometry(calls, k_origin_hint) };
+    Forma::Geometry::Form<float> form { forma_api_counting_geometry(calls, k_origin_hint) };
     form.wire = [&](Forma::Context&, uint32_t id, std::shared_ptr<Forma::MappedState<float>>) {
         ++wired;
         wired_id = id;
@@ -166,7 +166,7 @@ TEST_F(FormaApiTest, TendPlacesTheFormAndKeepsTheSurfaceAndResult)
     auto surface = make_surface("api-tend");
     auto calls = std::make_shared<int>(0);
     Forma::Tend<float> tend;
-    tend.form = Forma::Geometry::Form<float> { counting_geometry(calls, k_origin_hint) };
+    tend.form = Forma::Geometry::Form<float> { forma_api_counting_geometry(calls, k_origin_hint) };
     tend.initial = 0.5F;
 
     tend.place(surface);
@@ -184,7 +184,7 @@ TEST_F(FormaApiTest, CreateOnABatchDrawsTheElementAsASliceAndWiresTheForm)
     auto batch = Forma::create_buffer(surface.render_config());
     auto calls = std::make_shared<int>(0);
     int wired = 0;
-    Forma::Geometry::Form<float> form { counting_geometry(calls, k_origin_hint) };
+    Forma::Geometry::Form<float> form { forma_api_counting_geometry(calls, k_origin_hint) };
     form.wire = [&](Forma::Context&, uint32_t, std::shared_ptr<Forma::MappedState<float>>) { ++wired; };
 
     auto mapped = Forma::create<float>(surface, batch, std::move(form), 0.25F);
@@ -201,8 +201,8 @@ TEST_F(FormaApiTest, FormsCreatedOnOneBatchShareItsBuffer)
 {
     auto surface = make_surface("api-batch-shared");
     auto batch = Forma::create_buffer(surface.render_config());
-    Forma::Geometry::Form<float> first { counting_geometry(std::make_shared<int>(0)) };
-    Forma::Geometry::Form<float> second { counting_geometry(std::make_shared<int>(0)) };
+    Forma::Geometry::Form<float> first { forma_api_counting_geometry(std::make_shared<int>(0)) };
+    Forma::Geometry::Form<float> second { forma_api_counting_geometry(std::make_shared<int>(0)) };
     second.topology = PrimitiveTopology::TRIANGLE_LIST;
 
     auto a = Forma::create<float>(surface, batch, std::move(first), 0.F);
@@ -218,7 +218,7 @@ TEST_F(FormaApiTest, TendWithABatchPlacesItsElementAsASliceOfIt)
     auto surface = make_surface("api-tend-batch");
     auto batch = Forma::create_buffer(surface.render_config());
     Forma::Tend<float> tend;
-    tend.form = Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    tend.form = Forma::Geometry::Form<float> { forma_api_counting_geometry(std::make_shared<int>(0), k_origin_hint) };
     tend.initial = 0.5F;
     tend.batch = batch;
 
@@ -240,7 +240,7 @@ TEST_F(FormaApiTest, ScrollableOnABatchScissorsTheBatchOnceForEveryTrackedSlice)
     ASSERT_NE(batch->get_render_processor(), nullptr);
     EXPECT_EQ(batch->get_render_processor()->get_scissor(), Kinesis::Scissor::from(viewport));
 
-    Forma::Geometry::Form<float> form { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    Forma::Geometry::Form<float> form { forma_api_counting_geometry(std::make_shared<int>(0), k_origin_hint) };
     auto child = Forma::create<float>(surface, batch, std::move(form), 0.F);
     Forma::internal::atelier().track<float>(panel, surface.layer(), child, viewport);
 
@@ -260,7 +260,7 @@ TEST_F(FormaApiTest, ScrollableStillScissorsATrackedElementThatHasABufferOfItsOw
         Forma::FormaTarget::slice_of(batch, PrimitiveTopology::TRIANGLE_STRIP), surface, viewport);
 
     auto own = Forma::create_buffer(surface.render_config());
-    Forma::Geometry::Form<float> form { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    Forma::Geometry::Form<float> form { forma_api_counting_geometry(std::make_shared<int>(0), k_origin_hint) };
     auto child = Forma::create<float>(surface, own, std::move(form), 0.F);
     Forma::internal::atelier().track<float>(panel, surface.layer(), child, viewport);
 
@@ -277,7 +277,7 @@ TEST_F(FormaApiTest, ScrollableMovesATrackedElementOutOfTheSurfaceBufferIntoItsO
     auto panel = Forma::Scrollable {}.place(surface, viewport);
     auto panel_buffer = panel.buf.buffer();
 
-    Forma::Geometry::Form<float> form { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    Forma::Geometry::Form<float> form { forma_api_counting_geometry(std::make_shared<int>(0), k_origin_hint) };
     auto child = Forma::create<float>(surface, std::move(form), 0.F);
     const auto shared = surface.layer().batch();
     ASSERT_NE(shared, nullptr);
@@ -300,8 +300,8 @@ TEST_F(FormaApiTest, ATrackedElementMovesAlongsideTheOthersLeftOnTheSurfaceBuffe
     auto surface = make_surface("api-scroll-move-one");
     auto panel = Forma::Scrollable {}.place(surface, viewport);
 
-    Forma::Geometry::Form<float> tracked_form { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
-    Forma::Geometry::Form<float> other_form { counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    Forma::Geometry::Form<float> tracked_form { forma_api_counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    Forma::Geometry::Form<float> other_form { forma_api_counting_geometry(std::make_shared<int>(0), k_origin_hint) };
     auto tracked = Forma::create<float>(surface, std::move(tracked_form), 0.F);
     auto other = Forma::create<float>(surface, std::move(other_form), 0.F);
     const auto shared = surface.layer().batch();
@@ -321,9 +321,9 @@ TEST_F(FormaApiTest, FormsCreatedWithoutABufferShareTheSurfaceBuffer)
     auto surface = make_surface("api-default-batch");
 
     auto a = Forma::create<float>(
-        surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F);
+        surface, Forma::Geometry::Form<float> { forma_api_counting_geometry(std::make_shared<int>(0)) }, 0.F);
     auto b = Forma::create<float>(
-        surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F);
+        surface, Forma::Geometry::Form<float> { forma_api_counting_geometry(std::make_shared<int>(0)) }, 0.F);
 
     ASSERT_NE(surface.layer().batch(), nullptr);
     EXPECT_EQ(a.element.buffer.buffer(), surface.layer().batch());
@@ -353,7 +353,7 @@ TEST_F(FormaApiTest, TendWithoutABufferPlacesItsElementOnTheSurfaceBuffer)
 {
     auto surface = make_surface("api-tend-default-batch");
     Forma::Tend<float> tend;
-    tend.form = Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) };
+    tend.form = Forma::Geometry::Form<float> { forma_api_counting_geometry(std::make_shared<int>(0)) };
     tend.place(surface);
 
     EXPECT_EQ(tend.result->element.buffer.buffer(), surface.layer().batch());
@@ -364,7 +364,7 @@ TEST_F(FormaApiTest, DestroyingTheLastElementRetiresTheSurfaceBufferAndTheNextOn
 {
     auto surface = make_surface("api-batch-retire");
     auto first = Forma::create<float>(
-        surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F);
+        surface, Forma::Geometry::Form<float> { forma_api_counting_geometry(std::make_shared<int>(0)) }, 0.F);
     const auto old_batch = surface.layer().batch();
 
     Forma::destroy(surface, first.element.id);
@@ -372,7 +372,7 @@ TEST_F(FormaApiTest, DestroyingTheLastElementRetiresTheSurfaceBufferAndTheNextOn
     EXPECT_TRUE(old_batch->needs_removal());
 
     auto second = Forma::create<float>(
-        surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F);
+        surface, Forma::Geometry::Form<float> { forma_api_counting_geometry(std::make_shared<int>(0)) }, 0.F);
 
     EXPECT_NE(second.element.buffer.buffer(), old_batch);
     EXPECT_EQ(second.element.buffer.buffer(), surface.layer().batch());
@@ -382,11 +382,11 @@ TEST_F(FormaApiTest, RaisingAnElementDrawsItsSliceLastInTheSurfaceBuffer)
 {
     auto surface = make_surface("api-raise-order");
     auto first = Forma::create<float>(
-        surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F);
+        surface, Forma::Geometry::Form<float> { forma_api_counting_geometry(std::make_shared<int>(0)) }, 0.F);
     std::vector<Forma::Mapped<float>> others;
     for (int i = 0; i < 2; ++i) {
         others.push_back(Forma::create<float>(
-            surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F));
+            surface, Forma::Geometry::Form<float> { forma_api_counting_geometry(std::make_shared<int>(0)) }, 0.F));
     }
     const auto batch = surface.layer().batch();
     ASSERT_NE(batch, nullptr);
@@ -411,7 +411,7 @@ TEST_F(FormaApiTest, ARaisedBufferElementDrawsAboveEveryScrollBatchMadeBeforeItA
 
     auto own = Forma::create_buffer(surface.render_config());
     auto element = Forma::create_element<float>(
-        surface, Forma::FormaTarget(own), counting_geometry(std::make_shared<int>(0), k_origin_hint), 0.F);
+        surface, Forma::FormaTarget(own), forma_api_counting_geometry(std::make_shared<int>(0), k_origin_hint), 0.F);
     ASSERT_TRUE(surface.layer().bring_to_front(element.element.id));
 
     auto second_panel = Forma::Scrollable {}.place(surface, viewport);
@@ -427,7 +427,7 @@ TEST_F(FormaApiTest, ClearingALayerRetiresTheSurfaceBuffer)
 {
     auto surface = make_surface("api-batch-clear");
     auto element = Forma::create<float>(
-        surface, Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) }, 0.F);
+        surface, Forma::Geometry::Form<float> { forma_api_counting_geometry(std::make_shared<int>(0)) }, 0.F);
     const auto old_batch = surface.layer().batch();
     ASSERT_NE(old_batch, nullptr);
 
@@ -442,7 +442,7 @@ TEST_F(FormaApiTest, TendBridgeReturnsTheHandleOfItsElement)
 {
     auto surface = make_surface("api-tend-bridge");
     Forma::Tend<float> tend;
-    tend.form = Forma::Geometry::Form<float> { counting_geometry(std::make_shared<int>(0)) };
+    tend.form = Forma::Geometry::Form<float> { forma_api_counting_geometry(std::make_shared<int>(0)) };
     tend.initial = 0.75F;
     tend.place(surface);
     std::vector<float> received;
@@ -465,7 +465,7 @@ TEST_F(FormaApiTest, TendTrackReflowsItsGeometryOnScroll)
     const AABB2D content { .min = { -0.4F, -1.5F }, .max = { 0.4F, 1.5F } };
     auto calls = std::make_shared<int>(0);
     Forma::Tend<float> tend;
-    tend.form = Forma::Geometry::Form<float> { counting_geometry(calls, content) };
+    tend.form = Forma::Geometry::Form<float> { forma_api_counting_geometry(calls, content) };
     tend.place(surface);
     const int placed = *calls;
 

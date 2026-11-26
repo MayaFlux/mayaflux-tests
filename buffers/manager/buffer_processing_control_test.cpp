@@ -23,7 +23,7 @@ using Buffers::TokenUnitManager;
 
 namespace {
 
-    constexpr uint32_t UNIT_SIZE = 512;
+    constexpr uint32_t BUFFER_PROCESSING_CONTROL_UNIT_SIZE = 512;
 
     class CountingProbe final : public BufferProcessor {
     public:
@@ -50,7 +50,7 @@ class BufferProcessingControlTest : public ::testing::Test {
 protected:
     void SetUp() override
     {
-        units = std::make_unique<TokenUnitManager>(Buffers::AUDIO_BACKEND, Buffers::GRAPHICS_BACKEND, UNIT_SIZE);
+        units = std::make_unique<TokenUnitManager>(Buffers::AUDIO_BACKEND, Buffers::GRAPHICS_BACKEND, BUFFER_PROCESSING_CONTROL_UNIT_SIZE);
         access = std::make_unique<BufferAccessControl>(*units);
         control = std::make_unique<BufferProcessingControl>(*units, *access);
         probe = std::make_shared<CountingProbe>();

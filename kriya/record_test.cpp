@@ -13,7 +13,7 @@ namespace MayaFlux::Test {
 namespace {
 
     constexpr uint32_t k_block = 512;
-    constexpr uint32_t k_rate = 48000;
+    constexpr uint32_t k_record_rate = 48000;
 
     double value(uint64_t block, uint32_t frame)
     {
@@ -37,9 +37,9 @@ namespace {
         void SetUp() override
         {
             saved_size = Buffers::s_preferred_buffer_size;
-            scheduler = std::make_shared<Vruta::TaskScheduler>(k_rate);
-            manager = std::make_shared<Buffers::BufferManager>(2, 2, k_rate, k_block);
-            stream = std::make_shared<Kakshya::DynamicSoundStream>(k_rate, 1);
+            scheduler = std::make_shared<Vruta::TaskScheduler>(k_record_rate);
+            manager = std::make_shared<Buffers::BufferManager>(2, 2, k_record_rate, k_block);
+            stream = std::make_shared<Kakshya::DynamicSoundStream>(k_record_rate, 1);
         }
 
         void TearDown() override
@@ -120,7 +120,7 @@ namespace {
 
     TEST_F(RecordSyntheticTest, TheStreamChannelSelectsWhereTheSignalIsWritten)
     {
-        stream = std::make_shared<Kakshya::DynamicSoundStream>(k_rate, 2);
+        stream = std::make_shared<Kakshya::DynamicSoundStream>(k_record_rate, 2);
         const auto [pipeline, listener] = Kriya::record(scheduler, manager, stream, 0, 2, std::nullopt, 1);
 
         cycles(0, 2);

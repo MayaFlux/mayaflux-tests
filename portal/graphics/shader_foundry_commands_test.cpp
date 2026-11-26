@@ -25,11 +25,11 @@ namespace {
 
     using CommandType = ShaderFoundry::CommandBufferType;
 
-    constexpr uint32_t k_words = 16;
-    constexpr size_t k_bytes = k_words * sizeof(uint32_t);
+    constexpr uint32_t k_shader_foundry_commands_words = 16;
+    constexpr size_t k_shader_foundry_commands_bytes = k_shader_foundry_commands_words * sizeof(uint32_t);
     constexpr uint32_t k_pattern = 0xDEADBEEF;
 
-    ShaderFoundry& foundry()
+    ShaderFoundry& shader_foundry_commands_foundry()
     {
         return Portal::Graphics::get_shader_foundry();
     }
@@ -57,13 +57,13 @@ namespace {
             if (!s_backend) {
                 GTEST_SKIP() << "No usable Vulkan device: " << vulkan_unavailable_reason();
             }
-            foundry().shutdown();
-            ASSERT_TRUE(foundry().initialize(s_backend));
+            shader_foundry_commands_foundry().shutdown();
+            ASSERT_TRUE(shader_foundry_commands_foundry().initialize(s_backend));
         }
 
         void TearDown() override
         {
-            foundry().shutdown();
+            shader_foundry_commands_foundry().shutdown();
         }
 
         static const std::shared_ptr<Core::VulkanBackend>& backend() { return s_backend; }
@@ -72,7 +72,7 @@ namespace {
 
         static std::unique_ptr<RawVulkanBuffer> host_buffer()
         {
-            return std::make_unique<RawVulkanBuffer>(*s_backend, k_bytes,
+            return std::make_unique<RawVulkanBuffer>(*s_backend, k_shader_foundry_commands_bytes,
                 vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc
                     | vk::BufferUsageFlagBits::eStorageBuffer,
                 true);
@@ -80,14 +80,14 @@ namespace {
 
         static std::vector<uint32_t> words(const RawVulkanBuffer& buffer)
         {
-            std::vector<uint32_t> out(k_words);
-            std::memcpy(out.data(), buffer.mapped(), k_bytes);
+            std::vector<uint32_t> out(k_shader_foundry_commands_words);
+            std::memcpy(out.data(), buffer.mapped(), k_shader_foundry_commands_bytes);
             return out;
         }
 
         static void clear(const RawVulkanBuffer& buffer)
         {
-            std::memset(buffer.mapped(), 0, k_bytes);
+            std::memset(buffer.mapped(), 0, k_shader_foundry_commands_bytes);
         }
 
         class StorageLayout {
@@ -125,64 +125,64 @@ namespace {
     {
         StorageLayout layout;
 
-        const auto first = foundry().allocate_descriptor_set(layout.get());
-        const auto second = foundry().allocate_descriptor_set(layout.get());
+        const auto first = shader_foundry_commands_foundry().allocate_descriptor_set(layout.get());
+        const auto second = shader_foundry_commands_foundry().allocate_descriptor_set(layout.get());
 
         EXPECT_NE(first, INVALID_DESCRIPTOR_SET);
         EXPECT_NE(second, INVALID_DESCRIPTOR_SET);
         EXPECT_NE(first, second);
-        EXPECT_TRUE(foundry().get_descriptor_set(first));
-        EXPECT_NE(foundry().get_descriptor_set(first), foundry().get_descriptor_set(second));
+        EXPECT_TRUE(shader_foundry_commands_foundry().get_descriptor_set(first));
+        EXPECT_NE(shader_foundry_commands_foundry().get_descriptor_set(first), shader_foundry_commands_foundry().get_descriptor_set(second));
     }
 
     TEST_F(ShaderFoundryDeviceTest, UnknownDescriptorSetIdThrows)
     {
-        EXPECT_THROW(static_cast<void>(foundry().get_descriptor_set(9999)), std::invalid_argument);
+        EXPECT_THROW(static_cast<void>(shader_foundry_commands_foundry().get_descriptor_set(9999)), std::invalid_argument);
     }
 
     TEST_F(ShaderFoundryDeviceTest, BufferWritesToAKnownSetAreAcceptedAndUnknownSetsAreSkipped)
     {
         StorageLayout layout;
-        const auto set = foundry().allocate_descriptor_set(layout.get());
+        const auto set = shader_foundry_commands_foundry().allocate_descriptor_set(layout.get());
         const auto buffer = host_buffer();
 
-        EXPECT_NO_THROW(foundry().update_descriptor_buffer(
-            set, 0, vk::DescriptorType::eStorageBuffer, buffer->buffer(), 0, k_bytes));
-        EXPECT_NO_THROW(foundry().update_descriptor_buffer(
-            9999, 0, vk::DescriptorType::eStorageBuffer, buffer->buffer(), 0, k_bytes));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().update_descriptor_buffer(
+            set, 0, vk::DescriptorType::eStorageBuffer, buffer->buffer(), 0, k_shader_foundry_commands_bytes));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().update_descriptor_buffer(
+            9999, 0, vk::DescriptorType::eStorageBuffer, buffer->buffer(), 0, k_shader_foundry_commands_bytes));
 
         const std::vector<DescriptorBufferWrite> writes {
-            { .descriptor_set_id = 9999, .binding = 0, .type = vk::DescriptorType::eStorageBuffer, .buffer = buffer->buffer(), .offset = 0, .size = k_bytes },
-            { .descriptor_set_id = set, .binding = 0, .type = vk::DescriptorType::eStorageBuffer, .buffer = buffer->buffer(), .offset = 0, .size = k_bytes }
+            { .descriptor_set_id = 9999, .binding = 0, .type = vk::DescriptorType::eStorageBuffer, .buffer = buffer->buffer(), .offset = 0, .size = k_shader_foundry_commands_bytes },
+            { .descriptor_set_id = set, .binding = 0, .type = vk::DescriptorType::eStorageBuffer, .buffer = buffer->buffer(), .offset = 0, .size = k_shader_foundry_commands_bytes }
         };
-        EXPECT_NO_THROW(foundry().update_descriptor_buffers(writes));
-        EXPECT_NO_THROW(foundry().update_descriptor_buffers({}));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().update_descriptor_buffers(writes));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().update_descriptor_buffers({}));
     }
 
     TEST_F(ShaderFoundryDeviceTest, ImageWritesToAnUnknownSetAreSkipped)
     {
-        EXPECT_NO_THROW(foundry().update_descriptor_image(
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().update_descriptor_image(
             9999, 0, vk::ImageView {}, vk::Sampler {}, vk::ImageLayout::eShaderReadOnlyOptimal));
-        EXPECT_NO_THROW(foundry().update_descriptor_storage_image(
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().update_descriptor_storage_image(
             9999, 0, vk::ImageView {}, vk::ImageLayout::eGeneral));
 
         const std::vector<DescriptorImageWrite> writes {
             { .descriptor_set_id = 9999, .binding = 0, .type = vk::DescriptorType::eStorageImage, .image_view = vk::ImageView {}, .sampler = vk::Sampler {}, .layout = vk::ImageLayout::eGeneral }
         };
-        EXPECT_NO_THROW(foundry().update_descriptor_images(writes));
-        EXPECT_NO_THROW(foundry().update_descriptor_images({}));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().update_descriptor_images(writes));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().update_descriptor_images({}));
     }
 
     TEST_F(ShaderFoundryDeviceTest, ShutdownForgetsEveryDescriptorSet)
     {
         StorageLayout layout;
-        const auto set = foundry().allocate_descriptor_set(layout.get());
-        ASSERT_TRUE(foundry().get_descriptor_set(set));
+        const auto set = shader_foundry_commands_foundry().allocate_descriptor_set(layout.get());
+        ASSERT_TRUE(shader_foundry_commands_foundry().get_descriptor_set(set));
 
-        foundry().shutdown();
-        ASSERT_TRUE(foundry().initialize(backend()));
+        shader_foundry_commands_foundry().shutdown();
+        ASSERT_TRUE(shader_foundry_commands_foundry().initialize(backend()));
 
-        EXPECT_THROW(static_cast<void>(foundry().get_descriptor_set(set)), std::invalid_argument);
+        EXPECT_THROW(static_cast<void>(shader_foundry_commands_foundry().get_descriptor_set(set)), std::invalid_argument);
     }
 
     // ------------------------------------------------------------------
@@ -198,18 +198,18 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST_P, ShaderFoundryCommandTypeTest, BeginCommandsGivesADistinctBufferThatCanBeSubmitted, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        const auto first = foundry().begin_commands(GetParam().type);
-        const auto second = foundry().begin_commands(GetParam().type);
+        const auto first = shader_foundry_commands_foundry().begin_commands(GetParam().type);
+        const auto second = shader_foundry_commands_foundry().begin_commands(GetParam().type);
 
         EXPECT_NE(first, INVALID_COMMAND_BUFFER);
         EXPECT_NE(second, INVALID_COMMAND_BUFFER);
         EXPECT_NE(first, second);
-        EXPECT_TRUE(foundry().get_command_buffer(first));
-        EXPECT_NE(foundry().get_command_buffer(first), foundry().get_command_buffer(second));
+        EXPECT_TRUE(shader_foundry_commands_foundry().get_command_buffer(first));
+        EXPECT_NE(shader_foundry_commands_foundry().get_command_buffer(first), shader_foundry_commands_foundry().get_command_buffer(second));
 
-        foundry().submit_and_wait(first);
-        foundry().submit_and_wait(second);
-        EXPECT_FALSE(foundry().get_command_buffer(first));
+        shader_foundry_commands_foundry().submit_and_wait(first);
+        shader_foundry_commands_foundry().submit_and_wait(second);
+        EXPECT_FALSE(shader_foundry_commands_foundry().get_command_buffer(first));
     }
 
     INSTANTIATE_TEST_SUITE_P(Types, ShaderFoundryCommandTypeTest,
@@ -220,52 +220,52 @@ namespace {
 
     TEST_F(ShaderFoundryDeviceTest, EndCommandsSucceedsOnceAndFailsForUnknownOrFinishedBuffers)
     {
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
 
-        EXPECT_TRUE(foundry().end_commands(id));
-        EXPECT_FALSE(foundry().end_commands(id));
-        EXPECT_FALSE(foundry().end_commands(9999));
-        EXPECT_FALSE(foundry().get_command_buffer(9999));
+        EXPECT_TRUE(shader_foundry_commands_foundry().end_commands(id));
+        EXPECT_FALSE(shader_foundry_commands_foundry().end_commands(id));
+        EXPECT_FALSE(shader_foundry_commands_foundry().end_commands(9999));
+        EXPECT_FALSE(shader_foundry_commands_foundry().get_command_buffer(9999));
     }
 
     TEST_F(ShaderFoundryDeviceTest, SubmitAndWaitRunsTheRecordedWorkAndForgetsTheBuffer)
     {
         const auto buffer = host_buffer();
         clear(*buffer);
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().get_command_buffer(id).fillBuffer(buffer->buffer(), 0, k_bytes, k_pattern);
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().get_command_buffer(id).fillBuffer(buffer->buffer(), 0, k_shader_foundry_commands_bytes, k_pattern);
 
-        foundry().submit_and_wait(id);
+        shader_foundry_commands_foundry().submit_and_wait(id);
 
-        EXPECT_EQ(words(*buffer), std::vector<uint32_t>(k_words, k_pattern));
-        EXPECT_FALSE(foundry().get_command_buffer(id));
+        EXPECT_EQ(words(*buffer), std::vector<uint32_t>(k_shader_foundry_commands_words, k_pattern));
+        EXPECT_FALSE(shader_foundry_commands_foundry().get_command_buffer(id));
     }
 
     TEST_F(ShaderFoundryDeviceTest, SubmitAndWaitOfAnUnknownBufferIsIgnored)
     {
-        EXPECT_NO_THROW(foundry().submit_and_wait(9999));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().submit_and_wait(9999));
     }
 
     TEST_F(ShaderFoundryDeviceTest, AsyncSubmitSignalsItsFenceAndReleaseFreesTheBuffer)
     {
         const auto buffer = host_buffer();
         clear(*buffer);
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().get_command_buffer(id).fillBuffer(buffer->buffer(), 0, k_bytes, k_pattern);
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().get_command_buffer(id).fillBuffer(buffer->buffer(), 0, k_shader_foundry_commands_bytes, k_pattern);
 
-        const auto fence = foundry().submit_async(id);
+        const auto fence = shader_foundry_commands_foundry().submit_async(id);
         ASSERT_NE(fence, INVALID_FENCE);
-        foundry().wait_for_fence(fence);
+        shader_foundry_commands_foundry().wait_for_fence(fence);
 
-        EXPECT_TRUE(foundry().is_fence_signaled(fence));
-        EXPECT_EQ(words(*buffer), std::vector<uint32_t>(k_words, k_pattern));
-        EXPECT_TRUE(foundry().get_command_buffer(id));
+        EXPECT_TRUE(shader_foundry_commands_foundry().is_fence_signaled(fence));
+        EXPECT_EQ(words(*buffer), std::vector<uint32_t>(k_shader_foundry_commands_words, k_pattern));
+        EXPECT_TRUE(shader_foundry_commands_foundry().get_command_buffer(id));
 
-        foundry().release_fence(fence);
+        shader_foundry_commands_foundry().release_fence(fence);
 
-        EXPECT_FALSE(foundry().get_command_buffer(id));
-        EXPECT_FALSE(foundry().is_fence_signaled(fence));
-        EXPECT_NO_THROW(foundry().release_fence(fence));
+        EXPECT_FALSE(shader_foundry_commands_foundry().get_command_buffer(id));
+        EXPECT_FALSE(shader_foundry_commands_foundry().is_fence_signaled(fence));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().release_fence(fence));
     }
 
     TEST_F(ShaderFoundryDeviceTest, WaitForFencesWaitsForEveryFence)
@@ -274,23 +274,23 @@ namespace {
         const auto b = host_buffer();
         clear(*a);
         clear(*b);
-        const auto cmd_a = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().get_command_buffer(cmd_a).fillBuffer(a->buffer(), 0, k_bytes, 1U);
-        const auto cmd_b = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().get_command_buffer(cmd_b).fillBuffer(b->buffer(), 0, k_bytes, 2U);
-        const auto fence_a = foundry().submit_async(cmd_a);
-        const auto fence_b = foundry().submit_async(cmd_b);
+        const auto cmd_a = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().get_command_buffer(cmd_a).fillBuffer(a->buffer(), 0, k_shader_foundry_commands_bytes, 1U);
+        const auto cmd_b = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().get_command_buffer(cmd_b).fillBuffer(b->buffer(), 0, k_shader_foundry_commands_bytes, 2U);
+        const auto fence_a = shader_foundry_commands_foundry().submit_async(cmd_a);
+        const auto fence_b = shader_foundry_commands_foundry().submit_async(cmd_b);
         ASSERT_NE(fence_a, INVALID_FENCE);
         ASSERT_NE(fence_b, INVALID_FENCE);
 
-        foundry().wait_for_fences({ fence_a, fence_b });
+        shader_foundry_commands_foundry().wait_for_fences({ fence_a, fence_b });
 
-        EXPECT_TRUE(foundry().is_fence_signaled(fence_a));
-        EXPECT_TRUE(foundry().is_fence_signaled(fence_b));
-        EXPECT_EQ(words(*a), std::vector<uint32_t>(k_words, 1U));
-        EXPECT_EQ(words(*b), std::vector<uint32_t>(k_words, 2U));
-        foundry().release_fence(fence_a);
-        foundry().release_fence(fence_b);
+        EXPECT_TRUE(shader_foundry_commands_foundry().is_fence_signaled(fence_a));
+        EXPECT_TRUE(shader_foundry_commands_foundry().is_fence_signaled(fence_b));
+        EXPECT_EQ(words(*a), std::vector<uint32_t>(k_shader_foundry_commands_words, 1U));
+        EXPECT_EQ(words(*b), std::vector<uint32_t>(k_shader_foundry_commands_words, 2U));
+        shader_foundry_commands_foundry().release_fence(fence_a);
+        shader_foundry_commands_foundry().release_fence(fence_b);
     }
 
     TEST_F(ShaderFoundryDeviceTest, ALeaseHeldOnACommandBufferIsReleasedWhenASynchronousSubmitCompletes)
@@ -298,11 +298,11 @@ namespace {
         Portal::Graphics::SlotArena arena;
         ASSERT_TRUE(arena.initialize(64, Portal::Graphics::BufferUsageHint::UNIFORM, 2));
 
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().hold_until_complete(id, arena.lease(0));
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().hold_until_complete(id, arena.lease(0));
         EXPECT_EQ(arena.acquire(), 1U);
 
-        foundry().submit_and_wait(id);
+        shader_foundry_commands_foundry().submit_and_wait(id);
 
         EXPECT_EQ(arena.acquire(), 0U);
         arena.release();
@@ -314,13 +314,13 @@ namespace {
         ASSERT_TRUE(arena.initialize(64, Portal::Graphics::BufferUsageHint::UNIFORM, 2));
         const auto buffer = host_buffer();
 
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().get_command_buffer(id).fillBuffer(buffer->buffer(), 0, k_bytes, k_pattern);
-        foundry().hold_until_complete(id, arena.lease(0));
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().get_command_buffer(id).fillBuffer(buffer->buffer(), 0, k_shader_foundry_commands_bytes, k_pattern);
+        shader_foundry_commands_foundry().hold_until_complete(id, arena.lease(0));
 
-        foundry().release_fence(foundry().submit_async(id));
+        shader_foundry_commands_foundry().release_fence(shader_foundry_commands_foundry().submit_async(id));
         backend()->wait_idle();
-        foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
 
         EXPECT_EQ(arena.acquire(), 0U);
         arena.release();
@@ -331,14 +331,14 @@ namespace {
         Portal::Graphics::SlotArena arena;
         ASSERT_TRUE(arena.initialize(64, Portal::Graphics::BufferUsageHint::UNIFORM, 2));
 
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().hold_until_complete(id, arena.lease(0));
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().hold_until_complete(id, arena.lease(0));
         EXPECT_EQ(arena.acquire(), 1U);
 
         const std::array<Portal::Graphics::CommandBufferID, 1> ids { id };
-        foundry().retire_after_submit(ids);
+        shader_foundry_commands_foundry().retire_after_submit(ids);
         backend()->wait_idle();
-        foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
 
         EXPECT_EQ(arena.acquire(), 0U);
         arena.release();
@@ -363,13 +363,13 @@ namespace {
         auto allocation = resources.retain_image_allocation(image);
         ASSERT_NE(allocation, nullptr);
         const std::weak_ptr<void> weak = allocation;
-        const auto id = foundry().begin_commands(CommandType::GRAPHICS);
-        foundry().hold_image(id, image);
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::GRAPHICS);
+        shader_foundry_commands_foundry().hold_image(id, image);
         allocation.reset();
         vk::BufferImageCopy region {};
         region.imageSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
         region.imageExtent = vk::Extent3D { 4, 4, 1 };
-        auto cmd = foundry().get_command_buffer(id);
+        auto cmd = shader_foundry_commands_foundry().get_command_buffer(id);
         cmd.copyImageToBuffer(image->get_image(), vk::ImageLayout::eTransferSrcOptimal, destination.buffer(), 1, &region);
         const vk::MemoryBarrier2 to_host {
             vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
@@ -383,7 +383,7 @@ namespace {
         resources.cleanup_image(image);
         EXPECT_FALSE(image->is_initialized());
         EXPECT_FALSE(weak.expired());
-        foundry().submit_and_wait(id);
+        shader_foundry_commands_foundry().submit_and_wait(id);
         backend()->get_command_manager().collect();
 
         EXPECT_EQ(std::memcmp(destination.mapped(), expected.data(), expected.size()), 0);
@@ -395,9 +395,9 @@ namespace {
         Portal::Graphics::SlotArena arena;
         ASSERT_TRUE(arena.initialize(64, Portal::Graphics::BufferUsageHint::UNIFORM, 1));
 
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        EXPECT_NO_THROW(foundry().hold_until_complete(id, Portal::Graphics::SlotLease {}));
-        EXPECT_NO_THROW(foundry().hold_until_complete(9999, arena.lease(0)));
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().hold_until_complete(id, Portal::Graphics::SlotLease {}));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().hold_until_complete(9999, arena.lease(0)));
 
         EXPECT_EQ(arena.acquire(), 0U);
         EXPECT_EQ(arena.slot_count(), 1U);
@@ -406,38 +406,38 @@ namespace {
 
     TEST_F(ShaderFoundryDeviceTest, SubmittingAnUnknownBufferGivesNoFenceOrSemaphore)
     {
-        EXPECT_EQ(foundry().submit_async(9999), INVALID_FENCE);
-        EXPECT_EQ(foundry().submit_with_signal(9999), INVALID_SEMAPHORE);
-        EXPECT_FALSE(foundry().is_fence_signaled(9999));
-        EXPECT_NO_THROW(foundry().wait_for_fence(9999));
-        EXPECT_NO_THROW(foundry().wait_for_fences({ 9999 }));
+        EXPECT_EQ(shader_foundry_commands_foundry().submit_async(9999), INVALID_FENCE);
+        EXPECT_EQ(shader_foundry_commands_foundry().submit_with_signal(9999), INVALID_SEMAPHORE);
+        EXPECT_FALSE(shader_foundry_commands_foundry().is_fence_signaled(9999));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().wait_for_fence(9999));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().wait_for_fences({ 9999 }));
     }
 
     TEST_F(ShaderFoundryDeviceTest, SubmitWithSignalGivesASemaphoreWithAHandle)
     {
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
 
-        const auto semaphore = foundry().submit_with_signal(id);
+        const auto semaphore = shader_foundry_commands_foundry().submit_with_signal(id);
 
         ASSERT_NE(semaphore, INVALID_SEMAPHORE);
-        EXPECT_TRUE(foundry().get_semaphore_handle(semaphore));
-        EXPECT_FALSE(foundry().get_semaphore_handle(9999));
+        EXPECT_TRUE(shader_foundry_commands_foundry().get_semaphore_handle(semaphore));
+        EXPECT_FALSE(shader_foundry_commands_foundry().get_semaphore_handle(9999));
         device().waitIdle();
     }
 
     TEST_F(ShaderFoundryDeviceTest, BeginCommandsWithWaitRefusesAnUnknownSemaphoreAndAcceptsAKnownOne)
     {
-        const auto producer = foundry().begin_commands(CommandType::COMPUTE);
-        const auto semaphore = foundry().submit_with_signal(producer);
+        const auto producer = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        const auto semaphore = shader_foundry_commands_foundry().submit_with_signal(producer);
         ASSERT_NE(semaphore, INVALID_SEMAPHORE);
 
-        EXPECT_EQ(foundry().begin_commands_with_wait(CommandType::COMPUTE, 9999, vk::PipelineStageFlagBits2::eTransfer),
+        EXPECT_EQ(shader_foundry_commands_foundry().begin_commands_with_wait(CommandType::COMPUTE, 9999, vk::PipelineStageFlagBits2::eTransfer),
             INVALID_COMMAND_BUFFER);
 
-        const auto consumer = foundry().begin_commands_with_wait(
+        const auto consumer = shader_foundry_commands_foundry().begin_commands_with_wait(
             CommandType::COMPUTE, semaphore, vk::PipelineStageFlagBits2::eTransfer);
         EXPECT_NE(consumer, INVALID_COMMAND_BUFFER);
-        foundry().submit_and_wait(consumer);
+        shader_foundry_commands_foundry().submit_and_wait(consumer);
         device().waitIdle();
     }
 
@@ -446,37 +446,37 @@ namespace {
         const auto buffer = host_buffer();
         clear(*buffer);
 
-        const auto producer = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().get_command_buffer(producer).fillBuffer(buffer->buffer(), 0, k_bytes, k_pattern);
-        const auto semaphore = foundry().submit_with_signal(producer);
+        const auto producer = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().get_command_buffer(producer).fillBuffer(buffer->buffer(), 0, k_shader_foundry_commands_bytes, k_pattern);
+        const auto semaphore = shader_foundry_commands_foundry().submit_with_signal(producer);
         ASSERT_NE(semaphore, INVALID_SEMAPHORE);
 
         constexpr uint32_t consumer_pattern = 0x5A5A5A5AU;
-        const auto consumer = foundry().begin_commands_with_wait(
+        const auto consumer = shader_foundry_commands_foundry().begin_commands_with_wait(
             CommandType::COMPUTE, semaphore, vk::PipelineStageFlagBits2::eTransfer);
         ASSERT_NE(consumer, INVALID_COMMAND_BUFFER);
-        foundry().get_command_buffer(consumer).fillBuffer(buffer->buffer(), 0, k_bytes, consumer_pattern);
-        foundry().submit_and_wait(consumer);
+        shader_foundry_commands_foundry().get_command_buffer(consumer).fillBuffer(buffer->buffer(), 0, k_shader_foundry_commands_bytes, consumer_pattern);
+        shader_foundry_commands_foundry().submit_and_wait(consumer);
 
-        EXPECT_EQ(words(*buffer), std::vector<uint32_t>(k_words, consumer_pattern));
+        EXPECT_EQ(words(*buffer), std::vector<uint32_t>(k_shader_foundry_commands_words, consumer_pattern));
         device().waitIdle();
     }
 
     TEST_F(ShaderFoundryDeviceTest, ReleaseAfterSubmitRunsOnceThePendingSubmissionsComplete)
     {
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        const auto fence = foundry().submit_async(id);
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        const auto fence = shader_foundry_commands_foundry().submit_async(id);
         ASSERT_NE(fence, INVALID_FENCE);
 
         bool released = false;
-        foundry().release_after_submit([&released] { released = true; });
+        shader_foundry_commands_foundry().release_after_submit([&released] { released = true; });
 
-        foundry().wait_for_fence(fence);
-        foundry().release_fence(fence);
+        shader_foundry_commands_foundry().wait_for_fence(fence);
+        shader_foundry_commands_foundry().release_fence(fence);
 
-        const auto next = foundry().begin_commands(CommandType::COMPUTE);
+        const auto next = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
         EXPECT_TRUE(released);
-        foundry().submit_and_wait(next);
+        shader_foundry_commands_foundry().submit_and_wait(next);
     }
 
     TEST_F(ShaderFoundryDeviceTest, WaitForFencesCoversGraphicsAndComputeSubmissions)
@@ -485,51 +485,51 @@ namespace {
         const auto b = host_buffer();
         clear(*a);
         clear(*b);
-        const auto graphics = foundry().begin_commands(CommandType::GRAPHICS);
-        foundry().get_command_buffer(graphics).fillBuffer(a->buffer(), 0, k_bytes, 3U);
-        const auto compute = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().get_command_buffer(compute).fillBuffer(b->buffer(), 0, k_bytes, 4U);
-        const auto graphics_fence = foundry().submit_async(graphics);
-        const auto compute_fence = foundry().submit_async(compute);
+        const auto graphics = shader_foundry_commands_foundry().begin_commands(CommandType::GRAPHICS);
+        shader_foundry_commands_foundry().get_command_buffer(graphics).fillBuffer(a->buffer(), 0, k_shader_foundry_commands_bytes, 3U);
+        const auto compute = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().get_command_buffer(compute).fillBuffer(b->buffer(), 0, k_shader_foundry_commands_bytes, 4U);
+        const auto graphics_fence = shader_foundry_commands_foundry().submit_async(graphics);
+        const auto compute_fence = shader_foundry_commands_foundry().submit_async(compute);
         ASSERT_NE(graphics_fence, INVALID_FENCE);
         ASSERT_NE(compute_fence, INVALID_FENCE);
 
-        foundry().wait_for_fences({ graphics_fence, compute_fence });
+        shader_foundry_commands_foundry().wait_for_fences({ graphics_fence, compute_fence });
 
-        EXPECT_TRUE(foundry().is_fence_signaled(graphics_fence));
-        EXPECT_TRUE(foundry().is_fence_signaled(compute_fence));
-        EXPECT_EQ(words(*a), std::vector<uint32_t>(k_words, 3U));
-        EXPECT_EQ(words(*b), std::vector<uint32_t>(k_words, 4U));
-        foundry().release_fence(graphics_fence);
-        foundry().release_fence(compute_fence);
+        EXPECT_TRUE(shader_foundry_commands_foundry().is_fence_signaled(graphics_fence));
+        EXPECT_TRUE(shader_foundry_commands_foundry().is_fence_signaled(compute_fence));
+        EXPECT_EQ(words(*a), std::vector<uint32_t>(k_shader_foundry_commands_words, 3U));
+        EXPECT_EQ(words(*b), std::vector<uint32_t>(k_shader_foundry_commands_words, 4U));
+        shader_foundry_commands_foundry().release_fence(graphics_fence);
+        shader_foundry_commands_foundry().release_fence(compute_fence);
     }
 
     TEST_F(ShaderFoundryDeviceTest, RetireAfterSubmitFreesBuffersOnceTheirSubmissionCompletes)
     {
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        const auto semaphore = foundry().submit_with_signal(id);
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        const auto semaphore = shader_foundry_commands_foundry().submit_with_signal(id);
         ASSERT_NE(semaphore, INVALID_SEMAPHORE);
 
         const std::array<Portal::Graphics::CommandBufferID, 1> ids { id };
-        foundry().retire_after_submit(ids);
+        shader_foundry_commands_foundry().retire_after_submit(ids);
         backend()->get_command_manager().wait(backend()->get_command_manager().submitted());
 
-        const auto next = foundry().begin_commands(CommandType::COMPUTE);
-        EXPECT_FALSE(foundry().get_command_buffer(id));
-        foundry().submit_and_wait(next);
+        const auto next = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        EXPECT_FALSE(shader_foundry_commands_foundry().get_command_buffer(id));
+        shader_foundry_commands_foundry().submit_and_wait(next);
     }
 
     TEST_F(ShaderFoundryDeviceTest, RetireAfterSubmitFreesBuffersThatWereNeverSubmitted)
     {
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().end_commands(id);
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().end_commands(id);
 
         const std::array<Portal::Graphics::CommandBufferID, 1> ids { id };
-        foundry().retire_after_submit(ids);
+        shader_foundry_commands_foundry().retire_after_submit(ids);
 
-        const auto next = foundry().begin_commands(CommandType::COMPUTE);
-        EXPECT_FALSE(foundry().get_command_buffer(id));
-        foundry().submit_and_wait(next);
+        const auto next = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        EXPECT_FALSE(shader_foundry_commands_foundry().get_command_buffer(id));
+        shader_foundry_commands_foundry().submit_and_wait(next);
     }
 
     TEST_F(ShaderFoundryDeviceTest, RetireAfterSubmitHoldsBuffersWhileTheQueueIsBlocked)
@@ -538,31 +538,31 @@ namespace {
         const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
         auto& commands = backend()->get_command_manager();
 
-        const auto point = commands.submit(foundry().get_graphics_queue(), {}, waits);
+        const auto point = commands.submit(shader_foundry_commands_foundry().get_graphics_queue(), {}, waits);
         ASSERT_TRUE(point);
 
-        const auto id = foundry().begin_commands(CommandType::GRAPHICS);
-        foundry().end_commands(id);
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::GRAPHICS);
+        shader_foundry_commands_foundry().end_commands(id);
         const std::array<Portal::Graphics::CommandBufferID, 1> ids { id };
-        foundry().retire_after_submit(ids);
+        shader_foundry_commands_foundry().retire_after_submit(ids);
 
-        const auto held = foundry().begin_commands(CommandType::GRAPHICS);
-        EXPECT_TRUE(foundry().get_command_buffer(id));
-        foundry().end_commands(held);
+        const auto held = shader_foundry_commands_foundry().begin_commands(CommandType::GRAPHICS);
+        EXPECT_TRUE(shader_foundry_commands_foundry().get_command_buffer(id));
+        shader_foundry_commands_foundry().end_commands(held);
 
         gate.open();
         commands.wait(commands.submitted());
 
-        const auto next = foundry().begin_commands(CommandType::GRAPHICS);
-        EXPECT_FALSE(foundry().get_command_buffer(id));
-        foundry().end_commands(next);
+        const auto next = shader_foundry_commands_foundry().begin_commands(CommandType::GRAPHICS);
+        EXPECT_FALSE(shader_foundry_commands_foundry().get_command_buffer(id));
+        shader_foundry_commands_foundry().end_commands(next);
     }
 
     TEST_F(ShaderFoundryDeviceTest, RetireAfterSubmitIgnoresUnknownIds)
     {
         const std::array<Portal::Graphics::CommandBufferID, 1> ids { 9999 };
-        EXPECT_NO_THROW(foundry().retire_after_submit(ids));
-        EXPECT_NO_THROW(foundry().retire_after_submit({}));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().retire_after_submit(ids));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().retire_after_submit({}));
     }
 
     TEST_F(ShaderFoundryDeviceTest, ReleaseAfterSubmitWaitsForWorkPendingOnEveryQueue)
@@ -571,24 +571,24 @@ namespace {
         const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
         auto& commands = backend()->get_command_manager();
 
-        const auto compute = commands.submit(foundry().get_compute_queue(), {}, waits);
-        const auto graphics = commands.submit(foundry().get_graphics_queue(), {}, waits);
+        const auto compute = commands.submit(shader_foundry_commands_foundry().get_compute_queue(), {}, waits);
+        const auto graphics = commands.submit(shader_foundry_commands_foundry().get_graphics_queue(), {}, waits);
         ASSERT_TRUE(compute);
         ASSERT_TRUE(graphics);
 
         auto released = std::make_shared<bool>(false);
-        foundry().release_after_submit([released] { *released = true; });
+        shader_foundry_commands_foundry().release_after_submit([released] { *released = true; });
 
-        const auto held = foundry().begin_commands(CommandType::COMPUTE);
+        const auto held = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
         EXPECT_FALSE(*released);
-        foundry().end_commands(held);
+        shader_foundry_commands_foundry().end_commands(held);
 
         gate.open();
         commands.wait(commands.submitted());
 
-        const auto next = foundry().begin_commands(CommandType::COMPUTE);
+        const auto next = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
         EXPECT_TRUE(*released);
-        foundry().end_commands(next);
+        shader_foundry_commands_foundry().end_commands(next);
     }
 
     TEST_F(ShaderFoundryDeviceTest, ReleaseAfterSubmitRunsImmediatelyWhenNothingIsPending)
@@ -596,7 +596,7 @@ namespace {
         backend()->wait_idle();
 
         auto released = std::make_shared<bool>(false);
-        foundry().release_after_submit([released] { *released = true; });
+        shader_foundry_commands_foundry().release_after_submit([released] { *released = true; });
 
         EXPECT_TRUE(*released);
     }
@@ -609,11 +609,11 @@ namespace {
         ASSERT_TRUE(commands.has_deferred_commands());
 
         bool released = false;
-        foundry().release_after_submit([&released] { released = true; });
+        shader_foundry_commands_foundry().release_after_submit([&released] { released = true; });
         EXPECT_TRUE(commands.has_deferred_commands());
         EXPECT_TRUE(released);
 
-        foundry().flush_deferred();
+        shader_foundry_commands_foundry().flush_deferred();
         commands.wait(commands.submitted());
         commands.collect();
     }
@@ -624,7 +624,7 @@ namespace {
         clear(*output);
         auto& commands = backend()->get_command_manager();
         backend()->get_resource_manager().record_deferred_commands([&output](vk::CommandBuffer cmd) {
-            cmd.fillBuffer(output->buffer(), 0, k_bytes, k_pattern);
+            cmd.fillBuffer(output->buffer(), 0, k_shader_foundry_commands_bytes, k_pattern);
             const vk::MemoryBarrier2 to_host {
                 vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
                 vk::PipelineStageFlagBits2::eHost, vk::AccessFlagBits2::eHostRead
@@ -635,41 +635,41 @@ namespace {
             cmd.pipelineBarrier2(dependency);
         });
 
-        foundry().wait_submitted();
+        shader_foundry_commands_foundry().wait_submitted();
         EXPECT_TRUE(commands.has_deferred_commands());
 
-        foundry().flush_deferred();
+        shader_foundry_commands_foundry().flush_deferred();
         commands.wait(commands.submitted());
-        EXPECT_EQ(words(*output), std::vector<uint32_t>(k_words, k_pattern));
+        EXPECT_EQ(words(*output), std::vector<uint32_t>(k_shader_foundry_commands_words, k_pattern));
     }
 
     TEST_F(ShaderFoundryDeviceTest, EveryQueueKindHasAQueue)
     {
-        EXPECT_TRUE(foundry().get_graphics_queue());
-        EXPECT_TRUE(foundry().get_compute_queue());
-        EXPECT_TRUE(foundry().get_transfer_queue());
+        EXPECT_TRUE(shader_foundry_commands_foundry().get_graphics_queue());
+        EXPECT_TRUE(shader_foundry_commands_foundry().get_compute_queue());
+        EXPECT_TRUE(shader_foundry_commands_foundry().get_transfer_queue());
     }
 
     TEST_F(ShaderFoundryDeviceTest, ShutdownFreesBuffersThatWereNeverSubmitted)
     {
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        ASSERT_TRUE(foundry().get_command_buffer(id));
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        ASSERT_TRUE(shader_foundry_commands_foundry().get_command_buffer(id));
 
-        foundry().shutdown();
-        ASSERT_TRUE(foundry().initialize(backend()));
+        shader_foundry_commands_foundry().shutdown();
+        ASSERT_TRUE(shader_foundry_commands_foundry().initialize(backend()));
 
-        EXPECT_FALSE(foundry().get_command_buffer(id));
+        EXPECT_FALSE(shader_foundry_commands_foundry().get_command_buffer(id));
     }
 
     TEST_F(ShaderFoundryDeviceTest, StopFreesRecordingBuffersButKeepsTheFoundryInitialized)
     {
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        ASSERT_TRUE(foundry().get_command_buffer(id));
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        ASSERT_TRUE(shader_foundry_commands_foundry().get_command_buffer(id));
 
-        foundry().stop();
+        shader_foundry_commands_foundry().stop();
 
-        EXPECT_FALSE(foundry().get_command_buffer(id));
-        EXPECT_TRUE(foundry().is_initialized());
+        EXPECT_FALSE(shader_foundry_commands_foundry().get_command_buffer(id));
+        EXPECT_TRUE(shader_foundry_commands_foundry().is_initialized());
     }
 
     // ------------------------------------------------------------------
@@ -682,29 +682,29 @@ namespace {
         const auto target = host_buffer();
         clear(*source);
         clear(*target);
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        auto cmd = foundry().get_command_buffer(id);
-        cmd.fillBuffer(source->buffer(), 0, k_bytes, k_pattern);
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        auto cmd = shader_foundry_commands_foundry().get_command_buffer(id);
+        cmd.fillBuffer(source->buffer(), 0, k_shader_foundry_commands_bytes, k_pattern);
 
-        foundry().buffer_barrier(id, source->buffer(),
+        shader_foundry_commands_foundry().buffer_barrier(id, source->buffer(),
             vk::AccessFlagBits2::eTransferWrite, vk::AccessFlagBits2::eTransferRead,
             vk::PipelineStageFlagBits2::eTransfer, vk::PipelineStageFlagBits2::eTransfer);
 
-        const vk::BufferCopy region(0, 0, k_bytes);
+        const vk::BufferCopy region(0, 0, k_shader_foundry_commands_bytes);
         cmd.copyBuffer(source->buffer(), target->buffer(), region);
-        foundry().submit_and_wait(id);
+        shader_foundry_commands_foundry().submit_and_wait(id);
 
-        EXPECT_EQ(words(*target), std::vector<uint32_t>(k_words, k_pattern));
+        EXPECT_EQ(words(*target), std::vector<uint32_t>(k_shader_foundry_commands_words, k_pattern));
     }
 
     TEST_F(ShaderFoundryDeviceTest, BarriersOnAnUnknownCommandBufferAreIgnored)
     {
         const auto buffer = host_buffer();
 
-        EXPECT_NO_THROW(foundry().buffer_barrier(9999, buffer->buffer(),
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().buffer_barrier(9999, buffer->buffer(),
             vk::AccessFlagBits2::eTransferWrite, vk::AccessFlagBits2::eTransferRead,
             vk::PipelineStageFlagBits2::eTransfer, vk::PipelineStageFlagBits2::eTransfer));
-        EXPECT_NO_THROW(foundry().image_barrier(9999, vk::Image {},
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().image_barrier(9999, vk::Image {},
             vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
             vk::AccessFlags2 {}, vk::AccessFlagBits2::eShaderRead,
             vk::PipelineStageFlagBits2::eNone, vk::PipelineStageFlagBits2::eComputeShader));
@@ -713,54 +713,54 @@ namespace {
     TEST_F(ShaderFoundryDeviceTest, TimestampsOfASubmittedBufferGiveAValidDuration)
     {
         const auto buffer = host_buffer();
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().begin_timestamp(id, "fill");
-        foundry().get_command_buffer(id).fillBuffer(buffer->buffer(), 0, k_bytes, k_pattern);
-        foundry().end_timestamp(id, "fill");
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().begin_timestamp(id, "fill");
+        shader_foundry_commands_foundry().get_command_buffer(id).fillBuffer(buffer->buffer(), 0, k_shader_foundry_commands_bytes, k_pattern);
+        shader_foundry_commands_foundry().end_timestamp(id, "fill");
 
-        const auto fence = foundry().submit_async(id);
+        const auto fence = shader_foundry_commands_foundry().submit_async(id);
         ASSERT_NE(fence, INVALID_FENCE);
-        foundry().wait_for_fence(fence);
-        const auto result = foundry().get_timestamp_result(id, "fill");
+        shader_foundry_commands_foundry().wait_for_fence(fence);
+        const auto result = shader_foundry_commands_foundry().get_timestamp_result(id, "fill");
 
         EXPECT_TRUE(result.valid);
         EXPECT_EQ(result.label, "fill");
-        foundry().release_fence(fence);
+        shader_foundry_commands_foundry().release_fence(fence);
     }
 
     TEST_F(ShaderFoundryDeviceTest, TimestampsAreReadableAfterSubmitAndWait)
     {
         const auto buffer = host_buffer();
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().begin_timestamp(id, "fill");
-        foundry().get_command_buffer(id).fillBuffer(buffer->buffer(), 0, k_bytes, k_pattern);
-        foundry().end_timestamp(id, "fill");
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().begin_timestamp(id, "fill");
+        shader_foundry_commands_foundry().get_command_buffer(id).fillBuffer(buffer->buffer(), 0, k_shader_foundry_commands_bytes, k_pattern);
+        shader_foundry_commands_foundry().end_timestamp(id, "fill");
 
-        foundry().submit_and_wait(id);
+        shader_foundry_commands_foundry().submit_and_wait(id);
 
-        EXPECT_TRUE(foundry().get_timestamp_result(id, "fill").valid);
+        EXPECT_TRUE(shader_foundry_commands_foundry().get_timestamp_result(id, "fill").valid);
     }
 
     TEST_F(ShaderFoundryDeviceTest, TimestampResultsForUnknownBuffersOrLabelsAreInvalid)
     {
-        const auto id = foundry().begin_commands(CommandType::COMPUTE);
-        foundry().begin_timestamp(id, "known");
+        const auto id = shader_foundry_commands_foundry().begin_commands(CommandType::COMPUTE);
+        shader_foundry_commands_foundry().begin_timestamp(id, "known");
 
-        EXPECT_FALSE(foundry().get_timestamp_result(9999, "known").valid);
-        EXPECT_FALSE(foundry().get_timestamp_result(id, "other").valid);
-        EXPECT_NO_THROW(foundry().begin_timestamp(9999, "x"));
-        EXPECT_NO_THROW(foundry().end_timestamp(9999, "x"));
-        EXPECT_NO_THROW(foundry().end_timestamp(id, "never_begun"));
-        foundry().submit_and_wait(id);
+        EXPECT_FALSE(shader_foundry_commands_foundry().get_timestamp_result(9999, "known").valid);
+        EXPECT_FALSE(shader_foundry_commands_foundry().get_timestamp_result(id, "other").valid);
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().begin_timestamp(9999, "x"));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().end_timestamp(9999, "x"));
+        EXPECT_NO_THROW(shader_foundry_commands_foundry().end_timestamp(id, "never_begun"));
+        shader_foundry_commands_foundry().submit_and_wait(id);
     }
 
     TEST_F(ShaderFoundryDeviceTest, FlushDeferredSubmitsPendingCommandsOnce)
     {
         backend()->get_resource_manager().record_deferred_commands([](vk::CommandBuffer) { });
 
-        const auto point = foundry().flush_deferred();
+        const auto point = shader_foundry_commands_foundry().flush_deferred();
         EXPECT_TRUE(point);
-        EXPECT_FALSE(foundry().flush_deferred());
+        EXPECT_FALSE(shader_foundry_commands_foundry().flush_deferred());
         EXPECT_FALSE(backend()->get_command_manager().has_deferred_commands());
         backend()->get_command_manager().wait(point);
     }

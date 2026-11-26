@@ -30,7 +30,7 @@ namespace {
         return source;
     }
 
-    std::vector<MeshVertex> vertices_of(const MeshData& mesh)
+    std::vector<MeshVertex> alembic_model_writer_vertices_of(const MeshData& mesh)
     {
         const auto& bytes = std::get<std::vector<uint8_t>>(mesh.vertex_variant);
         std::vector<MeshVertex> out(bytes.size() / sizeof(MeshVertex));
@@ -137,8 +137,8 @@ TEST_F(AlembicModelWriterTest, PolygonsAndVertexDataComeBack)
     EXPECT_EQ(mesh->faces->sizes, written.faces->sizes);
     EXPECT_EQ(mesh->faces->corners, written.faces->corners);
 
-    const auto expected = vertices_of(written);
-    const auto actual = vertices_of(*mesh);
+    const auto expected = alembic_model_writer_vertices_of(written);
+    const auto actual = alembic_model_writer_vertices_of(*mesh);
     ASSERT_EQ(actual.size(), expected.size());
     for (size_t v = 0; v < actual.size(); ++v) {
         EXPECT_EQ(actual[v].position, expected[v].position);
@@ -187,7 +187,7 @@ TEST_F(AlembicModelWriterTest, SeamVerticesShareTheirPointInTheFile)
 
     const auto* mesh = read->mesh(0);
     ASSERT_NE(mesh, nullptr);
-    const auto actual = vertices_of(*mesh);
+    const auto actual = alembic_model_writer_vertices_of(*mesh);
     ASSERT_EQ(mesh->faces->corners.size(), 6U);
     for (size_t corner = 0; corner < 6; ++corner) {
         const auto& vertex = actual[mesh->faces->corners[corner]];
@@ -399,7 +399,7 @@ TEST_F(AlembicModelWriterTest, MeshFramesAreWrittenAtTheirTimes)
     EXPECT_DOUBLE_EQ(m_reader.mesh_time("plate", 1).value_or(0.0), 0.5);
     const auto later = m_reader.read_mesh("plate", 1);
     ASSERT_TRUE(later.has_value());
-    EXPECT_EQ(vertices_of(*later)[0].position.z, 1.0F);
+    EXPECT_EQ(alembic_model_writer_vertices_of(*later)[0].position.z, 1.0F);
 }
 
 } // namespace MayaFlux::Test

@@ -18,7 +18,7 @@ namespace {
     using Nodes::Network::NetworkOperator;
     using Nodes::Network::OutputMode;
 
-    std::vector<glm::vec3> positions(uint32_t count)
+    std::vector<glm::vec3> instance_network_positions(uint32_t count)
     {
         std::vector<glm::vec3> out;
         for (uint32_t i = 0; i < count; ++i) {
@@ -29,7 +29,7 @@ namespace {
 
     std::shared_ptr<GeometryLeafNode> leaf(uint32_t count = 3)
     {
-        return std::make_shared<GeometryLeafNode>(positions(count));
+        return std::make_shared<GeometryLeafNode>(instance_network_positions(count));
     }
 
     Kinesis::VectorField step_up()
@@ -250,7 +250,7 @@ namespace {
         InstanceNetwork net;
         auto node = leaf(3);
         net.add_slot("a", node);
-        node->set_positions(positions(7));
+        node->set_positions(instance_network_positions(7));
 
         net.process_batch(1);
 
@@ -264,7 +264,7 @@ namespace {
         node->compute_frame();
         net.add_slot("a", node);
         auto counter = net.get_operator_chain()->emplace<FrameCounter>();
-        node->set_positions(positions(7));
+        node->set_positions(instance_network_positions(7));
         net.set_enabled(false);
 
         net.process_batch(2);

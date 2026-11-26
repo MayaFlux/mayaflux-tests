@@ -18,9 +18,9 @@ using Buffers::RootAudioBuffer;
 
 namespace {
 
-    class TokenedProbe final : public BufferProcessor {
+    class RootAudioBufferTokenedProbe final : public BufferProcessor {
     public:
-        explicit TokenedProbe(Buffers::ProcessingToken token)
+        explicit RootAudioBufferTokenedProbe(Buffers::ProcessingToken token)
         {
             set_processing_token(token);
         }
@@ -66,9 +66,9 @@ TEST_F(RootAudioBufferTest, NothingIsInstalledUntilInitialize)
 TEST_F(RootAudioBufferTest, AChildOfAnotherAudioTokenIsRefused)
 {
     auto parallel = std::make_shared<AudioBuffer>();
-    parallel->set_default_processor(std::make_shared<TokenedProbe>(Buffers::AUDIO_PARALLEL));
+    parallel->set_default_processor(std::make_shared<RootAudioBufferTokenedProbe>(Buffers::AUDIO_PARALLEL));
     auto native = std::make_shared<AudioBuffer>();
-    native->set_default_processor(std::make_shared<TokenedProbe>(Buffers::AUDIO_BACKEND));
+    native->set_default_processor(std::make_shared<RootAudioBufferTokenedProbe>(Buffers::AUDIO_BACKEND));
 
     EXPECT_THROW(root->add_child_buffer(parallel), std::runtime_error);
     EXPECT_NO_THROW(root->add_child_buffer(native));

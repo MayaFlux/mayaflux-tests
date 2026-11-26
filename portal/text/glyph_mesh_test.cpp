@@ -16,8 +16,8 @@ namespace {
     using Portal::Text::StyleSpan;
 
     const glm::vec4 k_white { 1.F, 1.F, 1.F, 1.F };
-    const glm::vec4 k_red { 1.F, 0.F, 0.F, 1.F };
-    const glm::vec4 k_green { 0.F, 1.F, 0.F, 1.F };
+    const glm::vec4 k_glyph_mesh_red { 1.F, 0.F, 0.F, 1.F };
+    const glm::vec4 k_glyph_mesh_green { 0.F, 1.F, 0.F, 1.F };
 
     GlyphQuad quad_at(size_t byte_offset)
     {
@@ -71,7 +71,7 @@ namespace {
     {
         const std::vector<GlyphQuad> quads { quad_at(0) };
 
-        const auto v = glyph_vertices(quads, k_red, {}, {}, 2);
+        const auto v = glyph_vertices(quads, k_glyph_mesh_red, {}, {}, 2);
 
         ASSERT_EQ(v.size(), 6U);
         EXPECT_FLOAT_EQ(v[0].position.x, 10.F);
@@ -112,9 +112,9 @@ namespace {
     TEST(GlyphMeshTest, ASpanColoursTheQuadsInItsRangeAndTheRestKeepTheBaseColour)
     {
         const std::vector<GlyphQuad> quads { quad_at(0), quad_at(5) };
-        const std::vector<StyleSpan> spans { { .start = 0, .end = 3, .color = k_green } };
+        const std::vector<StyleSpan> spans { { .start = 0, .end = 3, .color = k_glyph_mesh_green } };
 
-        const auto v = glyph_vertices(quads, k_red, spans, {}, 0);
+        const auto v = glyph_vertices(quads, k_glyph_mesh_red, spans, {}, 0);
 
         ASSERT_EQ(v.size(), 12U);
         EXPECT_EQ(v[0].color, glm::vec4(glm::vec3(0.F, 1.F, 0.F), 1.F));
@@ -125,8 +125,8 @@ namespace {
     {
         const std::vector<GlyphQuad> quads { quad_at(1) };
         const std::vector<StyleSpan> spans {
-            { .start = 0, .end = 4, .color = k_red },
-            { .start = 0, .end = 4, .color = k_green },
+            { .start = 0, .end = 4, .color = k_glyph_mesh_red },
+            { .start = 0, .end = 4, .color = k_glyph_mesh_green },
         };
 
         const auto v = glyph_vertices(quads, k_white, spans, {}, 0);
@@ -138,9 +138,9 @@ namespace {
     TEST(GlyphMeshTest, ASpanWithReversedBoundsCoversTheSameRange)
     {
         const std::vector<GlyphQuad> quads { quad_at(1) };
-        const std::vector<StyleSpan> spans { { .start = 4, .end = 0, .color = k_green } };
+        const std::vector<StyleSpan> spans { { .start = 4, .end = 0, .color = k_glyph_mesh_green } };
 
-        const auto v = glyph_vertices(quads, k_red, spans, {}, 0);
+        const auto v = glyph_vertices(quads, k_glyph_mesh_red, spans, {}, 0);
 
         ASSERT_EQ(v.size(), 6U);
         EXPECT_EQ(v[0].color, glm::vec4(glm::vec3(0.F, 1.F, 0.F), 1.F));

@@ -85,7 +85,7 @@ void main()
         return config;
     }
 
-    std::vector<Kakshya::DataVariant> input_of(const std::vector<std::vector<double>>& channels)
+    std::vector<Kakshya::DataVariant> windowed_kernel_input_of(const std::vector<std::vector<double>>& channels)
     {
         std::vector<Kakshya::DataVariant> out;
         out.reserve(channels.size());
@@ -95,7 +95,7 @@ void main()
         return out;
     }
 
-    std::vector<double> random_signal(size_t count, uint64_t seed)
+    std::vector<double> windowed_kernel_random_signal(size_t count, uint64_t seed)
     {
         std::mt19937_64 engine(seed);
         std::uniform_real_distribution<double> distribution(-1.0, 1.0);
@@ -106,7 +106,7 @@ void main()
         return out;
     }
 
-    void expect_relative(double got, double want, double tolerance)
+    void windowed_kernel_expect_relative(double got, double want, double tolerance)
     {
         EXPECT_NEAR(got, want, tolerance * (1.0 + std::abs(want)));
     }
@@ -119,10 +119,10 @@ void main()
 
     TYPED_TEST(WindowedKernelGpuTest, AKernelBodyMatchesAHostComputationPerWindow)
     {
-        const auto signal = random_signal(2000, 3);
+        const auto signal = windowed_kernel_random_signal(2000, 3);
         StandardWindowedKernelAnalyzer analyzer(make_config(k_mean_step, 1, 64, 32));
 
-        const auto analysis = analyzer.analyze_windows(input_of({ signal }));
+        const auto analysis = analyzer.analyze_windows(windowed_kernel_input_of({ signal }));
 
         constexpr size_t windows = (2000 - 64) / 32 + 1;
         ASSERT_EQ(analysis.channels.size(), 1U);
@@ -134,18 +134,18 @@ void main()
                 const double b = static_cast<float>(signal[w * 32 + k + 1]);
                 sum += std::abs(a - b);
             }
-            expect_relative(analysis.channels[0].values[w], sum / 63.0, 1.0e-4);
+            windowed_kernel_expect_relative(analysis.channels[0].values[w], sum / 63.0, 1.0e-4);
         }
     }
 
     TYPED_TEST(WindowedKernelGpuTest, SeveralOutputsAndAParameterReachTheKernel)
     {
-        const auto signal = random_signal(1000, 5);
+        const auto signal = windowed_kernel_random_signal(1000, 5);
         auto config = make_config(k_extremes, 2, 50, 50);
         config.parameters = { 2.0F };
         StandardWindowedKernelAnalyzer analyzer(config);
 
-        const auto channel = analyzer.analyze_windows(input_of({ signal })).channels[0];
+        const auto channel = analyzer.analyze_windows(windowed_kernel_input_of({ signal })).channels[0];
 
         ASSERT_EQ(channel.outputs, 2U);
         ASSERT_EQ(channel.values.size(), 40U);
@@ -169,7 +169,7 @@ void main()
             std::ofstream file(path);
             file << k_comp_file;
         }
-        const auto signal = random_signal(1024, 7);
+        const auto signal = windowed_kernel_random_signal(1024, 7);
         WindowedKernelConfig config;
         config.shader_path = path.string();
         config.window_size = 128;
@@ -177,7 +177,7 @@ void main()
         config.parameters = { 0.5F };
         StandardWindowedKernelAnalyzer analyzer(config);
 
-        const auto channel = analyzer.analyze_windows(input_of({ signal })).channels[0];
+        const auto channel = analyzer.analyze_windows(windowed_kernel_input_of({ signal })).channels[0];
         std::filesystem::remove(path);
 
         constexpr size_t windows = (1024 - 128) / 64 + 1;
@@ -188,7 +188,7 @@ void main()
                 const double v = static_cast<float>(signal[w * 64 + k]);
                 sum += v * v;
             }
-            expect_relative(channel.values[w], sum * 0.5, 1.0e-4);
+            windowed_kernel_expect_relative(channel.values[w], sum * 0.5, 1.0e-4);
         }
     }
 
@@ -198,7 +198,7 @@ void main()
         std::iota(signal.begin(), signal.end(), 0.0);
         StandardWindowedKernelAnalyzer analyzer(make_config(k_window_sum, 1, 4, 1));
 
-        const auto channel = analyzer.analyze_windows(input_of({ signal })).channels[0];
+        const auto channel = analyzer.analyze_windows(windowed_kernel_input_of({ signal })).channels[0];
 
         const size_t windows = signal.size() - 3;
         ASSERT_EQ(channel.values.size(), windows);
@@ -216,7 +216,7 @@ void main()
         std::vector<double> second(256, 3.0);
         StandardWindowedKernelAnalyzer analyzer(make_config(k_window_sum, 1, 16, 16));
 
-        const auto analysis = analyzer.analyze_windows(input_of({ first, second }));
+        const auto analysis = analyzer.analyze_windows(windowed_kernel_input_of({ first, second }));
 
         ASSERT_EQ(analysis.channels.size(), 2U);
         for (const float value : analysis.channels[0].values) {
@@ -231,7 +231,7 @@ void main()
     {
         StandardWindowedKernelAnalyzer analyzer(make_config(k_window_sum, 1, 64, 32));
 
-        const auto analysis = analyzer.analyze_windows(input_of({ random_signal(30, 9) }));
+        const auto analysis = analyzer.analyze_windows(windowed_kernel_input_of({ windowed_kernel_random_signal(30, 9) }));
 
         ASSERT_EQ(analysis.channels.size(), 1U);
         EXPECT_TRUE(analysis.channels[0].values.empty());

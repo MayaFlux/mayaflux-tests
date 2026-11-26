@@ -30,7 +30,7 @@ namespace {
     constexpr vk::Format k_color_format = vk::Format::eR8G8B8A8Unorm;
     constexpr uint32_t k_extent = 8;
 
-    constexpr std::string_view k_vertex_source = R"(#version 450
+    constexpr std::string_view k_render_flow_vertex_source = R"(#version 450
 void main()
 {
     vec2 p = vec2(float((gl_VertexIndex << 1) & 2), float(gl_VertexIndex & 2));
@@ -72,7 +72,7 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
         return Portal::Graphics::get_render_flow();
     }
 
-    Portal::Graphics::ShaderFoundry& foundry()
+    Portal::Graphics::ShaderFoundry& render_flow_foundry()
     {
         return Portal::Graphics::get_shader_foundry();
     }
@@ -112,7 +112,7 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
                 GTEST_SKIP() << "No usable Vulkan device: " << vulkan_unavailable_reason();
             }
             teardown_portal();
-            ASSERT_TRUE(foundry().initialize(s_backend));
+            ASSERT_TRUE(render_flow_foundry().initialize(s_backend));
             ASSERT_TRUE(flow().initialize());
         }
 
@@ -127,11 +127,11 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
         {
             flow().shutdown();
             loom().shutdown();
-            foundry().shutdown();
+            render_flow_foundry().shutdown();
         }
 
-        static ShaderID vertex_shader() { return foundry().load_shader(std::string(k_vertex_source), ShaderStage::VERTEX); }
-        static ShaderID fragment_shader() { return foundry().load_shader(std::string(k_fragment_source), ShaderStage::FRAGMENT); }
+        static ShaderID vertex_shader() { return render_flow_foundry().load_shader(std::string(k_render_flow_vertex_source), ShaderStage::VERTEX); }
+        static ShaderID fragment_shader() { return render_flow_foundry().load_shader(std::string(k_fragment_source), ShaderStage::FRAGMENT); }
 
         static RenderPipelineConfig basic_config()
         {
@@ -157,7 +157,7 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
     TEST_F(RenderFlowTest, InitializeNeedsAnInitializedShaderFoundry)
     {
         flow().shutdown();
-        foundry().shutdown();
+        render_flow_foundry().shutdown();
 
         EXPECT_FALSE(flow().initialize());
         EXPECT_FALSE(flow().is_initialized());
@@ -285,7 +285,7 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
         EXPECT_FALSE(share_state(pooled, pushed));
 
         RenderPipelineConfig specialized = config;
-        specialized.fragment_shader = foundry().load_shader(
+        specialized.fragment_shader = render_flow_foundry().load_shader(
             std::string(k_specialized_fragment_source), ShaderStage::FRAGMENT);
         specialized.push_constant_size = 0;
         ASSERT_NE(specialized.fragment_shader, INVALID_SHADER);
@@ -333,7 +333,7 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
     TEST_F(RenderFlowTest, VertexInputShapeDecidesSharingNotVertexCount)
     {
         RenderPipelineConfig config = basic_config();
-        config.vertex_shader = foundry().load_shader(
+        config.vertex_shader = render_flow_foundry().load_shader(
             std::string(k_position_vertex_source), ShaderStage::VERTEX);
         ASSERT_NE(config.vertex_shader, INVALID_SHADER);
 
@@ -427,7 +427,7 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
     {
         ASSERT_TRUE(loom().initialize(backend()));
         RenderPipelineConfig config = basic_config();
-        config.fragment_shader = foundry().load_shader(
+        config.fragment_shader = render_flow_foundry().load_shader(
             std::string(k_specialized_fragment_source), ShaderStage::FRAGMENT);
         config.push_constant_size = 0;
         ASSERT_NE(config.fragment_shader, INVALID_SHADER);
@@ -442,8 +442,8 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
         const auto draw_and_check = [&](auto pipeline, const std::array<uint8_t, 4>& expected) {
             const auto target = loom().create_render_target(k_extent, k_extent, ImageFormat::RGBA8);
             ASSERT_NE(target, nullptr);
-            const auto id = foundry().begin_commands(Portal::Graphics::ShaderFoundry::CommandBufferType::GRAPHICS);
-            auto cmd = foundry().get_command_buffer(id);
+            const auto id = render_flow_foundry().begin_commands(Portal::Graphics::ShaderFoundry::CommandBufferType::GRAPHICS);
+            auto cmd = render_flow_foundry().get_command_buffer(id);
 
             vk::RenderingAttachmentInfo attachment {};
             attachment.imageView = target->get_image_view();
@@ -464,7 +464,7 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
             cmd.setScissor(0, vk::Rect2D { { 0, 0 }, { k_extent, k_extent } });
             flow().draw(id, 3);
             cmd.endRendering();
-            foundry().submit_and_wait(id);
+            render_flow_foundry().submit_and_wait(id);
 
             const auto downloaded = loom().download_image(target);
             ASSERT_TRUE(downloaded.has_value());
@@ -515,7 +515,7 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
         const auto sets = flow().allocate_pipeline_descriptors(id);
 
         ASSERT_EQ(sets.size(), 1U);
-        EXPECT_TRUE(foundry().get_descriptor_set(sets[0]));
+        EXPECT_TRUE(render_flow_foundry().get_descriptor_set(sets[0]));
     }
 
     TEST_F(RenderFlowTest, EachExtraDescriptorSetAddsALayoutAndFirstIndexSkipsLayouts)
@@ -568,7 +568,7 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
     {
         const auto pipeline = flow().create_pipeline(basic_config(), { k_color_format });
         ASSERT_NE(pipeline, INVALID_RENDER_PIPELINE);
-        const auto cmd = foundry().begin_commands(Portal::Graphics::ShaderFoundry::CommandBufferType::GRAPHICS);
+        const auto cmd = render_flow_foundry().begin_commands(Portal::Graphics::ShaderFoundry::CommandBufferType::GRAPHICS);
         const std::array<float, 4> color { 1.0F, 0.0F, 0.0F, 1.0F };
 
         EXPECT_NO_THROW(flow().bind_pipeline(cmd, 9999));
@@ -583,7 +583,7 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
         EXPECT_NO_THROW(flow().draw_mesh_tasks(9999, 1, 1, 1));
         EXPECT_NO_THROW(flow().draw_mesh_tasks_indirect(9999, nullptr, 0, 1));
 
-        foundry().submit_and_wait(cmd);
+        render_flow_foundry().submit_and_wait(cmd);
     }
 
     TEST_F(RenderFlowTest, PushingDescriptorsIsIgnoredWithoutAPushSetOrWithUnknownIds)
@@ -592,20 +592,20 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
         const auto pushable = flow().create_pipeline(basic_config(), { k_color_format }, vk::Format::eUndefined, 0U);
         ASSERT_NE(plain, INVALID_RENDER_PIPELINE);
         ASSERT_NE(pushable, INVALID_RENDER_PIPELINE);
-        const auto cmd = foundry().begin_commands(Portal::Graphics::ShaderFoundry::CommandBufferType::GRAPHICS);
+        const auto cmd = render_flow_foundry().begin_commands(Portal::Graphics::ShaderFoundry::CommandBufferType::GRAPHICS);
         const std::vector<vk::WriteDescriptorSet> writes(1);
 
         EXPECT_NO_THROW(flow().push_descriptors(cmd, plain, writes));
         EXPECT_NO_THROW(flow().push_descriptors(cmd, 9999, writes));
         EXPECT_NO_THROW(flow().push_descriptors(9999, pushable, writes));
 
-        foundry().submit_and_wait(cmd);
+        render_flow_foundry().submit_and_wait(cmd);
     }
 
     TEST_F(RenderFlowTest, TheFirstUnwrittenPushBindingNamesAUsedBindingNobodyWrites)
     {
         RenderPipelineConfig config = basic_config();
-        config.vertex_shader = foundry().load_shader(std::string(k_transform_vertex_source), ShaderStage::VERTEX);
+        config.vertex_shader = render_flow_foundry().load_shader(std::string(k_transform_vertex_source), ShaderStage::VERTEX);
         const auto pushable = flow().create_pipeline(config, { k_color_format }, vk::Format::eUndefined, 0U);
         const auto plain = flow().create_pipeline(config, { k_color_format });
         ASSERT_NE(pushable, INVALID_RENDER_PIPELINE);
@@ -640,8 +640,8 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
         ASSERT_NE(pipeline, INVALID_RENDER_PIPELINE);
         const std::array<float, 4> green { 0.0F, 1.0F, 0.0F, 1.0F };
 
-        const auto id = foundry().begin_commands(Portal::Graphics::ShaderFoundry::CommandBufferType::GRAPHICS);
-        auto cmd = foundry().get_command_buffer(id);
+        const auto id = render_flow_foundry().begin_commands(Portal::Graphics::ShaderFoundry::CommandBufferType::GRAPHICS);
+        auto cmd = render_flow_foundry().get_command_buffer(id);
 
         vk::RenderingAttachmentInfo attachment {};
         attachment.imageView = target->get_image_view();
@@ -663,7 +663,7 @@ void main() { color = vec4(float(selected == 0u), float(selected == 1u), 0.0, 1.
         flow().push_constants(id, pipeline, green.data(), sizeof(green));
         flow().draw(id, 3);
         cmd.endRendering();
-        foundry().submit_and_wait(id);
+        render_flow_foundry().submit_and_wait(id);
 
         const auto downloaded = loom().download_image(target);
         ASSERT_TRUE(downloaded.has_value());

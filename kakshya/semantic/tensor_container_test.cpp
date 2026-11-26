@@ -41,7 +41,7 @@ namespace {
         return TensorContainer(std::move(*ramp(std::move(shape))));
     }
 
-    Floats floats_of(const TensorData& tensor)
+    Floats tensor_container_floats_of(const TensorData& tensor)
     {
         return tensor.to_vector<float>().value_or(Floats {});
     }
@@ -66,7 +66,7 @@ namespace {
         EXPECT_TRUE(container.has_data());
         EXPECT_EQ(container.get_total_elements(), 20U);
         EXPECT_EQ(container.get_data().spec().name, "ramp");
-        EXPECT_EQ(floats_of(container.get_data()).back(), 19.0F);
+        EXPECT_EQ(tensor_container_floats_of(container.get_data()).back(), 19.0F);
     }
 
     TEST(TensorContainerTest, ASpecAllocatesAZeroFilledTensor)
@@ -203,10 +203,10 @@ namespace {
         ASSERT_EQ(copies.size(), 1U);
         EXPECT_EQ(copies[0].spec().shape, (Shape { 2, 3 }));
         EXPECT_TRUE(copies[0].spec().is_contiguous());
-        EXPECT_EQ(floats_of(copies[0]), (Floats { 7, 8, 9, 12, 13, 14 }));
+        EXPECT_EQ(tensor_container_floats_of(copies[0]), (Floats { 7, 8, 9, 12, 13, 14 }));
 
         copies[0].storage()[0] = std::byte { 0x7F };
-        EXPECT_EQ(floats_of(container.get_data())[7], 7.0F);
+        EXPECT_EQ(tensor_container_floats_of(container.get_data())[7], 7.0F);
     }
 
     TEST(TensorContainerRegionTest, TrailingAxesNotNamedSpanFully)
@@ -217,7 +217,7 @@ namespace {
 
         ASSERT_EQ(copies.size(), 1U);
         EXPECT_EQ(copies[0].spec().shape, (Shape { 2, 5 }));
-        EXPECT_EQ(floats_of(copies[0]), (Floats { 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 }));
+        EXPECT_EQ(tensor_container_floats_of(copies[0]), (Floats { 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 }));
     }
 
     TEST(TensorContainerRegionTest, APointRegionIsOneElement)
@@ -228,7 +228,7 @@ namespace {
 
         ASSERT_EQ(copies.size(), 1U);
         EXPECT_EQ(copies[0].spec().shape, (Shape { 1, 1 }));
-        EXPECT_EQ(floats_of(copies[0]), (Floats { 19 }));
+        EXPECT_EQ(tensor_container_floats_of(copies[0]), (Floats { 19 }));
     }
 
     TEST(TensorContainerRegionTest, InvalidRegionsSelectNothing)
@@ -261,8 +261,8 @@ namespace {
         const auto copies = container.get_region_group_data(group);
 
         ASSERT_EQ(copies.size(), 2U);
-        EXPECT_EQ(floats_of(copies[0]), (Floats { 0, 1 }));
-        EXPECT_EQ(floats_of(copies[1]), (Floats { 18, 19 }));
+        EXPECT_EQ(tensor_container_floats_of(copies[0]), (Floats { 0, 1 }));
+        EXPECT_EQ(tensor_container_floats_of(copies[1]), (Floats { 18, 19 }));
     }
 
     TEST(TensorContainerRegionTest, RegionsOfAColumnMajorTensorReadLogically)
@@ -272,7 +272,7 @@ namespace {
         const auto copies = container.get_region_data(Region({ 1, 1 }, { 2, 2 }));
 
         ASSERT_EQ(copies.size(), 1U);
-        EXPECT_EQ(floats_of(copies[0]), (Floats { 4, 7, 5, 8 }));
+        EXPECT_EQ(tensor_container_floats_of(copies[0]), (Floats { 4, 7, 5, 8 }));
     }
 
     TEST(TensorContainerRegionTest, RegionsOfAReversedAxisReadLogically)
@@ -286,7 +286,7 @@ namespace {
         const auto copies = container.get_region_data(Region({ 1 }, { 3 }));
 
         ASSERT_EQ(copies.size(), 1U);
-        EXPECT_EQ(floats_of(copies[0]), (Floats { 4, 3, 2 }));
+        EXPECT_EQ(tensor_container_floats_of(copies[0]), (Floats { 4, 3, 2 }));
     }
 
     TEST(TensorContainerRegionTest, ASubByteTensorOffersOnlyItsWholeExtent)
@@ -359,8 +359,8 @@ namespace {
 
         container.set_region_data(box, patch);
 
-        EXPECT_EQ(floats_of(container.get_data()), (Floats { 0, 0, 0, 0, 0, 0, 1, 0, 0, 2, 3, 0 }));
-        EXPECT_EQ(floats_of(container.get_region_data(box).front()), (Floats { 0, 1, 2, 3 }));
+        EXPECT_EQ(tensor_container_floats_of(container.get_data()), (Floats { 0, 0, 0, 0, 0, 0, 1, 0, 0, 2, 3, 0 }));
+        EXPECT_EQ(tensor_container_floats_of(container.get_region_data(box).front()), (Floats { 0, 1, 2, 3 }));
     }
 
     TEST(TensorContainerWriteTest, SetRegionDataWritesALogicalBoxOfAColumnMajorTensor)
@@ -373,13 +373,13 @@ namespace {
 
         const auto copies = container.get_region_data(Region({ 0, 0 }, { 0, 3 }));
         ASSERT_EQ(copies.size(), 1U);
-        EXPECT_EQ(floats_of(copies[0]), (Floats { 0, 1, 6, 9 }));
+        EXPECT_EQ(tensor_container_floats_of(copies[0]), (Floats { 0, 1, 6, 9 }));
     }
 
     TEST(TensorContainerWriteTest, SetRegionDataIgnoresInputsThatDoNotFit)
     {
         auto container = ramp_container({ 3, 4 });
-        const auto before = floats_of(container.get_data());
+        const auto before = tensor_container_floats_of(container.get_data());
         const Region box({ 0, 0 }, { 1, 1 });
 
         std::vector<TensorData> two;
@@ -401,7 +401,7 @@ namespace {
         container.set_region_data(Region({ 2, 3 }, { 3, 4 }), fits);
         container.set_region_data(box, {});
 
-        EXPECT_EQ(floats_of(container.get_data()), before);
+        EXPECT_EQ(tensor_container_floats_of(container.get_data()), before);
     }
 
     // ---------------------------------------------------------------------
@@ -417,7 +417,7 @@ namespace {
 
         ASSERT_EQ(copies.size(), 1U);
         EXPECT_EQ(copies[0].spec().shape, (Shape { 2, 3 }));
-        EXPECT_EQ(floats_of(copies[0]), (Floats { 12, 13, 14, 17, 18, 19 }));
+        EXPECT_EQ(tensor_container_floats_of(copies[0]), (Floats { 12, 13, 14, 17, 18, 19 }));
     }
 
     TEST(TensorContainerSegmentTest, MalformedSegmentsAreSkipped)
@@ -436,7 +436,7 @@ namespace {
         const auto copies = container.get_segments_data(segments);
 
         ASSERT_EQ(copies.size(), 1U);
-        EXPECT_EQ(floats_of(copies[0]), (Floats { 6, 7, 11, 12 }));
+        EXPECT_EQ(tensor_container_floats_of(copies[0]), (Floats { 6, 7, 11, 12 }));
     }
 
     TEST(TensorContainerSegmentTest, ACachedSegmentReturnsItsCachedTensor)
@@ -450,7 +450,7 @@ namespace {
 
         ASSERT_EQ(copies.size(), 1U);
         EXPECT_EQ(copies[0].spec().name, "cached");
-        EXPECT_EQ(floats_of(copies[0]), (Floats { 100, 200 }));
+        EXPECT_EQ(tensor_container_floats_of(copies[0]), (Floats { 100, 200 }));
     }
 
     TEST(TensorContainerSegmentTest, ASegmentCachedUnderAnotherKeyReadsTheSource)
@@ -462,7 +462,7 @@ namespace {
         const auto copies = container.get_segments_data({ segment });
 
         ASSERT_EQ(copies.size(), 1U);
-        EXPECT_EQ(floats_of(copies[0]), (Floats { 0, 1, 5, 6 }));
+        EXPECT_EQ(tensor_container_floats_of(copies[0]), (Floats { 0, 1, 5, 6 }));
     }
 
     // ---------------------------------------------------------------------

@@ -13,7 +13,7 @@ namespace {
 
     using Intervals = std::vector<std::pair<size_t, size_t>>;
 
-    std::vector<double> one_to_ten()
+    std::vector<double> discrete_extract_one_to_ten()
     {
         return { 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0 };
     }
@@ -129,7 +129,7 @@ namespace {
     TEST_P(KinesisExtractSliceTest, CopiesOnlyTheRequestedSamples)
     {
         const auto& c = GetParam();
-        const auto data = one_to_ten();
+        const auto data = discrete_extract_one_to_ten();
         EXPECT_EQ(D::slice_intervals(data, c.intervals), c.expected);
     }
 
@@ -252,7 +252,7 @@ namespace {
     TEST_P(KinesisExtractOverlapValueTest, WindowsAdvanceByTheHop)
     {
         const auto& c = GetParam();
-        EXPECT_EQ(D::overlapping_windows(one_to_ten(), c.window, c.overlap), c.expected);
+        EXPECT_EQ(D::overlapping_windows(discrete_extract_one_to_ten(), c.window, c.overlap), c.expected);
     }
 
     // ------------------------------------------------------------------
@@ -283,7 +283,7 @@ namespace {
     TEST_P(KinesisExtractIndexedWindowsTest, ReturnsOnlyWindowsThatFit)
     {
         const auto& c = GetParam();
-        EXPECT_EQ(D::windowed_by_indices(one_to_ten(), c.starts, c.window), c.expected);
+        EXPECT_EQ(D::windowed_by_indices(discrete_extract_one_to_ten(), c.starts, c.window), c.expected);
     }
 
     // ------------------------------------------------------------------

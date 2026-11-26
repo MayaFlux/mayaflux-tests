@@ -35,13 +35,13 @@ namespace {
     constexpr uint32_t k_root_operand = 0;
     constexpr uint32_t k_root_result = 1;
 
-    struct Pass {
+    struct SharedResourcesPass {
         std::unique_ptr<WordPairExecutionContext> context;
         Yantra::GpuComputeConfig config;
         WordPairOp op;
     };
 
-    Pass make_pass(WordPairOp op, const std::shared_ptr<GpuDispatchRecorder>& recording = nullptr)
+    SharedResourcesPass make_pass(WordPairOp op, const std::shared_ptr<GpuDispatchRecorder>& recording = nullptr)
     {
         const auto spec = word_pair_map_spec(op);
         auto config = Yantra::config_from_spec(spec);
@@ -63,7 +63,7 @@ namespace {
         return out;
     }
 
-    bool same(double got, double want)
+    bool shared_resources_same(double got, double want)
     {
         return (std::isnan(got) && std::isnan(want)) || std::bit_cast<uint64_t>(got) == std::bit_cast<uint64_t>(want);
     }
@@ -73,7 +73,7 @@ namespace {
         ASSERT_EQ(got.size(), a.size());
         size_t wrong = 0;
         for (size_t i = 0; i < a.size(); ++i) {
-            if (!same(got[i], std::sqrt(a[i] * b[i]))) {
+            if (!shared_resources_same(got[i], std::sqrt(a[i] * b[i]))) {
                 ++wrong;
             }
         }
@@ -123,7 +123,7 @@ namespace {
 
         ASSERT_EQ(got.size(), a.size());
         for (size_t i = 0; i < a.size(); ++i) {
-            ASSERT_TRUE(same(got[i], a[i] * b[i])) << "element " << i;
+            ASSERT_TRUE(shared_resources_same(got[i], a[i] * b[i])) << "element " << i;
         }
     }
 
@@ -323,11 +323,11 @@ namespace {
         ASSERT_EQ(got_peak.size(), want_peak.size());
         ASSERT_EQ(got_rows.size(), want_rows.size());
         for (size_t i = 0; i < want_energy.size(); ++i) {
-            EXPECT_TRUE(same(got_energy[i], want_energy[i])) << "energy " << i;
-            EXPECT_TRUE(same(got_peak[i], want_peak[i])) << "peak " << i;
+            EXPECT_TRUE(shared_resources_same(got_energy[i], want_energy[i])) << "energy " << i;
+            EXPECT_TRUE(shared_resources_same(got_peak[i], want_peak[i])) << "peak " << i;
         }
         for (size_t i = 0; i < want_rows.size(); ++i) {
-            ASSERT_TRUE(same(got_rows[i], want_rows[i])) << "row element " << i;
+            ASSERT_TRUE(shared_resources_same(got_rows[i], want_rows[i])) << "row element " << i;
         }
     }
 
@@ -350,7 +350,7 @@ namespace {
         ASSERT_EQ(got.size(), a.size());
         size_t wrong = 0;
         for (size_t i = 0; i < a.size(); ++i) {
-            if (!same(got[i], (a[i] * b[i]) / divisors[i])) {
+            if (!shared_resources_same(got[i], (a[i] * b[i]) / divisors[i])) {
                 ++wrong;
             }
         }

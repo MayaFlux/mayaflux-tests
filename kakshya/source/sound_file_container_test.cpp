@@ -14,44 +14,44 @@ namespace {
     using Kakshya::OrganizationStrategy;
     using Kakshya::ProcessingState;
 
-    constexpr uint32_t k_rate = 44100;
-    constexpr uint64_t k_frames = 8;
+    constexpr uint32_t k_sound_file_container_rate = 44100;
+    constexpr uint64_t k_sound_file_container_frames = 8;
 
-    double sample(uint64_t frame, uint32_t channel)
+    double sound_file_container_sample(uint64_t frame, uint32_t channel)
     {
         return 1.0 + 10.0 * static_cast<double>(frame) + static_cast<double>(channel);
     }
 
-    std::vector<std::vector<double>> channel_data(uint32_t channels, uint64_t frames = k_frames)
+    std::vector<std::vector<double>> channel_data(uint32_t channels, uint64_t frames = k_sound_file_container_frames)
     {
         std::vector<std::vector<double>> data(channels);
         for (uint32_t c = 0; c < channels; ++c) {
             for (uint64_t f = 0; f < frames; ++f) {
-                data[c].push_back(sample(f, c));
+                data[c].push_back(sound_file_container_sample(f, c));
             }
         }
         return data;
     }
 
-    std::vector<double> expected_frame(uint32_t channels, uint64_t frame)
+    std::vector<double> sound_file_container_expected_frame(uint32_t channels, uint64_t frame)
     {
         std::vector<double> values;
         for (uint32_t c = 0; c < channels; ++c) {
-            values.push_back(sample(frame, c));
+            values.push_back(sound_file_container_sample(frame, c));
         }
         return values;
     }
 
-    struct StreamShape {
+    struct SoundFileContainerStreamShape {
         OrganizationStrategy organization;
         uint32_t channels;
     };
 
-    class MakeSoundFileContainerTest : public ::testing::TestWithParam<StreamShape> {
+    class MakeSoundFileContainerTest : public ::testing::TestWithParam<SoundFileContainerStreamShape> {
     protected:
         void SetUp() override
         {
-            container = make_sound_file_container(channel_data(channels()), channels(), k_rate, organization());
+            container = make_sound_file_container(channel_data(channels()), channels(), k_sound_file_container_rate, organization());
         }
 
         [[nodiscard]] OrganizationStrategy organization() const { return GetParam().organization; }
@@ -62,13 +62,13 @@ namespace {
 
     INSTANTIATE_TEST_SUITE_P(Shapes, MakeSoundFileContainerTest,
         ::testing::Values(
-            StreamShape { OrganizationStrategy::INTERLEAVED, 1 },
-            StreamShape { OrganizationStrategy::INTERLEAVED, 2 },
-            StreamShape { OrganizationStrategy::INTERLEAVED, 3 },
-            StreamShape { OrganizationStrategy::PLANAR, 1 },
-            StreamShape { OrganizationStrategy::PLANAR, 2 },
-            StreamShape { OrganizationStrategy::PLANAR, 3 }),
-        [](const ::testing::TestParamInfo<StreamShape>& info) {
+            SoundFileContainerStreamShape { OrganizationStrategy::INTERLEAVED, 1 },
+            SoundFileContainerStreamShape { OrganizationStrategy::INTERLEAVED, 2 },
+            SoundFileContainerStreamShape { OrganizationStrategy::INTERLEAVED, 3 },
+            SoundFileContainerStreamShape { OrganizationStrategy::PLANAR, 1 },
+            SoundFileContainerStreamShape { OrganizationStrategy::PLANAR, 2 },
+            SoundFileContainerStreamShape { OrganizationStrategy::PLANAR, 3 }),
+        [](const ::testing::TestParamInfo<SoundFileContainerStreamShape>& info) {
             return std::string(info.param.organization == OrganizationStrategy::INTERLEAVED ? "Interleaved" : "Planar")
                 + std::to_string(info.param.channels) + "ch";
         });
@@ -76,19 +76,19 @@ namespace {
     TEST_P(MakeSoundFileContainerTest, TheContainerReportsWhatItWasBuiltFrom)
     {
         ASSERT_NE(container, nullptr);
-        EXPECT_EQ(container->get_num_frames(), k_frames);
+        EXPECT_EQ(container->get_num_frames(), k_sound_file_container_frames);
         EXPECT_EQ(container->get_num_channels(), channels());
-        EXPECT_EQ(container->get_sample_rate(), k_rate);
-        EXPECT_EQ(container->get_total_elements(), k_frames * channels());
+        EXPECT_EQ(container->get_sample_rate(), k_sound_file_container_rate);
+        EXPECT_EQ(container->get_total_elements(), k_sound_file_container_frames * channels());
         EXPECT_EQ(container->get_structure().organization, organization());
         EXPECT_TRUE(container->has_data());
     }
 
     TEST_P(MakeSoundFileContainerTest, EveryFrameReadsBackPerChannel)
     {
-        for (uint64_t f = 0; f < k_frames; ++f) {
+        for (uint64_t f = 0; f < k_sound_file_container_frames; ++f) {
             const auto values = container->get_frame(f).as<double>();
-            EXPECT_EQ(std::vector<double>(values.begin(), values.end()), expected_frame(channels(), f)) << f;
+            EXPECT_EQ(std::vector<double>(values.begin(), values.end()), sound_file_container_expected_frame(channels(), f)) << f;
         }
     }
 
@@ -109,8 +109,8 @@ namespace {
         if (organization() == OrganizationStrategy::INTERLEAVED) {
             ASSERT_EQ(processed.size(), 1U);
             std::vector<double> flat;
-            for (uint64_t f = 0; f < k_frames; ++f) {
-                const auto values = expected_frame(channels(), f);
+            for (uint64_t f = 0; f < k_sound_file_container_frames; ++f) {
+                const auto values = sound_file_container_expected_frame(channels(), f);
                 flat.insert(flat.end(), values.begin(), values.end());
             }
             EXPECT_EQ(std::get<std::vector<double>>(processed[0]), flat);

@@ -18,7 +18,7 @@ namespace {
         return { glm::vec3(0.0F, 0.0F, z), glm::vec3(1.0F, 0.0F, z), glm::vec3(1.0F, 1.0F, z), glm::vec3(0.0F, 1.0F, z) };
     }
 
-    std::vector<glm::vec3> dart()
+    std::vector<glm::vec3> polyhedral_polygon_dart()
     {
         return { glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.5F, 0.5F, 0.0F), glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(0.5F, 1.0F, 0.0F) };
     }
@@ -149,7 +149,7 @@ TEST(PolyhedralPolygonTest, ACollinearVertexOnAConvexOutlineKeepsItConvex)
 TEST(PolyhedralPolygonTest, ConcaveOutlinesAreNotConvex)
 {
     const auto shape = Polyhedral::l_shape();
-    const auto arrow = dart();
+    const auto arrow = polyhedral_polygon_dart();
 
     EXPECT_FALSE(Kinesis::polygon_is_convex(shape, Polyhedral::ring_of(6)));
     EXPECT_FALSE(Kinesis::polygon_is_convex(arrow, Polyhedral::ring_of(4)));

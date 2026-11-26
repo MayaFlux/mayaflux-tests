@@ -13,7 +13,7 @@ namespace {
     using IO::SafetensorsReader;
     using Kakshya::TensorDType;
 
-    const fs::path k_weights = "data/tensors/silero/silero_vad_16k.safetensors";
+    const fs::path k_silero_weights = "data/tensors/silero/silero_vad_16k.safetensors";
 
     struct Expected {
         const char* name;
@@ -46,8 +46,8 @@ namespace {
     protected:
         void SetUp() override
         {
-            if (!fs::exists(k_weights)) {
-                GTEST_SKIP() << k_weights.string() << " is not present";
+            if (!fs::exists(k_silero_weights)) {
+                GTEST_SKIP() << k_silero_weights.string() << " is not present";
             }
         }
     };
@@ -55,7 +55,7 @@ namespace {
     TEST_F(SileroWeightsTest, TheSafetensorsReaderListsEveryTensorWithItsShapeAndType)
     {
         SafetensorsReader reader;
-        ASSERT_TRUE(reader.open(k_weights.string())) << reader.get_last_error();
+        ASSERT_TRUE(reader.open(k_silero_weights.string())) << reader.get_last_error();
 
         const auto specs = reader.describe();
 
@@ -72,7 +72,7 @@ namespace {
     TEST_F(SileroWeightsTest, EveryTensorReadsWithFiniteValuesAndTheParameterCountMatches)
     {
         SafetensorsReader reader;
-        ASSERT_TRUE(reader.open(k_weights.string())) << reader.get_last_error();
+        ASSERT_TRUE(reader.open(k_silero_weights.string())) << reader.get_last_error();
 
         const auto set = reader.read_tensors();
 
@@ -95,7 +95,7 @@ namespace {
     TEST_F(SileroWeightsTest, ASingleTensorCanBeReadByName)
     {
         SafetensorsReader reader;
-        ASSERT_TRUE(reader.open(k_weights.string())) << reader.get_last_error();
+        ASSERT_TRUE(reader.open(k_silero_weights.string())) << reader.get_last_error();
 
         const auto bias = reader.read("final_conv.bias");
 

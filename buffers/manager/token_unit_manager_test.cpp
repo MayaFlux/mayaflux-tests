@@ -13,15 +13,15 @@ using Buffers::TokenUnitManager;
 
 namespace {
 
-    constexpr uint32_t UNIT_SIZE = 512;
-    constexpr uint32_t SMALL_SIZE = 128;
+    constexpr uint32_t TOKEN_UNIT_MANAGER_UNIT_SIZE = 512;
+    constexpr uint32_t TOKEN_UNIT_MANAGER_SMALL_SIZE = 128;
     constexpr uint32_t MEDIUM_SIZE = 256;
 
     class TokenUnitManagerFixture : public ::testing::Test {
     protected:
         void SetUp() override
         {
-            units = std::make_unique<TokenUnitManager>(Buffers::AUDIO_BACKEND, Buffers::GRAPHICS_BACKEND, UNIT_SIZE);
+            units = std::make_unique<TokenUnitManager>(Buffers::AUDIO_BACKEND, Buffers::GRAPHICS_BACKEND, TOKEN_UNIT_MANAGER_UNIT_SIZE);
         }
 
         std::unique_ptr<TokenUnitManager> units;
@@ -61,7 +61,7 @@ TEST_F(TokenUnitManagerTest, NoUnitsExistUntilRequested)
     EXPECT_TRUE(units->get_active_audio_tokens().empty());
     EXPECT_TRUE(units->get_active_graphics_tokens().empty());
     EXPECT_EQ(units->get_audio_channel_count(Buffers::AUDIO_BACKEND), 0U);
-    EXPECT_EQ(units->get_audio_buffer_size(Buffers::AUDIO_BACKEND), UNIT_SIZE);
+    EXPECT_EQ(units->get_audio_buffer_size(Buffers::AUDIO_BACKEND), TOKEN_UNIT_MANAGER_UNIT_SIZE);
 }
 
 TEST_F(TokenUnitManagerTest, GetOrCreateAudioUnitStartsEmptyAndIsIdempotent)
@@ -70,7 +70,7 @@ TEST_F(TokenUnitManagerTest, GetOrCreateAudioUnitStartsEmptyAndIsIdempotent)
 
     EXPECT_EQ(unit.channel_count, 0U);
     EXPECT_TRUE(unit.root_buffers.empty());
-    EXPECT_EQ(unit.buffer_size, UNIT_SIZE);
+    EXPECT_EQ(unit.buffer_size, TOKEN_UNIT_MANAGER_UNIT_SIZE);
     EXPECT_TRUE(units->has_audio_unit(Buffers::AUDIO_BACKEND));
     EXPECT_EQ(&units->get_or_create_audio_unit(Buffers::AUDIO_BACKEND), &unit);
     EXPECT_TRUE(units->get_active_audio_tokens().empty());
@@ -96,7 +96,7 @@ TEST_F(TokenUnitManagerTest, EnsureAudioChannelsCreatesRootsAtTheUnitSize)
     for (uint32_t channel = 0; channel < 3; ++channel) {
         ASSERT_NE(unit.root_buffers[channel], nullptr);
         EXPECT_EQ(unit.root_buffers[channel]->get_channel_id(), channel);
-        EXPECT_EQ(unit.root_buffers[channel]->get_num_samples(), UNIT_SIZE);
+        EXPECT_EQ(unit.root_buffers[channel]->get_num_samples(), TOKEN_UNIT_MANAGER_UNIT_SIZE);
         EXPECT_NE(unit.processing_chains[channel], nullptr);
     }
 }
@@ -135,12 +135,12 @@ TEST_F(TokenUnitManagerTest, ResizeAudioBuffersUpdatesTheUnitAndEveryRoot)
 {
     units->ensure_audio_channels(Buffers::AUDIO_BACKEND, 2);
 
-    units->resize_audio_buffers(Buffers::AUDIO_BACKEND, SMALL_SIZE);
+    units->resize_audio_buffers(Buffers::AUDIO_BACKEND, TOKEN_UNIT_MANAGER_SMALL_SIZE);
 
-    EXPECT_EQ(units->get_audio_buffer_size(Buffers::AUDIO_BACKEND), SMALL_SIZE);
+    EXPECT_EQ(units->get_audio_buffer_size(Buffers::AUDIO_BACKEND), TOKEN_UNIT_MANAGER_SMALL_SIZE);
     const auto& unit = units->get_audio_unit(Buffers::AUDIO_BACKEND);
     for (uint32_t channel = 0; channel < 2; ++channel) {
-        EXPECT_EQ(unit.root_buffers[channel]->get_num_samples(), SMALL_SIZE);
+        EXPECT_EQ(unit.root_buffers[channel]->get_num_samples(), TOKEN_UNIT_MANAGER_SMALL_SIZE);
     }
 }
 
@@ -176,11 +176,11 @@ TEST_F(TokenUnitManagerTest, AudioUnitsAreIndependentPerToken)
     units->ensure_audio_channels(Buffers::AUDIO_BACKEND, 2);
     units->ensure_audio_channels(Buffers::AUDIO_PARALLEL, 1);
 
-    units->resize_audio_buffers(Buffers::AUDIO_BACKEND, SMALL_SIZE);
+    units->resize_audio_buffers(Buffers::AUDIO_BACKEND, TOKEN_UNIT_MANAGER_SMALL_SIZE);
 
     EXPECT_EQ(units->get_audio_channel_count(Buffers::AUDIO_BACKEND), 2U);
     EXPECT_EQ(units->get_audio_channel_count(Buffers::AUDIO_PARALLEL), 1U);
-    EXPECT_EQ(units->get_audio_buffer_size(Buffers::AUDIO_PARALLEL), UNIT_SIZE);
+    EXPECT_EQ(units->get_audio_buffer_size(Buffers::AUDIO_PARALLEL), TOKEN_UNIT_MANAGER_UNIT_SIZE);
 }
 
 TEST_F(TokenUnitManagerTest, EnsureWithZeroChannelsCreatesNoChannels)
@@ -205,13 +205,13 @@ TEST_F(TokenUnitManagerTest, EnsureAndGetOnAFreshTokenCreatesChannelZero)
 TEST_F(TokenUnitManagerTest, ChannelsGrownAfterAResizeTakeTheResizedSize)
 {
     units->ensure_audio_channels(Buffers::AUDIO_BACKEND, 2);
-    units->resize_audio_buffers(Buffers::AUDIO_BACKEND, SMALL_SIZE);
+    units->resize_audio_buffers(Buffers::AUDIO_BACKEND, TOKEN_UNIT_MANAGER_SMALL_SIZE);
 
     units->ensure_audio_channels(Buffers::AUDIO_BACKEND, 3);
 
     const auto& unit = units->get_audio_unit(Buffers::AUDIO_BACKEND);
-    EXPECT_EQ(unit.buffer_size, SMALL_SIZE);
-    EXPECT_EQ(unit.root_buffers[2]->get_num_samples(), SMALL_SIZE);
+    EXPECT_EQ(unit.buffer_size, TOKEN_UNIT_MANAGER_SMALL_SIZE);
+    EXPECT_EQ(unit.root_buffers[2]->get_num_samples(), TOKEN_UNIT_MANAGER_SMALL_SIZE);
 }
 
 TEST_F(TokenUnitManagerTest, GraphicsUnitIsAbsentUntilCreatedAndQueriesDoNotCreateIt)

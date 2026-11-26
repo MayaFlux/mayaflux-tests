@@ -45,16 +45,16 @@ namespace {
         return r;
     }
 
-    void expect_near(glm::vec2 a, glm::vec2 b)
+    void form_factory_expect_near(glm::vec2 a, glm::vec2 b)
     {
         EXPECT_NEAR(a.x, b.x, k_eps);
         EXPECT_NEAR(a.y, b.y, k_eps);
     }
 
-    void expect_near(const AABB2D& a, const AABB2D& b)
+    void form_factory_expect_near(const AABB2D& a, const AABB2D& b)
     {
-        expect_near(a.min, b.min);
-        expect_near(a.max, b.max);
+        form_factory_expect_near(a.min, b.min);
+        form_factory_expect_near(a.max, b.max);
     }
 
     const AABB2D k_bounds { .min = { -0.5F, -0.2F }, .max = { 0.5F, 0.2F } };
@@ -111,7 +111,7 @@ TEST(FormaGeometryAtTest, ForwardsTheAnchorBoundsToTheFactory)
     },
         2.F);
 
-    expect_near(got, AABB2D { .min = { -1.F, -0.4F }, .max = { 1.F, 0.4F } });
+    form_factory_expect_near(got, AABB2D { .min = { -1.F, -0.4F }, .max = { 1.F, 0.4F } });
 }
 
 TEST(FormaGeometryAtTest, AnchorWithoutBoundsGivesAZeroRegion)
@@ -120,7 +120,7 @@ TEST(FormaGeometryAtTest, AnchorWithoutBoundsGivesAZeroRegion)
 
     const auto got = Geo::at(anchor, [](AABB2D b) { return b; });
 
-    expect_near(got, AABB2D { .min = { 0.F, 0.F }, .max = { 0.F, 0.F } });
+    form_factory_expect_near(got, AABB2D { .min = { 0.F, 0.F }, .max = { 0.F, 0.F } });
 }
 
 // =============================================================================
@@ -190,7 +190,7 @@ TEST_P(FormaFaderValueTest, HorizontalHandleTravelsTrackMinusOneHandle)
 
     ASSERT_TRUE(r.element.bounds_hint.has_value());
     const float expected_x = k_bounds.min.x + v * (k_bounds.width() - handle_w);
-    expect_near(*r.element.bounds_hint,
+    form_factory_expect_near(*r.element.bounds_hint,
         AABB2D { .min = { expected_x, k_bounds.min.y }, .max = { expected_x + handle_w, k_bounds.max.y } });
 }
 
@@ -241,7 +241,7 @@ TEST_P(FormaFaderValueTest, VerticalHandleTravelsTrackMinusOneHandle)
 
     ASSERT_TRUE(r.element.bounds_hint.has_value());
     const float expected_y = k_bounds.min.y + v * (k_bounds.height() - handle_h);
-    expect_near(*r.element.bounds_hint,
+    form_factory_expect_near(*r.element.bounds_hint,
         AABB2D { .min = { k_bounds.min.x, expected_y }, .max = { k_bounds.max.x, expected_y + handle_h } });
 }
 
@@ -268,12 +268,12 @@ TEST(FormaFaderTest, LiveOffsetShiftsGeometryAndHitBounds)
     const Rendered a = render(still, 0.5F);
     const Rendered b = render(moved, 0.5F);
 
-    expect_near(*b.element.bounds_hint, a.element.bounds_hint->translated(shift));
+    form_factory_expect_near(*b.element.bounds_hint, a.element.bounds_hint->translated(shift));
     const auto va = decode<MeshVertex>(a.bytes);
     const auto vb = decode<MeshVertex>(b.bytes);
     ASSERT_EQ(va.size(), vb.size());
     for (size_t i = 0; i < va.size(); ++i)
-        expect_near(glm::vec2(vb[i].position), glm::vec2(va[i].position) + shift);
+        form_factory_expect_near(glm::vec2(vb[i].position), glm::vec2(va[i].position) + shift);
 }
 
 TEST(FormaFaderTest, ValuesOutsideUnitRangeAreNotClampedByTheGeometry)
@@ -318,9 +318,9 @@ TEST_P(FormaRadialValueTest, IndicatorRunsFromCentreToTheSweptAngle)
     const auto verts = decode<LineVertex>(render(form, v).bytes);
 
     ASSERT_EQ(verts.size(), 2U);
-    expect_near(glm::vec2(verts[0].position), centre);
+    form_factory_expect_near(glm::vec2(verts[0].position), centre);
     const float angle = start + v * (end - start);
-    expect_near(glm::vec2(verts[1].position), centre + radius * glm::vec2(std::cos(angle), std::sin(angle)));
+    form_factory_expect_near(glm::vec2(verts[1].position), centre + radius * glm::vec2(std::cos(angle), std::sin(angle)));
 }
 
 TEST_P(FormaRadialValueTest, ProjectionInvertsTheIndicatorAngle)
@@ -343,7 +343,7 @@ TEST(FormaRadialTest, HitRegionIsTheCircleAroundTheRegionCentre)
 
     ASSERT_TRUE(r.element.contains);
     ASSERT_TRUE(r.element.bounds_hint.has_value());
-    expect_near(*r.element.bounds_hint, AABB2D::from_ndc(k_bounds.center(), glm::vec2(radius)));
+    form_factory_expect_near(*r.element.bounds_hint, AABB2D::from_ndc(k_bounds.center(), glm::vec2(radius)));
     EXPECT_TRUE(r.element.contains(k_bounds.center()));
     EXPECT_TRUE(r.element.contains(k_bounds.center() + glm::vec2(0.9F * radius, 0.F)));
     EXPECT_FALSE(r.element.contains(k_bounds.center() + glm::vec2(1.1F * radius, 0.F)));
@@ -391,7 +391,7 @@ TEST(FormaPointTest, HitRegionIsACircleOfTheHitRadius)
 
     const Rendered r = render(form, pos);
 
-    expect_near(*r.element.bounds_hint, AABB2D::from_ndc(pos, glm::vec2(0.08F)));
+    form_factory_expect_near(*r.element.bounds_hint, AABB2D::from_ndc(pos, glm::vec2(0.08F)));
     EXPECT_TRUE(r.element.contains(pos));
     EXPECT_TRUE(r.element.contains(pos + glm::vec2(0.07F, 0.F)));
     EXPECT_FALSE(r.element.contains(pos + glm::vec2(0.09F, 0.F)));
@@ -406,7 +406,7 @@ TEST(FormaPositionPickerTest, UnitSquareValueMapsOntoTheBounds)
 
     const auto verts = decode<PointVertex>(r.bytes);
     ASSERT_EQ(verts.size(), 1U);
-    expect_near(glm::vec2(verts[0].position),
+    form_factory_expect_near(glm::vec2(verts[0].position),
         { k_bounds.min.x + 0.25F * k_bounds.width(), k_bounds.min.y + 0.75F * k_bounds.height() });
     EXPECT_FLOAT_EQ(verts[0].size, 6.F);
     EXPECT_EQ(r.bytes.size(), form.capacity);
@@ -420,13 +420,13 @@ TEST(FormaPositionPickerTest, WholeRegionIsTheHitAreaAndProjectionInvertsPlaceme
 
     const Rendered r = render(form, v);
 
-    expect_near(*r.element.bounds_hint, k_bounds);
+    form_factory_expect_near(*r.element.bounds_hint, k_bounds);
     ASSERT_TRUE(r.element.contains);
     EXPECT_TRUE(r.element.contains(k_bounds.center()));
     EXPECT_TRUE(r.element.contains(k_bounds.min + glm::vec2(0.01F)));
     EXPECT_FALSE(r.element.contains(k_bounds.max + glm::vec2(0.01F)));
     const auto verts = decode<PointVertex>(r.bytes);
-    expect_near(project(glm::vec2(verts[0].position)), v);
+    form_factory_expect_near(project(glm::vec2(verts[0].position)), v);
 }
 
 TEST(FormaPositionPickerTest, LiveOffsetShiftsPlacementAndHitArea)
@@ -436,8 +436,8 @@ TEST(FormaPositionPickerTest, LiveOffsetShiftsPlacementAndHitArea)
 
     const Rendered r = render(form, glm::vec2(0.5F));
 
-    expect_near(*r.element.bounds_hint, k_bounds.translated(shift));
-    expect_near(glm::vec2(decode<PointVertex>(r.bytes)[0].position), k_bounds.center() + shift);
+    form_factory_expect_near(*r.element.bounds_hint, k_bounds.translated(shift));
+    form_factory_expect_near(glm::vec2(decode<PointVertex>(r.bytes)[0].position), k_bounds.center() + shift);
     EXPECT_TRUE(r.element.contains(k_bounds.center() + shift));
     EXPECT_FALSE(r.element.contains(k_bounds.max + shift + glm::vec2(0.05F)));
 }
@@ -469,7 +469,7 @@ TEST(FormaCrosshairTest, BoundsFollowArmLengthWhileHitsFollowHitRadius)
 
     const Rendered r = render(form, pos);
 
-    expect_near(*r.element.bounds_hint, AABB2D::from_ndc(pos, glm::vec2(0.1F)));
+    form_factory_expect_near(*r.element.bounds_hint, AABB2D::from_ndc(pos, glm::vec2(0.1F)));
     EXPECT_TRUE(r.element.contains({ 0.02F, 0.F }));
     EXPECT_FALSE(r.element.contains({ 0.05F, 0.F }));
 }
@@ -508,7 +508,7 @@ TEST_P(FormaStrokeSliderValueTest, FillRunsFromThePathStartToTheHandle)
 
     ASSERT_EQ(verts.size(), c.vertex_count);
     if (c.value > 0.F)
-        expect_near(glm::vec2(verts.back().position), c.last);
+        form_factory_expect_near(glm::vec2(verts.back().position), c.last);
 }
 
 TEST_P(FormaStrokeSliderValueTest, GeometryFitsDeclaredCapacity)
@@ -537,7 +537,7 @@ TEST(FormaStrokeSliderTest, HitRegionIsThePathWithItsHalfThickness)
 
     const Rendered r = render(form, 0.5F);
 
-    expect_near(*r.element.bounds_hint,
+    form_factory_expect_near(*r.element.bounds_hint,
         AABB2D { .min = { -0.05F, -0.05F }, .max = { 1.05F, 1.05F } });
     ASSERT_TRUE(r.element.contains);
     EXPECT_TRUE(r.element.contains({ 0.5F, 0.04F }));
@@ -583,8 +583,8 @@ TEST(FormaStrokeSliderTest, LiveOffsetTranslatesEveryVertexAndTheBounds)
     const auto vb = decode<LineVertex>(b.bytes);
     ASSERT_EQ(va.size(), vb.size());
     for (size_t i = 0; i < va.size(); ++i)
-        expect_near(glm::vec2(vb[i].position), glm::vec2(va[i].position) + shift);
-    expect_near(*b.element.bounds_hint, a.element.bounds_hint->translated(shift));
+        form_factory_expect_near(glm::vec2(vb[i].position), glm::vec2(va[i].position) + shift);
+    form_factory_expect_near(*b.element.bounds_hint, a.element.bounds_hint->translated(shift));
 }
 
 // =============================================================================
@@ -606,9 +606,9 @@ TEST(FormaToggleTest, ColourFollowsTheBoolAndTheQuadFillsTheRegion)
         EXPECT_EQ(v.color, glm::vec4(glm::vec3(0.1F), 1.F));
     for (const auto& v : von)
         EXPECT_EQ(v.color, glm::vec4(glm::vec3(0.8F, 0.2F, 0.2F), 1.F));
-    expect_near(glm::vec2(voff[0].position), k_bounds.min);
-    expect_near(glm::vec2(voff[3].position), k_bounds.max);
-    expect_near(*on.element.bounds_hint, k_bounds);
+    form_factory_expect_near(glm::vec2(voff[0].position), k_bounds.min);
+    form_factory_expect_near(glm::vec2(voff[3].position), k_bounds.max);
+    form_factory_expect_near(*on.element.bounds_hint, k_bounds);
     EXPECT_EQ(on.bytes.size(), form.capacity);
 }
 
@@ -619,8 +619,8 @@ TEST(FormaToggleTest, LiveOffsetShiftsTheQuad)
 
     const Rendered r = render(form, true);
 
-    expect_near(*r.element.bounds_hint, k_bounds.translated(shift));
-    expect_near(glm::vec2(decode<MeshVertex>(r.bytes)[0].position), k_bounds.min + shift);
+    form_factory_expect_near(*r.element.bounds_hint, k_bounds.translated(shift));
+    form_factory_expect_near(glm::vec2(decode<MeshVertex>(r.bytes)[0].position), k_bounds.min + shift);
 }
 
 class FormaLevelMeterValueTest : public ::testing::TestWithParam<float> { };
@@ -644,7 +644,7 @@ TEST_P(FormaLevelMeterValueTest, HorizontalSplitIsTheClampedFraction)
     EXPECT_NEAR(verts[7].position.x, k_bounds.max.x, k_eps);
     EXPECT_EQ(verts[0].color, glm::vec4(glm::vec3(0.2F, 0.7F, 0.3F), 1.F));
     EXPECT_EQ(verts[4].color, glm::vec4(glm::vec3(0.15F), 1.F));
-    expect_near(*r.element.bounds_hint, k_bounds);
+    form_factory_expect_near(*r.element.bounds_hint, k_bounds);
     EXPECT_EQ(r.bytes.size(), form.capacity);
 }
 
@@ -707,7 +707,7 @@ TEST(FormaDrawableCanvasTest, TooFewSamplesClearOutputButKeepTheHitArea)
         form.geometry(samples, r.bytes, r.element);
 
         EXPECT_TRUE(r.bytes.empty());
-        expect_near(*r.element.bounds_hint, k_bounds);
+        form_factory_expect_near(*r.element.bounds_hint, k_bounds);
         ASSERT_TRUE(r.element.contains);
         EXPECT_TRUE(r.element.contains(k_bounds.center()));
         EXPECT_FALSE(r.element.contains(k_bounds.max + glm::vec2(0.1F)));
@@ -753,7 +753,7 @@ TEST(FormaScrollIndicatorTest, BarLengthIsTheExtentFractionOfTheTrack)
     ASSERT_EQ(verts.size(), 4U);
     EXPECT_NEAR(verts[3].position.y - verts[0].position.y, 0.5F, k_eps);
     EXPECT_EQ(r.bytes.size(), form.capacity);
-    expect_near(*r.element.bounds_hint, track);
+    form_factory_expect_near(*r.element.bounds_hint, track);
 }
 
 TEST(FormaScrollIndicatorTest, PositionZeroPinsTheBarToTheTopAndOneToTheBottom)
@@ -809,10 +809,10 @@ TEST(FormaHandlePathTest, DrawsAConnectedStrokeAndABoxPerPoint)
 
     EXPECT_EQ(form.topology, PrimitiveTopology::LINE_LIST);
     ASSERT_EQ(verts.size(), 4U + 3U * 8U);
-    expect_near(xy(verts[0]), k_bounds.point_at({ 0.F, 0.F }));
-    expect_near(xy(verts[1]), k_bounds.point_at({ 0.5F, 1.F }));
-    expect_near(xy(verts[2]), k_bounds.point_at({ 0.5F, 1.F }));
-    expect_near(xy(verts[3]), k_bounds.point_at({ 1.F, 0.F }));
+    form_factory_expect_near(xy(verts[0]), k_bounds.point_at({ 0.F, 0.F }));
+    form_factory_expect_near(xy(verts[1]), k_bounds.point_at({ 0.5F, 1.F }));
+    form_factory_expect_near(xy(verts[2]), k_bounds.point_at({ 0.5F, 1.F }));
+    form_factory_expect_near(xy(verts[3]), k_bounds.point_at({ 1.F, 0.F }));
 }
 
 TEST(FormaHandlePathTest, TheBufferIsSizedForTheHandleCountAndTheDrawingFitsIt)
@@ -833,7 +833,7 @@ TEST(FormaHandlePathTest, TheWholeAreaIsTheHitRegionAtAnyState)
     const auto r = render(form, Points { { 0.F, 0.F }, { 0.2F, 0.2F } });
 
     ASSERT_TRUE(r.element.bounds_hint.has_value());
-    expect_near(*r.element.bounds_hint, k_bounds);
+    form_factory_expect_near(*r.element.bounds_hint, k_bounds);
     EXPECT_FALSE(static_cast<bool>(r.element.contains));
 }
 
@@ -846,9 +846,9 @@ TEST(FormaHandlePathTest, LiveOffsetShiftsTheStrokeAndTheHitRegion)
     const auto r = render(form, Points { { 0.F, 0.F }, { 1.F, 1.F } });
     const auto verts = decode<LineVertex>(r.bytes);
 
-    expect_near(xy(verts[0]), k_bounds.min + shift);
+    form_factory_expect_near(xy(verts[0]), k_bounds.min + shift);
     ASSERT_TRUE(r.element.bounds_hint.has_value());
-    expect_near(*r.element.bounds_hint, k_bounds.translated(shift));
+    form_factory_expect_near(*r.element.bounds_hint, k_bounds.translated(shift));
 }
 
 TEST(FormaHandlePathTest, AnEmptyHandleCountDeclaresNoCapacity)
@@ -886,8 +886,8 @@ TEST_F(FormaHandlePathWireTest, ADragMovesTheGrabbedPointAndLeavesTheOthers)
     window->move_to_ndc({ 0.F, 0.F });
 
     ASSERT_EQ(state->value.size(), 2U);
-    expect_near(state->value[0], { 0.5F, 0.5F });
-    expect_near(state->value[1], { 1.F, 1.F });
+    form_factory_expect_near(state->value[0], { 0.5F, 0.5F });
+    form_factory_expect_near(state->value[1], { 1.F, 1.F });
     EXPECT_GT(state->version, 0U);
 }
 
@@ -896,8 +896,8 @@ TEST_F(FormaHandlePathWireTest, APressFarFromEveryPointGrabsNothing)
     grab({ 0.F, 0.F });
     window->move_to_ndc({ 0.3F, 0.3F });
 
-    expect_near(state->value[0], { 0.F, 0.F });
-    expect_near(state->value[1], { 1.F, 1.F });
+    form_factory_expect_near(state->value[0], { 0.F, 0.F });
+    form_factory_expect_near(state->value[1], { 1.F, 1.F });
     EXPECT_EQ(state->version, 0U);
 }
 
@@ -908,18 +908,18 @@ TEST_F(FormaHandlePathWireTest, ThePointNearestThePressIsTheOneGrabbed)
     grab({ 0.04F, 0.F });
     window->move_to_ndc({ 0.3F, 0.3F });
 
-    expect_near(state->value[0], { 0.5F, 0.5F });
-    expect_near(state->value[1], { 0.8F, 0.8F });
+    form_factory_expect_near(state->value[0], { 0.5F, 0.5F });
+    form_factory_expect_near(state->value[1], { 0.8F, 0.8F });
 }
 
 TEST_F(FormaHandlePathWireTest, ADragIsClampedToTheArea)
 {
     grab({ 0.45F, 0.45F });
     window->move_to_ndc({ 0.9F, 0.9F });
-    expect_near(state->value[1], { 1.F, 1.F });
+    form_factory_expect_near(state->value[1], { 1.F, 1.F });
 
     window->move_to_ndc({ -0.9F, -0.9F });
-    expect_near(state->value[1], { 0.F, 0.F });
+    form_factory_expect_near(state->value[1], { 0.F, 0.F });
 }
 
 TEST_F(FormaHandlePathWireTest, AGrabEndsWithTheReleaseAndTheNextPressChoosesAgain)
@@ -930,8 +930,8 @@ TEST_F(FormaHandlePathWireTest, AGrabEndsWithTheReleaseAndTheNextPressChoosesAga
     grab({ 0.F, 0.F });
     window->move_to_ndc({ 0.3F, 0.3F });
 
-    expect_near(state->value[0], { 0.F, 0.F });
-    expect_near(state->value[1], { 1.F, 1.F });
+    form_factory_expect_near(state->value[0], { 0.F, 0.F });
+    form_factory_expect_near(state->value[1], { 1.F, 1.F });
 }
 
 }

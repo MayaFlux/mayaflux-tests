@@ -13,7 +13,7 @@ using Kinesis::Lattice1D;
 
 namespace {
 
-    std::span<const double> view(const std::vector<double>& values)
+    std::span<const double> scalar_window_view(const std::vector<double>& values)
     {
         return std::span<const double>(values);
     }
@@ -87,44 +87,44 @@ TEST(Lattice1DTest, SymbolicTrajectoryObservesAScalarStream)
 TEST(ScalarDifferenceTest, SpanFormMatchesTheHistoryBufferForm)
 {
     const std::vector<double> newest_first { 4.0, 1.0, 0.0, 3.0, -2.0, 5.0, 1.5, 0.5 };
-    const auto history = Kinesis::to_history<double>(view(newest_first));
+    const auto history = Kinesis::to_history<double>(scalar_window_view(newest_first));
 
-    EXPECT_DOUBLE_EQ(Kinesis::backward_difference<1>(view(newest_first), 0.01), Kinesis::backward_difference<1>(history, 0.01));
-    EXPECT_DOUBLE_EQ(Kinesis::backward_difference<3>(view(newest_first), 0.01), Kinesis::backward_difference<3>(history, 0.01));
-    EXPECT_DOUBLE_EQ(Kinesis::backward_difference<6>(view(newest_first), 0.01), Kinesis::backward_difference<6>(history, 0.01));
+    EXPECT_DOUBLE_EQ(Kinesis::backward_difference<1>(scalar_window_view(newest_first), 0.01), Kinesis::backward_difference<1>(history, 0.01));
+    EXPECT_DOUBLE_EQ(Kinesis::backward_difference<3>(scalar_window_view(newest_first), 0.01), Kinesis::backward_difference<3>(history, 0.01));
+    EXPECT_DOUBLE_EQ(Kinesis::backward_difference<6>(scalar_window_view(newest_first), 0.01), Kinesis::backward_difference<6>(history, 0.01));
 }
 
 TEST(ScalarDifferenceTest, NamedOrdersOfAQuadratic)
 {
     const std::vector<double> squares { 4.0, 1.0, 0.0 };
 
-    EXPECT_DOUBLE_EQ(Kinesis::velocity(view(squares), 1.0), 3.0);
-    EXPECT_DOUBLE_EQ(Kinesis::acceleration(view(squares), 1.0), 2.0);
-    EXPECT_DOUBLE_EQ(Kinesis::acceleration(view(squares), 0.5), 8.0);
+    EXPECT_DOUBLE_EQ(Kinesis::velocity(scalar_window_view(squares), 1.0), 3.0);
+    EXPECT_DOUBLE_EQ(Kinesis::acceleration(scalar_window_view(squares), 1.0), 2.0);
+    EXPECT_DOUBLE_EQ(Kinesis::acceleration(scalar_window_view(squares), 0.5), 8.0);
 }
 
 TEST(ScalarDifferenceTest, SamplesBeyondTheSpanReadAsZero)
 {
     const std::vector<double> one { 5.0 };
 
-    EXPECT_DOUBLE_EQ(Kinesis::velocity(view(one), 1.0), 5.0);
+    EXPECT_DOUBLE_EQ(Kinesis::velocity(scalar_window_view(one), 1.0), 5.0);
 }
 
 TEST(ScalarDifferenceTest, MovingAverageOverTheNewestSamples)
 {
     const std::vector<double> values { 1.0, 2.0, 3.0, 4.0 };
 
-    EXPECT_DOUBLE_EQ(Kinesis::moving_average(view(values), 2), 1.5);
-    EXPECT_DOUBLE_EQ(Kinesis::moving_average(view(values), 4), 2.5);
+    EXPECT_DOUBLE_EQ(Kinesis::moving_average(scalar_window_view(values), 2), 1.5);
+    EXPECT_DOUBLE_EQ(Kinesis::moving_average(scalar_window_view(values), 4), 2.5);
 }
 
 TEST(ScalarWindowMeasureTest, PathLengthAndNetDisplacement)
 {
     const std::vector<double> values { 5.0, 3.0, 4.0, 1.0 };
 
-    EXPECT_DOUBLE_EQ(Kinesis::path_length(view(values), 4), 6.0);
-    EXPECT_DOUBLE_EQ(Kinesis::net_displacement(view(values), 4), 4.0);
-    EXPECT_DOUBLE_EQ(Kinesis::path_length(view(values), 2), 2.0);
+    EXPECT_DOUBLE_EQ(Kinesis::path_length(scalar_window_view(values), 4), 6.0);
+    EXPECT_DOUBLE_EQ(Kinesis::net_displacement(scalar_window_view(values), 4), 4.0);
+    EXPECT_DOUBLE_EQ(Kinesis::path_length(scalar_window_view(values), 2), 2.0);
 }
 
 TEST(ScalarWindowMeasureTest, StraightnessSeparatesMonotoneFromWandering)
@@ -133,9 +133,9 @@ TEST(ScalarWindowMeasureTest, StraightnessSeparatesMonotoneFromWandering)
     const std::vector<double> wandering { 5.0, 3.0, 4.0, 1.0 };
     const std::vector<double> flat { 2.0, 2.0, 2.0 };
 
-    EXPECT_DOUBLE_EQ(Kinesis::straightness(view(monotone), 4), 1.0);
-    EXPECT_NEAR(Kinesis::straightness(view(wandering), 4), 4.0 / 6.0, 1e-12);
-    EXPECT_DOUBLE_EQ(Kinesis::straightness(view(flat), 3), 0.0);
+    EXPECT_DOUBLE_EQ(Kinesis::straightness(scalar_window_view(monotone), 4), 1.0);
+    EXPECT_NEAR(Kinesis::straightness(scalar_window_view(wandering), 4), 4.0 / 6.0, 1e-12);
+    EXPECT_DOUBLE_EQ(Kinesis::straightness(scalar_window_view(flat), 3), 0.0);
 }
 
 TEST(ScalarWindowMeasureTest, ReversalCountAndSpread)
@@ -144,18 +144,18 @@ TEST(ScalarWindowMeasureTest, ReversalCountAndSpread)
     const std::vector<double> ramp { 4.0, 3.0, 2.0, 1.0 };
     const std::vector<double> values { 1.0, 3.0, 5.0 };
 
-    EXPECT_EQ(Kinesis::reversal_count(view(zigzag), 4), 2U);
-    EXPECT_EQ(Kinesis::reversal_count(view(ramp), 4), 0U);
-    EXPECT_DOUBLE_EQ(Kinesis::spread_radius(view(values), 3), 2.0);
+    EXPECT_EQ(Kinesis::reversal_count(scalar_window_view(zigzag), 4), 2U);
+    EXPECT_EQ(Kinesis::reversal_count(scalar_window_view(ramp), 4), 0U);
+    EXPECT_DOUBLE_EQ(Kinesis::spread_radius(scalar_window_view(values), 3), 2.0);
 }
 
 TEST(ScalarWindowMeasureTest, WindowsLongerThanTheSpanAreClamped)
 {
     const std::vector<double> values { 2.0, 1.0 };
 
-    EXPECT_DOUBLE_EQ(Kinesis::path_length(view(values), 100), 1.0);
-    EXPECT_DOUBLE_EQ(Kinesis::net_displacement(view(values), 100), 1.0);
-    EXPECT_DOUBLE_EQ(Kinesis::spread_radius(view(values), 100), 0.5);
+    EXPECT_DOUBLE_EQ(Kinesis::path_length(scalar_window_view(values), 100), 1.0);
+    EXPECT_DOUBLE_EQ(Kinesis::net_displacement(scalar_window_view(values), 100), 1.0);
+    EXPECT_DOUBLE_EQ(Kinesis::spread_radius(scalar_window_view(values), 100), 0.5);
 }
 
 }

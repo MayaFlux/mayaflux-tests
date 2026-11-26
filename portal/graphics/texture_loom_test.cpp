@@ -29,7 +29,7 @@ namespace {
 
     using ImagePtr = std::shared_ptr<VKImage>;
 
-    TextureLoom& loom()
+    TextureLoom& texture_loom()
     {
         return Portal::Graphics::get_texture_manager();
     }
@@ -57,12 +57,12 @@ namespace {
             if (!s_backend) {
                 GTEST_SKIP() << "No usable Vulkan device: " << vulkan_unavailable_reason();
             }
-            loom().shutdown();
+            texture_loom().shutdown();
         }
 
         void TearDown() override
         {
-            loom().shutdown();
+            texture_loom().shutdown();
         }
 
         static const std::shared_ptr<Core::VulkanBackend>& backend() { return s_backend; }
@@ -98,7 +98,7 @@ namespace {
 
     std::vector<uint32_t> rgba8_words(const ImagePtr& image)
     {
-        const auto data = loom().download_image(image);
+        const auto data = texture_loom().download_image(image);
         if (!data) {
             return {};
         }
@@ -137,72 +137,72 @@ namespace {
 
     TEST_F(TextureLoomTest, UninitializedLoomCreatesNothing)
     {
-        EXPECT_FALSE(loom().is_initialized());
-        EXPECT_EQ(loom().create_2d(4, 4), nullptr);
-        EXPECT_EQ(loom().create_2d_uninitialized(4, 4), nullptr);
-        EXPECT_EQ(loom().create_3d(4, 4, 4), nullptr);
-        EXPECT_EQ(loom().create_cubemap(4), nullptr);
-        EXPECT_EQ(loom().create_2d_array(4, 4, 2), nullptr);
-        EXPECT_EQ(loom().create_render_target(4, 4), nullptr);
-        EXPECT_EQ(loom().create_depth_buffer(4, 4), nullptr);
-        EXPECT_EQ(loom().create_storage_image(4, 4), nullptr);
+        EXPECT_FALSE(texture_loom().is_initialized());
+        EXPECT_EQ(texture_loom().create_2d(4, 4), nullptr);
+        EXPECT_EQ(texture_loom().create_2d_uninitialized(4, 4), nullptr);
+        EXPECT_EQ(texture_loom().create_3d(4, 4, 4), nullptr);
+        EXPECT_EQ(texture_loom().create_cubemap(4), nullptr);
+        EXPECT_EQ(texture_loom().create_2d_array(4, 4, 2), nullptr);
+        EXPECT_EQ(texture_loom().create_render_target(4, 4), nullptr);
+        EXPECT_EQ(texture_loom().create_depth_buffer(4, 4), nullptr);
+        EXPECT_EQ(texture_loom().create_storage_image(4, 4), nullptr);
     }
 
     TEST_F(TextureLoomTest, InitializeRejectsANullBackend)
     {
-        EXPECT_FALSE(loom().initialize(nullptr));
-        EXPECT_FALSE(loom().is_initialized());
+        EXPECT_FALSE(texture_loom().initialize(nullptr));
+        EXPECT_FALSE(texture_loom().is_initialized());
     }
 
     TEST_F(TextureLoomTest, InitializingAgainReportsSuccessAndKeepsTheLoomUsable)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        EXPECT_TRUE(loom().initialize(backend()));
+        EXPECT_TRUE(texture_loom().initialize(backend()));
 
-        EXPECT_TRUE(loom().is_initialized());
-        EXPECT_NE(loom().create_2d(4, 4), nullptr);
+        EXPECT_TRUE(texture_loom().is_initialized());
+        EXPECT_NE(texture_loom().create_2d(4, 4), nullptr);
     }
 
     TEST_F(TextureLoomTest, ShutdownReleasesEveryImageTheLoomCreated)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr first = loom().create_2d(4, 4);
-        const ImagePtr second = loom().create_storage_image(8, 8);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr first = texture_loom().create_2d(4, 4);
+        const ImagePtr second = texture_loom().create_storage_image(8, 8);
         ASSERT_TRUE(first && first->is_initialized());
         ASSERT_TRUE(second && second->is_initialized());
 
-        loom().shutdown();
+        texture_loom().shutdown();
 
-        EXPECT_FALSE(loom().is_initialized());
+        EXPECT_FALSE(texture_loom().is_initialized());
         EXPECT_FALSE(first->is_initialized());
         EXPECT_FALSE(second->is_initialized());
     }
 
     TEST_F(TextureLoomTest, ClearImageResidencyRemovesOnlyThatImageBeforeShutdown)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        ImagePtr cleared = loom().create_2d(4, 4);
-        const ImagePtr retained = loom().create_storage_image(8, 8);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        ImagePtr cleared = texture_loom().create_2d(4, 4);
+        const ImagePtr retained = texture_loom().create_storage_image(8, 8);
         ASSERT_TRUE(cleared && cleared->is_initialized());
         ASSERT_TRUE(retained && retained->is_initialized());
         const std::weak_ptr<VKImage> cleared_weak = cleared;
 
-        loom().clear_image_residency(cleared);
+        texture_loom().clear_image_residency(cleared);
 
         EXPECT_FALSE(cleared->is_initialized());
         EXPECT_TRUE(retained->is_initialized());
         cleared.reset();
         EXPECT_TRUE(cleared_weak.expired());
 
-        loom().shutdown();
+        texture_loom().shutdown();
 
         EXPECT_FALSE(retained->is_initialized());
     }
 
     TEST_F(TextureLoomTest, ClearImageResidencyAlsoCleansAnImageNotRetainedByLoom)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         const ImagePtr external = std::make_shared<VKImage>(
             4, 4, 1, TextureLoom::to_vulkan_format(ImageFormat::RGBA8),
             VKImage::Usage::TEXTURE_2D, VKImage::Type::TYPE_2D,
@@ -210,20 +210,20 @@ namespace {
         backend()->get_resource_manager().initialize_image(external);
         ASSERT_TRUE(external->is_initialized());
 
-        loom().clear_image_residency(external);
+        texture_loom().clear_image_residency(external);
 
         EXPECT_FALSE(external->is_initialized());
-        EXPECT_NO_THROW(loom().shutdown());
+        EXPECT_NO_THROW(texture_loom().shutdown());
     }
 
     TEST_F(TextureLoomTest, ReleasingTheOnlyHolderClearsTheImage)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        ImagePtr image = loom().create_2d(4, 4);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        ImagePtr image = texture_loom().create_2d(4, 4);
         ASSERT_TRUE(image && image->is_initialized());
         const std::weak_ptr<VKImage> weak = image;
 
-        loom().release_image(image);
+        texture_loom().release_image(image);
 
         EXPECT_FALSE(image->is_initialized());
         image.reset();
@@ -232,23 +232,23 @@ namespace {
 
     TEST_F(TextureLoomTest, AnImageStaysResidentUntilEveryHolderReleasesIt)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr image = loom().create_2d(4, 4);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr image = texture_loom().create_2d(4, 4);
         ASSERT_TRUE(image && image->is_initialized());
 
-        loom().retain_image(image);
-        loom().retain_image(image);
-        loom().release_image(image);
-        loom().release_image(image);
+        texture_loom().retain_image(image);
+        texture_loom().retain_image(image);
+        texture_loom().release_image(image);
+        texture_loom().release_image(image);
         EXPECT_TRUE(image->is_initialized());
 
-        loom().release_image(image);
+        texture_loom().release_image(image);
         EXPECT_FALSE(image->is_initialized());
     }
 
     TEST_F(TextureLoomTest, RetainAndReleaseIgnoreAnImageTheLoomDidNotCreate)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         const ImagePtr external = std::make_shared<VKImage>(
             4, 4, 1, TextureLoom::to_vulkan_format(ImageFormat::RGBA8),
             VKImage::Usage::TEXTURE_2D, VKImage::Type::TYPE_2D,
@@ -256,34 +256,34 @@ namespace {
         backend()->get_resource_manager().initialize_image(external);
         ASSERT_TRUE(external->is_initialized());
 
-        loom().retain_image(external);
-        loom().release_image(external);
-        loom().release_image(external);
+        texture_loom().retain_image(external);
+        texture_loom().release_image(external);
+        texture_loom().release_image(external);
 
         EXPECT_TRUE(external->is_initialized());
-        loom().clear_image_residency(external);
+        texture_loom().clear_image_residency(external);
     }
 
     TEST_F(TextureLoomTest, RetainAndReleaseAcceptANullImage)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        EXPECT_NO_THROW(loom().retain_image(nullptr));
-        EXPECT_NO_THROW(loom().release_image(nullptr));
+        EXPECT_NO_THROW(texture_loom().retain_image(nullptr));
+        EXPECT_NO_THROW(texture_loom().release_image(nullptr));
     }
 
     TEST_F(TextureLoomTest, ReleasingAnImageAfterItsResidencyWasClearedChangesNothing)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr cleared = loom().create_2d(4, 4);
-        const ImagePtr other = loom().create_2d(4, 4);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr cleared = texture_loom().create_2d(4, 4);
+        const ImagePtr other = texture_loom().create_2d(4, 4);
         ASSERT_TRUE(cleared && cleared->is_initialized());
         ASSERT_TRUE(other && other->is_initialized());
 
-        loom().retain_image(cleared);
-        loom().clear_image_residency(cleared);
-        loom().release_image(cleared);
-        loom().release_image(cleared);
+        texture_loom().retain_image(cleared);
+        texture_loom().clear_image_residency(cleared);
+        texture_loom().release_image(cleared);
+        texture_loom().release_image(cleared);
 
         EXPECT_FALSE(cleared->is_initialized());
         EXPECT_TRUE(other->is_initialized());
@@ -291,34 +291,34 @@ namespace {
 
     TEST_F(TextureLoomTest, ReleasingAfterShutdownIsHarmless)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr image = loom().create_2d(4, 4);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr image = texture_loom().create_2d(4, 4);
         ASSERT_TRUE(image && image->is_initialized());
 
-        loom().shutdown();
+        texture_loom().shutdown();
 
-        EXPECT_NO_THROW(loom().release_image(image));
+        EXPECT_NO_THROW(texture_loom().release_image(image));
         EXPECT_FALSE(image->is_initialized());
     }
 
     TEST_F(TextureLoomTest, ShutdownIsRepeatable)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        loom().shutdown();
+        texture_loom().shutdown();
 
-        EXPECT_NO_THROW(loom().shutdown());
+        EXPECT_NO_THROW(texture_loom().shutdown());
     }
 
     TEST_F(TextureLoomTest, LoomCreatesImagesAgainAfterShutdownAndReinitialize)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        ASSERT_NE(loom().create_2d(4, 4), nullptr);
-        loom().shutdown();
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        ASSERT_NE(texture_loom().create_2d(4, 4), nullptr);
+        texture_loom().shutdown();
 
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr image = loom().create_2d(4, 4);
+        const ImagePtr image = texture_loom().create_2d(4, 4);
         ASSERT_NE(image, nullptr);
         EXPECT_TRUE(image->is_initialized());
     }
@@ -329,9 +329,9 @@ namespace {
 
     TEST_F(TextureLoomTest, Create2dWithoutDataIsASampledImageReadyForShaders)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr image = loom().create_2d(16, 8, ImageFormat::RGBA8);
+        const ImagePtr image = texture_loom().create_2d(16, 8, ImageFormat::RGBA8);
 
         ASSERT_NE(image, nullptr);
         EXPECT_TRUE(image->is_initialized());
@@ -346,9 +346,9 @@ namespace {
 
     TEST_F(TextureLoomTest, Create2dRecordsTheRequestedMipLevels)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr image = loom().create_2d(64, 64, ImageFormat::RGBA8, nullptr, 4);
+        const ImagePtr image = texture_loom().create_2d(64, 64, ImageFormat::RGBA8, nullptr, 4);
 
         ASSERT_NE(image, nullptr);
         EXPECT_EQ(image->get_mip_levels(), 4U);
@@ -356,10 +356,10 @@ namespace {
 
     TEST_F(TextureLoomTest, Create2dWithDataAndMipLevelsKeepsTheFirstLevelAndSettlesToShaderRead)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         const auto bytes = pixel_pattern(ImageFormat::RGBA8, 64);
 
-        const ImagePtr image = loom().create_2d(8, 8, ImageFormat::RGBA8, bytes.data(), 4);
+        const ImagePtr image = texture_loom().create_2d(8, 8, ImageFormat::RGBA8, bytes.data(), 4);
 
         ASSERT_NE(image, nullptr);
         EXPECT_EQ(image->get_mip_levels(), 4U);
@@ -371,47 +371,47 @@ namespace {
 
     TEST_F(TextureLoomTest, GenerateMipmapsAcceptsAnImageWithLevelsInEverySubmitMode)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
         for (const auto mode : { Portal::Graphics::SubmitMode::IMMEDIATE, Portal::Graphics::SubmitMode::DEFERRED, Portal::Graphics::SubmitMode::ASYNC }) {
-            const ImagePtr image = loom().create_2d(8, 8, ImageFormat::RGBA8, nullptr, 4);
+            const ImagePtr image = texture_loom().create_2d(8, 8, ImageFormat::RGBA8, nullptr, 4);
             ASSERT_NE(image, nullptr);
 
-            EXPECT_TRUE(loom().generate_mipmaps(image, FilterMode::LINEAR, mode));
+            EXPECT_TRUE(texture_loom().generate_mipmaps(image, FilterMode::LINEAR, mode));
             EXPECT_EQ(image->get_current_layout(), vk::ImageLayout::eShaderReadOnlyOptimal);
         }
     }
 
     TEST_F(TextureLoomTest, GenerateMipmapsTakesNearestAndFallsBackFromCubic)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr image = loom().create_2d(8, 8, ImageFormat::RGBA8, nullptr, 4);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr image = texture_loom().create_2d(8, 8, ImageFormat::RGBA8, nullptr, 4);
         ASSERT_NE(image, nullptr);
 
-        EXPECT_TRUE(loom().generate_mipmaps(image, FilterMode::NEAREST));
-        EXPECT_TRUE(loom().generate_mipmaps(image, FilterMode::CUBIC));
+        EXPECT_TRUE(texture_loom().generate_mipmaps(image, FilterMode::NEAREST));
+        EXPECT_TRUE(texture_loom().generate_mipmaps(image, FilterMode::CUBIC));
     }
 
     TEST_F(TextureLoomTest, GenerateMipmapsRefusesOneLevelNullAndAnUninitializedLoom)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr flat = loom().create_2d(8, 8, ImageFormat::RGBA8);
-        const ImagePtr mipped = loom().create_2d(8, 8, ImageFormat::RGBA8, nullptr, 4);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr flat = texture_loom().create_2d(8, 8, ImageFormat::RGBA8);
+        const ImagePtr mipped = texture_loom().create_2d(8, 8, ImageFormat::RGBA8, nullptr, 4);
         ASSERT_NE(flat, nullptr);
         ASSERT_NE(mipped, nullptr);
 
-        EXPECT_FALSE(loom().generate_mipmaps(flat));
-        EXPECT_FALSE(loom().generate_mipmaps(nullptr));
+        EXPECT_FALSE(texture_loom().generate_mipmaps(flat));
+        EXPECT_FALSE(texture_loom().generate_mipmaps(nullptr));
 
-        loom().shutdown();
-        EXPECT_FALSE(loom().generate_mipmaps(mipped));
+        texture_loom().shutdown();
+        EXPECT_FALSE(texture_loom().generate_mipmaps(mipped));
     }
 
     TEST_F(TextureLoomTest, Create2dUninitializedAllocatesWithoutAnUpload)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr image = loom().create_2d_uninitialized(32, 16, ImageFormat::R32F);
+        const ImagePtr image = texture_loom().create_2d_uninitialized(32, 16, ImageFormat::R32F);
 
         ASSERT_NE(image, nullptr);
         EXPECT_TRUE(image->is_initialized());
@@ -422,9 +422,9 @@ namespace {
 
     TEST_F(TextureLoomTest, Create3dRecordsTheDepthAndKind)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr image = loom().create_3d(8, 4, 2, ImageFormat::RGBA8);
+        const ImagePtr image = texture_loom().create_3d(8, 4, 2, ImageFormat::RGBA8);
 
         ASSERT_NE(image, nullptr);
         EXPECT_EQ(image->get_type(), VKImage::Type::TYPE_3D);
@@ -436,9 +436,9 @@ namespace {
 
     TEST_F(TextureLoomTest, CubemapIsSquareWithSixFaces)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr image = loom().create_cubemap(16, ImageFormat::RGBA8);
+        const ImagePtr image = texture_loom().create_cubemap(16, ImageFormat::RGBA8);
 
         ASSERT_NE(image, nullptr);
         EXPECT_EQ(image->get_type(), VKImage::Type::TYPE_CUBE);
@@ -449,9 +449,9 @@ namespace {
 
     TEST_F(TextureLoomTest, Create2dArrayRecordsTheLayerCount)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr image = loom().create_2d_array(8, 8, 5, ImageFormat::RGBA8);
+        const ImagePtr image = texture_loom().create_2d_array(8, 8, 5, ImageFormat::RGBA8);
 
         ASSERT_NE(image, nullptr);
         EXPECT_EQ(image->get_array_layers(), 5U);
@@ -461,16 +461,16 @@ namespace {
 
     TEST_F(TextureLoomTest, Create2dArrayOfZeroLayersIsRefused)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        EXPECT_EQ(loom().create_2d_array(8, 8, 0), nullptr);
+        EXPECT_EQ(texture_loom().create_2d_array(8, 8, 0), nullptr);
     }
 
     TEST_F(TextureLoomTest, RenderTargetIsLeftReadyAsAColorAttachment)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr image = loom().create_render_target(32, 32, ImageFormat::RGBA8);
+        const ImagePtr image = texture_loom().create_render_target(32, 32, ImageFormat::RGBA8);
 
         ASSERT_NE(image, nullptr);
         EXPECT_EQ(image->get_usage(), VKImage::Usage::RENDER_TARGET);
@@ -479,9 +479,9 @@ namespace {
 
     TEST_F(TextureLoomTest, StorageImageIsLeftInTheGeneralLayout)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr image = loom().create_storage_image(32, 32, ImageFormat::RGBA32F);
+        const ImagePtr image = texture_loom().create_storage_image(32, 32, ImageFormat::RGBA32F);
 
         ASSERT_NE(image, nullptr);
         EXPECT_EQ(image->get_usage(), VKImage::Usage::STORAGE);
@@ -491,9 +491,9 @@ namespace {
 
     TEST_F(TextureLoomTest, DepthBufferUsesA32BitFloatDepthFormatAndTheDepthAttachmentLayout)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr image = loom().create_depth_buffer(64, 64, false);
+        const ImagePtr image = texture_loom().create_depth_buffer(64, 64, false);
 
         ASSERT_NE(image, nullptr);
         EXPECT_EQ(image->get_usage(), VKImage::Usage::DEPTH_STENCIL);
@@ -509,9 +509,9 @@ namespace {
         if (!(features & vk::FormatFeatureFlagBits::eDepthStencilAttachment)) {
             GTEST_SKIP() << "Device has no D24S8 depth attachment format";
         }
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr image = loom().create_depth_buffer(64, 64, true);
+        const ImagePtr image = texture_loom().create_depth_buffer(64, 64, true);
 
         ASSERT_NE(image, nullptr);
         EXPECT_EQ(image->get_format(), vk::Format::eD24UnormS8Uint);
@@ -528,9 +528,9 @@ namespace {
 
     TEST_P(TextureLoomSampledFormatTest, SampledImageIsCreatedInTheFormatsVulkanFormat)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr image = loom().create_2d(8, 8, GetParam().format);
+        const ImagePtr image = texture_loom().create_2d(8, 8, GetParam().format);
 
         ASSERT_NE(image, nullptr);
         EXPECT_TRUE(image->is_initialized());
@@ -564,14 +564,14 @@ namespace {
 
     TEST_P(TextureLoomRoundTripTest, UploadedPixelsComeBackUnchanged)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         constexpr uint32_t width = 4;
         constexpr uint32_t height = 3;
         const auto pixels = pixel_pattern(GetParam().format, static_cast<size_t>(width) * height);
 
-        const ImagePtr image = loom().create_2d(width, height, GetParam().format, pixels.data());
+        const ImagePtr image = texture_loom().create_2d(width, height, GetParam().format, pixels.data());
         ASSERT_NE(image, nullptr);
-        const auto downloaded = loom().download_image(image);
+        const auto downloaded = texture_loom().download_image(image);
 
         ASSERT_TRUE(downloaded.has_value());
         ASSERT_EQ(downloaded->byte_size(), pixels.size());
@@ -599,54 +599,54 @@ namespace {
 
     TEST_F(TextureLoomTest, UploadDataFillsAnImageCreatedWithoutPixels)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         const std::vector<uint32_t> pixels { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
-        const ImagePtr image = loom().create_2d_uninitialized(4, 3, ImageFormat::RGBA8);
+        const ImagePtr image = texture_loom().create_2d_uninitialized(4, 3, ImageFormat::RGBA8);
         ASSERT_NE(image, nullptr);
 
-        loom().upload_data(image, pixels.data(), pixels.size() * sizeof(uint32_t));
+        texture_loom().upload_data(image, pixels.data(), pixels.size() * sizeof(uint32_t));
 
         EXPECT_EQ(rgba8_words(image), pixels);
     }
 
     TEST_F(TextureLoomTest, DownloadDataFillsACallerBuffer)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         const std::vector<uint32_t> pixels { 41, 42, 43, 44 };
         const size_t bytes = pixels.size() * sizeof(uint32_t);
-        const ImagePtr image = loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
+        const ImagePtr image = texture_loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
         ASSERT_NE(image, nullptr);
         std::vector<uint32_t> out(pixels.size(), 0);
 
-        loom().download_data(image, out.data(), bytes);
+        texture_loom().download_data(image, out.data(), bytes);
 
         EXPECT_EQ(out, pixels);
     }
 
     TEST_F(TextureLoomTest, InvalidUploadArgumentsAreIgnored)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         const std::vector<uint32_t> pixels { 1, 2, 3, 4 };
-        const ImagePtr image = loom().create_2d_uninitialized(2, 2, ImageFormat::RGBA8);
+        const ImagePtr image = texture_loom().create_2d_uninitialized(2, 2, ImageFormat::RGBA8);
 
-        EXPECT_NO_THROW(loom().upload_data(nullptr, pixels.data(), 16));
-        EXPECT_NO_THROW(loom().upload_data(image, nullptr, 16));
-        EXPECT_NO_THROW(loom().upload_data(image, pixels.data(), 16, nullptr));
+        EXPECT_NO_THROW(texture_loom().upload_data(nullptr, pixels.data(), 16));
+        EXPECT_NO_THROW(texture_loom().upload_data(image, nullptr, 16));
+        EXPECT_NO_THROW(texture_loom().upload_data(image, pixels.data(), 16, nullptr));
     }
 
     TEST_F(TextureLoomTest, DownloadImageRefusesImagesThatAreNotASingleLayer2dImage)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        EXPECT_FALSE(loom().download_image(loom().create_2d_array(4, 4, 2)).has_value());
-        EXPECT_FALSE(loom().download_image(loom().create_cubemap(4)).has_value());
-        EXPECT_FALSE(loom().download_image(loom().create_3d(4, 4, 4)).has_value());
-        EXPECT_FALSE(loom().download_image(nullptr).has_value());
+        EXPECT_FALSE(texture_loom().download_image(texture_loom().create_2d_array(4, 4, 2)).has_value());
+        EXPECT_FALSE(texture_loom().download_image(texture_loom().create_cubemap(4)).has_value());
+        EXPECT_FALSE(texture_loom().download_image(texture_loom().create_3d(4, 4, 4)).has_value());
+        EXPECT_FALSE(texture_loom().download_image(nullptr).has_value());
     }
 
     TEST_F(TextureLoomTest, DownloadImageIsRefusedWhileTheLoomIsNotInitialized)
     {
-        EXPECT_FALSE(loom().download_image(nullptr).has_value());
+        EXPECT_FALSE(texture_loom().download_image(nullptr).has_value());
     }
 
     // ------------------------------------------------------------------
@@ -655,17 +655,17 @@ namespace {
 
     TEST_F(TextureLoomTest, Create2dFromAVec4VariantUploadsFloatTexels)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         const std::vector<glm::vec4> texels {
             { 0.0F, 0.25F, 0.5F, 1.0F }, { 1.0F, 0.75F, 0.5F, 0.25F },
             { 0.1F, 0.2F, 0.3F, 0.4F }, { 0.9F, 0.8F, 0.7F, 0.6F }
         };
 
-        const ImagePtr image = loom().create_2d(Kakshya::DataVariant(texels), 2, 2);
+        const ImagePtr image = texture_loom().create_2d(Kakshya::DataVariant(texels), 2, 2);
 
         ASSERT_NE(image, nullptr);
         EXPECT_EQ(image->get_format(), vk::Format::eR32G32B32A32Sfloat);
-        const auto downloaded = loom().download_image(image);
+        const auto downloaded = texture_loom().download_image(image);
         ASSERT_TRUE(downloaded.has_value());
         ASSERT_EQ(downloaded->byte_size(), texels.size() * sizeof(glm::vec4));
         EXPECT_EQ(std::memcmp(downloaded->data(), texels.data(), downloaded->byte_size()), 0);
@@ -673,17 +673,17 @@ namespace {
 
     TEST_F(TextureLoomTest, Create2dFromAVariantOfTheWrongSizeThrows)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         const std::vector<glm::vec4> texels(4, glm::vec4(1.0F));
 
-        EXPECT_THROW(static_cast<void>(loom().create_2d(Kakshya::DataVariant(texels), 3, 3)), std::invalid_argument);
+        EXPECT_THROW(static_cast<void>(texture_loom().create_2d(Kakshya::DataVariant(texels), 3, 3)), std::invalid_argument);
     }
 
     TEST_F(TextureLoomTest, Create2dFromAnEmptyVariantReturnsNothing)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        EXPECT_EQ(loom().create_2d(Kakshya::DataVariant(std::vector<glm::vec4> {}), 2, 2), nullptr);
+        EXPECT_EQ(texture_loom().create_2d(Kakshya::DataVariant(std::vector<glm::vec4> {}), 2, 2), nullptr);
     }
 
     // ------------------------------------------------------------------
@@ -692,26 +692,26 @@ namespace {
 
     TEST_F(TextureLoomTest, TransitionLayoutRecordsTheNewLayoutOnTheImage)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr image = loom().create_2d(4, 4);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr image = texture_loom().create_2d(4, 4);
         ASSERT_NE(image, nullptr);
 
-        loom().transition_layout(image, vk::ImageLayout::eGeneral);
+        texture_loom().transition_layout(image, vk::ImageLayout::eGeneral);
 
         EXPECT_EQ(image->get_current_layout(), vk::ImageLayout::eGeneral);
     }
 
     TEST_F(TextureLoomTest, TransitionLayoutOfAMissingImageIsIgnored)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        EXPECT_NO_THROW(loom().transition_layout(nullptr, vk::ImageLayout::eGeneral));
+        EXPECT_NO_THROW(texture_loom().transition_layout(nullptr, vk::ImageLayout::eGeneral));
     }
 
     TEST_F(TextureLoomTest, SampledImagesAreReadableAndWritableInTheirOwnFormat)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr image = loom().create_2d(8, 8, ImageFormat::RG16F);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr image = texture_loom().create_2d(8, 8, ImageFormat::RG16F);
         ASSERT_NE(image, nullptr);
 
         EXPECT_EQ(TextureLoom::readable_format(image), ImageFormat::RG16F);
@@ -720,8 +720,8 @@ namespace {
 
     TEST_F(TextureLoomTest, DepthImageIsReadableInItsDepthFormat)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr image = loom().create_depth_buffer(8, 8, false);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr image = texture_loom().create_depth_buffer(8, 8, false);
         ASSERT_NE(image, nullptr);
 
         EXPECT_EQ(TextureLoom::readable_format(image), ImageFormat::DEPTH32F);
@@ -729,11 +729,11 @@ namespace {
 
     TEST_F(TextureLoomTest, CubemapArrayAnd3dImagesHaveNoTransferFormat)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        EXPECT_FALSE(TextureLoom::readable_format(loom().create_cubemap(4)).has_value());
-        EXPECT_FALSE(TextureLoom::readable_format(loom().create_2d_array(4, 4, 2)).has_value());
-        EXPECT_FALSE(TextureLoom::writable_format(loom().create_3d(4, 4, 4)).has_value());
+        EXPECT_FALSE(TextureLoom::readable_format(texture_loom().create_cubemap(4)).has_value());
+        EXPECT_FALSE(TextureLoom::readable_format(texture_loom().create_2d_array(4, 4, 2)).has_value());
+        EXPECT_FALSE(TextureLoom::writable_format(texture_loom().create_3d(4, 4, 4)).has_value());
     }
 
     // ------------------------------------------------------------------
@@ -747,18 +747,18 @@ namespace {
 
     TEST_F(TextureLoomTest, UploadLayerWritesOneLayerOfAnArrayThatBlitsBackOut)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr array = loom().create_2d_array(2, 2, 3, ImageFormat::RGBA8);
-        const ImagePtr flat = loom().create_2d(2, 2, ImageFormat::RGBA8);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr array = texture_loom().create_2d_array(2, 2, 3, ImageFormat::RGBA8);
+        const ImagePtr flat = texture_loom().create_2d(2, 2, ImageFormat::RGBA8);
         ASSERT_NE(array, nullptr);
         ASSERT_NE(flat, nullptr);
-        if (!loom().can_blit(array, flat, FilterMode::NEAREST)) {
+        if (!texture_loom().can_blit(array, flat, FilterMode::NEAREST)) {
             GTEST_SKIP() << "Device cannot blit RGBA8";
         }
         const std::vector<uint32_t> layer { 101, 102, 103, 104 };
 
-        ASSERT_TRUE(loom().upload_layer(array, 1, layer.data(), layer.size() * sizeof(uint32_t)));
-        ASSERT_TRUE(loom().blit_layer(array, flat,
+        ASSERT_TRUE(texture_loom().upload_layer(array, 1, layer.data(), layer.size() * sizeof(uint32_t)));
+        ASSERT_TRUE(texture_loom().blit_layer(array, flat,
             LayerBlit { .src_layer = 1, .dst_layer = 0, .src = rect(0, 0, 2, 2), .dst = rect(0, 0, 2, 2), .filter = FilterMode::NEAREST }));
 
         EXPECT_EQ(rgba8_words(flat), layer);
@@ -766,30 +766,30 @@ namespace {
 
     TEST_F(TextureLoomTest, UploadLayerRejectsABadLayerSizeOrMissingArguments)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr array = loom().create_2d_array(2, 2, 2, ImageFormat::RGBA8);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr array = texture_loom().create_2d_array(2, 2, 2, ImageFormat::RGBA8);
         ASSERT_NE(array, nullptr);
         const std::vector<uint32_t> layer { 1, 2, 3, 4 };
         const size_t bytes = layer.size() * sizeof(uint32_t);
 
-        EXPECT_FALSE(loom().upload_layer(array, 2, layer.data(), bytes));
-        EXPECT_FALSE(loom().upload_layer(array, 0, layer.data(), bytes - 4));
-        EXPECT_FALSE(loom().upload_layer(array, 0, nullptr, bytes));
-        EXPECT_FALSE(loom().upload_layer(nullptr, 0, layer.data(), bytes));
+        EXPECT_FALSE(texture_loom().upload_layer(array, 2, layer.data(), bytes));
+        EXPECT_FALSE(texture_loom().upload_layer(array, 0, layer.data(), bytes - 4));
+        EXPECT_FALSE(texture_loom().upload_layer(array, 0, nullptr, bytes));
+        EXPECT_FALSE(texture_loom().upload_layer(nullptr, 0, layer.data(), bytes));
     }
 
     TEST_F(TextureLoomTest, BlitScalesWithNearestFilteringByReplicatingSourcePixels)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         const std::vector<uint32_t> source { 1, 2, 3, 4 };
-        const ImagePtr src = loom().create_2d(2, 2, ImageFormat::RGBA8, source.data());
-        const ImagePtr dst = loom().create_2d(4, 4, ImageFormat::RGBA8);
+        const ImagePtr src = texture_loom().create_2d(2, 2, ImageFormat::RGBA8, source.data());
+        const ImagePtr dst = texture_loom().create_2d(4, 4, ImageFormat::RGBA8);
         ASSERT_TRUE(src && dst);
-        if (!loom().can_blit(src, dst, FilterMode::NEAREST)) {
+        if (!texture_loom().can_blit(src, dst, FilterMode::NEAREST)) {
             GTEST_SKIP() << "Device cannot blit RGBA8";
         }
 
-        ASSERT_TRUE(loom().blit_layer(src, dst,
+        ASSERT_TRUE(texture_loom().blit_layer(src, dst,
             LayerBlit { .src = rect(0, 0, 2, 2), .dst = rect(0, 0, 4, 4), .filter = FilterMode::NEAREST }));
 
         const std::vector<uint32_t> expected {
@@ -803,16 +803,16 @@ namespace {
 
     TEST_F(TextureLoomTest, BlitWithFlipXMirrorsTheRow)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         const std::vector<uint32_t> source { 1, 2, 3, 4 };
-        const ImagePtr src = loom().create_2d(4, 1, ImageFormat::RGBA8, source.data());
-        const ImagePtr dst = loom().create_2d(4, 1, ImageFormat::RGBA8);
+        const ImagePtr src = texture_loom().create_2d(4, 1, ImageFormat::RGBA8, source.data());
+        const ImagePtr dst = texture_loom().create_2d(4, 1, ImageFormat::RGBA8);
         ASSERT_TRUE(src && dst);
-        if (!loom().can_blit(src, dst, FilterMode::NEAREST)) {
+        if (!texture_loom().can_blit(src, dst, FilterMode::NEAREST)) {
             GTEST_SKIP() << "Device cannot blit RGBA8";
         }
 
-        ASSERT_TRUE(loom().blit_layer(src, dst,
+        ASSERT_TRUE(texture_loom().blit_layer(src, dst,
             LayerBlit { .src = rect(0, 0, 4, 1), .dst = rect(0, 0, 4, 1), .filter = FilterMode::NEAREST, .flip_x = true }));
 
         EXPECT_EQ(rgba8_words(dst), (std::vector<uint32_t> { 4, 3, 2, 1 }));
@@ -820,72 +820,72 @@ namespace {
 
     TEST_F(TextureLoomTest, BlitWithAZeroExtentRectangleRunsToTheImageEdge)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         const std::vector<uint32_t> source { 1, 2, 3, 4 };
-        const ImagePtr src = loom().create_2d(4, 1, ImageFormat::RGBA8, source.data());
-        const ImagePtr dst = loom().create_2d(4, 1, ImageFormat::RGBA8);
+        const ImagePtr src = texture_loom().create_2d(4, 1, ImageFormat::RGBA8, source.data());
+        const ImagePtr dst = texture_loom().create_2d(4, 1, ImageFormat::RGBA8);
         ASSERT_TRUE(src && dst);
-        if (!loom().can_blit(src, dst, FilterMode::NEAREST)) {
+        if (!texture_loom().can_blit(src, dst, FilterMode::NEAREST)) {
             GTEST_SKIP() << "Device cannot blit RGBA8";
         }
 
-        ASSERT_TRUE(loom().blit_layer(src, dst, LayerBlit { .filter = FilterMode::NEAREST }));
+        ASSERT_TRUE(texture_loom().blit_layer(src, dst, LayerBlit { .filter = FilterMode::NEAREST }));
 
         EXPECT_EQ(rgba8_words(dst), source);
     }
 
     TEST_F(TextureLoomTest, BlitRefusesMissingImagesTheSameImageAndRectanglesOutsideAnImage)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr a = loom().create_2d(4, 4, ImageFormat::RGBA8);
-        const ImagePtr b = loom().create_2d(4, 4, ImageFormat::RGBA8);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr a = texture_loom().create_2d(4, 4, ImageFormat::RGBA8);
+        const ImagePtr b = texture_loom().create_2d(4, 4, ImageFormat::RGBA8);
         ASSERT_TRUE(a && b);
 
-        EXPECT_FALSE(loom().blit_layer(nullptr, b));
-        EXPECT_FALSE(loom().blit_layer(a, nullptr));
-        EXPECT_FALSE(loom().blit_layer(a, a));
-        EXPECT_FALSE(loom().blit_layer(a, b, LayerBlit { .src = rect(2, 2, 4, 4) }));
-        EXPECT_FALSE(loom().blit_layer(a, b, LayerBlit { .dst = rect(-1, 0, 2, 2) }));
-        EXPECT_FALSE(loom().blit_layer(a, b, LayerBlit { .dst = rect(4, 0, 1, 1) }));
+        EXPECT_FALSE(texture_loom().blit_layer(nullptr, b));
+        EXPECT_FALSE(texture_loom().blit_layer(a, nullptr));
+        EXPECT_FALSE(texture_loom().blit_layer(a, a));
+        EXPECT_FALSE(texture_loom().blit_layer(a, b, LayerBlit { .src = rect(2, 2, 4, 4) }));
+        EXPECT_FALSE(texture_loom().blit_layer(a, b, LayerBlit { .dst = rect(-1, 0, 2, 2) }));
+        EXPECT_FALSE(texture_loom().blit_layer(a, b, LayerBlit { .dst = rect(4, 0, 1, 1) }));
     }
 
     TEST_F(TextureLoomTest, BlitRefusesLayersThatDoNotExist)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr a = loom().create_2d(4, 4, ImageFormat::RGBA8);
-        const ImagePtr b = loom().create_2d(4, 4, ImageFormat::RGBA8);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr a = texture_loom().create_2d(4, 4, ImageFormat::RGBA8);
+        const ImagePtr b = texture_loom().create_2d(4, 4, ImageFormat::RGBA8);
         ASSERT_TRUE(a && b);
 
-        EXPECT_FALSE(loom().blit_layer(a, b, LayerBlit { .src_layer = 1 }));
-        EXPECT_FALSE(loom().blit_layer(a, b, LayerBlit { .dst_layer = 1 }));
+        EXPECT_FALSE(texture_loom().blit_layer(a, b, LayerBlit { .src_layer = 1 }));
+        EXPECT_FALSE(texture_loom().blit_layer(a, b, LayerBlit { .dst_layer = 1 }));
     }
 
     TEST_F(TextureLoomTest, BlitRefusesDepthImages)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr color = loom().create_2d(4, 4, ImageFormat::RGBA8);
-        const ImagePtr depth = loom().create_depth_buffer(4, 4, false);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr color = texture_loom().create_2d(4, 4, ImageFormat::RGBA8);
+        const ImagePtr depth = texture_loom().create_depth_buffer(4, 4, false);
         ASSERT_TRUE(color && depth);
 
-        EXPECT_FALSE(loom().blit_layer(depth, color));
-        EXPECT_FALSE(loom().blit_layer(color, depth));
+        EXPECT_FALSE(texture_loom().blit_layer(depth, color));
+        EXPECT_FALSE(texture_loom().blit_layer(color, depth));
     }
 
     TEST_F(TextureLoomTest, CanBlitIsFalseForMissingImagesAndAnUninitializedLoom)
     {
-        EXPECT_FALSE(loom().can_blit(nullptr, nullptr));
+        EXPECT_FALSE(texture_loom().can_blit(nullptr, nullptr));
 
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr image = loom().create_2d(4, 4, ImageFormat::RGBA8);
-        EXPECT_FALSE(loom().can_blit(image, nullptr));
-        EXPECT_FALSE(loom().can_blit(nullptr, image));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr image = texture_loom().create_2d(4, 4, ImageFormat::RGBA8);
+        EXPECT_FALSE(texture_loom().can_blit(image, nullptr));
+        EXPECT_FALSE(texture_loom().can_blit(nullptr, image));
     }
 
     TEST_F(TextureLoomTest, CanBlitIsTrueBetweenTwoRgba8ImagesOnADeviceThatSupportsIt)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr a = loom().create_2d(4, 4, ImageFormat::RGBA8);
-        const ImagePtr b = loom().create_2d(4, 4, ImageFormat::RGBA8);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr a = texture_loom().create_2d(4, 4, ImageFormat::RGBA8);
+        const ImagePtr b = texture_loom().create_2d(4, 4, ImageFormat::RGBA8);
         ASSERT_TRUE(a && b);
         const auto features = backend()->get_context().get_physical_device()
                                   .getFormatProperties(vk::Format::eR8G8B8A8Unorm)
@@ -893,7 +893,7 @@ namespace {
         const bool device_supports = (features & vk::FormatFeatureFlagBits::eBlitSrc)
             && (features & vk::FormatFeatureFlagBits::eBlitDst);
 
-        EXPECT_EQ(loom().can_blit(a, b, FilterMode::NEAREST), static_cast<bool>(device_supports));
+        EXPECT_EQ(texture_loom().can_blit(a, b, FilterMode::NEAREST), static_cast<bool>(device_supports));
     }
 
     // ------------------------------------------------------------------
@@ -907,12 +907,12 @@ namespace {
 
     TEST_F(TextureLoomTest, CachedImageIsReusedForTheSameKeyAndReplacedForANewOne)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheEntry entry;
 
-        const ImagePtr first = loom().acquire_cached_image(entry, sampled_key(8, 8));
-        const ImagePtr again = loom().acquire_cached_image(entry, sampled_key(8, 8));
-        const ImagePtr larger = loom().acquire_cached_image(entry, sampled_key(16, 16));
+        const ImagePtr first = texture_loom().acquire_cached_image(entry, sampled_key(8, 8));
+        const ImagePtr again = texture_loom().acquire_cached_image(entry, sampled_key(8, 8));
+        const ImagePtr larger = texture_loom().acquire_cached_image(entry, sampled_key(16, 16));
 
         ASSERT_NE(first, nullptr);
         EXPECT_EQ(again, first);
@@ -924,19 +924,19 @@ namespace {
 
     TEST_F(TextureLoomTest, CachedKeyKindsMapToSampledArrayAndStorageImages)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheEntry sampled_entry;
         ImageCacheEntry array_entry;
         ImageCacheEntry storage_entry;
 
-        const ImagePtr sampled = loom().acquire_cached_image(sampled_entry, sampled_key(8, 8));
+        const ImagePtr sampled = texture_loom().acquire_cached_image(sampled_entry, sampled_key(8, 8));
         ImageKey array_key = sampled_key(8, 8);
         array_key.layers = 3;
         array_key.kind = ImageKey::Kind::SAMPLED_ARRAY;
-        const ImagePtr array = loom().acquire_cached_image(array_entry, array_key);
+        const ImagePtr array = texture_loom().acquire_cached_image(array_entry, array_key);
         ImageKey storage_key = sampled_key(8, 8);
         storage_key.kind = ImageKey::Kind::STORAGE_2D;
-        const ImagePtr storage = loom().acquire_cached_image(storage_entry, storage_key);
+        const ImagePtr storage = texture_loom().acquire_cached_image(storage_entry, storage_key);
 
         ASSERT_TRUE(sampled && array && storage);
         EXPECT_EQ(sampled->get_usage(), VKImage::Usage::TEXTURE_2D);
@@ -946,7 +946,7 @@ namespace {
 
     TEST_F(TextureLoomTest, CachedKeyKindsMapToRenderTargetAndDepthImages)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheEntry target_entry;
         ImageCacheEntry depth_entry;
 
@@ -956,8 +956,8 @@ namespace {
         ImageKey depth_key = sampled_key(8, 8);
         depth_key.kind = ImageKey::Kind::DEPTH;
 
-        const ImagePtr target = loom().acquire_cached_image(target_entry, target_key);
-        const ImagePtr depth = loom().acquire_cached_image(depth_entry, depth_key);
+        const ImagePtr target = texture_loom().acquire_cached_image(target_entry, target_key);
+        const ImagePtr depth = texture_loom().acquire_cached_image(depth_entry, depth_key);
 
         ASSERT_TRUE(target && depth);
         EXPECT_EQ(target->get_usage(), VKImage::Usage::RENDER_TARGET);
@@ -970,7 +970,7 @@ namespace {
 
     TEST_F(TextureLoomTest, CachedRenderTargetAndDepthAreReusedForTheSameKeyAndReplacedForANewSize)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheEntry target_entry;
         ImageCacheEntry depth_entry;
         ImageKey target_key = sampled_key(8, 8);
@@ -978,15 +978,15 @@ namespace {
         ImageKey depth_key = sampled_key(8, 8);
         depth_key.kind = ImageKey::Kind::DEPTH;
 
-        const ImagePtr target = loom().acquire_cached_image(target_entry, target_key);
-        const ImagePtr depth = loom().acquire_cached_image(depth_entry, depth_key);
-        EXPECT_EQ(loom().acquire_cached_image(target_entry, target_key), target);
-        EXPECT_EQ(loom().acquire_cached_image(depth_entry, depth_key), depth);
+        const ImagePtr target = texture_loom().acquire_cached_image(target_entry, target_key);
+        const ImagePtr depth = texture_loom().acquire_cached_image(depth_entry, depth_key);
+        EXPECT_EQ(texture_loom().acquire_cached_image(target_entry, target_key), target);
+        EXPECT_EQ(texture_loom().acquire_cached_image(depth_entry, depth_key), depth);
 
         target_key.width = 16;
         depth_key.width = 16;
-        const ImagePtr larger_target = loom().acquire_cached_image(target_entry, target_key);
-        const ImagePtr larger_depth = loom().acquire_cached_image(depth_entry, depth_key);
+        const ImagePtr larger_target = texture_loom().acquire_cached_image(target_entry, target_key);
+        const ImagePtr larger_depth = texture_loom().acquire_cached_image(depth_entry, depth_key);
 
         ASSERT_TRUE(larger_target && larger_depth);
         EXPECT_NE(larger_target, target);
@@ -997,7 +997,7 @@ namespace {
 
     TEST_F(TextureLoomTest, CachedRenderTargetAndDepthRefuseInconsistentKeys)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheEntry entry;
 
         ImageKey layered_mipped_target = sampled_key(8, 8);
@@ -1015,22 +1015,22 @@ namespace {
         mipped_depth.kind = ImageKey::Kind::DEPTH;
         mipped_depth.mip_levels = 2;
 
-        EXPECT_EQ(loom().acquire_cached_image(entry, layered_mipped_target), nullptr);
-        EXPECT_EQ(loom().acquire_cached_image(entry, non_square_cube), nullptr);
-        EXPECT_EQ(loom().acquire_cached_image(entry, layered_depth), nullptr);
-        EXPECT_EQ(loom().acquire_cached_image(entry, mipped_depth), nullptr);
+        EXPECT_EQ(texture_loom().acquire_cached_image(entry, layered_mipped_target), nullptr);
+        EXPECT_EQ(texture_loom().acquire_cached_image(entry, non_square_cube), nullptr);
+        EXPECT_EQ(texture_loom().acquire_cached_image(entry, layered_depth), nullptr);
+        EXPECT_EQ(texture_loom().acquire_cached_image(entry, mipped_depth), nullptr);
         EXPECT_EQ(entry.image, nullptr);
     }
 
     TEST_F(TextureLoomTest, ACachedRenderTargetKeyWithLayersMakesAnArrayAndAStorageKeyMakesAStorageUsableImage)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheEntry layered_entry;
         ImageKey layered = sampled_key(8, 8);
         layered.kind = ImageKey::Kind::RENDER_TARGET;
         layered.layers = 2;
 
-        const auto array = loom().acquire_cached_image(layered_entry, layered);
+        const auto array = texture_loom().acquire_cached_image(layered_entry, layered);
 
         ASSERT_NE(array, nullptr);
         EXPECT_EQ(array->get_array_layers(), 2U);
@@ -1040,7 +1040,7 @@ namespace {
         storage.kind = ImageKey::Kind::RENDER_TARGET;
         storage.storage = true;
 
-        const auto writable = loom().acquire_cached_image(storage_entry, storage);
+        const auto writable = texture_loom().acquire_cached_image(storage_entry, storage);
 
         ASSERT_NE(writable, nullptr);
         EXPECT_TRUE(static_cast<bool>(writable->get_usage_flags() & vk::ImageUsageFlagBits::eStorage));
@@ -1049,23 +1049,23 @@ namespace {
 
     TEST_F(TextureLoomTest, ACachedRenderTargetIsNotReusedForAKeyThatDiffersOnlyInStorageOrCube)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheEntry entry;
         ImageKey plain = sampled_key(8, 8);
         plain.kind = ImageKey::Kind::RENDER_TARGET;
-        const auto first = loom().acquire_cached_image(entry, plain);
+        const auto first = texture_loom().acquire_cached_image(entry, plain);
         ASSERT_NE(first, nullptr);
-        EXPECT_EQ(loom().acquire_cached_image(entry, plain), first);
+        EXPECT_EQ(texture_loom().acquire_cached_image(entry, plain), first);
 
         ImageKey writable = plain;
         writable.storage = true;
 
-        EXPECT_NE(loom().acquire_cached_image(entry, writable), first);
+        EXPECT_NE(texture_loom().acquire_cached_image(entry, writable), first);
     }
 
     TEST_F(TextureLoomTest, RefreshCachedImageRefusesRenderTargetAndDepthKeys)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheEntry entry;
         const std::vector<uint8_t> exact(16, 0);
         ImageKey target_key = sampled_key(2, 2);
@@ -1073,19 +1073,19 @@ namespace {
         ImageKey depth_key = sampled_key(2, 2);
         depth_key.kind = ImageKey::Kind::DEPTH;
 
-        EXPECT_EQ(loom().refresh_cached_image(entry, target_key, exact), nullptr);
-        EXPECT_EQ(loom().refresh_cached_image(entry, depth_key, exact), nullptr);
+        EXPECT_EQ(texture_loom().refresh_cached_image(entry, target_key, exact), nullptr);
+        EXPECT_EQ(texture_loom().refresh_cached_image(entry, depth_key, exact), nullptr);
         EXPECT_EQ(entry.image, nullptr);
     }
 
     TEST_F(TextureLoomTest, ARenderTargetTakesALevelCountAndZeroMeansAFullChain)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        const ImagePtr flat = loom().create_render_target(8, 8);
-        const ImagePtr three = loom().create_render_target(8, 8, ImageFormat::RGBA8, 3);
-        const ImagePtr full = loom().create_render_target(8, 8, ImageFormat::RGBA8, 0);
-        const ImagePtr full_wide = loom().create_render_target(32, 4, ImageFormat::RGBA8, 0);
+        const ImagePtr flat = texture_loom().create_render_target(8, 8);
+        const ImagePtr three = texture_loom().create_render_target(8, 8, ImageFormat::RGBA8, 3);
+        const ImagePtr full = texture_loom().create_render_target(8, 8, ImageFormat::RGBA8, 0);
+        const ImagePtr full_wide = texture_loom().create_render_target(32, 4, ImageFormat::RGBA8, 0);
 
         ASSERT_TRUE(flat && three && full && full_wide);
         EXPECT_EQ(flat->get_mip_levels(), 1U);
@@ -1096,29 +1096,29 @@ namespace {
 
     TEST_F(TextureLoomTest, TheAttachmentViewCoversOnlyTheFirstLevel)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
-        const ImagePtr mipped = loom().create_render_target(8, 8, ImageFormat::RGBA8, 4);
-        const ImagePtr flat = loom().create_render_target(8, 8);
+        ASSERT_TRUE(texture_loom().initialize(backend()));
+        const ImagePtr mipped = texture_loom().create_render_target(8, 8, ImageFormat::RGBA8, 4);
+        const ImagePtr flat = texture_loom().create_render_target(8, 8);
         ASSERT_TRUE(mipped && flat);
 
-        const vk::ImageView first_level = loom().attachment_view(mipped);
+        const vk::ImageView first_level = texture_loom().attachment_view(mipped);
 
         EXPECT_TRUE(first_level);
         EXPECT_NE(first_level, mipped->get_image_view());
-        EXPECT_EQ(loom().attachment_view(mipped), first_level);
-        EXPECT_TRUE(loom().attachment_view(flat));
+        EXPECT_EQ(texture_loom().attachment_view(mipped), first_level);
+        EXPECT_TRUE(texture_loom().attachment_view(flat));
     }
 
     TEST_F(TextureLoomTest, TheAttachmentViewOfNothingIsNull)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
 
-        EXPECT_FALSE(loom().attachment_view(nullptr));
+        EXPECT_FALSE(texture_loom().attachment_view(nullptr));
     }
 
     TEST_F(TextureLoomTest, CachedImageRefusesDegenerateAndInconsistentKeys)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheEntry entry;
 
         ImageKey zero_width = sampled_key(0, 8);
@@ -1132,23 +1132,23 @@ namespace {
         layered_storage.kind = ImageKey::Kind::STORAGE_2D;
         layered_storage.layers = 2;
 
-        EXPECT_EQ(loom().acquire_cached_image(entry, zero_width), nullptr);
-        EXPECT_EQ(loom().acquire_cached_image(entry, layered_2d), nullptr);
-        EXPECT_EQ(loom().acquire_cached_image(entry, mipped_array), nullptr);
-        EXPECT_EQ(loom().acquire_cached_image(entry, layered_storage), nullptr);
+        EXPECT_EQ(texture_loom().acquire_cached_image(entry, zero_width), nullptr);
+        EXPECT_EQ(texture_loom().acquire_cached_image(entry, layered_2d), nullptr);
+        EXPECT_EQ(texture_loom().acquire_cached_image(entry, mipped_array), nullptr);
+        EXPECT_EQ(texture_loom().acquire_cached_image(entry, layered_storage), nullptr);
         EXPECT_EQ(entry.image, nullptr);
     }
 
     TEST_F(TextureLoomTest, RefreshCachedImageUploadsPixelsIntoTheCachedImage)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheEntry entry;
         const std::vector<uint32_t> pixels { 7, 8, 9, 10 };
         const std::vector<uint32_t> updated_pixels { 11, 12, 13, 14 };
         const std::span<const uint8_t> bytes(
             reinterpret_cast<const uint8_t*>(pixels.data()), pixels.size() * sizeof(uint32_t));
 
-        ImagePtr image = loom().refresh_cached_image(entry, sampled_key(2, 2), bytes);
+        ImagePtr image = texture_loom().refresh_cached_image(entry, sampled_key(2, 2), bytes);
 
         ASSERT_NE(image, nullptr);
         EXPECT_EQ(rgba8_words(image), pixels);
@@ -1156,7 +1156,7 @@ namespace {
         const std::span<const uint8_t> updated_bytes(
             reinterpret_cast<const uint8_t*>(updated_pixels.data()),
             updated_pixels.size() * sizeof(uint32_t));
-        const ImagePtr refreshed = loom().refresh_cached_image(entry, sampled_key(2, 2), updated_bytes);
+        const ImagePtr refreshed = texture_loom().refresh_cached_image(entry, sampled_key(2, 2), updated_bytes);
 
         EXPECT_EQ(refreshed, image);
         EXPECT_EQ(rgba8_words(refreshed), updated_pixels);
@@ -1164,50 +1164,50 @@ namespace {
 
     TEST_F(TextureLoomTest, RefreshCachedImageRefusesAWrongByteCountAndStorageKeys)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheEntry entry;
         const std::vector<uint8_t> too_few(15, 0);
         const std::vector<uint8_t> exact(16, 0);
         ImageKey storage_key = sampled_key(2, 2);
         storage_key.kind = ImageKey::Kind::STORAGE_2D;
 
-        EXPECT_EQ(loom().refresh_cached_image(entry, sampled_key(2, 2), too_few), nullptr);
-        EXPECT_EQ(loom().refresh_cached_image(entry, storage_key, exact), nullptr);
+        EXPECT_EQ(texture_loom().refresh_cached_image(entry, sampled_key(2, 2), too_few), nullptr);
+        EXPECT_EQ(texture_loom().refresh_cached_image(entry, storage_key, exact), nullptr);
     }
 
     TEST_F(TextureLoomTest, CacheSetReturnsOneImagePerKey)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheSet cache(1U << 20);
 
-        const ImagePtr a = cache.acquire(loom(), sampled_key(8, 8));
-        const ImagePtr a_again = cache.acquire(loom(), sampled_key(8, 8));
-        const ImagePtr b = cache.acquire(loom(), sampled_key(16, 8));
+        const ImagePtr a = cache.acquire(texture_loom(), sampled_key(8, 8));
+        const ImagePtr a_again = cache.acquire(texture_loom(), sampled_key(8, 8));
+        const ImagePtr b = cache.acquire(texture_loom(), sampled_key(16, 8));
 
         ASSERT_NE(a, nullptr);
         EXPECT_EQ(a_again, a);
         ASSERT_NE(b, nullptr);
         EXPECT_NE(b, a);
-        EXPECT_EQ(cache.acquire(loom(), sampled_key(8, 8)), a);
+        EXPECT_EQ(cache.acquire(texture_loom(), sampled_key(8, 8)), a);
     }
 
     TEST_F(TextureLoomTest, CacheSetDoesNotRememberAKeyItCouldNotCreate)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheSet cache(1U << 20);
 
-        EXPECT_EQ(cache.acquire(loom(), sampled_key(0, 8)), nullptr);
-        EXPECT_EQ(cache.acquire(loom(), sampled_key(0, 8)), nullptr);
-        EXPECT_NE(cache.acquire(loom(), sampled_key(8, 8)), nullptr);
+        EXPECT_EQ(cache.acquire(texture_loom(), sampled_key(0, 8)), nullptr);
+        EXPECT_EQ(cache.acquire(texture_loom(), sampled_key(0, 8)), nullptr);
+        EXPECT_NE(cache.acquire(texture_loom(), sampled_key(8, 8)), nullptr);
     }
 
     TEST_F(TextureLoomTest, CacheSetStillServesImagesBeyondItsByteBudget)
     {
-        ASSERT_TRUE(loom().initialize(backend()));
+        ASSERT_TRUE(texture_loom().initialize(backend()));
         ImageCacheSet cache(1);
 
-        EXPECT_NE(cache.acquire(loom(), sampled_key(8, 8)), nullptr);
-        EXPECT_NE(cache.acquire(loom(), sampled_key(16, 16)), nullptr);
+        EXPECT_NE(cache.acquire(texture_loom(), sampled_key(8, 8)), nullptr);
+        EXPECT_NE(cache.acquire(texture_loom(), sampled_key(16, 16)), nullptr);
     }
 
 } // namespace

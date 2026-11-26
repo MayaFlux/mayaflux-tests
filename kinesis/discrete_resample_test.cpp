@@ -75,7 +75,7 @@ namespace {
         return out;
     }
 
-    std::vector<double> noise(size_t count, uint32_t seed)
+    std::vector<double> discrete_resample_noise(size_t count, uint32_t seed)
     {
         std::mt19937 engine(seed);
         std::uniform_real_distribution<double> dist(-1.0, 1.0);
@@ -117,7 +117,7 @@ namespace {
     TEST_P(DiscreteResampleRatioTest, MatchesTheDirectSumOverEveryInputSample)
     {
         const auto& p = GetParam();
-        const auto input = noise(p.count, 5);
+        const auto input = discrete_resample_noise(p.count, 5);
 
         const auto got = D::resample(input, p.from, p.to, p.config);
         const auto want = direct_sum(input, p.from, p.to, p.config);
@@ -131,7 +131,7 @@ namespace {
     TEST_P(DiscreteResampleRatioTest, TheLengthIsTheCeilingOfTheRatio)
     {
         const auto& p = GetParam();
-        const auto input = noise(p.count, 6);
+        const auto input = discrete_resample_noise(p.count, 6);
 
         const uint64_t scaled = static_cast<uint64_t>(p.count) * p.to;
         const size_t ceiling = static_cast<size_t>((scaled + p.from - 1) / p.from);
@@ -299,7 +299,7 @@ namespace {
     TEST_P(DiscreteResamplerRatioTest, TheStreamIsTheWholeBufferOutputHoweverTheInputIsCut)
     {
         const auto [from, to] = GetParam();
-        const auto input = noise(12000, 5);
+        const auto input = discrete_resample_noise(12000, 5);
         const auto whole = D::resample(input, from, to);
         constexpr std::array<size_t, 8> blocks { 1, 7, 64, 513, 3, 2048, 0, 100 };
 
@@ -315,7 +315,7 @@ namespace {
     TEST_P(DiscreteResamplerRatioTest, OneSampleAtATimeGivesTheSameOutput)
     {
         const auto [from, to] = GetParam();
-        const auto input = noise(900, 8);
+        const auto input = discrete_resample_noise(900, 8);
         const auto whole = D::resample(input, from, to);
         constexpr std::array<size_t, 1> blocks { 1 };
 
@@ -371,7 +371,7 @@ namespace {
     TEST(DiscreteResamplerTest, OnlyTheInputTheNextOutputNeedsIsKept)
     {
         D::Resampler resampler(48000, 16000);
-        const auto block = noise(480, 3);
+        const auto block = discrete_resample_noise(480, 3);
 
         size_t most = 0;
         for (size_t i = 0; i < 400; ++i) {
@@ -384,7 +384,7 @@ namespace {
 
     TEST(DiscreteResamplerTest, AFlushEndsTheStreamAndTheNextPushStartsANewOne)
     {
-        const auto input = noise(3000, 2);
+        const auto input = discrete_resample_noise(3000, 2);
         const auto whole = D::resample(input, 44100, 16000);
         constexpr std::array<size_t, 2> blocks { 333, 1000 };
         D::Resampler resampler(44100, 16000);
@@ -398,7 +398,7 @@ namespace {
 
     TEST(DiscreteResamplerTest, ResetForgetsAPartialStream)
     {
-        const auto input = noise(3000, 4);
+        const auto input = discrete_resample_noise(3000, 4);
         const auto whole = D::resample(input, 48000, 16000);
         constexpr std::array<size_t, 1> blocks { 700 };
         D::Resampler resampler(48000, 16000);
@@ -412,7 +412,7 @@ namespace {
     TEST(DiscreteResamplerTest, EqualRatesPassTheInputThroughWithNoDelay)
     {
         D::Resampler resampler(16000, 16000);
-        const auto input = noise(50, 6);
+        const auto input = discrete_resample_noise(50, 6);
 
         EXPECT_EQ(resampler.lookahead(), 0U);
         EXPECT_EQ(resampler.push(input), input);

@@ -17,7 +17,7 @@ namespace {
     using Nodes::NodeContext;
     using Nodes::NodeState;
 
-    std::vector<double> run(Node& node, size_t count)
+    std::vector<double> node_claim_run(Node& node, size_t count)
     {
         std::vector<double> samples;
         samples.reserve(count);
@@ -55,7 +55,7 @@ namespace {
             for (uint32_t i = 0; i < GetParam().buffers; ++i) {
                 a->add_buffer_reference();
             }
-            reference = run(*b, 16);
+            reference = node_claim_run(*b, 16);
         }
 
         [[nodiscard]] size_t offset() const { return GetParam().consumes ? 1 : 0; }
@@ -72,7 +72,7 @@ namespace {
     {
         Buffers::extract_single_sample(a);
 
-        const auto following = run(*a, 3);
+        const auto following = node_claim_run(*a, 3);
 
         for (size_t i = 0; i < following.size(); ++i) {
             EXPECT_DOUBLE_EQ(following[i], reference[offset() + i]) << "sample " << i;
@@ -96,7 +96,7 @@ namespace {
             EXPECT_DOUBLE_EQ(extracted[i], reference[i]) << "sample " << i;
         }
 
-        const auto following = run(*a, 3);
+        const auto following = node_claim_run(*a, 3);
         const size_t skipped = GetParam().consumes ? 8 : 0;
         for (size_t i = 0; i < following.size(); ++i) {
             EXPECT_DOUBLE_EQ(following[i], reference[skipped + i]) << "sample " << i;
@@ -116,7 +116,7 @@ namespace {
             EXPECT_DOUBLE_EQ(buffer[i], reference[i]) << "sample " << i;
         }
 
-        const auto following = run(*a, 3);
+        const auto following = node_claim_run(*a, 3);
         const size_t skipped = GetParam().consumes ? 8 : 0;
         for (size_t i = 0; i < following.size(); ++i) {
             EXPECT_DOUBLE_EQ(following[i], reference[skipped + i]) << "sample " << i;
@@ -176,7 +176,7 @@ namespace {
             for (uint32_t i = 0; i < GetParam(); ++i) {
                 a->add_buffer_reference();
             }
-            reference = run(*b, 8);
+            reference = node_claim_run(*b, 8);
         }
 
         std::vector<double> reference;
@@ -222,26 +222,26 @@ namespace {
 
     TEST_F(NodeSaveRestoreTest, RestoreRewindsTheNodeToTheSave)
     {
-        const auto reference = run(*b, 5);
+        const auto reference = node_claim_run(*b, 5);
 
         a->save_state();
-        run(*a, 5);
+        node_claim_run(*a, 5);
         a->restore_state();
 
-        EXPECT_EQ(run(*a, 5), reference);
+        EXPECT_EQ(node_claim_run(*a, 5), reference);
     }
 
     TEST_F(NodeSaveRestoreTest, SaveAndRestoreRepeatCleanly)
     {
-        const auto reference = run(*b, 4);
+        const auto reference = node_claim_run(*b, 4);
 
         for (int round = 0; round < 3; ++round) {
             a->save_state();
-            run(*a, 4);
+            node_claim_run(*a, 4);
             a->restore_state();
         }
 
-        EXPECT_EQ(run(*a, 4), reference);
+        EXPECT_EQ(node_claim_run(*a, 4), reference);
     }
 
     TEST_F(NodeSaveRestoreTest, RestoreRewindsTheLastOutputToo)
@@ -249,7 +249,7 @@ namespace {
         const double before = a->get_last_output();
 
         a->save_state();
-        run(*a, 3);
+        node_claim_run(*a, 3);
         a->restore_state();
 
         EXPECT_DOUBLE_EQ(a->get_last_output(), before);
@@ -261,15 +261,15 @@ namespace {
         auto modulator_b = std::make_shared<Sine>(5.0F, 0.5);
         auto modulated_a = std::make_shared<Sine>(modulator_a, 880.0F, 0.5);
         auto modulated_b = std::make_shared<Sine>(modulator_b, 880.0F, 0.5);
-        run(*modulated_a, 2);
-        run(*modulated_b, 2);
-        const auto reference = run(*modulated_b, 6);
+        node_claim_run(*modulated_a, 2);
+        node_claim_run(*modulated_b, 2);
+        const auto reference = node_claim_run(*modulated_b, 6);
 
         modulated_a->save_state();
-        run(*modulated_a, 6);
+        node_claim_run(*modulated_a, 6);
         modulated_a->restore_state();
 
-        EXPECT_EQ(run(*modulated_a, 6), reference);
+        EXPECT_EQ(node_claim_run(*modulated_a, 6), reference);
     }
 
     TEST_F(NodeSaveRestoreTest, TicksAreSuppressedWhileSavedAndResumeAfterRestore)
@@ -278,11 +278,11 @@ namespace {
         a->on_tick([&ticks](NodeContext&) { ++ticks; });
 
         a->save_state();
-        run(*a, 3);
+        node_claim_run(*a, 3);
         EXPECT_EQ(ticks, 0);
 
         a->restore_state();
-        run(*a, 3);
+        node_claim_run(*a, 3);
         EXPECT_EQ(ticks, 3);
     }
 
@@ -293,7 +293,7 @@ namespace {
         a->m_fire_events_during_snapshot = true;
 
         a->save_state();
-        run(*a, 3);
+        node_claim_run(*a, 3);
         a->restore_state();
 
         EXPECT_EQ(ticks, 3);
@@ -305,11 +305,11 @@ namespace {
         a->on_tick([&ticks](NodeContext&) { ++ticks; });
         a->set_in_network(true);
 
-        run(*a, 3);
+        node_claim_run(*a, 3);
         EXPECT_EQ(ticks, 0);
 
         a->set_in_network(false);
-        run(*a, 3);
+        node_claim_run(*a, 3);
         EXPECT_EQ(ticks, 3);
     }
 
@@ -355,20 +355,20 @@ namespace {
     TEST_F(NodeClaimClashTest, ContendedNodeTimesOutAndIsLeftUntouched)
     {
         Nodes::atomic_set_flag_strong(a->m_state, NodeState::ACTIVE);
-        const auto reference = run(*b, 4);
+        const auto reference = node_claim_run(*b, 4);
         ASSERT_TRUE(a->try_claim_snapshot_context(777));
 
         EXPECT_DOUBLE_EQ(Buffers::extract_single_sample(a), 0.0);
 
         EXPECT_TRUE(a->is_in_snapshot_context(777));
         a->release_snapshot_context(777);
-        EXPECT_EQ(run(*a, 4), reference);
+        EXPECT_EQ(node_claim_run(*a, 4), reference);
     }
 
     TEST_F(NodeClaimClashTest, ConcurrentExtractionsLeaveAnActiveNodeUnchanged)
     {
         Nodes::atomic_set_flag_strong(a->m_state, NodeState::ACTIVE);
-        const auto reference = run(*b, 4);
+        const auto reference = node_claim_run(*b, 4);
 
         std::vector<std::thread> threads;
         threads.reserve(4);
@@ -384,7 +384,7 @@ namespace {
         }
 
         EXPECT_FALSE(a->has_active_snapshot());
-        EXPECT_EQ(run(*a, 4), reference);
+        EXPECT_EQ(node_claim_run(*a, 4), reference);
     }
 
     TEST_F(NodeClaimClashTest, ThrowingNodeReleasesTheClaimAndYieldsSilence)

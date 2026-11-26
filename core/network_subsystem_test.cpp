@@ -32,7 +32,7 @@ namespace {
     using Core::NetworkTransport;
 
     template <typename Predicate>
-    bool eventually(Predicate predicate, std::chrono::milliseconds timeout = 3s)
+    bool network_subsystem_eventually(Predicate predicate, std::chrono::milliseconds timeout = 3s)
     {
         const auto deadline = std::chrono::steady_clock::now() + timeout;
         while (std::chrono::steady_clock::now() < deadline) {
@@ -237,21 +237,21 @@ namespace {
         std::function<uint64_t()> m_allocator;
     };
 
-    class SubsystemRig {
+    class NetworkSubsystemSubsystemRig {
     public:
-        explicit SubsystemRig(const GlobalNetworkConfig& network_config = {})
+        explicit NetworkSubsystemSubsystemRig(const GlobalNetworkConfig& network_config = {})
             : scheduler(std::make_shared<Vruta::TaskScheduler>(48000))
             , subsystem(network_config)
             , handle(nullptr, nullptr, scheduler, nullptr, nullptr, subsystem.get_tokens())
         {
         }
 
-        SubsystemRig(const SubsystemRig&) = delete;
-        SubsystemRig& operator=(const SubsystemRig&) = delete;
-        SubsystemRig(SubsystemRig&&) = delete;
-        SubsystemRig& operator=(SubsystemRig&&) = delete;
+        NetworkSubsystemSubsystemRig(const NetworkSubsystemSubsystemRig&) = delete;
+        NetworkSubsystemSubsystemRig& operator=(const NetworkSubsystemSubsystemRig&) = delete;
+        NetworkSubsystemSubsystemRig(NetworkSubsystemSubsystemRig&&) = delete;
+        NetworkSubsystemSubsystemRig& operator=(NetworkSubsystemSubsystemRig&&) = delete;
 
-        ~SubsystemRig() { subsystem.shutdown(); }
+        ~NetworkSubsystemSubsystemRig() { subsystem.shutdown(); }
 
         void initialize() { subsystem.initialize(handle); }
 
@@ -303,7 +303,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, NewSubsystemIsIdleAndReportsItsTokens)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
 
         EXPECT_FALSE(rig.subsystem.is_ready());
         EXPECT_FALSE(rig.subsystem.is_running());
@@ -316,7 +316,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, StartBeforeInitializeIsRejected)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
 
         rig.subsystem.start();
 
@@ -327,7 +327,7 @@ namespace {
     {
         ASSERT_FALSE(network_service_registered());
         ASSERT_FALSE(Portal::Network::is_initialized());
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
 
         rig.initialize();
 
@@ -345,7 +345,7 @@ namespace {
         config.udp.enabled = true;
         config.tcp.enabled = true;
         config.uds.enabled = true;
-        SubsystemRig rig(config);
+        NetworkSubsystemSubsystemRig rig(config);
 
         rig.initialize();
 
@@ -362,7 +362,7 @@ namespace {
     {
         GlobalNetworkConfig config;
         config.shared_memory.enabled = true;
-        SubsystemRig rig(config);
+        NetworkSubsystemSubsystemRig rig(config);
 
         rig.initialize();
 
@@ -377,7 +377,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, AddBackendRejectsNull)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
 
         EXPECT_FALSE(rig.subsystem.add_backend(nullptr));
@@ -386,7 +386,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, AddBackendInitializesAndRegistersTheBackend)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
 
@@ -401,7 +401,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, AddBackendRejectsADuplicateTransportWithoutInitializingIt)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto first_counters = std::make_shared<NetCounters>();
         auto second_counters = std::make_shared<NetCounters>();
@@ -416,7 +416,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, AddBackendRejectsABackendThatFailsToInitialize)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
 
@@ -434,7 +434,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, StartAndStopDriveEveryBackend)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto udp = std::make_shared<NetCounters>();
         auto tcp = std::make_shared<NetCounters>();
@@ -454,7 +454,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, StartAndStopAreIdempotent)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         rig.add_fake(NetworkTransport::UDP, counters);
@@ -473,7 +473,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, PauseStopsAndResumeStartsAgain)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         rig.add_fake(NetworkTransport::UDP, counters);
@@ -490,7 +490,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, ShutdownReleasesBackendsServiceAndPortal)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         rig.add_fake(NetworkTransport::UDP, counters);
@@ -511,7 +511,7 @@ namespace {
     {
         auto counters = std::make_shared<NetCounters>();
         {
-            SubsystemRig rig;
+            NetworkSubsystemSubsystemRig rig;
             rig.initialize();
             rig.add_fake(NetworkTransport::UDP, counters);
             rig.subsystem.shutdown();
@@ -524,7 +524,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, ReinitializeAfterShutdownIsPossible)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         rig.subsystem.shutdown();
         ASSERT_FALSE(rig.subsystem.is_ready());
@@ -541,7 +541,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, OpenEndpointAssignsDistinctIdsAndRoutesToTheTransportBackend)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto udp = std::make_shared<NetCounters>();
         auto tcp = std::make_shared<NetCounters>();
@@ -566,7 +566,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, OpenEndpointWithoutABackendForTheTransportFails)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto udp = std::make_shared<NetCounters>();
         rig.add_fake(NetworkTransport::UDP, udp);
@@ -577,7 +577,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, OpenEndpointThatTheBackendRefusesIsNotRouted)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         auto* backend = rig.add_fake(NetworkTransport::UDP, counters);
@@ -594,7 +594,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, SendAndSendToReachTheOwningBackend)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto udp = std::make_shared<NetCounters>();
         auto tcp = std::make_shared<NetCounters>();
@@ -617,7 +617,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, UnknownEndpointIsClosedAndRejectsTraffic)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         rig.add_fake(NetworkTransport::UDP, counters);
@@ -632,7 +632,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, CloseEndpointForgetsTheRoute)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         rig.add_fake(NetworkTransport::UDP, counters);
@@ -652,7 +652,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, GetAllEndpointsAggregatesEveryBackend)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         rig.add_fake(NetworkTransport::UDP, std::make_shared<NetCounters>());
         rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
@@ -674,7 +674,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, ReceiveCallbackIsDispatchedPerEndpoint)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::UDP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -705,7 +705,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, ReplacingTheReceiveCallbackRedirectsDelivery)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::UDP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -725,7 +725,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, ClosedEndpointNoLongerReceivesCallbacks)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::UDP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -748,7 +748,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, EveryBackendReceivesTheEndpointIdAllocator)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::UDP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -766,7 +766,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, AcceptedConnectionDeliversToTheListenersCallback)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -789,7 +789,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, ListenerCallbackSetAfterTheAcceptStillApplies)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -806,7 +806,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, AcceptedConnectionsOfOneListenerShareItsCallback)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -825,7 +825,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, AcceptedConnectionOwnCallbackTakesPrecedence)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -846,7 +846,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, AcceptedConnectionIsRoutedForSendAndStateQueries)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         auto* backend = rig.add_fake(NetworkTransport::TCP, counters);
@@ -865,7 +865,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, ConnectionWithoutAKnownListenerIsNotRouted)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         auto* backend = rig.add_fake(NetworkTransport::TCP, counters);
@@ -881,7 +881,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, ClosingAListenerClosesItsAcceptedConnections)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         auto* backend = rig.add_fake(NetworkTransport::TCP, counters);
@@ -907,7 +907,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, ClosingAnAcceptedConnectionLeavesTheListenerServing)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         auto* backend = rig.add_fake(NetworkTransport::TCP, counters);
@@ -952,7 +952,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, HandlerMayCloseItsOwnConnection)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         auto* backend = rig.add_fake(NetworkTransport::TCP, counters);
@@ -975,7 +975,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, HandlerMayReplaceItsOwnCallback)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -1002,7 +1002,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, HandlerMayOpenAnotherEndpoint)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto udp = std::make_shared<NetCounters>();
         auto* tcp_backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
@@ -1037,7 +1037,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, StateCallbackReportsTheTransitionsOfItsEndpointOnly)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -1063,7 +1063,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, ReplacingTheStateCallbackRedirectsDelivery)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -1083,7 +1083,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, AcceptedConnectionReportsThroughTheListenersStateCallback)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -1107,7 +1107,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, AcceptedConnectionOwnStateCallbackTakesPrecedence)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -1128,7 +1128,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, ClosedEndpointNoLongerReportsState)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -1147,7 +1147,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, StateHandlerMayCloseItsOwnEndpoint)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         auto* backend = rig.add_fake(NetworkTransport::TCP, counters);
@@ -1167,7 +1167,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, WriteBacklogComesFromTheOwningBackend)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::TCP, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -1180,7 +1180,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, LineControlReachesTheOwningBackendWithEachLineOptional)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(NetworkTransport::SERIAL, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
@@ -1201,7 +1201,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, LineControlOfAnUnknownEndpointIsRefused)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
 
         EXPECT_FALSE(rig.subsystem.set_control_lines(99, true, true));
@@ -1210,7 +1210,7 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, NetworkSubsystemTest, ABackendWithoutLineControlRefusesIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::loopback_tcp>() }))
     {
-        SubsystemRig rig(GlobalNetworkConfig::with_tcp());
+        NetworkSubsystemSubsystemRig rig(GlobalNetworkConfig::with_tcp());
         rig.initialize();
         EndpointInfo listener = info_for(NetworkTransport::TCP, EndpointRole::RECEIVE);
         listener.local_port = free_tcp_port();
@@ -1228,7 +1228,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, PostedCallableRunsOnceAfterItsDelay)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         rig.subsystem.start();
         std::atomic<int> runs { 0 };
@@ -1241,7 +1241,7 @@ namespace {
         });
 
         EXPECT_NE(token, 0U);
-        ASSERT_TRUE(eventually([&] { return runs.load() == 1; }));
+        ASSERT_TRUE(network_subsystem_eventually([&] { return runs.load() == 1; }));
         EXPECT_GE(ran_at.load() - posted, 40ms);
         std::this_thread::sleep_for(60ms);
         EXPECT_EQ(runs.load(), 1);
@@ -1249,7 +1249,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, EachPostedTimerGetsItsOwnToken)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
 
         const uint64_t first = rig.subsystem.post_after(10s, [] { });
@@ -1262,7 +1262,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, CancelledTimerNeverRuns)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         rig.subsystem.start();
         std::atomic<int> runs { 0 };
@@ -1276,12 +1276,12 @@ namespace {
 
     TEST(NetworkSubsystemTest, CancellingATimerThatAlreadyRanOrIsUnknownIsHarmless)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         rig.subsystem.start();
         std::atomic<int> runs { 0 };
         const uint64_t token = rig.subsystem.post_after(5ms, [&] { ++runs; });
-        ASSERT_TRUE(eventually([&] { return runs.load() == 1; }));
+        ASSERT_TRUE(network_subsystem_eventually([&] { return runs.load() == 1; }));
 
         EXPECT_NO_THROW(rig.subsystem.cancel_post(token));
         EXPECT_NO_THROW(rig.subsystem.cancel_post(token));
@@ -1291,7 +1291,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, TimersRunTogetherOnOneThreadThatIsNotTheCaller)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         rig.subsystem.start();
         std::promise<std::thread::id> first;
@@ -1313,7 +1313,7 @@ namespace {
     {
         std::atomic<int> runs { 0 };
         {
-            SubsystemRig rig;
+            NetworkSubsystemSubsystemRig rig;
             rig.initialize();
             rig.subsystem.start();
             rig.subsystem.post_after(100ms, [&] { ++runs; });
@@ -1330,12 +1330,12 @@ namespace {
 
     TEST(NetworkSubsystemTest, RegisteredServiceRoutesEveryOperationToTheSubsystem)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<NetCounters>();
         auto* backend = rig.add_fake(NetworkTransport::UDP, counters);
         ASSERT_NE(backend, nullptr);
-        auto* service = SubsystemRig::service();
+        auto* service = NetworkSubsystemSubsystemRig::service();
         ASSERT_NE(service, nullptr);
         const std::vector<uint8_t> data { 8, 9 };
 
@@ -1359,12 +1359,12 @@ namespace {
 
     TEST(NetworkSubsystemTest, RegisteredServiceRoutesTheStateBacklogLineControlAndTimerMembers)
     {
-        SubsystemRig rig;
+        NetworkSubsystemSubsystemRig rig;
         rig.initialize();
         rig.subsystem.start();
         auto* backend = rig.add_fake(NetworkTransport::SERIAL, std::make_shared<NetCounters>());
         ASSERT_NE(backend, nullptr);
-        auto* service = SubsystemRig::service();
+        auto* service = NetworkSubsystemSubsystemRig::service();
         ASSERT_NE(service, nullptr);
         ASSERT_TRUE(service->set_endpoint_state_callback);
         ASSERT_TRUE(service->get_write_backlog);
@@ -1391,7 +1391,7 @@ namespace {
         std::atomic<int> runs { 0 };
         const uint64_t token = service->post_after(5ms, [&] { ++runs; });
         EXPECT_NE(token, 0U);
-        ASSERT_TRUE(eventually([&] { return runs.load() == 1; }));
+        ASSERT_TRUE(network_subsystem_eventually([&] { return runs.load() == 1; }));
         service->cancel_post(token);
     }
 
@@ -1402,10 +1402,10 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST, NetworkSubsystemTest, UdpLoopbackThroughTheRegisteredService, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::loopback_udp>() }))
     {
         Inbox inbox;
-        SubsystemRig rig(GlobalNetworkConfig::with_udp());
+        NetworkSubsystemSubsystemRig rig(GlobalNetworkConfig::with_udp());
         rig.initialize();
         rig.subsystem.start();
-        auto* service = SubsystemRig::service();
+        auto* service = NetworkSubsystemSubsystemRig::service();
         ASSERT_NE(service, nullptr);
         const uint16_t port = free_udp_port();
 
@@ -1427,7 +1427,7 @@ namespace {
 
         ASSERT_TRUE(service->send(sender_id, data.data(), data.size()));
 
-        ASSERT_TRUE(eventually([&] { return inbox.size() == 1; }));
+        ASSERT_TRUE(network_subsystem_eventually([&] { return inbox.size() == 1; }));
         EXPECT_EQ(inbox.items.front(), data);
         EXPECT_EQ(service->get_endpoint_state(receiver_id), EndpointState::OPEN);
     }
@@ -1435,10 +1435,10 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST, NetworkSubsystemTest, UdpKeepsDeliveringAfterPauseAndResume, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::loopback_udp>() }))
     {
         Inbox inbox;
-        SubsystemRig rig(GlobalNetworkConfig::with_udp());
+        NetworkSubsystemSubsystemRig rig(GlobalNetworkConfig::with_udp());
         rig.initialize();
         rig.subsystem.start();
-        auto* service = SubsystemRig::service();
+        auto* service = NetworkSubsystemSubsystemRig::service();
         ASSERT_NE(service, nullptr);
         const uint16_t port = free_udp_port();
 
@@ -1462,7 +1462,7 @@ namespace {
         ASSERT_TRUE(rig.subsystem.is_running());
         ASSERT_TRUE(service->send(sender_id, data.data(), data.size()));
 
-        ASSERT_TRUE(eventually([&] { return inbox.size() == 1; }));
+        ASSERT_TRUE(network_subsystem_eventually([&] { return inbox.size() == 1; }));
     }
 
     // ------------------------------------------------------------------
@@ -1473,10 +1473,10 @@ namespace {
     {
         std::mutex mutex;
         std::vector<std::pair<uint64_t, std::vector<uint8_t>>> seen;
-        SubsystemRig rig(GlobalNetworkConfig::with_tcp());
+        NetworkSubsystemSubsystemRig rig(GlobalNetworkConfig::with_tcp());
         rig.initialize();
         rig.subsystem.start();
-        auto* service = SubsystemRig::service();
+        auto* service = NetworkSubsystemSubsystemRig::service();
         ASSERT_NE(service, nullptr);
         const uint16_t port = free_tcp_port();
 
@@ -1496,7 +1496,7 @@ namespace {
         const std::vector<uint8_t> frame { 0, 0, 0, 3, 1, 2, 3 };
         asio::write(client, asio::buffer(frame));
 
-        ASSERT_TRUE(eventually([&] {
+        ASSERT_TRUE(network_subsystem_eventually([&] {
             std::scoped_lock lock(mutex);
             return seen.size() == 1;
         }));
@@ -1511,7 +1511,7 @@ namespace {
         std::array<uint8_t, 6> received {};
         size_t got = 0;
         client.non_blocking(true);
-        ASSERT_TRUE(eventually([&] {
+        ASSERT_TRUE(network_subsystem_eventually([&] {
             asio::error_code ec;
             got += client.read_some(asio::buffer(received.data() + got, received.size() - got), ec);
             return got == received.size();
@@ -1536,10 +1536,10 @@ namespace {
 
         Inbox inbox;
         {
-            SubsystemRig rig(GlobalNetworkConfig::with_uds());
+            NetworkSubsystemSubsystemRig rig(GlobalNetworkConfig::with_uds());
             rig.initialize();
             rig.subsystem.start();
-            auto* service = SubsystemRig::service();
+            auto* service = NetworkSubsystemSubsystemRig::service();
             ASSERT_NE(service, nullptr);
 
             EndpointInfo listener = info_for(NetworkTransport::UDS, EndpointRole::RECEIVE);
@@ -1560,9 +1560,9 @@ namespace {
             ASSERT_TRUE(sink.is_open());
             const std::vector<uint8_t> data { 0xCA, 0xFE };
 
-            ASSERT_TRUE(eventually([&] { return sink.send(data); }));
+            ASSERT_TRUE(network_subsystem_eventually([&] { return sink.send(data); }));
 
-            ASSERT_TRUE(eventually([&] { return inbox.size() == 1; }));
+            ASSERT_TRUE(network_subsystem_eventually([&] { return inbox.size() == 1; }));
             EXPECT_EQ(inbox.items.front(), data);
         }
 
@@ -1605,10 +1605,10 @@ namespace {
     {
         const TempSocketDirectory directory("mfu-reply");
         Inbox replies;
-        SubsystemRig rig(GlobalNetworkConfig::with_uds());
+        NetworkSubsystemSubsystemRig rig(GlobalNetworkConfig::with_uds());
         rig.initialize();
         rig.subsystem.start();
-        auto* service = SubsystemRig::service();
+        auto* service = NetworkSubsystemSubsystemRig::service();
         ASSERT_NE(service, nullptr);
 
         EndpointInfo listener = info_for(NetworkTransport::UDS, EndpointRole::RECEIVE);
@@ -1632,12 +1632,12 @@ namespace {
             [&replies](uint64_t, const uint8_t* data, size_t size, std::string_view) {
                 replies.push(std::vector<uint8_t>(data, data + size));
             });
-        ASSERT_TRUE(eventually([&] { return service->get_endpoint_state(client_id) == EndpointState::OPEN; }));
+        ASSERT_TRUE(network_subsystem_eventually([&] { return service->get_endpoint_state(client_id) == EndpointState::OPEN; }));
         const auto question = text_bytes("ping");
 
         ASSERT_TRUE(service->send(client_id, question.data(), question.size()));
 
-        ASSERT_TRUE(eventually([&] { return replies.size() == 1; }));
+        ASSERT_TRUE(network_subsystem_eventually([&] { return replies.size() == 1; }));
         EXPECT_EQ(replies.items.front(), text_bytes("pong"));
     }
 
@@ -1646,10 +1646,10 @@ namespace {
         const TempSocketDirectory directory("mfu-stored");
         Inbox received;
         std::atomic<uint64_t> connection { 0 };
-        SubsystemRig rig(GlobalNetworkConfig::with_uds());
+        NetworkSubsystemSubsystemRig rig(GlobalNetworkConfig::with_uds());
         rig.initialize();
         rig.subsystem.start();
-        auto* service = SubsystemRig::service();
+        auto* service = NetworkSubsystemSubsystemRig::service();
         ASSERT_NE(service, nullptr);
 
         EndpointInfo listener = info_for(NetworkTransport::UDS, EndpointRole::RECEIVE);
@@ -1667,10 +1667,10 @@ namespace {
             [&received](uint64_t, const uint8_t* data, size_t size, std::string_view) {
                 received.push(std::vector<uint8_t>(data, data + size));
             });
-        ASSERT_TRUE(eventually([&] { return service->get_endpoint_state(client_id) == EndpointState::OPEN; }));
+        ASSERT_TRUE(network_subsystem_eventually([&] { return service->get_endpoint_state(client_id) == EndpointState::OPEN; }));
         const auto hello = text_bytes("hello");
         ASSERT_TRUE(service->send(client_id, hello.data(), hello.size()));
-        ASSERT_TRUE(eventually([&] { return connection.load() != 0; }));
+        ASSERT_TRUE(network_subsystem_eventually([&] { return connection.load() != 0; }));
 
         {
             const auto sink = Portal::Network::NetworkSink::to_connection(connection.load());
@@ -1681,7 +1681,7 @@ namespace {
             EXPECT_TRUE(sink.send(second));
         }
 
-        ASSERT_TRUE(eventually([&] { return received.size() == 2; }));
+        ASSERT_TRUE(network_subsystem_eventually([&] { return received.size() == 2; }));
         EXPECT_EQ(received.items[0], text_bytes("one"));
         EXPECT_EQ(received.items[1], text_bytes("two"));
         EXPECT_EQ(service->get_endpoint_state(connection.load()), EndpointState::OPEN);
@@ -1692,10 +1692,10 @@ namespace {
     {
         const TempSocketDirectory directory("mfu-gone");
         std::atomic<uint64_t> connection { 0 };
-        SubsystemRig rig(GlobalNetworkConfig::with_uds());
+        NetworkSubsystemSubsystemRig rig(GlobalNetworkConfig::with_uds());
         rig.initialize();
         rig.subsystem.start();
-        auto* service = SubsystemRig::service();
+        auto* service = NetworkSubsystemSubsystemRig::service();
         ASSERT_NE(service, nullptr);
 
         EndpointInfo listener = info_for(NetworkTransport::UDS, EndpointRole::RECEIVE);
@@ -1708,10 +1708,10 @@ namespace {
         client.remote_path = directory.socket();
         const uint64_t client_id = service->open_endpoint(client);
         ASSERT_NE(client_id, 0U);
-        ASSERT_TRUE(eventually([&] { return service->get_endpoint_state(client_id) == EndpointState::OPEN; }));
+        ASSERT_TRUE(network_subsystem_eventually([&] { return service->get_endpoint_state(client_id) == EndpointState::OPEN; }));
         const auto hello = text_bytes("hello");
         ASSERT_TRUE(service->send(client_id, hello.data(), hello.size()));
-        ASSERT_TRUE(eventually([&] { return connection.load() != 0; }));
+        ASSERT_TRUE(network_subsystem_eventually([&] { return connection.load() != 0; }));
         const auto sink = Portal::Network::NetworkSink::to_connection(connection.load());
         const auto data = text_bytes("late");
         ASSERT_TRUE(sink.send(data));
@@ -1725,7 +1725,7 @@ namespace {
 
     TEST(NetworkSubsystemTest, UdsSinkWithoutAPathDoesNotOpen)
     {
-        SubsystemRig rig(GlobalNetworkConfig::with_uds());
+        NetworkSubsystemSubsystemRig rig(GlobalNetworkConfig::with_uds());
         rig.initialize();
 
         const Portal::Network::NetworkSink sink(Portal::Network::StreamConfig {
@@ -1751,10 +1751,10 @@ namespace {
         std::mutex mutex;
         std::vector<std::pair<uint64_t, std::vector<uint8_t>>> seen;
         {
-            SubsystemRig rig(GlobalNetworkConfig::with_uds());
+            NetworkSubsystemSubsystemRig rig(GlobalNetworkConfig::with_uds());
             rig.initialize();
             rig.subsystem.start();
-            auto* service = SubsystemRig::service();
+            auto* service = NetworkSubsystemSubsystemRig::service();
             ASSERT_NE(service, nullptr);
 
             EndpointInfo listener = info_for(NetworkTransport::UDS, EndpointRole::RECEIVE);
@@ -1771,11 +1771,11 @@ namespace {
             client.remote_path = path;
             const uint64_t client_id = service->open_endpoint(client);
             ASSERT_NE(client_id, 0U);
-            ASSERT_TRUE(eventually([&] { return service->get_endpoint_state(client_id) == EndpointState::OPEN; }));
+            ASSERT_TRUE(network_subsystem_eventually([&] { return service->get_endpoint_state(client_id) == EndpointState::OPEN; }));
 
             const std::vector<uint8_t> request { 1, 2, 3 };
             ASSERT_TRUE(service->send(client_id, request.data(), request.size()));
-            ASSERT_TRUE(eventually([&] {
+            ASSERT_TRUE(network_subsystem_eventually([&] {
                 std::scoped_lock lock(mutex);
                 return seen.size() == 1;
             }));
@@ -1792,7 +1792,7 @@ namespace {
                 });
             const std::vector<uint8_t> reply { 0xAB, 0xCD };
             ASSERT_TRUE(service->send(connection_id, reply.data(), reply.size()));
-            ASSERT_TRUE(eventually([&] {
+            ASSERT_TRUE(network_subsystem_eventually([&] {
                 std::scoped_lock lock(mutex);
                 return client_seen.size() == 1;
             }));

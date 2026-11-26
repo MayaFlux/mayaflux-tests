@@ -16,12 +16,12 @@ namespace {
     using Kakshya::OrganizationStrategy;
     using Kakshya::SoundStreamContainer;
 
-    constexpr uint32_t k_rate = 1000;
+    constexpr uint32_t k_cursor_access_processor_rate = 1000;
     constexpr uint32_t k_channels = 2;
-    constexpr uint64_t k_frames = 16;
+    constexpr uint64_t k_cursor_access_processor_frames = 16;
     constexpr uint64_t k_block = 4;
 
-    double sample(uint64_t frame, uint32_t channel)
+    double cursor_access_processor_sample(uint64_t frame, uint32_t channel)
     {
         return 1.0 + 10.0 * static_cast<double>(frame) + static_cast<double>(channel);
     }
@@ -30,21 +30,21 @@ namespace {
     {
         std::vector<double> values;
         for (uint64_t f = first; f < first + count; ++f) {
-            values.push_back(sample(f, channel));
+            values.push_back(cursor_access_processor_sample(f, channel));
         }
         return values;
     }
 
-    std::shared_ptr<DynamicSoundStream> make_stream(OrganizationStrategy organization, uint64_t frames = k_frames, uint32_t channels = k_channels)
+    std::shared_ptr<DynamicSoundStream> make_stream(OrganizationStrategy organization, uint64_t frames = k_cursor_access_processor_frames, uint32_t channels = k_channels)
     {
-        auto stream = std::make_shared<DynamicSoundStream>(k_rate, channels);
+        auto stream = std::make_shared<DynamicSoundStream>(k_cursor_access_processor_rate, channels);
         stream->get_structure().organization = organization;
 
         if (organization == OrganizationStrategy::INTERLEAVED) {
             std::vector<double> flat;
             for (uint64_t f = 0; f < frames; ++f) {
                 for (uint32_t c = 0; c < channels; ++c) {
-                    flat.push_back(sample(f, c));
+                    flat.push_back(cursor_access_processor_sample(f, c));
                 }
             }
             stream->write_frames(std::vector<std::span<const double>> { std::span<const double>(flat) }, 0);
@@ -134,7 +134,7 @@ namespace {
 
     TEST_P(CursorAccessProcessorTest, AttachingToAnotherContainerKindIsRefused)
     {
-        const auto plain = std::make_shared<SoundStreamContainer>(k_rate, k_channels);
+        const auto plain = std::make_shared<SoundStreamContainer>(k_cursor_access_processor_rate, k_channels);
 
         EXPECT_NO_THROW(processor->on_attach(plain));
         EXPECT_NO_THROW(processor->process(plain));
@@ -159,7 +159,7 @@ namespace {
         attach();
 
         EXPECT_EQ(processor->loop_start(), 0U);
-        EXPECT_EQ(processor->loop_end(), k_frames);
+        EXPECT_EQ(processor->loop_end(), k_cursor_access_processor_frames);
     }
 
     TEST_P(CursorAccessProcessorTest, ResettingActivatesAndReadsFromTheLoopStart)
@@ -258,12 +258,12 @@ namespace {
 
     TEST_P(CursorAccessProcessorTest, ALoopEndPastTheStreamIsTreatedAsTheStreamEnd)
     {
-        processor->set_loop_region(0, k_frames + 5);
+        processor->set_loop_region(0, k_cursor_access_processor_frames + 5);
         processor->set_looping(true);
         attach();
         processor->reset();
 
-        for (uint64_t block = 0; block < k_frames / k_block; ++block) {
+        for (uint64_t block = 0; block < k_cursor_access_processor_frames / k_block; ++block) {
             EXPECT_EQ(run(), ramp(0, block * k_block, k_block)) << block;
         }
 
@@ -273,13 +273,13 @@ namespace {
 
     TEST_P(CursorAccessProcessorTest, AOneShotWithAnEndPastTheStreamStopsOnItsLastBlock)
     {
-        processor->set_loop_region(0, k_frames + 1);
+        processor->set_loop_region(0, k_cursor_access_processor_frames + 1);
         int ended = 0;
         processor->set_on_end([&ended] { ++ended; });
         attach();
         processor->reset();
 
-        for (uint64_t block = 0; block < k_frames / k_block; ++block) {
+        for (uint64_t block = 0; block < k_cursor_access_processor_frames / k_block; ++block) {
             run();
         }
 
@@ -334,8 +334,8 @@ namespace {
         std::vector<double> first;
         std::vector<double> second;
         for (uint64_t n = 0; n < k_block; ++n) {
-            first.push_back(sample(2 * n, 0));
-            second.push_back(sample(8 + 2 * n, 0));
+            first.push_back(cursor_access_processor_sample(2 * n, 0));
+            second.push_back(cursor_access_processor_sample(8 + 2 * n, 0));
         }
 
         EXPECT_EQ(run(), first);
@@ -351,7 +351,7 @@ namespace {
 
         const auto at = [](double u) {
             const auto frame = static_cast<uint64_t>(std::floor(u));
-            return sample(frame, 0) + (u - std::floor(u)) * (sample(frame + 1, 0) - sample(frame, 0));
+            return cursor_access_processor_sample(frame, 0) + (u - std::floor(u)) * (cursor_access_processor_sample(frame + 1, 0) - cursor_access_processor_sample(frame, 0));
         };
 
         const auto first = run();
@@ -376,7 +376,7 @@ namespace {
         const auto faster = run();
         ASSERT_EQ(faster.size(), k_block);
         for (uint64_t n = 0; n < k_block; ++n) {
-            EXPECT_EQ(faster[n], sample(4 + 2 * n, 0)) << n;
+            EXPECT_EQ(faster[n], cursor_access_processor_sample(4 + 2 * n, 0)) << n;
         }
         EXPECT_EQ(processor->cursor(), 12U);
     }
@@ -538,7 +538,7 @@ namespace {
                 .fn = [fn = std::move(fn)](const double& t) { return fn(t); } });
         }
 
-        void start_with(const std::shared_ptr<const Kinesis::TimeMap>& map, uint64_t region_end = k_frames)
+        void start_with(const std::shared_ptr<const Kinesis::TimeMap>& map, uint64_t region_end = k_cursor_access_processor_frames)
         {
             processor->set_loop_region(0, region_end);
             processor->set_time_map(map);
@@ -555,7 +555,7 @@ namespace {
 
     TEST_P(CursorTimeMapTest, ARealtimeMapReadsFramesLikeNormalSpeed)
     {
-        start_with(map_of([](double t) { return t * k_rate; }));
+        start_with(map_of([](double t) { return t * k_cursor_access_processor_rate; }));
 
         expect_near(run(0), ramp(0, 0, k_block));
         expect_near(run(0), ramp(0, 4, k_block));
@@ -564,37 +564,37 @@ namespace {
 
     TEST_P(CursorTimeMapTest, FractionalPositionsInterpolateLinearly)
     {
-        start_with(map_of([](double t) { return t * k_rate * 0.5; }));
+        start_with(map_of([](double t) { return t * k_cursor_access_processor_rate * 0.5; }));
 
         const auto out = run(0);
 
-        expect_near(out, (std::vector<double> { sample(0, 0), sample(0, 0) + 5.0, sample(1, 0), sample(1, 0) + 5.0 }));
+        expect_near(out, (std::vector<double> { cursor_access_processor_sample(0, 0), cursor_access_processor_sample(0, 0) + 5.0, cursor_access_processor_sample(1, 0), cursor_access_processor_sample(1, 0) + 5.0 }));
     }
 
     TEST_P(CursorTimeMapTest, AReversingMapPlaysBackwards)
     {
-        start_with(map_of([](double t) { return 15.0 - t * k_rate; }));
+        start_with(map_of([](double t) { return 15.0 - t * k_cursor_access_processor_rate; }));
 
-        expect_near(run(0), (std::vector<double> { sample(15, 0), sample(14, 0), sample(13, 0), sample(12, 0) }));
-        expect_near(run(0), (std::vector<double> { sample(11, 0), sample(10, 0), sample(9, 0), sample(8, 0) }));
+        expect_near(run(0), (std::vector<double> { cursor_access_processor_sample(15, 0), cursor_access_processor_sample(14, 0), cursor_access_processor_sample(13, 0), cursor_access_processor_sample(12, 0) }));
+        expect_near(run(0), (std::vector<double> { cursor_access_processor_sample(11, 0), cursor_access_processor_sample(10, 0), cursor_access_processor_sample(9, 0), cursor_access_processor_sample(8, 0) }));
     }
 
     TEST_P(CursorTimeMapTest, AFixedPositionHoldsOneFrame)
     {
         start_with(map_of([](double) { return 3.0; }));
 
-        expect_near(run(1), std::vector<double>(k_block, sample(3, 1)));
+        expect_near(run(1), std::vector<double>(k_block, cursor_access_processor_sample(3, 1)));
     }
 
     TEST_P(CursorTimeMapTest, LeavingTheRegionEndsTheVoiceAfterTheFramesInside)
     {
         int ended = 0;
         processor->set_on_end([&ended] { ++ended; });
-        start_with(map_of([](double t) { return t * k_rate + 14.0; }));
+        start_with(map_of([](double t) { return t * k_cursor_access_processor_rate + 14.0; }));
 
         const auto out = run(0);
 
-        expect_near(out, (std::vector<double> { sample(14, 0), sample(15, 0), 0.0, 0.0 }));
+        expect_near(out, (std::vector<double> { cursor_access_processor_sample(14, 0), cursor_access_processor_sample(15, 0), 0.0, 0.0 }));
         EXPECT_FALSE(processor->is_active());
         EXPECT_EQ(ended, 1);
         expect_near(run(0), std::vector<double>(k_block, 0.0));
@@ -603,7 +603,7 @@ namespace {
     TEST_P(CursorTimeMapTest, ALoopingMapWrapsInsideTheRegion)
     {
         processor->set_looping(true);
-        start_with(map_of([](double t) { return t * k_rate; }), 8);
+        start_with(map_of([](double t) { return t * k_cursor_access_processor_rate; }), 8);
 
         run();
         expect_near(run(0), ramp(0, 4, k_block));
@@ -617,7 +617,7 @@ namespace {
         processor->set_on_end([&ended] { ++ended; });
         processor->set_looping(true);
         processor->set_loop_count(2);
-        start_with(map_of([](double t) { return 2.0 * t * k_rate; }), 8);
+        start_with(map_of([](double t) { return 2.0 * t * k_cursor_access_processor_rate; }), 8);
 
         run();
         EXPECT_TRUE(processor->is_active());
@@ -646,7 +646,7 @@ namespace {
         processor->set_on_end([&ended] { ++ended; });
         processor->set_looping(true);
         processor->set_loop_count(1);
-        start_with(map_of([](double t) { return 2.0 - 2.0 * t * k_rate; }), 8);
+        start_with(map_of([](double t) { return 2.0 - 2.0 * t * k_cursor_access_processor_rate; }), 8);
 
         run();
 
@@ -657,7 +657,7 @@ namespace {
     TEST_P(CursorTimeMapTest, WithoutALoopCountAMapLoopsForever)
     {
         processor->set_looping(true);
-        start_with(map_of([](double t) { return 2.0 * t * k_rate; }), 8);
+        start_with(map_of([](double t) { return 2.0 * t * k_cursor_access_processor_rate; }), 8);
 
         for (int i = 0; i < 20; ++i) {
             run();
@@ -668,7 +668,7 @@ namespace {
 
     TEST_P(CursorTimeMapTest, ADifferentMapRestartsTheClockButTheSameMapDoesNot)
     {
-        const auto map = map_of([](double t) { return t * k_rate; });
+        const auto map = map_of([](double t) { return t * k_cursor_access_processor_rate; });
         start_with(map);
         run();
         run();
@@ -676,13 +676,13 @@ namespace {
         processor->set_time_map(map);
         expect_near(run(0), ramp(0, 8, k_block));
 
-        processor->set_time_map(map_of([](double t) { return t * k_rate; }));
+        processor->set_time_map(map_of([](double t) { return t * k_cursor_access_processor_rate; }));
         expect_near(run(0), ramp(0, 0, k_block));
     }
 
     TEST_P(CursorTimeMapTest, ResettingRestartsTheClock)
     {
-        start_with(map_of([](double t) { return t * k_rate; }));
+        start_with(map_of([](double t) { return t * k_cursor_access_processor_rate; }));
         run();
         run();
 
@@ -693,7 +693,7 @@ namespace {
 
     TEST_P(CursorTimeMapTest, ClearingTheMapGoesBackToSpeedReading)
     {
-        start_with(map_of([](double t) { return t * k_rate; }));
+        start_with(map_of([](double t) { return t * k_cursor_access_processor_rate; }));
         run();
 
         processor->set_time_map(nullptr);
@@ -703,7 +703,7 @@ namespace {
 
     TEST_P(CursorTimeMapTest, ARepeatRestartsTheMapEveryLength)
     {
-        start_with(map_of([](double t) { return t * k_rate; }));
+        start_with(map_of([](double t) { return t * k_cursor_access_processor_rate; }));
         processor->set_repeat(map_of([](double) { return 0.004; }));
 
         expect_near(run(0), ramp(0, 0, k_block));
@@ -712,15 +712,15 @@ namespace {
 
     TEST_P(CursorTimeMapTest, ARepeatShorterThanTheBlockRepeatsInsideIt)
     {
-        start_with(map_of([](double t) { return t * k_rate; }));
+        start_with(map_of([](double t) { return t * k_cursor_access_processor_rate; }));
         processor->set_repeat(map_of([](double) { return 0.002; }));
 
-        expect_near(run(0), (std::vector<double> { sample(0, 0), sample(1, 0), sample(0, 0), sample(1, 0) }));
+        expect_near(run(0), (std::vector<double> { cursor_access_processor_sample(0, 0), cursor_access_processor_sample(1, 0), cursor_access_processor_sample(0, 0), cursor_access_processor_sample(1, 0) }));
     }
 
     TEST_P(CursorTimeMapTest, ClearingTheRepeatLetsTheMapRunOn)
     {
-        start_with(map_of([](double t) { return t * k_rate; }));
+        start_with(map_of([](double t) { return t * k_cursor_access_processor_rate; }));
         processor->set_repeat(map_of([](double) { return 0.004; }));
         run();
         run();
@@ -735,7 +735,7 @@ namespace {
         int ended = 0;
         processor->set_on_end([&ended] { ++ended; });
         processor->set_loop_region(5, 5);
-        processor->set_time_map(map_of([](double t) { return t * k_rate; }));
+        processor->set_time_map(map_of([](double t) { return t * k_cursor_access_processor_rate; }));
         attach();
         processor->reset();
 
@@ -745,12 +745,12 @@ namespace {
         EXPECT_EQ(ended, 1);
     }
 
-    struct StreamShape {
+    struct CursorAccessProcessorStreamShape {
         OrganizationStrategy organization;
         uint32_t channels;
     };
 
-    class CursorAccessProcessorShapeTest : public ::testing::TestWithParam<StreamShape> {
+    class CursorAccessProcessorShapeTest : public ::testing::TestWithParam<CursorAccessProcessorStreamShape> {
     protected:
         void SetUp() override
         {
@@ -766,14 +766,14 @@ namespace {
                 .fn = [fn = std::move(fn)](const double& t) { return fn(t); } });
         }
 
-        void make_written_stream(uint64_t frames = k_frames)
+        void make_written_stream(uint64_t frames = k_cursor_access_processor_frames)
         {
             stream = make_stream(organization(), frames, channels());
         }
 
         void make_ring(uint64_t capacity)
         {
-            stream = std::make_shared<DynamicSoundStream>(k_rate, channels());
+            stream = std::make_shared<DynamicSoundStream>(k_cursor_access_processor_rate, channels());
             stream->get_structure().organization = organization();
             stream->enable_circular_buffer(capacity);
         }
@@ -812,13 +812,13 @@ namespace {
 
     INSTANTIATE_TEST_SUITE_P(Shapes, CursorAccessProcessorShapeTest,
         ::testing::Values(
-            StreamShape { OrganizationStrategy::INTERLEAVED, 1 },
-            StreamShape { OrganizationStrategy::INTERLEAVED, 2 },
-            StreamShape { OrganizationStrategy::INTERLEAVED, 3 },
-            StreamShape { OrganizationStrategy::PLANAR, 1 },
-            StreamShape { OrganizationStrategy::PLANAR, 2 },
-            StreamShape { OrganizationStrategy::PLANAR, 3 }),
-        [](const ::testing::TestParamInfo<StreamShape>& info) {
+            CursorAccessProcessorStreamShape { OrganizationStrategy::INTERLEAVED, 1 },
+            CursorAccessProcessorStreamShape { OrganizationStrategy::INTERLEAVED, 2 },
+            CursorAccessProcessorStreamShape { OrganizationStrategy::INTERLEAVED, 3 },
+            CursorAccessProcessorStreamShape { OrganizationStrategy::PLANAR, 1 },
+            CursorAccessProcessorStreamShape { OrganizationStrategy::PLANAR, 2 },
+            CursorAccessProcessorStreamShape { OrganizationStrategy::PLANAR, 3 }),
+        [](const ::testing::TestParamInfo<CursorAccessProcessorStreamShape>& info) {
             return std::string(info.param.organization == OrganizationStrategy::INTERLEAVED ? "Interleaved" : "Planar")
                 + std::to_string(info.param.channels) + "ch";
         });
@@ -849,8 +849,8 @@ namespace {
     TEST_P(CursorAccessProcessorShapeTest, AMappedReadFillsEveryChannel)
     {
         make_written_stream();
-        processor->set_loop_region(0, k_frames);
-        processor->set_time_map(map_of([](double t) { return t * k_rate; }));
+        processor->set_loop_region(0, k_cursor_access_processor_frames);
+        processor->set_time_map(map_of([](double t) { return t * k_cursor_access_processor_rate; }));
         start();
 
         run();
@@ -869,7 +869,7 @@ namespace {
         processor->set_loop_region(0, ring);
         processor->set_looping(true);
         processor->set_time_map(std::make_shared<const Kinesis::TimeMap>(
-            Kinesis::TimeMaps::lagged(origin, k_rate, Kinesis::TimeMap { .fn = [](const double&) { return lag; } })));
+            Kinesis::TimeMaps::lagged(origin, k_cursor_access_processor_rate, Kinesis::TimeMap { .fn = [](const double&) { return lag; } })));
         start();
 
         for (uint64_t block = 0; block < 7; ++block) {

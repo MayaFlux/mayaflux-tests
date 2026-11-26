@@ -19,7 +19,7 @@ using IO::MouseButtons;
 
 namespace {
 
-    void expect_near(glm::vec2 a, glm::vec2 b)
+    void windowless_surface_expect_near(glm::vec2 a, glm::vec2 b)
     {
         EXPECT_NEAR(a.x, b.x, 1e-4F);
         EXPECT_NEAR(a.y, b.y, 1e-4F);
@@ -211,7 +211,7 @@ TEST_F(FormaWindowlessFixture, AFedMoveReportsThePointerInNdcOfTheExtent)
 
     offscreen->ctx().feed_move(50.0, 25.0);
 
-    expect_near(seen, { -0.5F, 0.5F });
+    windowless_surface_expect_near(seen, { -0.5F, 0.5F });
 }
 
 TEST_F(FormaWindowlessFixture, AFedPressAndReleaseReachTheElementAndPressTakesFocus)
@@ -226,13 +226,13 @@ TEST_F(FormaWindowlessFixture, AFedPressAndReleaseReachTheElementAndPressTakesFo
 
     offscreen->ctx().feed_press(100.0, 50.0, MouseButtons::Left);
     EXPECT_EQ(presses, 1);
-    expect_near(pressed, { 0.F, 0.F });
+    windowless_surface_expect_near(pressed, { 0.F, 0.F });
     EXPECT_EQ(offscreen->ctx().focused(), id);
     EXPECT_TRUE(offscreen->ctx().button_down(MouseButtons::Left));
 
     offscreen->ctx().feed_release(100.0, 50.0, MouseButtons::Left);
     EXPECT_EQ(releases, 1);
-    expect_near(released, { 0.F, 0.F });
+    windowless_surface_expect_near(released, { 0.F, 0.F });
     EXPECT_FALSE(offscreen->ctx().button_down(MouseButtons::Left));
 }
 
@@ -503,7 +503,7 @@ TEST(ViewPlanePointTest, NoViewMovementReturnsTheScreenPosition)
     const auto point = Kinesis::view_plane_point({ 0.3F, -0.4F }, Kinesis::ViewTransform {});
 
     ASSERT_TRUE(point.has_value());
-    expect_near(*point, { 0.3F, -0.4F });
+    windowless_surface_expect_near(*point, { 0.3F, -0.4F });
 }
 
 TEST(ViewPlanePointTest, ATranslatedAndScaledViewIsInverted)
@@ -516,7 +516,7 @@ TEST(ViewPlanePointTest, ATranslatedAndScaledViewIsInverted)
     const auto point = Kinesis::view_plane_point({ 0.5F, 0.4F }, vt);
 
     ASSERT_TRUE(point.has_value());
-    expect_near(*point, { 0.0F, 0.2F });
+    windowless_surface_expect_near(*point, { 0.0F, 0.2F });
 }
 
 TEST(ViewPlanePointTest, AViewSeeingThePlaneEdgeOnHasNoPoint)
@@ -545,7 +545,7 @@ TEST_F(FormaWindowlessFixture, ThePointerIsMappedThroughTheViewForHitsAndCallbac
 
     offscreen->ctx().feed_press(75.0, 50.0, MouseButtons::Left);
     EXPECT_EQ(presses, 1);
-    expect_near(pressed, { -0.75F, 0.F });
+    windowless_surface_expect_near(pressed, { -0.75F, 0.F });
 }
 
 TEST_F(FormaWindowlessFixture, RemovingTheViewPutsTheHitRegionsBack)
@@ -620,7 +620,7 @@ TEST_F(FormaWindowlessFixture, FedPixelsOfTheImageAreMappedIntoTheAreaOfTheSurfa
 
     partial.ctx().feed_press(150.0, 50.0, MouseButtons::Left);
     EXPECT_EQ(presses, 1);
-    expect_near(pressed, { 0.F, 0.F });
+    windowless_surface_expect_near(pressed, { 0.F, 0.F });
 }
 
 // =============================================================================
@@ -653,7 +653,7 @@ TEST_F(FormaRoutedInputFixture, TheHostPointerIsMappedFromTheElementBoundsToTheI
     window->move_to_ndc({ -0.25F, 0.25F });
 
     EXPECT_GT(moves, 0);
-    expect_near(seen, { -0.5F, 0.5F });
+    windowless_surface_expect_near(seen, { -0.5F, 0.5F });
 }
 
 TEST_F(FormaRoutedInputFixture, TheTopOfTheElementIsTheTopRowOfTheImage)
@@ -680,7 +680,7 @@ TEST_F(FormaRoutedInputFixture, PressAndReleaseOnTheElementReachTheImageSurface)
 
     EXPECT_EQ(presses, 1);
     EXPECT_EQ(releases, 1);
-    expect_near(pressed, { 0.F, 0.F });
+    windowless_surface_expect_near(pressed, { 0.F, 0.F });
 }
 
 TEST_F(FormaRoutedInputFixture, APressOnTheElementGivesFocusToTheElementUnderThePointerInTheImage)
@@ -893,7 +893,7 @@ TEST_F(FormaRoutedInputFixture, AMovedHostElementIsFollowedByTheMapping)
 
     window->move_to_ndc({ 0.25F, 0.75F });
 
-    expect_near(seen, { -0.5F, 0.5F });
+    windowless_surface_expect_near(seen, { -0.5F, 0.5F });
 }
 
 TEST_F(FormaRoutedInputFixture, UnbindingTheHostElementStopsTheRouting)

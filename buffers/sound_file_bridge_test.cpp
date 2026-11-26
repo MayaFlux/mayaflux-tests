@@ -60,9 +60,9 @@ namespace {
         double m_gain;
     };
 
-    class ProbeProcessor : public Buffers::BufferProcessor {
+    class SoundFileBridgeProbeProcessor : public Buffers::BufferProcessor {
     public:
-        explicit ProbeProcessor(std::shared_ptr<SoundStreamWriter> writer)
+        explicit SoundFileBridgeProbeProcessor(std::shared_ptr<SoundStreamWriter> writer)
             : m_writer(std::move(writer))
         {
         }
@@ -269,7 +269,7 @@ namespace {
     TEST_P(SoundFileBridgeTest, AProcessorSeesTheCurrentBlockBeforeTheWriterCapturesIt)
     {
         const auto bridge = make_ready_bridge(0);
-        const auto probe = std::make_shared<ProbeProcessor>(bridge->get_stream_writer());
+        const auto probe = std::make_shared<SoundFileBridgeProbeProcessor>(bridge->get_stream_writer());
         ASSERT_TRUE(bridge->get_processing_chain()->add_processor(probe, bridge));
 
         cycle(bridge);

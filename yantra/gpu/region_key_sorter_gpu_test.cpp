@@ -20,7 +20,7 @@ namespace {
     using Yantra::SortingDirection;
     using Yantra::SortKey;
 
-    constexpr double k_nan = std::numeric_limits<double>::quiet_NaN();
+    constexpr double k_region_key_sorter_gpu_nan = std::numeric_limits<double>::quiet_NaN();
 
     const Facet<double> k_feature {};
     const Facet<double> k_marker {};
@@ -92,8 +92,8 @@ namespace {
     TYPED_TEST(RegionKeySorterDeviceTest, GpuOrderPutsNaNLastAndKeepsItsTiesInInputOrder)
     {
         const auto gpu = std::make_shared<RegionKeySorter>(keyed(1))
-                             ->apply_operation(make_group({ make_region(k_nan, 0.0), make_region(2.0, 1.0),
-                                 make_region(-1.0, 2.0), make_region(k_nan, 3.0) }));
+                             ->apply_operation(make_group({ make_region(k_region_key_sorter_gpu_nan, 0.0), make_region(2.0, 1.0),
+                                 make_region(-1.0, 2.0), make_region(k_region_key_sorter_gpu_nan, 3.0) }));
 
         EXPECT_EQ(column(gpu, k_marker), (std::vector<double> { 2.0, 1.0, 0.0, 3.0 }));
     }

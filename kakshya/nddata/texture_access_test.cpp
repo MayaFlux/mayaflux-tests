@@ -23,13 +23,13 @@ namespace {
         EXPECT_FALSE(access.was_promoted());
     }
 
-    struct FormatCase {
+    struct TextureAccessFormatCase {
         GpuDataFormat format;
         uint32_t channels;
         size_t bytes;
     };
 
-    class TextureAccessFormatTest : public ::testing::TestWithParam<FormatCase> { };
+    class TextureAccessFormatTest : public ::testing::TestWithParam<TextureAccessFormatCase> { };
 
     TEST_P(TextureAccessFormatTest, ChannelCountMatchesTheFormat)
     {
@@ -49,18 +49,18 @@ namespace {
 
     INSTANTIATE_TEST_SUITE_P(Formats, TextureAccessFormatTest,
         ::testing::Values(
-            FormatCase { GpuDataFormat::UINT8, 1, 1 },
-            FormatCase { GpuDataFormat::UINT16, 1, 2 },
-            FormatCase { GpuDataFormat::UINT32, 1, 4 },
-            FormatCase { GpuDataFormat::INT32, 1, 4 },
-            FormatCase { GpuDataFormat::FLOAT32, 1, 4 },
-            FormatCase { GpuDataFormat::FLOAT64, 1, 8 },
-            FormatCase { GpuDataFormat::VEC2_F32, 2, 8 },
-            FormatCase { GpuDataFormat::VEC2_F64, 2, 16 },
-            FormatCase { GpuDataFormat::VEC3_F32, 3, 12 },
-            FormatCase { GpuDataFormat::VEC3_F64, 3, 24 },
-            FormatCase { GpuDataFormat::VEC4_F32, 4, 16 },
-            FormatCase { GpuDataFormat::VEC4_F64, 4, 32 }));
+            TextureAccessFormatCase { GpuDataFormat::UINT8, 1, 1 },
+            TextureAccessFormatCase { GpuDataFormat::UINT16, 1, 2 },
+            TextureAccessFormatCase { GpuDataFormat::UINT32, 1, 4 },
+            TextureAccessFormatCase { GpuDataFormat::INT32, 1, 4 },
+            TextureAccessFormatCase { GpuDataFormat::FLOAT32, 1, 4 },
+            TextureAccessFormatCase { GpuDataFormat::FLOAT64, 1, 8 },
+            TextureAccessFormatCase { GpuDataFormat::VEC2_F32, 2, 8 },
+            TextureAccessFormatCase { GpuDataFormat::VEC2_F64, 2, 16 },
+            TextureAccessFormatCase { GpuDataFormat::VEC3_F32, 3, 12 },
+            TextureAccessFormatCase { GpuDataFormat::VEC3_F64, 3, 24 },
+            TextureAccessFormatCase { GpuDataFormat::VEC4_F32, 4, 16 },
+            TextureAccessFormatCase { GpuDataFormat::VEC4_F64, 4, 32 }));
 
     template <typename T>
     void expect_zero_copy(std::vector<T> source, GpuDataFormat format)

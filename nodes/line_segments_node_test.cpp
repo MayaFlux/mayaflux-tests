@@ -21,7 +21,7 @@ namespace {
         return v;
     }
 
-    ::testing::AssertionResult near_vec(const glm::vec3& a, const glm::vec3& b, float tol = 1e-5F)
+    ::testing::AssertionResult line_segments_node_near_vec(const glm::vec3& a, const glm::vec3& b, float tol = 1e-5F)
     {
         if (glm::length(a - b) <= tol) {
             return ::testing::AssertionSuccess();
@@ -84,10 +84,10 @@ namespace {
         node.compute_frame();
 
         ASSERT_EQ(node.get_vertex_count(), 4U);
-        EXPECT_TRUE(near_vec(uploaded(0).position, { 0, 0, 0 }));
-        EXPECT_TRUE(near_vec(uploaded(1).position, { 1, 0, 0 }));
-        EXPECT_TRUE(near_vec(uploaded(2).position, { 0, 1, 0 }));
-        EXPECT_TRUE(near_vec(uploaded(3).position, { 0, 2, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(0).position, { 0, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(1).position, { 1, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(2).position, { 0, 1, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(3).position, { 0, 2, 0 }));
         EXPECT_FLOAT_EQ(uploaded(0).thickness, 1.0F);
         EXPECT_FLOAT_EQ(uploaded(3).thickness, 4.0F);
     }
@@ -98,8 +98,8 @@ namespace {
             make_vertex({ 1, 0, 0 }, 2.0F, { 0, 0, 1 }));
         node.compute_frame();
 
-        EXPECT_TRUE(near_vec(uploaded(0).color, { 1, 0, 0 }));
-        EXPECT_TRUE(near_vec(uploaded(1).color, { 0, 0, 1 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(0).color, { 1, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(1).color, { 0, 0, 1 }));
     }
 
     TEST_F(LineSegmentsNodeTest, ComputeFrameUpdatesLayoutVertexCount)
@@ -153,8 +153,8 @@ namespace {
         node.compute_frame();
 
         ASSERT_EQ(node.get_vertex_count(), 4U);
-        EXPECT_TRUE(near_vec(uploaded(0).position, { 0, 0, 0 }));
-        EXPECT_TRUE(near_vec(uploaded(3).position, { 6, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(0).position, { 0, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(3).position, { 6, 0, 0 }));
     }
 
     TEST_F(LineSegmentsNodeTest, MoreSegmentsThanInitialCapacityAreUploaded)
@@ -166,8 +166,8 @@ namespace {
         node.compute_frame();
 
         ASSERT_EQ(node.get_vertex_count(), 60U);
-        EXPECT_TRUE(near_vec(uploaded(58).position, { 29, 0, 0 }));
-        EXPECT_TRUE(near_vec(uploaded(59).position, { 29, 1, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(58).position, { 29, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(59).position, { 29, 1, 0 }));
     }
 
     TEST_F(LineSegmentsNodeTest, AddAxisRunsFromOriginAlongDirectionScaledByLength)
@@ -176,8 +176,8 @@ namespace {
         node.compute_frame();
 
         ASSERT_EQ(node.get_vertex_count(), 2U);
-        EXPECT_TRUE(near_vec(uploaded(0).position, { 1, 2, 3 }));
-        EXPECT_TRUE(near_vec(uploaded(1).position, { 1, 6, 3 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(0).position, { 1, 2, 3 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(1).position, { 1, 6, 3 }));
     }
 
     TEST_F(LineSegmentsNodeTest, AddAxisTipInheritsOriginColourAndThickness)
@@ -185,7 +185,7 @@ namespace {
         node.add_axis(make_vertex({ 0, 0, 0 }, 5.0F, { 0, 1, 0 }), { 1, 0, 0 }, 2.0F);
         node.compute_frame();
 
-        EXPECT_TRUE(near_vec(uploaded(1).color, { 0, 1, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(1).color, { 0, 1, 0 }));
         EXPECT_FLOAT_EQ(uploaded(1).thickness, 5.0F);
     }
 
@@ -194,7 +194,7 @@ namespace {
         node.add_axis(make_vertex({ 0, 0, 0 }), { 2, 0, 0 }, 3.0F);
         node.compute_frame();
 
-        EXPECT_TRUE(near_vec(uploaded(1).position, { 6, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(1).position, { 6, 0, 0 }));
     }
 
     TEST_F(LineSegmentsNodeTest, ClearSegmentsEmptiesTheNode)
@@ -265,7 +265,7 @@ namespace {
         node.compute_frame();
 
         ASSERT_EQ(node.get_vertex_count(), 2U);
-        EXPECT_TRUE(near_vec(uploaded(1).position, { 1, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(1).position, { 1, 0, 0 }));
     }
 
     TEST_F(LineSegmentsNodeTest, ProcessSampleUploadsAFrameAndReturnsZero)
@@ -282,10 +282,10 @@ namespace {
         node.compute_frame();
 
         ASSERT_EQ(node.get_segment_count(), 2U);
-        EXPECT_TRUE(near_vec(uploaded(0).position, { -0.2F, 0, 0 }));
-        EXPECT_TRUE(near_vec(uploaded(1).position, { 0.2F, 0, 0 }));
-        EXPECT_TRUE(near_vec(uploaded(2).position, { 0.8F, 0, 0 }));
-        EXPECT_TRUE(near_vec(uploaded(3).position, { 1.2F, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(0).position, { -0.2F, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(1).position, { 0.2F, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(2).position, { 0.8F, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(3).position, { 1.2F, 0, 0 }));
     }
 
     TEST_F(LineSegmentsNodeTest, TangentsTakeTheColourAndThicknessOfTheirPathVertex)
@@ -293,7 +293,7 @@ namespace {
         node.add_tangent(straight_path(3), 0.4F);
         node.compute_frame();
 
-        EXPECT_TRUE(near_vec(uploaded(0).color, { 0.5F, 0.25F, 0.125F }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(0).color, { 0.5F, 0.25F, 0.125F }));
         EXPECT_FLOAT_EQ(uploaded(0).thickness, 3.0F);
         EXPECT_FLOAT_EQ(uploaded(2).thickness, 4.0F);
     }
@@ -313,7 +313,7 @@ namespace {
         ASSERT_EQ(node.get_segment_count(), 1U);
         const glm::vec3 a = uploaded(0).position;
         const glm::vec3 b = uploaded(1).position;
-        EXPECT_TRUE(near_vec((a + b) * 0.5F, { 0.5F, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec((a + b) * 0.5F, { 0.5F, 0, 0 }));
         EXPECT_NEAR(glm::dot(b - a, glm::vec3(1, 0, 0)), 0.0F, 1e-5F);
     }
 
@@ -336,8 +336,8 @@ namespace {
         node.compute_frame();
 
         ASSERT_EQ(node.get_segment_count(), 1U);
-        EXPECT_TRUE(near_vec(uploaded(0).position, { 1, 1, 0 }));
-        EXPECT_TRUE(near_vec(uploaded(1).position, { 1, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(0).position, { 1, 1, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(1).position, { 1, 0, 0 }));
     }
 
     TEST_F(LineSegmentsNodeTest, StraightPathHasZeroLengthCurvature)
@@ -346,7 +346,7 @@ namespace {
         node.compute_frame();
 
         ASSERT_EQ(node.get_segment_count(), 2U);
-        EXPECT_TRUE(near_vec(uploaded(0).position, uploaded(1).position));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(0).position, uploaded(1).position));
     }
 
     TEST_F(LineSegmentsNodeTest, AnnotationsOnPathsTooShortAddNothing)
@@ -387,8 +387,8 @@ namespace {
         node.compute_frame();
 
         ASSERT_EQ(node.get_segment_count(), 2U);
-        EXPECT_TRUE(near_vec(uploaded(0).position, { 9, 9, 9 }));
-        EXPECT_TRUE(near_vec(uploaded(2).position, { -0.5F, 0, 0 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(0).position, { 9, 9, 9 }));
+        EXPECT_TRUE(line_segments_node_near_vec(uploaded(2).position, { -0.5F, 0, 0 }));
     }
 
     TEST_F(LineSegmentsNodeTest, AnnotationMarksNodeForUploadOnNextFrame)

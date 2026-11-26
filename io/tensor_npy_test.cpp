@@ -81,13 +81,13 @@ namespace {
         int m_counter {};
     };
 
-    std::string read_file(const std::string& path)
+    std::string tensor_npy_read_file(const std::string& path)
     {
         std::ifstream file(path, std::ios::binary);
         return { std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
     }
 
-    std::string float_bytes(std::initializer_list<float> values)
+    std::string tensor_npy_float_bytes(std::initializer_list<float> values)
     {
         std::string out(values.size() * sizeof(float), '\0');
         size_t offset = 0;
@@ -116,7 +116,7 @@ namespace {
         return "{'descr': '" + descr + "', 'fortran_order': " + order + ", 'shape': " + shape + ", }";
     }
 
-    std::optional<TensorData> floats(std::vector<uint64_t> shape, std::string name)
+    std::optional<TensorData> tensor_npy_floats(std::vector<uint64_t> shape, std::string name)
     {
         uint64_t count = 1;
         for (const auto extent : shape)
@@ -126,26 +126,26 @@ namespace {
         return TensorData::from_values<float>(values, std::move(shape), std::move(name));
     }
 
-    std::vector<float> floats_of(const TensorData& tensor)
+    std::vector<float> tensor_npy_floats_of(const TensorData& tensor)
     {
         return tensor.to_vector<float>().value_or(std::vector<float> {});
     }
 
-    bool same_bytes(const TensorData& a, const TensorData& b)
+    bool tensor_npy_same_bytes(const TensorData& a, const TensorData& b)
     {
         return a.byte_size() == b.byte_size()
             && (a.byte_size() == 0 || std::memcmp(a.storage().data(), b.storage().data(), a.byte_size()) == 0);
     }
 
-    struct DTypeCase {
+    struct TensorNpyDTypeCase {
         const char* name;
         TensorDType dtype;
         std::vector<uint64_t> shape;
     };
 
-    const std::vector<DTypeCase>& numpy_cases()
+    const std::vector<TensorNpyDTypeCase>& numpy_cases()
     {
-        static const std::vector<DTypeCase> cases {
+        static const std::vector<TensorNpyDTypeCase> cases {
             { "F16", TensorDType::float16(), { 4 } },
             { "F32", TensorDType::of<float>(), { 2, 3 } },
             { "F64", TensorDType::of<double>(), { 3 } },
@@ -167,7 +167,7 @@ namespace {
         return cases;
     }
 
-    TensorData patterned(const DTypeCase& param, const std::string& name)
+    TensorData patterned(const TensorNpyDTypeCase& param, const std::string& name)
     {
         const auto spec = TensorSpec::contiguous(param.dtype, param.shape, name);
         std::vector<std::byte> bytes(param.dtype.storage_bytes(spec.element_count().value_or(0)).value_or(0));
@@ -181,10 +181,10 @@ namespace {
     // ---------------------------------------------------------------------
 
     class TensorNpyRoundTripTest : public TensorNpyFixture,
-                                   public ::testing::WithParamInterface<DTypeCase> { };
+                                   public ::testing::WithParamInterface<TensorNpyDTypeCase> { };
 
     INSTANTIATE_TEST_SUITE_P(DTypes, TensorNpyRoundTripTest, ::testing::ValuesIn(numpy_cases()),
-        [](const ::testing::TestParamInfo<DTypeCase>& info) { return std::string(info.param.name); });
+        [](const ::testing::TestParamInfo<TensorNpyDTypeCase>& info) { return std::string(info.param.name); });
 
     TEST_P(TensorNpyRoundTripTest, BytesShapeAndTypeSurviveAFileTrip)
     {
@@ -204,7 +204,7 @@ namespace {
         ASSERT_TRUE(back.has_value()) << reader.get_last_error();
         EXPECT_EQ(back->spec().dtype, param.dtype);
         EXPECT_EQ(back->spec().shape, param.shape);
-        EXPECT_TRUE(same_bytes(original, *back));
+        EXPECT_TRUE(tensor_npy_same_bytes(original, *back));
     }
 
     class TensorNpyTest : public TensorNpyFixture { };
@@ -212,11 +212,11 @@ namespace {
     TEST_F(TensorNpyTest, TheWrittenHeaderIsAlignedAndSelfDescribing)
     {
         TensorSet set;
-        set.tensors.push_back(*floats({ 2, 3 }, "w"));
+        set.tensors.push_back(*tensor_npy_floats({ 2, 3 }, "w"));
         const auto path = temp_path(".npy");
         ASSERT_TRUE(NpyWriter {}.write(path, set));
 
-        const auto file = read_file(path);
+        const auto file = tensor_npy_read_file(path);
         ASSERT_GT(file.size(), 10U);
         EXPECT_EQ(static_cast<uint8_t>(file[0]), 0x93U);
         EXPECT_EQ(file.substr(1, 5), "NUMPY");
@@ -241,13 +241,13 @@ namespace {
         vector_set.tensors.push_back(*TensorData::from_values<float>(three, {}, "v"));
         const auto vector_path = temp_path(".npy");
         ASSERT_TRUE(NpyWriter {}.write(vector_path, vector_set));
-        EXPECT_NE(read_file(vector_path).find("'shape': (3,)"), std::string::npos);
+        EXPECT_NE(tensor_npy_read_file(vector_path).find("'shape': (3,)"), std::string::npos);
 
         TensorSet scalar_set;
         scalar_set.tensors.push_back(*TensorData::allocate(TensorSpec::contiguous(TensorDType::of<float>(), {}, "s")));
         const auto scalar_path = temp_path(".npy");
         ASSERT_TRUE(NpyWriter {}.write(scalar_path, scalar_set));
-        EXPECT_NE(read_file(scalar_path).find("'shape': ()"), std::string::npos);
+        EXPECT_NE(tensor_npy_read_file(scalar_path).find("'shape': ()"), std::string::npos);
     }
 
     TEST_F(TensorNpyTest, VeryLargeHeadersUseVersionTwo)
@@ -257,7 +257,7 @@ namespace {
             TensorSpec::contiguous(TensorDType::of<float>(), std::vector<uint64_t>(25000, 1), "deep")));
         const auto path = temp_path(".npy");
         ASSERT_TRUE(NpyWriter {}.write(path, set));
-        EXPECT_EQ(read_file(path)[6], 2);
+        EXPECT_EQ(tensor_npy_read_file(path)[6], 2);
 
         NpyReader reader;
         ASSERT_TRUE(reader.open(path)) << reader.get_last_error();
@@ -270,7 +270,7 @@ namespace {
         layout.strides = { 1, 2 };
         auto strided = TensorData::allocate(layout);
         ASSERT_TRUE(strided.has_value());
-        ASSERT_TRUE(TensorInsertion(*strided).assign(*floats({ 2, 3 }, "w")->access()));
+        ASSERT_TRUE(TensorInsertion(*strided).assign(*tensor_npy_floats({ 2, 3 }, "w")->access()));
 
         TensorSet set;
         set.tensors.push_back(*strided);
@@ -282,7 +282,7 @@ namespace {
         const auto back = reader.read("");
         ASSERT_TRUE(back.has_value());
         EXPECT_TRUE(back->spec().is_contiguous());
-        EXPECT_EQ(floats_of(*back), (std::vector<float> { 0, 1, 2, 3, 4, 5 }));
+        EXPECT_EQ(tensor_npy_floats_of(*back), (std::vector<float> { 0, 1, 2, 3, 4, 5 }));
     }
 
     TEST_F(TensorNpyTest, TheWriterRefusesWhatNumpyHasNoTypeFor)
@@ -309,8 +309,8 @@ namespace {
         EXPECT_NE(empty_writer.get_last_error().find("exactly one"), std::string::npos);
 
         TensorSet two;
-        two.tensors.push_back(*floats({ 1 }, "a"));
-        two.tensors.push_back(*floats({ 1 }, "b"));
+        two.tensors.push_back(*tensor_npy_floats({ 1 }, "a"));
+        two.tensors.push_back(*tensor_npy_floats({ 1 }, "b"));
         NpyWriter two_writer;
         EXPECT_FALSE(two_writer.write(temp_path(".npy"), two));
         EXPECT_NE(two_writer.get_last_error().find("exactly one"), std::string::npos);
@@ -323,7 +323,7 @@ namespace {
     TEST_F(TensorNpyTest, TheTensorIsNamedAfterTheFileStem)
     {
         TensorSet set;
-        set.tensors.push_back(*floats({ 2 }, "ignored"));
+        set.tensors.push_back(*tensor_npy_floats({ 2 }, "ignored"));
         const auto path = temp_path(".npy");
         ASSERT_TRUE(NpyWriter {}.write(path, set));
 
@@ -342,7 +342,7 @@ namespace {
         const std::string one_and_two("\x3F\x80\x00\x00\x40\x00\x00\x00", 8);
         NpyReader floats_reader;
         ASSERT_TRUE(floats_reader.open(write_file(".npy", npy_bytes(npy_dict(">f4", "(2,)"), one_and_two))));
-        EXPECT_EQ(floats_of(*floats_reader.read("")), (std::vector<float> { 1.0F, 2.0F }));
+        EXPECT_EQ(tensor_npy_floats_of(*floats_reader.read("")), (std::vector<float> { 1.0F, 2.0F }));
 
         NpyReader shorts_reader;
         ASSERT_TRUE(shorts_reader.open(write_file(".npy", npy_bytes(npy_dict(">u2", "(1,)"), std::string("\x01\x02", 2)))));
@@ -355,7 +355,7 @@ namespace {
     {
         NpyReader reader;
         ASSERT_TRUE(reader.open(write_file(".npy",
-            npy_bytes(npy_dict("<f4", "(2, 3)", "True"), float_bytes({ 0, 1, 2, 3, 4, 5 })))));
+            npy_bytes(npy_dict("<f4", "(2, 3)", "True"), tensor_npy_float_bytes({ 0, 1, 2, 3, 4, 5 })))));
 
         const auto spec = reader.describe().front();
         EXPECT_EQ(spec.shape, (std::vector<uint64_t> { 2, 3 }));
@@ -366,7 +366,7 @@ namespace {
         ASSERT_TRUE(tensor.has_value());
         const auto dense = TensorData::copy_of(*tensor->access());
         ASSERT_TRUE(dense.has_value());
-        EXPECT_EQ(floats_of(*dense), (std::vector<float> { 0, 2, 4, 1, 3, 5 }));
+        EXPECT_EQ(tensor_npy_floats_of(*dense), (std::vector<float> { 0, 2, 4, 1, 3, 5 }));
     }
 
     TEST_F(TensorNpyTest, AllThreeFormatVersionsAreAccepted)
@@ -374,9 +374,9 @@ namespace {
         for (const uint8_t major : { uint8_t { 1 }, uint8_t { 2 }, uint8_t { 3 } }) {
             NpyReader reader;
             ASSERT_TRUE(reader.open(write_file(".npy",
-                npy_bytes(npy_dict("<f4", "(2,)"), float_bytes({ 5.0F, 6.0F }), major))))
+                npy_bytes(npy_dict("<f4", "(2,)"), tensor_npy_float_bytes({ 5.0F, 6.0F }), major))))
                 << "version " << static_cast<int>(major) << ": " << reader.get_last_error();
-            EXPECT_EQ(floats_of(*reader.read("")), (std::vector<float> { 5.0F, 6.0F }));
+            EXPECT_EQ(tensor_npy_floats_of(*reader.read("")), (std::vector<float> { 5.0F, 6.0F }));
         }
     }
 
@@ -384,35 +384,35 @@ namespace {
     {
         NpyReader double_quotes;
         ASSERT_TRUE(double_quotes.open(write_file(".npy",
-            npy_bytes(R"({"descr": "<f4", "fortran_order": False, "shape": (1,), })", float_bytes({ 3.0F })))));
-        EXPECT_EQ(floats_of(*double_quotes.read("")), (std::vector<float> { 3.0F }));
+            npy_bytes(R"({"descr": "<f4", "fortran_order": False, "shape": (1,), })", tensor_npy_float_bytes({ 3.0F })))));
+        EXPECT_EQ(tensor_npy_floats_of(*double_quotes.read("")), (std::vector<float> { 3.0F }));
 
         NpyReader long_suffix;
         ASSERT_TRUE(long_suffix.open(write_file(".npy",
-            npy_bytes(npy_dict("<f4", "(2L, 1L)"), float_bytes({ 1.0F, 2.0F })))));
+            npy_bytes(npy_dict("<f4", "(2L, 1L)"), tensor_npy_float_bytes({ 1.0F, 2.0F })))));
         EXPECT_EQ(long_suffix.describe().front().shape, (std::vector<uint64_t> { 2, 1 }));
 
         NpyReader scalar;
-        ASSERT_TRUE(scalar.open(write_file(".npy", npy_bytes(npy_dict("<f4", "()"), float_bytes({ 7.0F })))));
+        ASSERT_TRUE(scalar.open(write_file(".npy", npy_bytes(npy_dict("<f4", "()"), tensor_npy_float_bytes({ 7.0F })))));
         EXPECT_TRUE(scalar.describe().front().shape.empty());
-        EXPECT_EQ(floats_of(*scalar.read("")), (std::vector<float> { 7.0F }));
+        EXPECT_EQ(tensor_npy_floats_of(*scalar.read("")), (std::vector<float> { 7.0F }));
     }
 
     TEST_F(TensorNpyTest, TrailingBytesAfterTheDataAreIgnored)
     {
         NpyReader reader;
         ASSERT_TRUE(reader.open(write_file(".npy",
-            npy_bytes(npy_dict("<f4", "(1,)"), float_bytes({ 4.0F, 99.0F })))));
-        EXPECT_EQ(floats_of(*reader.read("")), (std::vector<float> { 4.0F }));
+            npy_bytes(npy_dict("<f4", "(1,)"), tensor_npy_float_bytes({ 4.0F, 99.0F })))));
+        EXPECT_EQ(tensor_npy_floats_of(*reader.read("")), (std::vector<float> { 4.0F }));
     }
 
-    struct MalformedCase {
+    struct TensorNpyMalformedCase {
         const char* name;
         std::string content;
     };
 
     class TensorNpyMalformedTest : public TensorNpyFixture,
-                                   public ::testing::WithParamInterface<MalformedCase> { };
+                                   public ::testing::WithParamInterface<TensorNpyMalformedCase> { };
 
     std::string bad_version()
     {
@@ -434,22 +434,22 @@ namespace {
 
     INSTANTIATE_TEST_SUITE_P(Files, TensorNpyMalformedTest,
         ::testing::Values(
-            MalformedCase { "NotNumpy", "this is plain text and not an array" },
-            MalformedCase { "TooShort", std::string(5, 'x') },
-            MalformedCase { "UnknownVersion", bad_version() },
-            MalformedCase { "HeaderLengthPastTheFile", lying_length() },
-            MalformedCase { "StructuredDtype",
+            TensorNpyMalformedCase { "NotNumpy", "this is plain text and not an array" },
+            TensorNpyMalformedCase { "TooShort", std::string(5, 'x') },
+            TensorNpyMalformedCase { "UnknownVersion", bad_version() },
+            TensorNpyMalformedCase { "HeaderLengthPastTheFile", lying_length() },
+            TensorNpyMalformedCase { "StructuredDtype",
                 npy_bytes("{'descr': [('a', '<i4'), ('b', '<f4')], 'fortran_order': False, 'shape': (1,), }", std::string(8, '\0')) },
-            MalformedCase { "ObjectDtype", npy_bytes(npy_dict("|O", "(1,)"), std::string(8, '\0')) },
-            MalformedCase { "StringDtype", npy_bytes(npy_dict("|S4", "(1,)"), std::string(4, '\0')) },
-            MalformedCase { "LongDouble", npy_bytes(npy_dict("<f16", "(1,)"), std::string(16, '\0')) },
-            MalformedCase { "VoidDtype", npy_bytes(npy_dict("|V2", "(1,)"), std::string(2, '\0')) },
-            MalformedCase { "DatetimeDtype", npy_bytes(npy_dict("<M8[s]", "(1,)"), std::string(8, '\0')) },
-            MalformedCase { "MissingShape", npy_bytes("{'descr': '<f4', 'fortran_order': False, }", std::string(4, '\0')) },
-            MalformedCase { "NegativeShape", npy_bytes(npy_dict("<f4", "(-1,)"), std::string(4, '\0')) },
-            MalformedCase { "MissingFortranOrder", npy_bytes("{'descr': '<f4', 'shape': (1,), }", std::string(4, '\0')) },
-            MalformedCase { "DataShorterThanTheShape", npy_bytes(npy_dict("<f4", "(4,)"), std::string(8, '\0')) }),
-        [](const ::testing::TestParamInfo<MalformedCase>& info) { return std::string(info.param.name); });
+            TensorNpyMalformedCase { "ObjectDtype", npy_bytes(npy_dict("|O", "(1,)"), std::string(8, '\0')) },
+            TensorNpyMalformedCase { "StringDtype", npy_bytes(npy_dict("|S4", "(1,)"), std::string(4, '\0')) },
+            TensorNpyMalformedCase { "LongDouble", npy_bytes(npy_dict("<f16", "(1,)"), std::string(16, '\0')) },
+            TensorNpyMalformedCase { "VoidDtype", npy_bytes(npy_dict("|V2", "(1,)"), std::string(2, '\0')) },
+            TensorNpyMalformedCase { "DatetimeDtype", npy_bytes(npy_dict("<M8[s]", "(1,)"), std::string(8, '\0')) },
+            TensorNpyMalformedCase { "MissingShape", npy_bytes("{'descr': '<f4', 'fortran_order': False, }", std::string(4, '\0')) },
+            TensorNpyMalformedCase { "NegativeShape", npy_bytes(npy_dict("<f4", "(-1,)"), std::string(4, '\0')) },
+            TensorNpyMalformedCase { "MissingFortranOrder", npy_bytes("{'descr': '<f4', 'shape': (1,), }", std::string(4, '\0')) },
+            TensorNpyMalformedCase { "DataShorterThanTheShape", npy_bytes(npy_dict("<f4", "(4,)"), std::string(8, '\0')) }),
+        [](const ::testing::TestParamInfo<TensorNpyMalformedCase>& info) { return std::string(info.param.name); });
 
     TEST_P(TensorNpyMalformedTest, OpeningFailsWithAReasonAndLeavesNothingOpen)
     {
@@ -462,7 +462,7 @@ namespace {
 
     TEST_F(TensorNpyTest, ProbeAndCanReadRecogniseTheMagic)
     {
-        const auto good = npy_bytes(npy_dict("<f4", "(1,)"), float_bytes({ 1.0F }));
+        const auto good = npy_bytes(npy_dict("<f4", "(1,)"), tensor_npy_float_bytes({ 1.0F }));
         const auto as_bytes = [](const std::string& text) {
             return std::vector<std::byte>(reinterpret_cast<const std::byte*>(text.data()),
                 reinterpret_cast<const std::byte*>(text.data()) + text.size());
@@ -492,10 +492,10 @@ namespace {
     // ---------------------------------------------------------------------
 
     class TensorNpzRoundTripTest : public TensorNpyFixture,
-                                   public ::testing::WithParamInterface<DTypeCase> { };
+                                   public ::testing::WithParamInterface<TensorNpyDTypeCase> { };
 
     INSTANTIATE_TEST_SUITE_P(DTypes, TensorNpzRoundTripTest, ::testing::ValuesIn(numpy_cases()),
-        [](const ::testing::TestParamInfo<DTypeCase>& info) { return std::string(info.param.name); });
+        [](const ::testing::TestParamInfo<TensorNpyDTypeCase>& info) { return std::string(info.param.name); });
 
     TEST_P(TensorNpzRoundTripTest, BytesShapeAndTypeSurviveAnArchiveTrip)
     {
@@ -516,7 +516,7 @@ namespace {
         ASSERT_TRUE(back.has_value()) << reader.get_last_error();
         EXPECT_EQ(back->spec().dtype, param.dtype);
         EXPECT_EQ(back->spec().shape, param.shape);
-        EXPECT_TRUE(same_bytes(original, *back));
+        EXPECT_TRUE(tensor_npy_same_bytes(original, *back));
     }
 
     class TensorNpzTest : public TensorNpyFixture { };
@@ -525,9 +525,9 @@ namespace {
     {
         std::vector<int64_t> wide { 10, 20 };
         TensorSet set;
-        set.tensors.push_back(*floats({ 2, 2 }, "a"));
+        set.tensors.push_back(*tensor_npy_floats({ 2, 2 }, "a"));
         set.tensors.push_back(*TensorData::from_values<int64_t>(wide, {}, "layer/w"));
-        set.tensors.push_back(*floats({ 3 }, "b"));
+        set.tensors.push_back(*tensor_npy_floats({ 3 }, "b"));
 
         const auto path = temp_path(".npz");
         ASSERT_TRUE(NpzWriter {}.write(path, set));
@@ -544,7 +544,7 @@ namespace {
         const auto picked = reader.read_tensors(TensorReadOptions { .names = { "b", "layer/w" } });
         ASSERT_TRUE(picked.has_value());
         ASSERT_EQ(picked->tensors.size(), 2U);
-        EXPECT_EQ(floats_of(picked->tensors[0]), (std::vector<float> { 0, 1, 2 }));
+        EXPECT_EQ(tensor_npy_floats_of(picked->tensors[0]), (std::vector<float> { 0, 1, 2 }));
         const auto wide_view = picked->tensors[1].access();
         ASSERT_TRUE(wide_view.has_value());
         const auto wide_values = wide_view->as<int64_t>();
@@ -557,8 +557,8 @@ namespace {
     TEST_F(TensorNpzTest, EntriesAreStoredAndNamedAfterTheirTensors)
     {
         TensorSet set;
-        set.tensors.push_back(*floats({ 4 }, "alpha"));
-        set.tensors.push_back(*floats({ 2 }, "beta"));
+        set.tensors.push_back(*tensor_npy_floats({ 4 }, "alpha"));
+        set.tensors.push_back(*tensor_npy_floats({ 2 }, "beta"));
         const auto path = temp_path(".npz");
         ASSERT_TRUE(NpzWriter {}.write(path, set));
 
@@ -586,7 +586,7 @@ namespace {
         ASSERT_TRUE(NpyWriter {}.write(npy_path, set));
 
         const auto path = temp_path(".npz");
-        ASSERT_TRUE(write_zip(path, { { "z.npy", read_file(npy_path) } }, MZ_BEST_COMPRESSION));
+        ASSERT_TRUE(write_zip(path, { { "z.npy", tensor_npy_read_file(npy_path) } }, MZ_BEST_COMPRESSION));
         EXPECT_LT(fs::file_size(path), fs::file_size(npy_path));
 
         NpzReader reader;
@@ -595,26 +595,26 @@ namespace {
         EXPECT_EQ(reader.describe().front().shape, (std::vector<uint64_t> { 4096 }));
         const auto back = reader.read("z");
         ASSERT_TRUE(back.has_value());
-        EXPECT_EQ(floats_of(*back), zeros);
+        EXPECT_EQ(tensor_npy_floats_of(*back), zeros);
     }
 
     TEST_F(TensorNpzTest, FortranAndBigEndianEntriesAreHandledLikeStandaloneFiles)
     {
         const auto path = temp_path(".npz");
         ASSERT_TRUE(write_zip(path, {
-                                        { "f.npy", npy_bytes(npy_dict("<f4", "(2, 3)", "True"), float_bytes({ 0, 1, 2, 3, 4, 5 })) },
+                                        { "f.npy", npy_bytes(npy_dict("<f4", "(2, 3)", "True"), tensor_npy_float_bytes({ 0, 1, 2, 3, 4, 5 })) },
                                         { "b.npy", npy_bytes(npy_dict(">f4", "(2,)"), std::string("\x3F\x80\x00\x00\x40\x00\x00\x00", 8)) },
                                     }));
 
         NpzReader reader;
         ASSERT_TRUE(reader.open(path));
         EXPECT_EQ(reader.find_spec("f")->strides, (std::vector<int64_t> { 1, 2 }));
-        EXPECT_EQ(floats_of(*reader.read("b")), (std::vector<float> { 1.0F, 2.0F }));
+        EXPECT_EQ(tensor_npy_floats_of(*reader.read("b")), (std::vector<float> { 1.0F, 2.0F }));
     }
 
     TEST_F(TensorNpzTest, EntriesThatAreNotArraysOrNotReadableAreSkipped)
     {
-        const auto good = npy_bytes(npy_dict("<f4", "(1,)"), float_bytes({ 2.0F }));
+        const auto good = npy_bytes(npy_dict("<f4", "(1,)"), tensor_npy_float_bytes({ 2.0F }));
         const auto path = temp_path(".npz");
         ASSERT_TRUE(write_zip(path, {
                                         { "notes.txt", "not an array" },
@@ -628,7 +628,7 @@ namespace {
         const auto specs = reader.describe();
         ASSERT_EQ(specs.size(), 1U);
         EXPECT_EQ(specs[0].name, "good");
-        EXPECT_EQ(floats_of(*reader.read("good")), (std::vector<float> { 2.0F }));
+        EXPECT_EQ(tensor_npy_floats_of(*reader.read("good")), (std::vector<float> { 2.0F }));
     }
 
     TEST_F(TensorNpzTest, AnArchiveWithoutArraysOpensEmpty)
@@ -657,9 +657,9 @@ namespace {
     TEST_F(TensorNpzTest, OpeningAnotherArchiveReplacesTheFirst)
     {
         TensorSet first;
-        first.tensors.push_back(*floats({ 1 }, "one"));
+        first.tensors.push_back(*tensor_npy_floats({ 1 }, "one"));
         TensorSet second;
-        second.tensors.push_back(*floats({ 1 }, "two"));
+        second.tensors.push_back(*tensor_npy_floats({ 1 }, "two"));
         const auto first_path = temp_path(".npz");
         const auto second_path = temp_path(".npz");
         ASSERT_TRUE(NpzWriter {}.write(first_path, first));
@@ -678,7 +678,7 @@ namespace {
     TEST_F(TensorNpzTest, TheWriterRefusesTheWholeSetForOneBadTensor)
     {
         TensorSet unsupported;
-        unsupported.tensors.push_back(*floats({ 2 }, "fine"));
+        unsupported.tensors.push_back(*tensor_npy_floats({ 2 }, "fine"));
         unsupported.tensors.push_back(*TensorData::allocate(
             TensorSpec::contiguous(TensorDType::bfloat16(), { 2 }, "brain")));
         NpzWriter first;
@@ -686,8 +686,8 @@ namespace {
         EXPECT_NE(first.get_last_error().find("numpy has no type"), std::string::npos);
 
         TensorSet duplicate;
-        duplicate.tensors.push_back(*floats({ 1 }, "a"));
-        duplicate.tensors.push_back(*floats({ 1 }, "a"));
+        duplicate.tensors.push_back(*tensor_npy_floats({ 1 }, "a"));
+        duplicate.tensors.push_back(*tensor_npy_floats({ 1 }, "a"));
         NpzWriter second;
         EXPECT_FALSE(second.write(temp_path(".npz"), duplicate));
         EXPECT_FALSE(second.get_last_error().empty());
@@ -696,7 +696,7 @@ namespace {
     TEST_F(TensorNpzTest, FileReaderSurfaceReportsTheFormat)
     {
         TensorSet set;
-        set.tensors.push_back(*floats({ 2 }, "a"));
+        set.tensors.push_back(*tensor_npy_floats({ 2 }, "a"));
         const auto path = temp_path(".npz");
         ASSERT_TRUE(NpzWriter {}.write(path, set));
 
@@ -726,7 +726,7 @@ namespace {
         std::string written(const std::string& suffix)
         {
             TensorSet set;
-            set.tensors.push_back(*floats({ 3 }, "a"));
+            set.tensors.push_back(*tensor_npy_floats({ 3 }, "a"));
             const auto path = temp_path(suffix);
             auto writer = TensorFormatRegistry::instance().create_writer(path);
             EXPECT_NE(writer, nullptr);
@@ -753,14 +753,14 @@ namespace {
         const auto& registry = TensorFormatRegistry::instance();
 
         TensorSet set;
-        set.tensors.push_back(*floats({ 3 }, "a"));
+        set.tensors.push_back(*tensor_npy_floats({ 3 }, "a"));
         const auto npy_path = temp_path(".npy");
         const auto safetensors_path = temp_path(".safetensors");
         ASSERT_TRUE(NpyWriter {}.write(npy_path, set));
         ASSERT_TRUE(SafetensorsWriter {}.write(safetensors_path, set));
 
-        const auto npy_renamed = write_file(".dat", read_file(npy_path));
-        const auto safetensors_renamed = write_file(".dat", read_file(safetensors_path));
+        const auto npy_renamed = write_file(".dat", tensor_npy_read_file(npy_path));
+        const auto safetensors_renamed = write_file(".dat", tensor_npy_read_file(safetensors_path));
 
         ASSERT_NE(registry.detect(npy_renamed), nullptr);
         EXPECT_EQ(registry.detect(npy_renamed)->name, "npy");
@@ -775,7 +775,7 @@ namespace {
         ASSERT_NE(registry.detect(path), nullptr);
         EXPECT_EQ(registry.detect(path)->name, "npz");
 
-        const auto renamed = write_file(".bin", read_file(path));
+        const auto renamed = write_file(".bin", tensor_npy_read_file(path));
         EXPECT_EQ(registry.detect(renamed), nullptr);
         EXPECT_NE(registry.create_reader(renamed, "npz"), nullptr);
     }
@@ -790,7 +790,7 @@ namespace {
             const auto all = reader->read_tensors();
             ASSERT_TRUE(all.has_value()) << suffix;
             ASSERT_EQ(all->tensors.size(), 1U) << suffix;
-            EXPECT_EQ(floats_of(all->tensors.front()), (std::vector<float> { 0, 1, 2 })) << suffix;
+            EXPECT_EQ(tensor_npy_floats_of(all->tensors.front()), (std::vector<float> { 0, 1, 2 })) << suffix;
         }
     }
 

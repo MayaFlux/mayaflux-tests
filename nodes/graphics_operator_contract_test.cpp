@@ -47,7 +47,7 @@ namespace {
         return pts;
     }
 
-    std::vector<glm::vec3> positions(uint32_t count, float offset)
+    std::vector<glm::vec3> graphics_operator_contract_positions(uint32_t count, float offset)
     {
         std::vector<glm::vec3> pts;
         pts.reserve(count);
@@ -88,8 +88,8 @@ namespace {
             { .name = "Assembly", .groups = 2,
                 .make = [] {
                     auto op = std::make_unique<AssemblyOperator>();
-                    op->add_geometry(positions(5, 0.0F), Portal::Graphics::PrimitiveTopology::POINT_LIST);
-                    op->add_geometry(positions(7, 10.0F), Portal::Graphics::PrimitiveTopology::POINT_LIST);
+                    op->add_geometry(graphics_operator_contract_positions(5, 0.0F), Portal::Graphics::PrimitiveTopology::POINT_LIST);
+                    op->add_geometry(graphics_operator_contract_positions(7, 10.0F), Portal::Graphics::PrimitiveTopology::POINT_LIST);
                     return op;
                 },
                 .make_empty = [] { return std::make_unique<AssemblyOperator>(); } },
@@ -306,9 +306,9 @@ namespace {
         using Portal::Graphics::PrimitiveTopology;
 
         AssemblyOperator op;
-        op.add_geometry(positions(3, 0.0F), PrimitiveTopology::POINT_LIST);
-        op.add_geometry(positions(4, 5.0F), PrimitiveTopology::LINE_STRIP);
-        op.add_geometry(positions(2, 9.0F), PrimitiveTopology::POINT_LIST);
+        op.add_geometry(graphics_operator_contract_positions(3, 0.0F), PrimitiveTopology::POINT_LIST);
+        op.add_geometry(graphics_operator_contract_positions(4, 5.0F), PrimitiveTopology::LINE_STRIP);
+        op.add_geometry(graphics_operator_contract_positions(2, 9.0F), PrimitiveTopology::POINT_LIST);
 
         const auto runs = op.topology_runs();
 
@@ -326,8 +326,8 @@ namespace {
         using Portal::Graphics::PrimitiveTopology;
 
         AssemblyOperator op;
-        op.add_geometry(positions(3, 0.0F), PrimitiveTopology::POINT_LIST);
-        op.add_geometry(positions(4, 5.0F), PrimitiveTopology::POINT_LIST);
+        op.add_geometry(graphics_operator_contract_positions(3, 0.0F), PrimitiveTopology::POINT_LIST);
+        op.add_geometry(graphics_operator_contract_positions(4, 5.0F), PrimitiveTopology::POINT_LIST);
 
         const auto runs = op.topology_runs();
 
@@ -340,8 +340,8 @@ namespace {
         using Portal::Graphics::PrimitiveTopology;
 
         AssemblyOperator op;
-        op.add_geometry(positions(3, 0.0F), PrimitiveTopology::LINE_STRIP);
-        op.add_geometry(positions(4, 5.0F), PrimitiveTopology::LINE_STRIP);
+        op.add_geometry(graphics_operator_contract_positions(3, 0.0F), PrimitiveTopology::LINE_STRIP);
+        op.add_geometry(graphics_operator_contract_positions(4, 5.0F), PrimitiveTopology::LINE_STRIP);
 
         EXPECT_EQ(op.topology_runs().size(), 2U);
     }
@@ -351,8 +351,8 @@ namespace {
         using Portal::Graphics::PrimitiveTopology;
 
         AssemblyOperator op;
-        auto first = op.add_geometry(positions(3, 0.0F), PrimitiveTopology::POINT_LIST);
-        op.add_geometry(positions(4, 5.0F), PrimitiveTopology::POINT_LIST);
+        auto first = op.add_geometry(graphics_operator_contract_positions(3, 0.0F), PrimitiveTopology::POINT_LIST);
+        op.add_geometry(graphics_operator_contract_positions(4, 5.0F), PrimitiveTopology::POINT_LIST);
 
         EXPECT_TRUE(op.remove_geometry(first));
         EXPECT_EQ(op.get_vertex_count(), 4U);

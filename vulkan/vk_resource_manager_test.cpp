@@ -25,7 +25,7 @@ namespace {
 
     constexpr vk::BufferUsageFlags k_transfer_usage = vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst;
 
-    std::vector<uint8_t> pattern(size_t size, uint8_t seed = 1)
+    std::vector<uint8_t> vk_resource_manager_pattern(size_t size, uint8_t seed = 1)
     {
         std::vector<uint8_t> bytes(size);
         std::iota(bytes.begin(), bytes.end(), seed);
@@ -91,7 +91,7 @@ TEST_F(BackendResourceManagerTest, RawHostVisibleBufferIsPersistentlyMapped)
     RawVulkanBuffer raw(backend(), 128, k_transfer_usage, true);
 
     ASSERT_NE(raw.mapped(), nullptr);
-    const auto bytes = pattern(128);
+    const auto bytes = vk_resource_manager_pattern(128);
     std::memcpy(raw.mapped(), bytes.data(), bytes.size());
     EXPECT_EQ(std::memcmp(raw.mapped(), bytes.data(), bytes.size()), 0);
 }
@@ -167,7 +167,7 @@ MAYAFLUX_TEST_WITH(TEST_F, BackendResourceManagerTest, DeferredCopyCanReadABuffe
     backend().wait_idle();
     auto source = staging_buffer(128);
     RawVulkanBuffer destination(backend(), 128, k_transfer_usage, true);
-    const auto expected = pattern(128, 19);
+    const auto expected = vk_resource_manager_pattern(128, 19);
     std::memcpy(source->get_mapped_ptr(), expected.data(), expected.size());
     std::memset(destination.mapped(), 0, expected.size());
 
@@ -190,7 +190,7 @@ MAYAFLUX_TEST_WITH(TEST_F, BackendResourceManagerTest, CleanupKeepsADeferredBuff
     backend().wait_idle();
     auto source = staging_buffer(128);
     RawVulkanBuffer destination(backend(), 128, k_transfer_usage, true);
-    const auto expected = pattern(128, 71);
+    const auto expected = vk_resource_manager_pattern(128, 71);
     std::memcpy(source->get_mapped_ptr(), expected.data(), expected.size());
     std::memset(destination.mapped(), 0, expected.size());
 
@@ -229,7 +229,7 @@ TEST_F(BackendResourceManagerTest, BufferServiceRetireDetachesTheBuffer)
 TEST_F(BackendResourceManagerTest, ResizingAManagedBufferPreservesItsBytesAndKeepsItUsable)
 {
     auto buffer = staging_buffer(64);
-    const auto bytes = pattern(64);
+    const auto bytes = vk_resource_manager_pattern(64);
     std::memcpy(buffer->get_mapped_ptr(), bytes.data(), bytes.size());
 
     buffer->resize(256, true);
@@ -250,7 +250,7 @@ MAYAFLUX_TEST_WITH(TEST_F, BackendResourceManagerTest, ResizeKeepsADeferredReade
     backend().wait_idle();
     auto source = staging_buffer(128);
     RawVulkanBuffer destination(backend(), 128, k_transfer_usage, true);
-    const auto expected = pattern(128, 43);
+    const auto expected = vk_resource_manager_pattern(128, 43);
     std::memcpy(source->get_mapped_ptr(), expected.data(), expected.size());
     std::memset(destination.mapped(), 0, expected.size());
 
@@ -276,7 +276,7 @@ MAYAFLUX_TEST_WITH(TEST_F, BackendResourceManagerTest, ResizingOneBufferLeavesAn
     auto resized = staging_buffer(64);
     auto source = staging_buffer(128);
     RawVulkanBuffer destination(backend(), 128, k_transfer_usage, true);
-    const auto expected = pattern(128, 97);
+    const auto expected = vk_resource_manager_pattern(128, 97);
     std::memcpy(source->get_mapped_ptr(), expected.data(), expected.size());
     std::memset(destination.mapped(), 0, expected.size());
 
@@ -328,7 +328,7 @@ TEST_F(BackendResourceManagerTest, BufferServiceCopiesBytesBetweenBuffers)
     ASSERT_NE(service(), nullptr);
     RawVulkanBuffer src(backend(), 128, k_transfer_usage, true);
     RawVulkanBuffer dst(backend(), 128, k_transfer_usage, true);
-    const auto bytes = pattern(128);
+    const auto bytes = vk_resource_manager_pattern(128);
     std::memcpy(src.mapped(), bytes.data(), bytes.size());
     std::memset(dst.mapped(), 0, 128);
 
@@ -342,7 +342,7 @@ TEST_F(BackendResourceManagerTest, BufferServiceCopyHonoursOffsets)
     ASSERT_NE(service(), nullptr);
     RawVulkanBuffer src(backend(), 128, k_transfer_usage, true);
     RawVulkanBuffer dst(backend(), 128, k_transfer_usage, true);
-    const auto bytes = pattern(128);
+    const auto bytes = vk_resource_manager_pattern(128);
     std::memcpy(src.mapped(), bytes.data(), bytes.size());
     std::memset(dst.mapped(), 0, 128);
 
@@ -358,7 +358,7 @@ TEST_F(BackendResourceManagerTest, FencedCopyCompletesAfterWait)
     ASSERT_NE(service(), nullptr);
     RawVulkanBuffer src(backend(), 128, k_transfer_usage, true);
     RawVulkanBuffer dst(backend(), 128, k_transfer_usage, true);
-    const auto bytes = pattern(128, 9);
+    const auto bytes = vk_resource_manager_pattern(128, 9);
     std::memcpy(src.mapped(), bytes.data(), bytes.size());
     std::memset(dst.mapped(), 0, 128);
 
@@ -553,7 +553,7 @@ TEST_F(BackendResourceManagerTest, CleanupImageReleasesHandlesAndIsRepeatable)
 MAYAFLUX_TEST_WITH(TEST_F, BackendResourceManagerTest, DeferredImageReadSurvivesCleanupAndReinitialization, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
 {
     auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
-    const auto expected = pattern(64, 37);
+    const auto expected = vk_resource_manager_pattern(64, 37);
     resources().upload_image_data(image, expected.data(), expected.size());
     resources().transition_image_layout(image, vk::ImageLayout::eTransferSrcOptimal, Core::SubmitMode::IMMEDIATE);
     RawVulkanBuffer destination(backend(), expected.size(), k_transfer_usage, true);
@@ -626,7 +626,7 @@ TEST_P(ImageRoundTripTest, UploadedBytesReadBackUnchanged)
     constexpr uint32_t k_extent = 4;
     const size_t size = static_cast<size_t>(k_extent) * k_extent * Core::vk_format_bytes_per_pixel(format);
     auto image = make_image(k_extent, k_extent, format, usage);
-    const auto bytes = pattern(size, 3);
+    const auto bytes = vk_resource_manager_pattern(size, 3);
 
     resources().upload_image_data(image, bytes.data(), bytes.size());
     std::vector<uint8_t> out(size, 0);
@@ -648,7 +648,7 @@ INSTANTIATE_TEST_SUITE_P(UsagesAndFormats, ImageRoundTripTest,
 TEST_F(BackendResourceManagerTest, UploadWithNullArgumentsIsRejected)
 {
     auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
-    const auto bytes = pattern(64);
+    const auto bytes = vk_resource_manager_pattern(64);
 
     EXPECT_NO_THROW(resources().upload_image_data(nullptr, bytes.data(), bytes.size()));
     EXPECT_NO_THROW(resources().upload_image_data(image, nullptr, bytes.size()));
@@ -659,7 +659,7 @@ TEST_F(BackendResourceManagerTest, DeferredUploadThroughProvidedStagingBufferRou
 {
     auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
     auto staging = staging_buffer(64);
-    const auto bytes = pattern(64, 5);
+    const auto bytes = vk_resource_manager_pattern(64, 5);
 
     resources().upload_image_data(image, bytes.data(), bytes.size(), staging, true);
     std::vector<uint8_t> out(64, 0);
@@ -675,7 +675,7 @@ TEST_F(BackendResourceManagerTest, LayerUploadReturnsTrueForAnArrayImage)
     auto image = std::make_shared<VKImage>(4, 4, 1, vk::Format::eR8G8B8A8Unorm, VKImage::Usage::TEXTURE_2D,
         VKImage::Type::TYPE_2D, 1, 2);
     resources().initialize_image(image);
-    const auto bytes = pattern(64);
+    const auto bytes = vk_resource_manager_pattern(64);
 
     EXPECT_TRUE(resources().upload_image_layer(image, 1, bytes.data(), bytes.size()));
     resources().cleanup_image(image);
@@ -687,10 +687,10 @@ TEST_F(BackendResourceManagerTest, LayerUploadPreservesOtherLayersAfterWholeArra
         VKImage::Type::TYPE_2D, 1, 3);
     resources().initialize_image(image);
 
-    auto expected = pattern(48, 7);
+    auto expected = vk_resource_manager_pattern(48, 7);
     resources().upload_image_data(image, expected.data(), expected.size());
 
-    const auto replacement = pattern(16, 101);
+    const auto replacement = vk_resource_manager_pattern(16, 101);
     ASSERT_TRUE(resources().upload_image_layer(image, 1, replacement.data(), replacement.size()));
     std::memcpy(expected.data() + 16, replacement.data(), replacement.size());
 
@@ -704,8 +704,8 @@ TEST_F(BackendResourceManagerTest, LayerUploadPreservesOtherLayersAfterWholeArra
 TEST_F(BackendResourceManagerTest, HostReadbackRestoresGeneralLayoutForAnotherUpload)
 {
     auto image = make_image(2, 2, vk::Format::eR8G8B8A8Unorm, VKImage::Usage::STORAGE);
-    const auto first = pattern(16, 11);
-    const auto second = pattern(16, 51);
+    const auto first = vk_resource_manager_pattern(16, 11);
+    const auto second = vk_resource_manager_pattern(16, 51);
 
     resources().upload_image_data(image, first.data(), first.size());
 
@@ -732,7 +732,7 @@ TEST_F(BackendResourceManagerTest, HostImageTransfersDoNotWaitForUnrelatedBlocke
     }
 
     auto image = make_image(2, 2, vk::Format::eR8G8B8A8Unorm, VKImage::Usage::STORAGE);
-    const auto bytes = pattern(16, 3);
+    const auto bytes = vk_resource_manager_pattern(16, 3);
 
     TimelineGate gate(context.get_device());
     const std::array<vk::SemaphoreSubmitInfo, 1> waits { gate.closed() };
@@ -795,7 +795,7 @@ TEST_F(BackendResourceManagerTest, TransitionToTheTrackedLayoutRecordsNothing)
 TEST_F(BackendResourceManagerTest, DeferredTransitionOfAnUploadedImageIsSeenByALaterDownload)
 {
     auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
-    const auto bytes = pattern(64, 3);
+    const auto bytes = vk_resource_manager_pattern(64, 3);
     resources().upload_image_data(image, bytes.data(), bytes.size());
 
     resources().transition_image_layout(image, vk::ImageLayout::eGeneral);
@@ -842,7 +842,7 @@ TEST_F(BackendResourceManagerTest, ExecuteAsyncReleasesWhatItKeepsAliveOnceItCom
 MAYAFLUX_TEST_WITH(TEST_F, BackendResourceManagerTest, AsyncImageReadSurvivesResidencyClearBeforeWait, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
 {
     auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
-    const auto expected = pattern(64, 93);
+    const auto expected = vk_resource_manager_pattern(64, 93);
     resources().upload_image_data(image, expected.data(), expected.size());
     resources().transition_image_layout(image, vk::ImageLayout::eTransferSrcOptimal, Core::SubmitMode::IMMEDIATE);
     RawVulkanBuffer destination(backend(), expected.size(), k_transfer_usage, true);
@@ -896,7 +896,7 @@ TEST_F(BackendResourceManagerTest, AsyncBlitCopiesPixelsAndAHostReadAfterwardsSe
 {
     auto src = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
     auto dst = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
-    const auto bytes = pattern(64, 9);
+    const auto bytes = vk_resource_manager_pattern(64, 9);
     resources().upload_image_data(src, bytes.data(), bytes.size());
 
     vk::ImageBlit region {};
@@ -935,7 +935,7 @@ TEST_F(BackendResourceManagerTest, DeferredBlitIsSeenByALaterAsyncBlitOfItsDesti
     auto first = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
     auto middle = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
     auto last = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
-    const auto bytes = pattern(64, 11);
+    const auto bytes = vk_resource_manager_pattern(64, 11);
     resources().upload_image_data(first, bytes.data(), bytes.size());
 
     vk::ImageBlit region {};
@@ -992,7 +992,7 @@ TEST_F(BackendResourceManagerTest, DeferredUploadThroughStagingIsSeenByALaterDow
     auto image = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
     auto staging = staging_buffer();
     const auto staging_count = staging.use_count();
-    const auto bytes = pattern(64, 5);
+    const auto bytes = vk_resource_manager_pattern(64, 5);
 
     resources().upload_image_data(image, bytes.data(), bytes.size(), staging, true);
     ASSERT_TRUE(backend().get_command_manager().has_deferred_commands());
@@ -1022,7 +1022,7 @@ TEST_F(BackendResourceManagerTest, FullExtentBlitCopiesPixels)
 {
     auto src = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
     auto dst = make_image(4, 4, vk::Format::eR8G8B8A8Unorm);
-    const auto bytes = pattern(64, 7);
+    const auto bytes = vk_resource_manager_pattern(64, 7);
     resources().upload_image_data(src, bytes.data(), bytes.size());
 
     vk::ImageBlit region {};

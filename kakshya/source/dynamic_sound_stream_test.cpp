@@ -16,9 +16,9 @@ namespace {
     using Kakshya::Region;
     using Kakshya::RegionGroup;
 
-    constexpr uint32_t k_rate = 44100;
+    constexpr uint32_t k_dynamic_sound_stream_rate = 44100;
 
-    double sample(uint64_t frame, uint32_t channel, double bias = 0.0)
+    double dynamic_sound_stream_sample(uint64_t frame, uint32_t channel, double bias = 0.0)
     {
         return bias + 1.0 + 10.0 * static_cast<double>(frame) + static_cast<double>(channel);
     }
@@ -27,12 +27,12 @@ namespace {
     {
         std::vector<double> values(channels);
         for (uint32_t c = 0; c < channels; ++c) {
-            values[c] = sample(frame, c, bias);
+            values[c] = dynamic_sound_stream_sample(frame, c, bias);
         }
         return values;
     }
 
-    std::shared_ptr<DynamicSoundStream> make_stream(OrganizationStrategy organization, uint32_t channels, uint32_t rate = k_rate)
+    std::shared_ptr<DynamicSoundStream> dynamic_sound_make_stream(OrganizationStrategy organization, uint32_t channels, uint32_t rate = k_dynamic_sound_stream_rate)
     {
         auto stream = std::make_shared<DynamicSoundStream>(rate, channels);
         stream->get_structure().organization = organization;
@@ -47,7 +47,7 @@ namespace {
             std::vector<double> flat(frames * channels);
             for (uint64_t f = 0; f < frames; ++f) {
                 for (uint32_t c = 0; c < channels; ++c) {
-                    flat[f * channels + c] = sample(start + f, c, bias);
+                    flat[f * channels + c] = dynamic_sound_stream_sample(start + f, c, bias);
                 }
             }
             return stream.write_frames(std::vector<std::span<const double>> { std::span<const double>(flat) }, start);
@@ -56,7 +56,7 @@ namespace {
         std::vector<std::vector<double>> columns(channels, std::vector<double>(frames));
         for (uint64_t f = 0; f < frames; ++f) {
             for (uint32_t c = 0; c < channels; ++c) {
-                columns[c][f] = sample(start + f, c, bias);
+                columns[c][f] = dynamic_sound_stream_sample(start + f, c, bias);
             }
         }
         std::vector<std::span<const double>> spans(columns.begin(), columns.end());
@@ -88,22 +88,22 @@ namespace {
         return values;
     }
 
-    struct StreamShape {
+    struct DynamicSoundStreamStreamShape {
         OrganizationStrategy organization;
         uint32_t channels;
     };
 
-    std::string shape_name(const ::testing::TestParamInfo<StreamShape>& info)
+    std::string dynamic_sound_stream_shape_name(const ::testing::TestParamInfo<DynamicSoundStreamStreamShape>& info)
     {
         return std::string(info.param.organization == OrganizationStrategy::INTERLEAVED ? "Interleaved" : "Planar")
             + std::to_string(info.param.channels) + "ch";
     }
 
-    class DynamicSoundStreamLayoutTest : public ::testing::TestWithParam<StreamShape> {
+    class DynamicSoundStreamLayoutTest : public ::testing::TestWithParam<DynamicSoundStreamStreamShape> {
     protected:
         void SetUp() override
         {
-            stream = make_stream(GetParam().organization, GetParam().channels);
+            stream = dynamic_sound_make_stream(GetParam().organization, GetParam().channels);
         }
 
         [[nodiscard]] uint32_t channels() const { return GetParam().channels; }
@@ -114,17 +114,17 @@ namespace {
 
     INSTANTIATE_TEST_SUITE_P(Shapes, DynamicSoundStreamLayoutTest,
         ::testing::Values(
-            StreamShape { OrganizationStrategy::INTERLEAVED, 1 },
-            StreamShape { OrganizationStrategy::INTERLEAVED, 2 },
-            StreamShape { OrganizationStrategy::INTERLEAVED, 3 },
-            StreamShape { OrganizationStrategy::PLANAR, 1 },
-            StreamShape { OrganizationStrategy::PLANAR, 2 },
-            StreamShape { OrganizationStrategy::PLANAR, 3 }),
-        shape_name);
+            DynamicSoundStreamStreamShape { OrganizationStrategy::INTERLEAVED, 1 },
+            DynamicSoundStreamStreamShape { OrganizationStrategy::INTERLEAVED, 2 },
+            DynamicSoundStreamStreamShape { OrganizationStrategy::INTERLEAVED, 3 },
+            DynamicSoundStreamStreamShape { OrganizationStrategy::PLANAR, 1 },
+            DynamicSoundStreamStreamShape { OrganizationStrategy::PLANAR, 2 },
+            DynamicSoundStreamStreamShape { OrganizationStrategy::PLANAR, 3 }),
+        dynamic_sound_stream_shape_name);
 
     TEST_P(DynamicSoundStreamLayoutTest, ConstructionReportsItsParametersAndStartsEmpty)
     {
-        EXPECT_EQ(stream->get_sample_rate(), k_rate);
+        EXPECT_EQ(stream->get_sample_rate(), k_dynamic_sound_stream_rate);
         EXPECT_EQ(stream->get_num_channels(), channels());
         EXPECT_TRUE(stream->get_auto_resize());
         EXPECT_FALSE(stream->is_circular());
@@ -483,7 +483,7 @@ namespace {
         } else {
             ASSERT_EQ(data.size(), channels());
             for (uint32_t c = 0; c < channels(); ++c) {
-                EXPECT_EQ(std::get<std::vector<double>>(data[c]), (std::vector<double> { sample(1, c), sample(2, c) })) << c;
+                EXPECT_EQ(std::get<std::vector<double>>(data[c]), (std::vector<double> { dynamic_sound_stream_sample(1, c), dynamic_sound_stream_sample(2, c) })) << c;
             }
         }
     }
@@ -513,7 +513,7 @@ namespace {
         if (interleaved()) {
             EXPECT_TRUE(span.empty());
         } else {
-            EXPECT_EQ(std::vector<double>(span.begin(), span.end()), (std::vector<double> { sample(1, c), sample(2, c) }));
+            EXPECT_EQ(std::vector<double>(span.begin(), span.end()), (std::vector<double> { dynamic_sound_stream_sample(1, c), dynamic_sound_stream_sample(2, c) }));
             EXPECT_EQ(stream->get_channel_frames(c, 3, 10).size(), 1U);
             EXPECT_TRUE(stream->get_channel_frames(c, 4, 1).empty());
         }
@@ -528,7 +528,7 @@ namespace {
 
         stream->get_channel_frames(out, c, 2);
 
-        EXPECT_EQ(out, (std::vector<double> { sample(2, c), sample(3, c), 0.0, 0.0 }));
+        EXPECT_EQ(out, (std::vector<double> { dynamic_sound_stream_sample(2, c), dynamic_sound_stream_sample(3, c), 0.0, 0.0 }));
     }
 
     TEST_P(DynamicSoundStreamLayoutTest, CopyingFromAMissingChannelLeavesTheOutputAlone)
@@ -596,10 +596,10 @@ namespace {
 
     TEST_P(DynamicSoundStreamLayoutTest, TimeAndPositionConvertAtTheSampleRate)
     {
-        EXPECT_EQ(stream->time_to_position(0.5), k_rate / 2U);
-        EXPECT_DOUBLE_EQ(stream->position_to_time(k_rate), 1.0);
-        EXPECT_EQ(stream->get_temporal_rate(), k_rate);
-        EXPECT_EQ(stream->time_to_position(stream->position_to_time(k_rate / 2U)), k_rate / 2U);
+        EXPECT_EQ(stream->time_to_position(0.5), k_dynamic_sound_stream_rate / 2U);
+        EXPECT_DOUBLE_EQ(stream->position_to_time(k_dynamic_sound_stream_rate), 1.0);
+        EXPECT_EQ(stream->get_temporal_rate(), k_dynamic_sound_stream_rate);
+        EXPECT_EQ(stream->time_to_position(stream->position_to_time(k_dynamic_sound_stream_rate / 2U)), k_dynamic_sound_stream_rate / 2U);
     }
 
     TEST_P(DynamicSoundStreamLayoutTest, CoordinatesMapToLinearIndicesFrameMajor)
@@ -816,11 +816,11 @@ namespace {
 
     INSTANTIATE_TEST_SUITE_P(Shapes, DynamicSoundStreamSnapshotTest,
         ::testing::Values(
-            StreamShape { OrganizationStrategy::INTERLEAVED, 1 },
-            StreamShape { OrganizationStrategy::INTERLEAVED, 2 },
-            StreamShape { OrganizationStrategy::PLANAR, 1 },
-            StreamShape { OrganizationStrategy::PLANAR, 2 }),
-        shape_name);
+            DynamicSoundStreamStreamShape { OrganizationStrategy::INTERLEAVED, 1 },
+            DynamicSoundStreamStreamShape { OrganizationStrategy::INTERLEAVED, 2 },
+            DynamicSoundStreamStreamShape { OrganizationStrategy::PLANAR, 1 },
+            DynamicSoundStreamStreamShape { OrganizationStrategy::PLANAR, 2 }),
+        dynamic_sound_stream_shape_name);
 
     TEST_P(DynamicSoundStreamSnapshotTest, ALinearSnapshotKeepsTheMostRecentFramesOldestFirst)
     {
@@ -831,7 +831,7 @@ namespace {
         ASSERT_NE(copy, nullptr);
         EXPECT_EQ(copy->get_num_frames(), 3U);
         EXPECT_EQ(copy->get_num_channels(), channels());
-        EXPECT_EQ(copy->get_sample_rate(), k_rate);
+        EXPECT_EQ(copy->get_sample_rate(), k_dynamic_sound_stream_rate);
         for (uint32_t c = 0; c < channels(); ++c) {
             EXPECT_EQ(snapshot_channel(copy, c), (std::vector<double> { 3.0 + 100 * c, 4.0 + 100 * c, 5.0 + 100 * c })) << c;
         }
@@ -908,7 +908,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, InterleavedStreamsStoreSamplesFrameMajor)
     {
-        const auto stream = make_stream(OrganizationStrategy::INTERLEAVED, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::INTERLEAVED, 2);
         const std::vector<double> samples { 1.0, 2.0, 3.0, 4.0 };
 
         stream->write_frames(std::vector<std::span<const double>> { std::span<const double>(samples) }, 0);
@@ -924,7 +924,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, AnIncompleteTrailingFrameOfInterleavedSamplesIsDropped)
     {
-        const auto stream = make_stream(OrganizationStrategy::INTERLEAVED, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::INTERLEAVED, 2);
         const std::vector<double> samples { 0.1, 0.2, 0.3 };
 
         EXPECT_EQ(stream->write_frames(std::vector<std::span<const double>> { std::span<const double>(samples) }, 0), 1U);
@@ -934,7 +934,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, PlanarWritesTakeOneSpanPerChannel)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
         const std::vector<double> left { 0.1, 0.3, 0.5, 0.7 };
         const std::vector<double> right { 0.2, 0.4, 0.6, 0.8 };
 
@@ -947,7 +947,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, PlanarWritesNeedEveryChannel)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
         const std::vector<double> only { 0.1, 0.2 };
 
         EXPECT_EQ(stream->write_frames(std::vector<std::span<const double>> { std::span<const double>(only) }, 0), 0U);
@@ -956,7 +956,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, PlanarWritesNeedMatchingChannelLengths)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
         const std::vector<double> left { 0.1, 0.2, 0.3 };
         const std::vector<double> right { 0.1, 0.2 };
 
@@ -966,7 +966,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, ZeroCapacityRingsAndCapacitiesDoNotThrow)
     {
-        const auto stream = make_stream(OrganizationStrategy::INTERLEAVED, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::INTERLEAVED, 2);
 
         EXPECT_NO_THROW(stream->ensure_capacity(0));
         EXPECT_NO_THROW(stream->enable_circular_buffer(0));
@@ -974,7 +974,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, DynamicSlotsAreUniqueAndReusedAfterRelease)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
 
         const uint32_t a = stream->allocate_dynamic_slot();
         const uint32_t b = stream->allocate_dynamic_slot();
@@ -987,7 +987,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, DynamicSlotsStartEmptyAndHoldIndependentData)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
         const uint32_t a = stream->allocate_dynamic_slot();
         const uint32_t b = stream->allocate_dynamic_slot();
         EXPECT_TRUE(stream->get_dynamic_data(a).empty());
@@ -1000,7 +1000,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, ReleasingASlotClearsItsData)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
         const uint32_t a = stream->allocate_dynamic_slot();
         stream->get_dynamic_data(a).push_back(std::vector<double> { 1.0 });
 
@@ -1013,7 +1013,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, UnknownDynamicSlotsAreRefused)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
 
         EXPECT_THROW((void)stream->get_dynamic_data(0), std::out_of_range);
         EXPECT_NO_THROW(stream->release_dynamic_slot(7));
@@ -1021,7 +1021,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, ReadersAreTrackedPerDimension)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
         EXPECT_FALSE(stream->has_active_readers());
 
         const uint32_t first = stream->register_dimension_reader(0);
@@ -1038,7 +1038,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, ADimensionIsConsumedOnceEveryReaderHasMarkedIt)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
         const uint32_t first = stream->register_dimension_reader(0);
         const uint32_t second = stream->register_dimension_reader(0);
 
@@ -1051,7 +1051,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, ConsumptionCanBeClearedForTheNextCycle)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
         const uint32_t reader = stream->register_dimension_reader(1);
         stream->mark_dimension_consumed(1, reader);
         ASSERT_TRUE(stream->all_dimensions_consumed());
@@ -1063,7 +1063,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, MarkingForAnUnknownReaderChangesNothing)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
         stream->register_dimension_reader(0);
 
         stream->mark_dimension_consumed(0, 99);
@@ -1073,12 +1073,12 @@ namespace {
 
     TEST(DynamicSoundStreamTest, WithNoReadersEveryDimensionCountsAsConsumed)
     {
-        EXPECT_TRUE(make_stream(OrganizationStrategy::PLANAR, 2)->all_dimensions_consumed());
+        EXPECT_TRUE(dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2)->all_dimensions_consumed());
     }
 
     TEST(DynamicSoundStreamTest, ProcessingTokensAreHeldByOneChannelAtATime)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
 
         EXPECT_TRUE(stream->try_acquire_processing_token(0));
         EXPECT_FALSE(stream->try_acquire_processing_token(1));
@@ -1093,7 +1093,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, RegionGroupsAreStoredByNameAndRemovable)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
         RegionGroup group("hits");
         group.add_region(Region(std::vector<uint64_t> { 0, 0 }, std::vector<uint64_t> { 3, 1 }));
 
@@ -1110,7 +1110,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, LoopRegionsAreStoredAndLoopingToggles)
     {
-        const auto stream = make_stream(OrganizationStrategy::INTERLEAVED, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::INTERLEAVED, 2);
         write_ramp(*stream, 8);
         const Region region(std::vector<uint64_t> { 2, 0 }, std::vector<uint64_t> { 5, 1 });
 
@@ -1127,7 +1127,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, ALoopRegionPullsAnOutsideReadPositionBackInside)
     {
-        const auto stream = make_stream(OrganizationStrategy::INTERLEAVED, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::INTERLEAVED, 2);
         write_ramp(*stream, 8);
         stream->set_looping(true);
         stream->set_read_position({ 0, 0 });
@@ -1139,7 +1139,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, MonoStreamsAreOneDimensional)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 1);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 1);
         write_ramp(*stream, 4);
 
         EXPECT_EQ(stream->get_dimensions().size(), 1U);
@@ -1148,7 +1148,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, MultichannelStreamsAreFramesByChannels)
     {
-        const auto stream = make_stream(OrganizationStrategy::PLANAR, 2);
+        const auto stream = dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2);
         write_ramp(*stream, 4);
 
         const auto dims = stream->get_dimensions();
@@ -1163,7 +1163,7 @@ namespace {
 
     TEST(DynamicSoundStreamTest, ElementValuesAreDoubles)
     {
-        EXPECT_EQ(make_stream(OrganizationStrategy::PLANAR, 2)->value_element_type(), std::type_index(typeid(double)));
+        EXPECT_EQ(dynamic_sound_make_stream(OrganizationStrategy::PLANAR, 2)->value_element_type(), std::type_index(typeid(double)));
     }
 
 } // namespace

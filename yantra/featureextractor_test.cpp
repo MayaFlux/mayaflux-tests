@@ -23,11 +23,11 @@ namespace {
 
     namespace D = Kinesis::Discrete;
 
-    constexpr uint32_t k_window = 256;
-    constexpr uint32_t k_hop = 128;
-    constexpr size_t k_samples = 1024;
+    constexpr uint32_t k_featureextractor_window = 256;
+    constexpr uint32_t k_featureextractor_hop = 128;
+    constexpr size_t k_featureextractor_samples = 1024;
 
-    FeatureExtractorConfig config_for(ExtractionMethod method, uint32_t window = k_window, uint32_t hop = k_hop)
+    FeatureExtractorConfig config_for(ExtractionMethod method, uint32_t window = k_featureextractor_window, uint32_t hop = k_featureextractor_hop)
     {
         FeatureExtractorConfig config;
         config.method = method;
@@ -47,7 +47,7 @@ namespace {
 
     std::vector<double> burst()
     {
-        std::vector<double> data(k_samples, 0.0);
+        std::vector<double> data(k_featureextractor_samples, 0.0);
         for (size_t i = 512; i < 768; ++i) {
             data[i] = 0.5 * std::sin(2.0 * std::numbers::pi * static_cast<double>(i) / 64.0);
         }
@@ -56,7 +56,7 @@ namespace {
 
     std::vector<std::vector<double>> sources()
     {
-        return { tone(k_samples, 64.0), burst() };
+        return { tone(k_featureextractor_samples, 64.0), burst() };
     }
 
     std::shared_ptr<SignalSourceContainer> two_channels()
@@ -131,8 +131,8 @@ namespace {
         const auto* record = output.facets.get<FeatureExtraction>();
         ASSERT_NE(record, nullptr);
         EXPECT_EQ(ExtractionMethod(record->config.method), GetParam());
-        EXPECT_EQ(record->config.window_size, k_window);
-        EXPECT_EQ(record->config.hop_size, k_hop);
+        EXPECT_EQ(record->config.window_size, k_featureextractor_window);
+        EXPECT_EQ(record->config.hop_size, k_featureextractor_hop);
 
         size_t total = 0;
         for (const auto& channel : output.data) {
@@ -198,7 +198,7 @@ namespace {
 
         ASSERT_EQ(channels.size(), signals.size());
         for (size_t c = 0; c < signals.size(); ++c) {
-            EXPECT_EQ(channels[c], D::overlapping_windows(signals[c], k_window, GetParam().overlap))
+            EXPECT_EQ(channels[c], D::overlapping_windows(signals[c], k_featureextractor_window, GetParam().overlap))
                 << "channel " << c;
         }
     }
@@ -249,7 +249,7 @@ namespace {
 
     TEST_P(FeatureExtractorZeroCrossingTest, RegionsAroundEachKinesisCrossing)
     {
-        const auto signal = tone(k_samples, 64.0);
+        const auto signal = tone(k_featureextractor_samples, 64.0);
         const uint32_t region = GetParam();
 
         auto config = config_for(ExtractionMethod::ZERO_CROSSING_DATA);
@@ -270,20 +270,20 @@ namespace {
     // Invalid settings are rejected at construction
     // ------------------------------------------------------------------
 
-    struct InvalidCase {
+    struct FeatureextractorInvalidCase {
         const char* name;
         uint32_t window;
         uint32_t hop;
     };
 
-    class FeatureExtractorInvalidConfigTest : public ::testing::TestWithParam<InvalidCase> { };
+    class FeatureExtractorInvalidConfigTest : public ::testing::TestWithParam<FeatureextractorInvalidCase> { };
 
     INSTANTIATE_TEST_SUITE_P(Configs, FeatureExtractorInvalidConfigTest,
         ::testing::Values(
-            InvalidCase { "ZeroWindow", 0, 128 },
-            InvalidCase { "ZeroHop", 256, 0 },
-            InvalidCase { "HopLargerThanWindow", 128, 256 }),
-        [](const ::testing::TestParamInfo<InvalidCase>& info) {
+            FeatureextractorInvalidCase { "ZeroWindow", 0, 128 },
+            FeatureextractorInvalidCase { "ZeroHop", 256, 0 },
+            FeatureextractorInvalidCase { "HopLargerThanWindow", 128, 256 }),
+        [](const ::testing::TestParamInfo<FeatureextractorInvalidCase>& info) {
             return std::string(info.param.name);
         });
 

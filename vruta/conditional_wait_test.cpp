@@ -17,7 +17,7 @@ using Count = std::shared_ptr<std::atomic<int>>;
 
 namespace {
 
-    constexpr unsigned int SAMPLE_RATE = 48000;
+    constexpr unsigned int CONDITIONAL_WAIT_SAMPLE_RATE = 48000;
     constexpr bool polled = false;
     constexpr bool wake_only = true;
 
@@ -56,7 +56,7 @@ namespace {
     }
 
     template <typename Predicate>
-    bool eventually(Predicate&& predicate, std::chrono::milliseconds limit = 2000ms)
+    bool conditional_wait_eventually(Predicate&& predicate, std::chrono::milliseconds limit = 2000ms)
     {
         const auto deadline = std::chrono::steady_clock::now() + limit;
         while (std::chrono::steady_clock::now() < deadline) {
@@ -74,7 +74,7 @@ class ConditionalWaitTest : public ::testing::Test {
 protected:
     void SetUp() override
     {
-        scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
+        scheduler = std::make_shared<Vruta::TaskScheduler>(CONDITIONAL_WAIT_SAMPLE_RATE);
     }
 
     void TearDown() override
@@ -114,7 +114,7 @@ TEST_F(ConditionalWaitTest, APolledConditionResumesOnceItIsTrue)
 
     flag->store(true);
 
-    EXPECT_TRUE(eventually([&] { return resumed->load() == 1; }));
+    EXPECT_TRUE(conditional_wait_eventually([&] { return resumed->load() == 1; }));
 }
 
 TEST_F(ConditionalWaitTest, APolledConditionWaitsForTheIntervalUnlessWoken)
@@ -133,7 +133,7 @@ TEST_F(ConditionalWaitTest, APolledConditionWaitsForTheIntervalUnlessWoken)
     EXPECT_EQ(resumed->load(), 0);
 
     scheduler->wake_conditional();
-    EXPECT_TRUE(eventually([&] { return resumed->load() == 1; }));
+    EXPECT_TRUE(conditional_wait_eventually([&] { return resumed->load() == 1; }));
 }
 
 TEST_F(ConditionalWaitTest, AWakeConditionResumesAfterTheWakeNotAfterTheInterval)
@@ -150,7 +150,7 @@ TEST_F(ConditionalWaitTest, AWakeConditionResumesAfterTheWakeNotAfterTheInterval
     flag->store(true);
     scheduler->wake_conditional();
 
-    EXPECT_TRUE(eventually([&] { return resumed->load() == 1; }, 500ms));
+    EXPECT_TRUE(conditional_wait_eventually([&] { return resumed->load() == 1; }, 500ms));
 }
 
 TEST_F(ConditionalWaitTest, AWakeConditionIsNotPolled)
@@ -177,7 +177,7 @@ TEST_F(ConditionalWaitTest, ASteadyDelayResumesAfterItsDeadline)
     auto routine = std::make_shared<Vruta::FreeRoutine>(resume_after_delay(0.05, resumed));
     scheduler->add_task(routine, "delay");
 
-    EXPECT_TRUE(eventually([&] { return resumed->load() == 1; }));
+    EXPECT_TRUE(conditional_wait_eventually([&] { return resumed->load() == 1; }));
     EXPECT_GE(std::chrono::steady_clock::now() - start, 50ms);
 }
 
@@ -189,7 +189,7 @@ TEST_F(ConditionalWaitTest, ASteadyDelayDoesNotDependOnThePollInterval)
     auto routine = std::make_shared<Vruta::FreeRoutine>(resume_after_delay(0.05, resumed));
     scheduler->add_task(routine, "delay_slow_poll");
 
-    EXPECT_TRUE(eventually([&] { return resumed->load() == 1; }, 1000ms));
+    EXPECT_TRUE(conditional_wait_eventually([&] { return resumed->load() == 1; }, 1000ms));
 }
 
 TEST_F(ConditionalWaitTest, AZeroSteadyDelaySuspendsOnceAndThenResumes)
@@ -199,7 +199,7 @@ TEST_F(ConditionalWaitTest, AZeroSteadyDelaySuspendsOnceAndThenResumes)
     auto routine = std::make_shared<Vruta::FreeRoutine>(resume_after_delay(0.0, resumed));
     scheduler->add_task(routine, "zero_delay");
 
-    EXPECT_TRUE(eventually([&] { return resumed->load() == 1; }));
+    EXPECT_TRUE(conditional_wait_eventually([&] { return resumed->load() == 1; }));
 }
 
 TEST_F(ConditionalWaitTest, ATaskThatKeepsMakingProgressDoesNotWaitBetweenSteps)
@@ -210,7 +210,7 @@ TEST_F(ConditionalWaitTest, ATaskThatKeepsMakingProgressDoesNotWaitBetweenSteps)
     auto routine = std::make_shared<Vruta::FreeRoutine>(step_through(1000, done));
     scheduler->add_task(routine, "progress");
 
-    EXPECT_TRUE(eventually([&] { return done->load() == 1; }, 5000ms));
+    EXPECT_TRUE(conditional_wait_eventually([&] { return done->load() == 1; }, 5000ms));
     EXPECT_LT(std::chrono::steady_clock::now() - start, 500ms);
 }
 
@@ -228,7 +228,7 @@ TEST_F(ConditionalWaitTest, CancellingATaskReachesAThreadThatIsAsleep)
 
     EXPECT_TRUE(scheduler->cancel_task("cancel_me"));
 
-    EXPECT_TRUE(eventually([&] { return completed->load(); }, 1000ms));
+    EXPECT_TRUE(conditional_wait_eventually([&] { return completed->load(); }, 1000ms));
 }
 
 TEST_F(ConditionalWaitTest, AddingATaskReachesAThreadThatIsAsleep)
@@ -245,7 +245,7 @@ TEST_F(ConditionalWaitTest, AddingATaskReachesAThreadThatIsAsleep)
     auto added = std::make_shared<Vruta::FreeRoutine>(resume_after_delay(0.01, second));
     scheduler->add_task(added, "added_later");
 
-    EXPECT_TRUE(eventually([&] { return second->load() == 1; }, 1000ms));
+    EXPECT_TRUE(conditional_wait_eventually([&] { return second->load() == 1; }, 1000ms));
 }
 
 TEST_F(ConditionalWaitTest, ShutdownReleasesAThreadThatIsAsleep)

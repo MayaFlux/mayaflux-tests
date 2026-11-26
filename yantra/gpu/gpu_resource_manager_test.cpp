@@ -16,9 +16,9 @@ namespace {
     using Yantra::GpuDispatchRecorder;
     using Yantra::GpuResourceManager;
 
-    constexpr uint32_t k_words = 16;
-    constexpr size_t k_bytes = k_words * sizeof(uint32_t);
-    constexpr std::array<uint32_t, 3> k_one { 1, 1, 1 };
+    constexpr uint32_t k_gpu_resource_manager_words = 16;
+    constexpr size_t k_gpu_resource_manager_bytes = k_gpu_resource_manager_words * sizeof(uint32_t);
+    constexpr std::array<uint32_t, 3> k_gpu_resource_manager_one { 1, 1, 1 };
 
     constexpr std::string_view k_scale_source = R"(#version 450
 layout(local_size_x = 16) in;
@@ -134,8 +134,8 @@ void main()
         GpuResourceManager manager;
 
         EXPECT_FALSE(manager.is_ready("missing"));
-        EXPECT_THROW(manager.dispatch("missing", k_one, nullptr, 0), std::runtime_error);
-        EXPECT_THROW(manager.ensure_buffer("missing", 0, k_bytes), std::runtime_error);
+        EXPECT_THROW(manager.dispatch("missing", k_gpu_resource_manager_one, nullptr, 0), std::runtime_error);
+        EXPECT_THROW(manager.ensure_buffer("missing", 0, k_gpu_resource_manager_bytes), std::runtime_error);
     }
 
     TYPED_TEST(GpuResourceManagerTest, ReleasedKeyIsNotReadyAndCanBeInitialisedAgain)
@@ -179,11 +179,11 @@ void main()
         GpuResourceManager manager;
         manager.set_recording(recording);
         ASSERT_TRUE(init_scale(manager));
-        manager.ensure_buffer("scale", 0, k_bytes);
-        upload_words(manager, "scale", 0, ascending(k_words));
+        manager.ensure_buffer("scale", 0, k_gpu_resource_manager_bytes);
+        upload_words(manager, "scale", 0, ascending(k_gpu_resource_manager_words));
         const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
         manager.bind_descriptors_batch("scale", bindings);
-        manager.record_stage("scale", k_one, push_bytes(2), {});
+        manager.record_stage("scale", k_gpu_resource_manager_one, push_bytes(2), {});
         EXPECT_TRUE(recording->is_open());
 
         manager.cleanup();
@@ -211,15 +211,15 @@ void main()
     {
         GpuResourceManager manager;
         ASSERT_TRUE(init_scale(manager));
-        manager.ensure_buffer("scale", 0, k_bytes);
-        upload_words(manager, "scale", 0, ascending(k_words));
+        manager.ensure_buffer("scale", 0, k_gpu_resource_manager_bytes);
+        upload_words(manager, "scale", 0, ascending(k_gpu_resource_manager_words));
         const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
         manager.bind_descriptors_batch("scale", bindings);
         const auto factor = push_bytes(3);
 
-        manager.dispatch("scale", k_one, factor.data(), factor.size());
+        manager.dispatch("scale", k_gpu_resource_manager_one, factor.data(), factor.size());
 
-        EXPECT_EQ(download_words(manager, "scale", 0, k_words), scaled(ascending(k_words), 3));
+        EXPECT_EQ(download_words(manager, "scale", 0, k_gpu_resource_manager_words), scaled(ascending(k_gpu_resource_manager_words), 3));
     }
 
     TYPED_TEST(GpuResourceManagerTest, RecordStageRunsImmediatelyWithoutARecording)
@@ -227,41 +227,41 @@ void main()
         GpuResourceManager manager;
         ASSERT_TRUE(init_scale(manager));
         EXPECT_FALSE(manager.has_recording());
-        manager.ensure_buffer("scale", 0, k_bytes);
-        upload_words(manager, "scale", 0, ascending(k_words));
+        manager.ensure_buffer("scale", 0, k_gpu_resource_manager_bytes);
+        upload_words(manager, "scale", 0, ascending(k_gpu_resource_manager_words));
         const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
         manager.bind_descriptors_batch("scale", bindings);
 
-        manager.record_stage("scale", k_one, push_bytes(2), {});
+        manager.record_stage("scale", k_gpu_resource_manager_one, push_bytes(2), {});
 
-        EXPECT_EQ(download_words(manager, "scale", 0, k_words), scaled(ascending(k_words), 2));
+        EXPECT_EQ(download_words(manager, "scale", 0, k_gpu_resource_manager_words), scaled(ascending(k_gpu_resource_manager_words), 2));
     }
 
     TYPED_TEST(GpuResourceManagerTest, DispatchAsyncReturnsAFenceThatCompletesWithResults)
     {
         GpuResourceManager manager;
         ASSERT_TRUE(init_scale(manager));
-        manager.ensure_buffer("scale", 0, k_bytes);
-        upload_words(manager, "scale", 0, ascending(k_words));
+        manager.ensure_buffer("scale", 0, k_gpu_resource_manager_bytes);
+        upload_words(manager, "scale", 0, ascending(k_gpu_resource_manager_words));
         const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
         manager.bind_descriptors_batch("scale", bindings);
         const auto factor = push_bytes(4);
 
-        const auto fence = manager.dispatch_async("scale", k_one, factor.data(), factor.size());
+        const auto fence = manager.dispatch_async("scale", k_gpu_resource_manager_one, factor.data(), factor.size());
         ASSERT_NE(fence, INVALID_FENCE);
         foundry().wait_for_fence(fence);
         EXPECT_TRUE(foundry().is_fence_signaled(fence));
         foundry().release_fence(fence);
 
-        EXPECT_EQ(download_words(manager, "scale", 0, k_words), scaled(ascending(k_words), 4));
+        EXPECT_EQ(download_words(manager, "scale", 0, k_gpu_resource_manager_words), scaled(ascending(k_gpu_resource_manager_words), 4));
     }
 
     TYPED_TEST(GpuResourceManagerTest, IndirectStageReadsItsGroupCountsFromABuffer)
     {
         GpuResourceManager manager;
         ASSERT_TRUE(init_scale(manager));
-        manager.ensure_buffer("scale", 0, 2 * k_bytes);
-        upload_words(manager, "scale", 0, ascending(2 * k_words));
+        manager.ensure_buffer("scale", 0, 2 * k_gpu_resource_manager_bytes);
+        upload_words(manager, "scale", 0, ascending(2 * k_gpu_resource_manager_words));
         const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
         manager.bind_descriptors_batch("scale", bindings);
         manager.ensure_shared_buffer(0, 3, 3, GpuBufferBinding::ElementType::UINT32,
@@ -269,9 +269,9 @@ void main()
         upload_shared_words(manager, 0, 3, { 2, 1, 1 });
         const IndirectDispatch indirect { .buffer = manager.shared_buffer_handle(0, 3).buffer };
 
-        manager.record_stage("scale", k_one, push_bytes(5), indirect);
+        manager.record_stage("scale", k_gpu_resource_manager_one, push_bytes(5), indirect);
 
-        EXPECT_EQ(download_words(manager, "scale", 0, 2 * k_words), scaled(ascending(2 * k_words), 5));
+        EXPECT_EQ(download_words(manager, "scale", 0, 2 * k_gpu_resource_manager_words), scaled(ascending(2 * k_gpu_resource_manager_words), 5));
     }
 
     // ------------------------------------------------------------------
@@ -282,38 +282,38 @@ void main()
     {
         GpuResourceManager manager;
         ASSERT_TRUE(init_pair(manager));
-        manager.ensure_buffer("pair", 0, k_bytes);
-        upload_words(manager, "pair", 0, ascending(k_words));
-        manager.ensure_shared_buffer(1, 0, k_words, GpuBufferBinding::ElementType::UINT32);
-        upload_shared_words(manager, 1, 0, ascending(k_words, 100));
+        manager.ensure_buffer("pair", 0, k_gpu_resource_manager_bytes);
+        upload_words(manager, "pair", 0, ascending(k_gpu_resource_manager_words));
+        manager.ensure_shared_buffer(1, 0, k_gpu_resource_manager_words, GpuBufferBinding::ElementType::UINT32);
+        upload_shared_words(manager, 1, 0, ascending(k_gpu_resource_manager_words, 100));
         const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0), storage_binding(1, 0) };
         manager.bind_descriptors_batch("pair", bindings);
 
-        manager.dispatch("pair", k_one, nullptr, 0);
+        manager.dispatch("pair", k_gpu_resource_manager_one, nullptr, 0);
 
-        EXPECT_EQ(download_words(manager, "pair", 0, k_words),
-            summed(ascending(k_words), ascending(k_words, 100)));
+        EXPECT_EQ(download_words(manager, "pair", 0, k_gpu_resource_manager_words),
+            summed(ascending(k_gpu_resource_manager_words), ascending(k_gpu_resource_manager_words, 100)));
     }
 
     TYPED_TEST(GpuResourceManagerTest, RegrowingTheSharedSecondSetRebindsTheSet)
     {
         GpuResourceManager manager;
         ASSERT_TRUE(init_pair(manager));
-        manager.ensure_buffer("pair", 0, k_bytes);
-        upload_words(manager, "pair", 0, ascending(k_words));
-        manager.ensure_shared_buffer(1, 0, k_words, GpuBufferBinding::ElementType::UINT32);
-        upload_shared_words(manager, 1, 0, ascending(k_words, 100));
+        manager.ensure_buffer("pair", 0, k_gpu_resource_manager_bytes);
+        upload_words(manager, "pair", 0, ascending(k_gpu_resource_manager_words));
+        manager.ensure_shared_buffer(1, 0, k_gpu_resource_manager_words, GpuBufferBinding::ElementType::UINT32);
+        upload_shared_words(manager, 1, 0, ascending(k_gpu_resource_manager_words, 100));
         const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0), storage_binding(1, 0) };
         manager.bind_descriptors_batch("pair", bindings);
-        manager.dispatch("pair", k_one, nullptr, 0);
+        manager.dispatch("pair", k_gpu_resource_manager_one, nullptr, 0);
 
-        manager.ensure_shared_buffer(1, 0, 2 * k_words, GpuBufferBinding::ElementType::UINT32);
-        upload_shared_words(manager, 1, 0, ascending(2 * k_words, 200));
+        manager.ensure_shared_buffer(1, 0, 2 * k_gpu_resource_manager_words, GpuBufferBinding::ElementType::UINT32);
+        upload_shared_words(manager, 1, 0, ascending(2 * k_gpu_resource_manager_words, 200));
         manager.bind_descriptors_batch("pair", bindings);
-        manager.dispatch("pair", k_one, nullptr, 0);
+        manager.dispatch("pair", k_gpu_resource_manager_one, nullptr, 0);
 
-        EXPECT_EQ(download_words(manager, "pair", 0, k_words),
-            summed(summed(ascending(k_words), ascending(k_words, 100)), ascending(k_words, 200)));
+        EXPECT_EQ(download_words(manager, "pair", 0, k_gpu_resource_manager_words),
+            summed(summed(ascending(k_gpu_resource_manager_words), ascending(k_gpu_resource_manager_words, 100)), ascending(k_gpu_resource_manager_words, 200)));
     }
 
     // ------------------------------------------------------------------
@@ -324,13 +324,13 @@ void main()
     {
         GpuResourceManager manager;
         ASSERT_TRUE(init_pointer(manager));
-        manager.ensure_shared_buffer(1, 0, k_words, GpuBufferBinding::ElementType::UINT32);
-        upload_shared_words(manager, 1, 0, ascending(k_words));
+        manager.ensure_shared_buffer(1, 0, k_gpu_resource_manager_words, GpuBufferBinding::ElementType::UINT32);
+        upload_shared_words(manager, 1, 0, ascending(k_gpu_resource_manager_words));
         const auto push = pointer_push(manager.shared_buffer_address(1, 0), 5);
 
-        manager.dispatch("pointer", k_one, push.data(), push.size());
+        manager.dispatch("pointer", k_gpu_resource_manager_one, push.data(), push.size());
 
-        EXPECT_EQ(download_shared_words(manager, 1, 0, k_words), summed(ascending(k_words), filled(k_words, 5)));
+        EXPECT_EQ(download_shared_words(manager, 1, 0, k_gpu_resource_manager_words), summed(ascending(k_gpu_resource_manager_words), filled(k_gpu_resource_manager_words, 5)));
     }
 
     TYPED_TEST(GpuResourceManagerTest, DeviceAddressIsZeroUntilTheBufferExistsAndFollowsARegrowth)
@@ -340,22 +340,22 @@ void main()
 
         EXPECT_EQ(manager.shared_buffer_address(1, 0), 0U);
 
-        manager.ensure_shared_buffer(1, 0, k_words, GpuBufferBinding::ElementType::UINT32);
+        manager.ensure_shared_buffer(1, 0, k_gpu_resource_manager_words, GpuBufferBinding::ElementType::UINT32);
         const uint64_t first = manager.shared_buffer_address(1, 0);
         EXPECT_NE(first, 0U);
 
-        manager.ensure_shared_buffer(1, 0, k_words / 2, GpuBufferBinding::ElementType::UINT32);
+        manager.ensure_shared_buffer(1, 0, k_gpu_resource_manager_words / 2, GpuBufferBinding::ElementType::UINT32);
         EXPECT_EQ(manager.shared_buffer_address(1, 0), first);
 
-        manager.ensure_shared_buffer(1, 0, 2 * k_words, GpuBufferBinding::ElementType::UINT32);
+        manager.ensure_shared_buffer(1, 0, 2 * k_gpu_resource_manager_words, GpuBufferBinding::ElementType::UINT32);
         ASSERT_NE(manager.shared_buffer_address(1, 0), 0U);
-        upload_shared_words(manager, 1, 0, ascending(2 * k_words));
+        upload_shared_words(manager, 1, 0, ascending(2 * k_gpu_resource_manager_words));
         const auto push = pointer_push(manager.shared_buffer_address(1, 0), 7);
 
         manager.dispatch("pointer", { 2, 1, 1 }, push.data(), push.size());
 
-        EXPECT_EQ(download_shared_words(manager, 1, 0, 2 * k_words),
-            summed(ascending(2 * k_words), filled(2 * k_words, 7)));
+        EXPECT_EQ(download_shared_words(manager, 1, 0, 2 * k_gpu_resource_manager_words),
+            summed(ascending(2 * k_gpu_resource_manager_words), filled(2 * k_gpu_resource_manager_words, 7)));
     }
 
     TYPED_TEST(GpuResourceManagerTest, LaterSetBindingsTheShaderDoesNotUseAreNotHeld)
@@ -369,15 +369,15 @@ void main()
         EXPECT_TRUE(manager.holds_binding("scale", 0, 0));
         EXPECT_FALSE(manager.holds_binding("scale", 1, 0));
 
-        manager.ensure_buffer("scale", 0, k_bytes);
-        upload_words(manager, "scale", 0, ascending(k_words));
-        manager.ensure_shared_buffer(1, 0, k_words, GpuBufferBinding::ElementType::UINT32);
+        manager.ensure_buffer("scale", 0, k_gpu_resource_manager_bytes);
+        upload_words(manager, "scale", 0, ascending(k_gpu_resource_manager_words));
+        manager.ensure_shared_buffer(1, 0, k_gpu_resource_manager_words, GpuBufferBinding::ElementType::UINT32);
         manager.bind_descriptors_batch("scale", bindings);
         const auto factor = push_bytes(3);
 
-        manager.dispatch("scale", k_one, factor.data(), factor.size());
+        manager.dispatch("scale", k_gpu_resource_manager_one, factor.data(), factor.size());
 
-        EXPECT_EQ(download_words(manager, "scale", 0, k_words), scaled(ascending(k_words), 3));
+        EXPECT_EQ(download_words(manager, "scale", 0, k_gpu_resource_manager_words), scaled(ascending(k_gpu_resource_manager_words), 3));
     }
 
     TYPED_TEST(GpuResourceManagerTest, ShaderUsingOnlyALaterSetKeepsItsSetNumberAcrossTheGap)
@@ -387,13 +387,13 @@ void main()
         ASSERT_TRUE(manager.initialise("far", compute_config(load_compute(k_far_set_source), 0), bindings));
         EXPECT_TRUE(manager.holds_binding("far", 2, 0));
 
-        manager.ensure_shared_buffer(2, 0, k_words, GpuBufferBinding::ElementType::UINT32);
-        upload_shared_words(manager, 2, 0, ascending(k_words));
+        manager.ensure_shared_buffer(2, 0, k_gpu_resource_manager_words, GpuBufferBinding::ElementType::UINT32);
+        upload_shared_words(manager, 2, 0, ascending(k_gpu_resource_manager_words));
         manager.bind_descriptors_batch("far", bindings);
 
-        manager.dispatch("far", k_one, nullptr, 0);
+        manager.dispatch("far", k_gpu_resource_manager_one, nullptr, 0);
 
-        EXPECT_EQ(download_shared_words(manager, 2, 0, k_words), summed(ascending(k_words), filled(k_words, 1)));
+        EXPECT_EQ(download_shared_words(manager, 2, 0, k_gpu_resource_manager_words), summed(ascending(k_gpu_resource_manager_words), filled(k_gpu_resource_manager_words, 1)));
     }
 
     // ------------------------------------------------------------------
@@ -406,19 +406,19 @@ void main()
         GpuResourceManager manager;
         manager.set_recording(recording);
         ASSERT_TRUE(init_scale(manager));
-        manager.ensure_buffer("scale", 0, k_bytes);
-        upload_words(manager, "scale", 0, ascending(k_words));
+        manager.ensure_buffer("scale", 0, k_gpu_resource_manager_bytes);
+        upload_words(manager, "scale", 0, ascending(k_gpu_resource_manager_words));
         const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
         manager.bind_descriptors_batch("scale", bindings);
         const auto factor = push_bytes(3);
 
-        EXPECT_EQ(manager.dispatch_async("scale", k_one, factor.data(), factor.size()), INVALID_FENCE);
+        EXPECT_EQ(manager.dispatch_async("scale", k_gpu_resource_manager_one, factor.data(), factor.size()), INVALID_FENCE);
         EXPECT_TRUE(recording->is_open());
         EXPECT_NE(recording->submit(), INVALID_FENCE);
         EXPECT_FALSE(recording->is_open());
         recording->wait();
 
-        EXPECT_EQ(download_words(manager, "scale", 0, k_words), scaled(ascending(k_words), 3));
+        EXPECT_EQ(download_words(manager, "scale", 0, k_gpu_resource_manager_words), scaled(ascending(k_gpu_resource_manager_words), 3));
     }
 
     TYPED_TEST(GpuResourceManagerTest, UploadsBetweenRecordedDispatchesAreSeenInOrder)
@@ -429,19 +429,19 @@ void main()
             GpuResourceManager manager;
             manager.set_recording(recorded ? recording : nullptr);
             ASSERT_TRUE(init_accumulate(manager));
-            manager.ensure_buffer("accumulate", 0, k_bytes);
-            manager.ensure_buffer("accumulate", 1, k_bytes);
+            manager.ensure_buffer("accumulate", 0, k_gpu_resource_manager_bytes);
+            manager.ensure_buffer("accumulate", 1, k_gpu_resource_manager_bytes);
             const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0), storage_binding(0, 1) };
             manager.bind_descriptors_batch("accumulate", bindings);
-            upload_words(manager, "accumulate", 1, filled(k_words, 0));
+            upload_words(manager, "accumulate", 1, filled(k_gpu_resource_manager_words, 0));
 
-            upload_words(manager, "accumulate", 0, ascending(k_words));
-            manager.record_stage("accumulate", k_one, {}, {});
-            upload_words(manager, "accumulate", 0, ascending(k_words, 100));
-            manager.record_stage("accumulate", k_one, {}, {});
+            upload_words(manager, "accumulate", 0, ascending(k_gpu_resource_manager_words));
+            manager.record_stage("accumulate", k_gpu_resource_manager_one, {}, {});
+            upload_words(manager, "accumulate", 0, ascending(k_gpu_resource_manager_words, 100));
+            manager.record_stage("accumulate", k_gpu_resource_manager_one, {}, {});
 
-            EXPECT_EQ(download_words(manager, "accumulate", 1, k_words),
-                summed(ascending(k_words), ascending(k_words, 100)));
+            EXPECT_EQ(download_words(manager, "accumulate", 1, k_gpu_resource_manager_words),
+                summed(ascending(k_gpu_resource_manager_words), ascending(k_gpu_resource_manager_words, 100)));
         }
     }
 
@@ -453,20 +453,20 @@ void main()
             GpuResourceManager manager;
             manager.set_recording(recorded ? recording : nullptr);
             ASSERT_TRUE(init_accumulate(manager));
-            manager.ensure_buffer("accumulate", 0, k_bytes);
-            manager.ensure_shared_buffer(0, 1, k_words, GpuBufferBinding::ElementType::UINT32);
+            manager.ensure_buffer("accumulate", 0, k_gpu_resource_manager_bytes);
+            manager.ensure_shared_buffer(0, 1, k_gpu_resource_manager_words, GpuBufferBinding::ElementType::UINT32);
             const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0), storage_binding(0, 1) };
             manager.bind_descriptors_batch("accumulate", bindings);
             manager.fill_shared(0, 1, 0);
 
-            upload_words(manager, "accumulate", 0, ascending(k_words));
-            manager.record_stage("accumulate", k_one, {}, {});
+            upload_words(manager, "accumulate", 0, ascending(k_gpu_resource_manager_words));
+            manager.record_stage("accumulate", k_gpu_resource_manager_one, {}, {});
             manager.fill_shared(0, 1, 5);
-            upload_words(manager, "accumulate", 0, ascending(k_words, 100));
-            manager.record_stage("accumulate", k_one, {}, {});
+            upload_words(manager, "accumulate", 0, ascending(k_gpu_resource_manager_words, 100));
+            manager.record_stage("accumulate", k_gpu_resource_manager_one, {}, {});
 
-            EXPECT_EQ(download_shared_words(manager, 0, 1, k_words),
-                summed(filled(k_words, 5), ascending(k_words, 100)));
+            EXPECT_EQ(download_shared_words(manager, 0, 1, k_gpu_resource_manager_words),
+                summed(filled(k_gpu_resource_manager_words, 5), ascending(k_gpu_resource_manager_words, 100)));
         }
     }
 
@@ -477,17 +477,17 @@ void main()
         manager.set_recording(recording);
         ASSERT_TRUE(init_scale(manager));
         const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
-        manager.ensure_buffer("scale", 0, k_bytes);
-        upload_words(manager, "scale", 0, ascending(k_words));
+        manager.ensure_buffer("scale", 0, k_gpu_resource_manager_bytes);
+        upload_words(manager, "scale", 0, ascending(k_gpu_resource_manager_words));
         manager.bind_descriptors_batch("scale", bindings);
-        manager.record_stage("scale", k_one, push_bytes(3), {});
+        manager.record_stage("scale", k_gpu_resource_manager_one, push_bytes(3), {});
 
-        manager.ensure_buffer("scale", 0, 2 * k_bytes);
-        upload_words(manager, "scale", 0, ascending(2 * k_words));
+        manager.ensure_buffer("scale", 0, 2 * k_gpu_resource_manager_bytes);
+        upload_words(manager, "scale", 0, ascending(2 * k_gpu_resource_manager_words));
         manager.bind_descriptors_batch("scale", bindings);
         manager.record_stage("scale", { 2, 1, 1 }, push_bytes(3), {});
 
-        EXPECT_EQ(download_words(manager, "scale", 0, 2 * k_words), scaled(ascending(2 * k_words), 3));
+        EXPECT_EQ(download_words(manager, "scale", 0, 2 * k_gpu_resource_manager_words), scaled(ascending(2 * k_gpu_resource_manager_words), 3));
     }
 
     // ------------------------------------------------------------------
@@ -498,8 +498,8 @@ void main()
     {
         GpuResourceManager manager;
         ASSERT_TRUE(init_scale(manager));
-        manager.ensure_buffer("scale", 0, k_bytes);
-        upload_words(manager, "scale", 0, ascending(k_words));
+        manager.ensure_buffer("scale", 0, k_gpu_resource_manager_bytes);
+        upload_words(manager, "scale", 0, ascending(k_gpu_resource_manager_words));
         const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
         manager.bind_descriptors_batch("scale", bindings);
         std::vector<uint32_t> visited;
@@ -514,10 +514,10 @@ void main()
             .passes_per_batch = 2,
         };
 
-        manager.dispatch_batched("scale", k_one, sizeof(uint32_t), ctx);
+        manager.dispatch_batched("scale", k_gpu_resource_manager_one, sizeof(uint32_t), ctx);
 
         EXPECT_EQ(visited, (std::vector<uint32_t> { 0, 1, 2 }));
-        EXPECT_EQ(download_words(manager, "scale", 0, k_words), scaled(ascending(k_words), 24));
+        EXPECT_EQ(download_words(manager, "scale", 0, k_gpu_resource_manager_words), scaled(ascending(k_gpu_resource_manager_words), 24));
     }
 
     TYPED_TEST(GpuResourceManagerTest, DispatchBatchedWithARecordingAppendsEveryPassBeforeSubmit)
@@ -526,8 +526,8 @@ void main()
         GpuResourceManager manager;
         manager.set_recording(recording);
         ASSERT_TRUE(init_scale(manager));
-        manager.ensure_buffer("scale", 0, k_bytes);
-        upload_words(manager, "scale", 0, ascending(k_words));
+        manager.ensure_buffer("scale", 0, k_gpu_resource_manager_bytes);
+        upload_words(manager, "scale", 0, ascending(k_gpu_resource_manager_words));
         const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
         manager.bind_descriptors_batch("scale", bindings);
         Yantra::ExecutionContext ctx;
@@ -540,10 +540,10 @@ void main()
             .passes_per_batch = 2,
         };
 
-        manager.dispatch_batched("scale", k_one, sizeof(uint32_t), ctx);
+        manager.dispatch_batched("scale", k_gpu_resource_manager_one, sizeof(uint32_t), ctx);
         EXPECT_TRUE(recording->is_open());
 
-        EXPECT_EQ(download_words(manager, "scale", 0, k_words), scaled(ascending(k_words), 24));
+        EXPECT_EQ(download_words(manager, "scale", 0, k_gpu_resource_manager_words), scaled(ascending(k_gpu_resource_manager_words), 24));
         EXPECT_FALSE(recording->is_open());
     }
 
@@ -555,8 +555,8 @@ void main()
             GpuResourceManager manager;
             manager.set_recording(recorded ? recording : nullptr);
             ASSERT_TRUE(init_scale(manager));
-            manager.ensure_buffer("scale", 0, 2 * k_bytes);
-            upload_words(manager, "scale", 0, ascending(2 * k_words));
+            manager.ensure_buffer("scale", 0, 2 * k_gpu_resource_manager_bytes);
+            upload_words(manager, "scale", 0, ascending(2 * k_gpu_resource_manager_words));
             const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
             manager.bind_descriptors_batch("scale", bindings);
             manager.ensure_shared_buffer(0, 3, 3, GpuBufferBinding::ElementType::UINT32,
@@ -575,7 +575,7 @@ void main()
             manager.dispatch_batched_indirect("scale", 0, 3, { 2, 1, 1 }, sizeof(uint32_t), ctx);
 
             EXPECT_EQ(visited, (std::vector<uint32_t> { 0, 1 }));
-            EXPECT_EQ(download_words(manager, "scale", 0, 2 * k_words), scaled(ascending(2 * k_words), 9));
+            EXPECT_EQ(download_words(manager, "scale", 0, 2 * k_gpu_resource_manager_words), scaled(ascending(2 * k_gpu_resource_manager_words), 9));
         }
     }
 
@@ -597,11 +597,11 @@ void main()
         GpuResourceManager manager;
         manager.set_recording(recording);
         ASSERT_TRUE(init_scale(manager));
-        manager.ensure_buffer("scale", 0, k_bytes);
-        upload_words(manager, "scale", 0, ascending(k_words));
+        manager.ensure_buffer("scale", 0, k_gpu_resource_manager_bytes);
+        upload_words(manager, "scale", 0, ascending(k_gpu_resource_manager_words));
         const std::vector<GpuBufferBinding> bindings { storage_binding(0, 0) };
         manager.bind_descriptors_batch("scale", bindings);
-        manager.record_stage("scale", k_one, push_bytes(2), {});
+        manager.record_stage("scale", k_gpu_resource_manager_one, push_bytes(2), {});
 
         manager.release("scale");
         recording->wait();

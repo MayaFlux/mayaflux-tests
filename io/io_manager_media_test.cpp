@@ -18,14 +18,14 @@ namespace {
     class IOManagerImageLoadTest : public IOManagerFixture { };
     class IOManagerImageSaveTest : public IOManagerFixture { };
 
-    constexpr uint32_t image_width = 4;
-    constexpr uint32_t image_height = 3;
+    constexpr uint32_t io_manager_media_image_width = 4;
+    constexpr uint32_t io_manager_media_image_height = 3;
 
     std::string make_ppm()
     {
         std::string bytes = "P6\n4 3\n255\n";
-        for (uint32_t y = 0; y < image_height; ++y) {
-            for (uint32_t x = 0; x < image_width; ++x) {
+        for (uint32_t y = 0; y < io_manager_media_image_height; ++y) {
+            for (uint32_t x = 0; x < io_manager_media_image_width; ++x) {
                 bytes.push_back(static_cast<char>(20 + x * 17 + y * 3));
                 bytes.push_back(static_cast<char>(60 + x * 5 + y * 19));
                 bytes.push_back(static_cast<char>(100 + x * 11 + y * 7));
@@ -37,9 +37,9 @@ namespace {
     Kakshya::ImageData make_rgba(uint8_t seed = 0)
     {
         std::vector<uint8_t> pixels;
-        pixels.reserve(static_cast<size_t>(image_width) * image_height * 4U);
-        for (uint32_t y = 0; y < image_height; ++y) {
-            for (uint32_t x = 0; x < image_width; ++x) {
+        pixels.reserve(static_cast<size_t>(io_manager_media_image_width) * io_manager_media_image_height * 4U);
+        for (uint32_t y = 0; y < io_manager_media_image_height; ++y) {
+            for (uint32_t x = 0; x < io_manager_media_image_width; ++x) {
                 pixels.push_back(static_cast<uint8_t>(seed + x * 40U));
                 pixels.push_back(static_cast<uint8_t>(seed + y * 70U));
                 pixels.push_back(static_cast<uint8_t>(seed + 9U));
@@ -48,8 +48,8 @@ namespace {
         }
         Kakshya::ImageData data;
         data.pixels = std::move(pixels);
-        data.width = image_width;
-        data.height = image_height;
+        data.width = io_manager_media_image_width;
+        data.height = io_manager_media_image_height;
         data.channels = 4;
         data.format = Kakshya::ImageFormat::RGBA8;
         return data;
@@ -459,8 +459,8 @@ TEST_F(IOManagerImageLoadTest, ValidImageLoadsAtItsOwnSizeAndRetainsItsReader)
     const auto texture = manager->load_image(path_of("image.pnm"));
 
     ASSERT_NE(texture, nullptr);
-    EXPECT_EQ(texture->get_width(), image_width);
-    EXPECT_EQ(texture->get_height(), image_height);
+    EXPECT_EQ(texture->get_width(), io_manager_media_image_width);
+    EXPECT_EQ(texture->get_height(), io_manager_media_image_height);
     EXPECT_EQ(manager->get_image_readers().size(), 1U);
 }
 
@@ -471,8 +471,8 @@ TEST_F(IOManagerImageLoadTest, EveryChannelRequestLoadsTheSameExtent)
     for (const int channels : { 0, 1, 4 }) {
         const auto texture = manager->load_image(path_of("image.pnm"), channels);
         ASSERT_NE(texture, nullptr) << channels;
-        EXPECT_EQ(texture->get_width(), image_width) << channels;
-        EXPECT_EQ(texture->get_height(), image_height) << channels;
+        EXPECT_EQ(texture->get_width(), io_manager_media_image_width) << channels;
+        EXPECT_EQ(texture->get_height(), io_manager_media_image_height) << channels;
     }
     EXPECT_EQ(manager->get_image_readers().size(), 3U);
 }
@@ -492,8 +492,8 @@ TEST_F(IOManagerImageLoadTest, AThreeChannelSourceIsPromotedWhenTheLayoutIsLeftT
     const auto texture = manager->load_image(path_of("image.pnm"), 0);
 
     ASSERT_NE(texture, nullptr);
-    EXPECT_EQ(texture->get_width(), image_width);
-    EXPECT_EQ(texture->get_height(), image_height);
+    EXPECT_EQ(texture->get_width(), io_manager_media_image_width);
+    EXPECT_EQ(texture->get_height(), io_manager_media_image_height);
 }
 
 TEST_F(IOManagerImageLoadTest, ARegionCropsToItsExtent)
@@ -551,8 +551,8 @@ TEST_F(IOManagerImageSaveTest, SavedPngReadsBackPixelForPixel)
     ASSERT_TRUE(exists("saved.png"));
     const auto back = IO::ImageReader::load(path_of("saved.png"), 4);
     ASSERT_TRUE(back.has_value());
-    EXPECT_EQ(back->width, image_width);
-    EXPECT_EQ(back->height, image_height);
+    EXPECT_EQ(back->width, io_manager_media_image_width);
+    EXPECT_EQ(back->height, io_manager_media_image_height);
     ASSERT_NE(back->as_uint8(), nullptr);
     EXPECT_EQ(*back->as_uint8(), *original.as_uint8());
 }
@@ -565,8 +565,8 @@ TEST_F(IOManagerImageSaveTest, SavedImageLoadsThroughTheManager)
     const auto texture = manager->load_image(path_of("saved.png"));
 
     ASSERT_NE(texture, nullptr);
-    EXPECT_EQ(texture->get_width(), image_width);
-    EXPECT_EQ(texture->get_height(), image_height);
+    EXPECT_EQ(texture->get_width(), io_manager_media_image_width);
+    EXPECT_EQ(texture->get_height(), io_manager_media_image_height);
 }
 
 TEST_F(IOManagerImageSaveTest, SaveReturnsBeforeTheWriteAndTheFileAppearsOnWait)

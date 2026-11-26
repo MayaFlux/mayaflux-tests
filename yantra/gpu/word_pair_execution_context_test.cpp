@@ -31,8 +31,8 @@ void main()
 }
 )";
 
-    constexpr double k_inf = std::numeric_limits<double>::infinity();
-    constexpr double k_nan = std::numeric_limits<double>::quiet_NaN();
+    constexpr double k_word_pair_execution_context_inf = std::numeric_limits<double>::infinity();
+    constexpr double k_word_pair_execution_context_nan = std::numeric_limits<double>::quiet_NaN();
 
     struct CopyPush {
         uint32_t count;
@@ -85,7 +85,7 @@ void main()
     }
 
     const std::vector<double> k_mixed {
-        3.5, -2.25, 0.0, -0.0, k_inf, -k_inf, 1.0e-300, -1.0e300, 1.0, k_nan, 7.0
+        3.5, -2.25, 0.0, -0.0, k_word_pair_execution_context_inf, -k_word_pair_execution_context_inf, 1.0e-300, -1.0e300, 1.0, k_word_pair_execution_context_nan, 7.0
     };
 
     template <typename Fixture>

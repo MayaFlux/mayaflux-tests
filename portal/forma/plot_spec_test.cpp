@@ -18,7 +18,7 @@ using Plot::AxisRange;
 namespace {
 
     template <typename V>
-    std::vector<V> decode(const std::vector<uint8_t>& bytes)
+    std::vector<V> plot_spec_decode(const std::vector<uint8_t>& bytes)
     {
         std::vector<V> out(bytes.size() / sizeof(V));
         std::memcpy(out.data(), bytes.data(), out.size() * sizeof(V));
@@ -251,7 +251,7 @@ TEST(FormaPlotBackgroundTest, SolidQuadCoversTheBoundsAsATriangleStrip)
 
     fn(0.F, bytes, el);
 
-    const auto verts = decode<MeshVertex>(bytes);
+    const auto verts = plot_spec_decode<MeshVertex>(bytes);
     ASSERT_EQ(verts.size(), 4U);
     EXPECT_EQ(verts[0].position, glm::vec3(-0.5F, -0.25F, 0.F));
     EXPECT_EQ(verts[1].position, glm::vec3(0.5F, -0.25F, 0.F));
@@ -379,7 +379,7 @@ TEST(FormaPlotCursorTest, VerticalCursorMapsTheValueOntoTheXAxis)
 
     fn(0.25F, bytes, el);
 
-    const auto verts = decode<LineVertex>(bytes);
+    const auto verts = plot_spec_decode<LineVertex>(bytes);
     ASSERT_EQ(verts.size(), 2U);
     const float x = -0.5F + 0.25F * 1.0F;
     EXPECT_EQ(verts[0].position, glm::vec3(x, -0.25F, 0.F));
@@ -401,7 +401,7 @@ TEST(FormaPlotCursorTest, HorizontalCursorMapsTheValueOntoTheYAxis)
 
     fn(0.5F, bytes, el);
 
-    const auto verts = decode<LineVertex>(bytes);
+    const auto verts = plot_spec_decode<LineVertex>(bytes);
     ASSERT_EQ(verts.size(), 2U);
     EXPECT_EQ(verts[0].position, glm::vec3(-0.5F, 0.F, 0.F));
     EXPECT_EQ(verts[1].position, glm::vec3(0.5F, 0.F, 0.F));
@@ -421,8 +421,8 @@ TEST(FormaPlotCursorTest, ValuesOutsideZeroToOneClampToTheEdges)
     fn(-4.F, low, el);
     fn(9.F, high, el);
 
-    EXPECT_FLOAT_EQ(decode<LineVertex>(low)[0].position.x, -0.5F);
-    EXPECT_FLOAT_EQ(decode<LineVertex>(high)[0].position.x, 0.5F);
+    EXPECT_FLOAT_EQ(plot_spec_decode<LineVertex>(low)[0].position.x, -0.5F);
+    EXPECT_FLOAT_EQ(plot_spec_decode<LineVertex>(high)[0].position.x, 0.5F);
 }
 
 // =============================================================================

@@ -22,8 +22,8 @@ namespace MayaFlux::Test {
 namespace {
 
     namespace fs = std::filesystem;
-    namespace P = MayaFlux::Platform;
-    using Reason = P::AcquireFailure::Reason;
+    namespace UNIX_SOCKET_P = MayaFlux::Platform;
+    using Reason = UNIX_SOCKET_P::AcquireFailure::Reason;
 
     class SocketTree {
     public:
@@ -104,14 +104,14 @@ namespace {
 #endif
     }
 
-    P::UnixSocketSource at(const fs::path& path)
+    UNIX_SOCKET_P::UnixSocketSource at(const fs::path& path)
     {
-        return P::UnixSocketFromPath { .path = path };
+        return UNIX_SOCKET_P::UnixSocketFromPath { .path = path };
     }
 
-    P::UnixSocketSource named(std::string file_name)
+    UNIX_SOCKET_P::UnixSocketSource named(std::string file_name)
     {
-        return P::UnixSocketFromName { .file_name = std::move(file_name) };
+        return UNIX_SOCKET_P::UnixSocketFromName { .file_name = std::move(file_name) };
     }
 
     bool never_alive(const fs::path&)
@@ -136,7 +136,7 @@ namespace {
 
     TEST(UnixSocketTest, AnEmptyPathIsAnEmptyRequest)
     {
-        const auto result = P::acquire_unix_socket(at({}), never_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at({}), never_alive);
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(reason_of(result), Reason::EmptyRequest);
@@ -148,7 +148,7 @@ namespace {
         int calls = 0;
         const auto path = tree.root() / "lila.sock";
 
-        const auto result = P::acquire_unix_socket(at(path), [&](const fs::path&) {
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at(path), [&](const fs::path&) {
             ++calls;
             return false;
         });
@@ -165,7 +165,7 @@ namespace {
         MayaFlux::Test::ScopedWorkingDir cwd;
         cwd.write(fs::path("local") / "keep", "x");
 
-        const auto result = P::acquire_unix_socket(at("local/lila.sock"), never_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at("local/lila.sock"), never_alive);
 
         ASSERT_TRUE(result.has_value());
         EXPECT_TRUE(result->path.is_absolute());
@@ -178,7 +178,7 @@ namespace {
         const std::string directory = tree.root().string();
         MayaFlux::Test::ScopedEnv variable(runtime_variable(), directory.c_str());
 
-        const auto result = P::acquire_unix_socket(named("t.sock"), never_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(named("t.sock"), never_alive);
 
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(result->path, tree.root() / "t.sock");
@@ -191,10 +191,10 @@ namespace {
         const std::string directory = tree.root().string();
         MayaFlux::Test::ScopedEnv variable(runtime_variable(), directory.c_str());
 
-        const auto result = P::acquire_unix_socket(named(std::string(P::default_unix_socket_name)), never_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(named(std::string(UNIX_SOCKET_P::default_unix_socket_name)), never_alive);
 
         ASSERT_TRUE(result.has_value());
-        EXPECT_EQ(result->path.filename().string(), std::string(P::default_unix_socket_name));
+        EXPECT_EQ(result->path.filename().string(), std::string(UNIX_SOCKET_P::default_unix_socket_name));
     }
 
     TEST(UnixSocketTest, ANameRefusesWhatIsNotAPlainFileName)
@@ -206,11 +206,11 @@ namespace {
         const std::vector<std::string> hostile { "../escape.sock", "sub/lila.sock", "/abs/lila.sock", ".", "..",
             std::string("lila\0.sock", 10), "lila\n.sock", "lila\t.sock" };
         for (const auto& name : hostile) {
-            const auto result = P::acquire_unix_socket(named(name), never_alive);
+            const auto result = UNIX_SOCKET_P::acquire_unix_socket(named(name), never_alive);
             ASSERT_FALSE(result.has_value()) << name;
             EXPECT_EQ(reason_of(result), Reason::InvalidName) << name;
         }
-        EXPECT_EQ(P::acquire_unix_socket(named(""), never_alive).error().reason, Reason::EmptyRequest);
+        EXPECT_EQ(UNIX_SOCKET_P::acquire_unix_socket(named(""), never_alive).error().reason, Reason::EmptyRequest);
     }
 
     TEST(UnixSocketTest, ANameWithNoUsableRuntimeDirectoryListsEveryCandidate)
@@ -219,7 +219,7 @@ namespace {
         const std::string absent = (tree.root() / "absent").string();
         MayaFlux::Test::ScopedEnv variable(runtime_variable(), absent.c_str());
 
-        const auto result = P::acquire_unix_socket(named("t.sock"), never_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(named("t.sock"), never_alive);
 
         if (result.has_value()) {
             GTEST_SKIP() << "a fallback runtime directory exists on this host";
@@ -237,13 +237,13 @@ namespace {
 
         {
             MayaFlux::Test::ScopedEnv variable(runtime_variable(), first.c_str());
-            const auto candidates = P::runtime_directory_candidates();
+            const auto candidates = UNIX_SOCKET_P::runtime_directory_candidates();
             ASSERT_FALSE(candidates.empty());
             EXPECT_EQ(candidates.front(), fs::path(first));
         }
         {
             MayaFlux::Test::ScopedEnv variable(runtime_variable(), second.c_str());
-            const auto candidates = P::runtime_directory_candidates();
+            const auto candidates = UNIX_SOCKET_P::runtime_directory_candidates();
             ASSERT_FALSE(candidates.empty());
             EXPECT_EQ(candidates.front(), fs::path(second));
         }
@@ -253,7 +253,7 @@ namespace {
     {
         MayaFlux::Test::ScopedEnv variable(runtime_variable(), "relative/dir");
 
-        for (const auto& candidate : P::runtime_directory_candidates()) {
+        for (const auto& candidate : UNIX_SOCKET_P::runtime_directory_candidates()) {
             EXPECT_TRUE(candidate.is_absolute()) << candidate;
             EXPECT_NE(candidate, fs::path("relative/dir"));
         }
@@ -263,7 +263,7 @@ namespace {
     {
         MayaFlux::Test::ScopedEnv variable(runtime_variable(), "");
 
-        for (const auto& candidate : P::runtime_directory_candidates()) {
+        for (const auto& candidate : UNIX_SOCKET_P::runtime_directory_candidates()) {
             EXPECT_FALSE(candidate.empty());
         }
     }
@@ -275,15 +275,15 @@ namespace {
     TEST(UnixSocketTest, ThePathLimitIsExactInBytes)
     {
         SocketTree tree;
-        const size_t limit = P::unix_socket_path_limit;
+        const size_t limit = UNIX_SOCKET_P::unix_socket_path_limit;
         const size_t base = tree.root().u8string().size() + 1;
         ASSERT_LT(base, limit);
 
         const auto at_limit = tree.root() / std::string(limit - base, 'a');
         const auto over_limit = tree.root() / std::string(limit - base + 1, 'a');
 
-        EXPECT_TRUE(P::acquire_unix_socket(at(at_limit), never_alive).has_value());
-        const auto refused = P::acquire_unix_socket(at(over_limit), never_alive);
+        EXPECT_TRUE(UNIX_SOCKET_P::acquire_unix_socket(at(at_limit), never_alive).has_value());
+        const auto refused = UNIX_SOCKET_P::acquire_unix_socket(at(over_limit), never_alive);
         ASSERT_FALSE(refused.has_value());
         EXPECT_EQ(reason_of(refused), Reason::TooLong);
         ASSERT_EQ(refused.error().tried.size(), 1U);
@@ -293,7 +293,7 @@ namespace {
     TEST(UnixSocketTest, TheLimitCountsBytesNotCharacters)
     {
         SocketTree tree;
-        const size_t limit = P::unix_socket_path_limit;
+        const size_t limit = UNIX_SOCKET_P::unix_socket_path_limit;
         const size_t remaining = limit - (tree.root().u8string().size() + 1);
         std::u8string name;
         while (name.size() + 2 <= remaining) {
@@ -301,8 +301,8 @@ namespace {
         }
         const std::u8string over = name + u8"\u00e9";
 
-        EXPECT_TRUE(P::acquire_unix_socket(at(tree.root() / fs::path(name)), never_alive).has_value());
-        const auto refused = P::acquire_unix_socket(at(tree.root() / fs::path(over)), never_alive);
+        EXPECT_TRUE(UNIX_SOCKET_P::acquire_unix_socket(at(tree.root() / fs::path(name)), never_alive).has_value());
+        const auto refused = UNIX_SOCKET_P::acquire_unix_socket(at(tree.root() / fs::path(over)), never_alive);
         ASSERT_FALSE(refused.has_value());
         EXPECT_EQ(reason_of(refused), Reason::TooLong);
     }
@@ -311,8 +311,8 @@ namespace {
     {
         SocketTree tree;
 
-        P::Acquired<P::UnixSocket> result = std::unexpected(P::AcquireFailure {});
-        EXPECT_NO_THROW(result = P::acquire_unix_socket(at(tree.root() / std::string(400, 'a')), never_alive));
+        UNIX_SOCKET_P::Acquired<UNIX_SOCKET_P::UnixSocket> result = std::unexpected(UNIX_SOCKET_P::AcquireFailure {});
+        EXPECT_NO_THROW(result = UNIX_SOCKET_P::acquire_unix_socket(at(tree.root() / std::string(400, 'a')), never_alive));
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(reason_of(result), Reason::TooLong);
     }
@@ -326,7 +326,7 @@ namespace {
         SocketTree tree;
         const auto directory = tree.root() / "absent";
 
-        const auto result = P::acquire_unix_socket(at(directory / "lila.sock"), never_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at(directory / "lila.sock"), never_alive);
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(reason_of(result), Reason::Missing);
@@ -339,7 +339,7 @@ namespace {
         SocketTree tree;
         const auto file = tree.make_file("not-a-directory");
 
-        const auto result = P::acquire_unix_socket(at(file / "lila.sock"), never_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at(file / "lila.sock"), never_alive);
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(reason_of(result), Reason::NotDirectory);
@@ -354,14 +354,14 @@ namespace {
         const auto directory = tree.make_directory("shared");
         fs::permissions(directory, fs::perms::others_write, fs::perm_options::add);
 
-        const auto open = P::acquire_unix_socket(at(directory / "lila.sock"), never_alive);
+        const auto open = UNIX_SOCKET_P::acquire_unix_socket(at(directory / "lila.sock"), never_alive);
         ASSERT_FALSE(open.has_value());
         EXPECT_EQ(reason_of(open), Reason::Unsafe);
         ASSERT_EQ(open.error().tried.size(), 1U);
         EXPECT_EQ(open.error().tried.front(), directory);
 
         fs::permissions(directory, fs::perms::sticky_bit, fs::perm_options::add);
-        EXPECT_TRUE(P::acquire_unix_socket(at(directory / "lila.sock"), never_alive).has_value());
+        EXPECT_TRUE(UNIX_SOCKET_P::acquire_unix_socket(at(directory / "lila.sock"), never_alive).has_value());
 #endif
     }
 
@@ -374,7 +374,7 @@ namespace {
         const auto directory = tree.make_directory("group");
         fs::permissions(directory, fs::perms::group_write, fs::perm_options::add);
 
-        EXPECT_TRUE(P::acquire_unix_socket(at(directory / "lila.sock"), never_alive).has_value());
+        EXPECT_TRUE(UNIX_SOCKET_P::acquire_unix_socket(at(directory / "lila.sock"), never_alive).has_value());
 #endif
     }
 
@@ -389,7 +389,7 @@ namespace {
         const std::string text = directory.string();
         MayaFlux::Test::ScopedEnv variable(runtime_variable(), text.c_str());
 
-        const auto result = P::acquire_unix_socket(named("t.sock"), never_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(named("t.sock"), never_alive);
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(reason_of(result), Reason::Unsafe);
@@ -406,7 +406,7 @@ namespace {
         const auto path = tree.make_file("lila.sock", "precious");
         int calls = 0;
 
-        const auto result = P::acquire_unix_socket(at(path), [&](const fs::path&) {
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at(path), [&](const fs::path&) {
             ++calls;
             return false;
         });
@@ -424,7 +424,7 @@ namespace {
         const auto path = tree.make_directory("lila.sock");
         tree.make_file("lila.sock/inner");
 
-        const auto result = P::acquire_unix_socket(at(path), never_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at(path), never_alive);
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(reason_of(result), Reason::NotSocket);
@@ -442,7 +442,7 @@ namespace {
             GTEST_SKIP() << "symlinks unavailable";
         }
 
-        const auto result = P::acquire_unix_socket(at(link), always_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at(link), always_alive);
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(reason_of(result), Reason::NotSocket);
@@ -460,7 +460,7 @@ namespace {
             GTEST_SKIP() << "symlinks unavailable";
         }
 
-        const auto result = P::acquire_unix_socket(at(link), never_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at(link), never_alive);
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(reason_of(result), Reason::NotSocket);
@@ -471,9 +471,9 @@ namespace {
     {
         SocketTree tree;
 
-        EXPECT_FALSE(P::is_unix_socket(tree.root() / "absent.sock"));
-        EXPECT_FALSE(P::is_unix_socket(tree.make_file("plain.sock")));
-        EXPECT_FALSE(P::is_unix_socket(tree.make_directory("dir.sock")));
+        EXPECT_FALSE(UNIX_SOCKET_P::is_unix_socket(tree.root() / "absent.sock"));
+        EXPECT_FALSE(UNIX_SOCKET_P::is_unix_socket(tree.make_file("plain.sock")));
+        EXPECT_FALSE(UNIX_SOCKET_P::is_unix_socket(tree.make_directory("dir.sock")));
     }
 
     TEST(UnixSocketTest, IsUnixSocketRecognisesASocketFileAndNotALinkToIt)
@@ -485,13 +485,13 @@ namespace {
         const auto real = tree.root() / "real.sock";
         ASSERT_TRUE(make_socket_file(real));
 
-        EXPECT_TRUE(P::is_unix_socket(real));
+        EXPECT_TRUE(UNIX_SOCKET_P::is_unix_socket(real));
 
         const auto link = tree.root() / "link.sock";
         std::error_code ec;
         fs::create_symlink(real, link, ec);
         if (!ec) {
-            EXPECT_FALSE(P::is_unix_socket(link));
+            EXPECT_FALSE(UNIX_SOCKET_P::is_unix_socket(link));
         }
 #endif
     }
@@ -511,7 +511,7 @@ namespace {
             GTEST_SKIP() << "symlinks unavailable";
         }
 
-        const auto result = P::acquire_unix_socket(at(link), never_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at(link), never_alive);
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(reason_of(result), Reason::NotSocket);
@@ -531,7 +531,7 @@ namespace {
         int calls = 0;
         const fs::path cut_short(real.string() + std::string("\0junk", 5));
 
-        const auto result = P::acquire_unix_socket(at(cut_short), [&](const fs::path&) {
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at(cut_short), [&](const fs::path&) {
             ++calls;
             return false;
         });
@@ -542,7 +542,7 @@ namespace {
         EXPECT_EQ(fs::symlink_status(real).type(), fs::file_type::socket);
 
         for (const char* control : { "\n", "\t", "\x7F" }) {
-            const auto refused = P::acquire_unix_socket(at(fs::path(real.string() + control)), never_alive);
+            const auto refused = UNIX_SOCKET_P::acquire_unix_socket(at(fs::path(real.string() + control)), never_alive);
             ASSERT_FALSE(refused.has_value());
             EXPECT_EQ(reason_of(refused), Reason::InvalidName);
         }
@@ -561,7 +561,7 @@ namespace {
         int calls = 0;
         fs::path probed;
 
-        const auto result = P::acquire_unix_socket(at(path), [&](const fs::path& candidate) {
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at(path), [&](const fs::path& candidate) {
             ++calls;
             probed = candidate;
             return false;
@@ -591,8 +591,8 @@ namespace {
             return false;
         };
 
-        ASSERT_TRUE(P::acquire_unix_socket(at(path), probe).has_value());
-        const auto again = P::acquire_unix_socket(at(path), probe);
+        ASSERT_TRUE(UNIX_SOCKET_P::acquire_unix_socket(at(path), probe).has_value());
+        const auto again = UNIX_SOCKET_P::acquire_unix_socket(at(path), probe);
 
         ASSERT_TRUE(again.has_value());
         EXPECT_FALSE(again->replaced_stale);
@@ -609,7 +609,7 @@ namespace {
         const auto path = tree.root() / "lila.sock";
         ASSERT_TRUE(make_socket_file(path));
 
-        const auto result = P::acquire_unix_socket(at(path), always_alive);
+        const auto result = UNIX_SOCKET_P::acquire_unix_socket(at(path), always_alive);
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(reason_of(result), Reason::InUse);
@@ -629,7 +629,7 @@ namespace {
         ASSERT_TRUE(make_socket_file(path));
 
         EXPECT_THROW(
-            (void)P::acquire_unix_socket(at(path), [](const fs::path&) -> bool { throw std::runtime_error("probe failed"); }),
+            (void)UNIX_SOCKET_P::acquire_unix_socket(at(path), [](const fs::path&) -> bool { throw std::runtime_error("probe failed"); }),
             std::runtime_error);
 
         EXPECT_EQ(fs::symlink_status(path).type(), fs::file_type::socket);
@@ -646,8 +646,8 @@ namespace {
         MayaFlux::Test::ScopedEnv variable(runtime_variable(), directory.c_str());
         ASSERT_TRUE(make_socket_file(tree.root() / "t.sock"));
 
-        const auto live = P::acquire_unix_socket(named("t.sock"), always_alive);
-        const auto stale = P::acquire_unix_socket(named("t.sock"), never_alive);
+        const auto live = UNIX_SOCKET_P::acquire_unix_socket(named("t.sock"), always_alive);
+        const auto stale = UNIX_SOCKET_P::acquire_unix_socket(named("t.sock"), never_alive);
 
         ASSERT_FALSE(live.has_value());
         EXPECT_EQ(reason_of(live), Reason::InUse);
@@ -670,7 +670,7 @@ namespace {
         ASSERT_TRUE(make_socket_file(path));
         fs::permissions(path, fs::perms::all, fs::perm_options::replace);
 
-        EXPECT_TRUE(P::restrict_unix_socket_to_owner(path).has_value());
+        EXPECT_TRUE(UNIX_SOCKET_P::restrict_unix_socket_to_owner(path).has_value());
 
         EXPECT_EQ(fs::status(path).permissions() & fs::perms::mask,
             fs::perms::owner_read | fs::perms::owner_write);
@@ -684,7 +684,7 @@ namespace {
 #else
         SocketTree tree;
 
-        const auto result = P::restrict_unix_socket_to_owner(tree.root() / "absent.sock");
+        const auto result = UNIX_SOCKET_P::restrict_unix_socket_to_owner(tree.root() / "absent.sock");
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().reason, Reason::Unsafe);
@@ -710,15 +710,15 @@ namespace {
             }
             const fs::path path(tree.root().string() + "/" + name);
 
-            P::Acquired<P::UnixSocket> result = std::unexpected(P::AcquireFailure {});
-            ASSERT_NO_THROW(result = P::acquire_unix_socket(at(path), [&](const fs::path&) {
+            UNIX_SOCKET_P::Acquired<UNIX_SOCKET_P::UnixSocket> result = std::unexpected(UNIX_SOCKET_P::AcquireFailure {});
+            ASSERT_NO_THROW(result = UNIX_SOCKET_P::acquire_unix_socket(at(path), [&](const fs::path&) {
                 ++probes;
                 return true;
             })) << "seed " << seed;
 
             if (result.has_value()) {
                 ASSERT_TRUE(result->path.is_absolute()) << "seed " << seed;
-                ASSERT_LE(result->path.u8string().size(), P::unix_socket_path_limit) << "seed " << seed;
+                ASSERT_LE(result->path.u8string().size(), UNIX_SOCKET_P::unix_socket_path_limit) << "seed " << seed;
                 ASSERT_FALSE(result->replaced_stale) << "seed " << seed;
             }
         }
@@ -732,7 +732,7 @@ namespace {
     std::vector<fs::path> listed_inside(const fs::path& root)
     {
         std::vector<fs::path> inside;
-        for (const auto& path : P::list_unix_sockets()) {
+        for (const auto& path : UNIX_SOCKET_P::list_unix_sockets()) {
             if (path.parent_path() == root)
                 inside.push_back(path);
         }
@@ -766,7 +766,7 @@ namespace {
         const std::string directory = tree.root().string();
         MayaFlux::Test::ScopedEnv variable(runtime_variable(), directory.c_str());
 
-        const auto all = P::list_unix_sockets();
+        const auto all = UNIX_SOCKET_P::list_unix_sockets();
         EXPECT_TRUE(std::ranges::is_sorted(all));
         EXPECT_EQ(std::ranges::count(all, earlier), 1);
         EXPECT_EQ(std::ranges::count(all, later), 1);
@@ -796,7 +796,7 @@ namespace {
         const std::string missing = (tree.root() / "missing").string();
         MayaFlux::Test::ScopedEnv variable(runtime_variable(), missing.c_str());
 
-        EXPECT_NO_THROW((void)P::list_unix_sockets());
+        EXPECT_NO_THROW((void)UNIX_SOCKET_P::list_unix_sockets());
     }
 
 }

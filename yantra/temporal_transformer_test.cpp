@@ -15,8 +15,8 @@ namespace {
     using Yantra::TemporalTransformerConfig;
     namespace D = Kinesis::Discrete;
 
-    constexpr std::size_t k_samples = 256;
-    constexpr double k_tolerance = 1e-9;
+    constexpr std::size_t k_temporal_transformer_samples = 256;
+    constexpr double k_temporal_transformer_tolerance = 1e-9;
 
     const char* operation_name(TemporalOperation op)
     {
@@ -46,9 +46,9 @@ namespace {
         return cfg;
     }
 
-    Yantra::Datum<std::vector<Kakshya::DataVariant>> two_channel_input()
+    Yantra::Datum<std::vector<Kakshya::DataVariant>> temporal_transformer_two_channel_input()
     {
-        return to_datum({ sine_samples(k_samples, 440.0), ramp_samples(k_samples) });
+        return to_datum({ sine_samples(k_temporal_transformer_samples, 440.0), ramp_samples(k_temporal_transformer_samples) });
     }
 
     class TemporalOperationTest : public ::testing::TestWithParam<TemporalOperation> {
@@ -70,7 +70,7 @@ namespace {
     {
         TemporalTransformer<> transformer(config_for(GetParam()));
 
-        const auto result = transformer.apply_operation(two_channel_input());
+        const auto result = transformer.apply_operation(temporal_transformer_two_channel_input());
 
         ASSERT_EQ(result.data.size(), 2U);
         for (std::size_t ch = 0; ch < 2; ++ch) {
@@ -94,13 +94,13 @@ namespace {
     {
         TemporalTransformer<> transformer;
 
-        const auto input = to_datum({ ramp_samples(k_samples) });
+        const auto input = to_datum({ ramp_samples(k_temporal_transformer_samples) });
         const auto result = transformer.apply_operation(input);
 
         const auto out = channel_samples(result, 0);
         const auto in = channel_samples(input, 0);
-        for (std::size_t i = 0; i < k_samples; ++i) {
-            EXPECT_NEAR(out[i], in[k_samples - 1 - i], k_tolerance) << "Sample " << i;
+        for (std::size_t i = 0; i < k_temporal_transformer_samples; ++i) {
+            EXPECT_NEAR(out[i], in[k_temporal_transformer_samples - 1 - i], k_temporal_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -170,7 +170,7 @@ namespace {
         cfg.target_size = 0;
         TemporalTransformer<> transformer(cfg);
 
-        const auto input = to_datum({ ramp_samples(k_samples) });
+        const auto input = to_datum({ ramp_samples(k_temporal_transformer_samples) });
         const auto result = transformer.apply_operation(input);
 
         EXPECT_EQ(channel_samples(result, 0), channel_samples(input, 0));
@@ -184,7 +184,7 @@ namespace {
         cfg.use_cubic = false;
         TemporalTransformer<> transformer(cfg);
 
-        const auto input = to_datum({ ramp_samples(k_samples) });
+        const auto input = to_datum({ ramp_samples(k_temporal_transformer_samples) });
         const auto result = transformer.apply_operation(input);
 
         std::vector<double> expected(512);
@@ -194,7 +194,7 @@ namespace {
         const auto out = channel_samples(result, 0);
         ASSERT_EQ(out.size(), 512U);
         for (std::size_t i = 0; i < expected.size(); ++i) {
-            EXPECT_NEAR(out[i], expected[i], k_tolerance) << "Sample " << i;
+            EXPECT_NEAR(out[i], expected[i], k_temporal_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -206,7 +206,7 @@ namespace {
         cfg.use_cubic = true;
         TemporalTransformer<> transformer(cfg);
 
-        const auto input = to_datum({ sine_samples(k_samples, 220.0) });
+        const auto input = to_datum({ sine_samples(k_temporal_transformer_samples, 220.0) });
         const auto result = transformer.apply_operation(input);
 
         std::vector<double> expected(512);
@@ -216,7 +216,7 @@ namespace {
         const auto out = channel_samples(result, 0);
         ASSERT_EQ(out.size(), 512U);
         for (std::size_t i = 0; i < expected.size(); ++i) {
-            EXPECT_NEAR(out[i], expected[i], k_tolerance) << "Sample " << i;
+            EXPECT_NEAR(out[i], expected[i], k_temporal_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -227,14 +227,14 @@ namespace {
         cfg.stretch_factor = 2.0;
         TemporalTransformer<> transformer(cfg);
 
-        const auto input = to_datum({ sine_samples(k_samples, 440.0) });
+        const auto input = to_datum({ sine_samples(k_temporal_transformer_samples, 440.0) });
         const auto result = transformer.apply_operation(input);
 
         const auto expected = D::time_stretch(channel_samples(input, 0), 2.0);
         const auto out = channel_samples(result, 0);
         ASSERT_EQ(out.size(), expected.size());
         for (std::size_t i = 0; i < expected.size(); ++i) {
-            EXPECT_NEAR(out[i], expected[i], k_tolerance) << "Sample " << i;
+            EXPECT_NEAR(out[i], expected[i], k_temporal_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -246,15 +246,15 @@ namespace {
         cfg.fade_out_ratio = 0.1;
         TemporalTransformer<> transformer(cfg);
 
-        const auto input = to_datum({ sine_samples(k_samples, 440.0) });
+        const auto input = to_datum({ sine_samples(k_temporal_transformer_samples, 440.0) });
         const auto result = transformer.apply_operation(input);
 
         std::vector<double> expected = channel_samples(input, 0);
         D::fade(expected, 0.2, 0.1);
 
         const auto out = channel_samples(result, 0);
-        for (std::size_t i = 0; i < k_samples; ++i) {
-            EXPECT_NEAR(out[i], expected[i], k_tolerance) << "Sample " << i;
+        for (std::size_t i = 0; i < k_temporal_transformer_samples; ++i) {
+            EXPECT_NEAR(out[i], expected[i], k_temporal_transformer_tolerance) << "Sample " << i;
         }
     }
 

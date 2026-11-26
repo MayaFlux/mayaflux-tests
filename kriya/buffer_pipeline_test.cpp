@@ -25,7 +25,7 @@ namespace {
     using Kriya::BufferPipeline;
     using Kriya::ExecutionStrategy;
 
-    constexpr uint32_t k_rate = 48000;
+    constexpr uint32_t k_buffer_pipeline_rate = 48000;
 
     double sample(uint64_t index)
     {
@@ -42,7 +42,7 @@ namespace {
         return values;
     }
 
-    std::vector<double> values_of(const DataVariant& data)
+    std::vector<double> buffer_pipeline_values_of(const DataVariant& data)
     {
         const auto* values = std::get_if<std::vector<double>>(&data);
         return values ? *values : std::vector<double> {};
@@ -78,7 +78,7 @@ namespace {
         void SetUp() override
         {
             block = Buffers::s_preferred_buffer_size;
-            scheduler = std::make_shared<Vruta::TaskScheduler>(k_rate);
+            scheduler = std::make_shared<Vruta::TaskScheduler>(k_buffer_pipeline_rate);
             manager = std::make_shared<Buffers::BufferManager>();
             source = make_buffer();
             set_source_block(0);
@@ -178,7 +178,7 @@ namespace {
         *pipeline
             >> BufferOperation::capture_from(source)
             >> BufferOperation::transform([&](DataVariant& data, uint32_t) {
-                   seen = values_of(data);
+                   seen = buffer_pipeline_values_of(data);
                    return data;
                });
         pipeline->execute_once();
@@ -195,7 +195,7 @@ namespace {
         *pipeline
             >> BufferOperation::capture_from(source).for_cycles(4).on_data_ready(advancing_source())
             >> BufferOperation::transform([&](DataVariant& data, uint32_t) {
-                   seen.push_back(values_of(data));
+                   seen.push_back(buffer_pipeline_values_of(data));
                    return data;
                });
         pipeline->execute_for_cycles(1);
@@ -213,7 +213,7 @@ namespace {
         *pipeline
             >> BufferOperation::capture_from(source).for_cycles(4).on_data_ready(advancing_source())
             >> BufferOperation::transform([&](DataVariant& data, uint32_t) {
-                   seen.push_back(values_of(data));
+                   seen.push_back(buffer_pipeline_values_of(data));
                    return data;
                });
         pipeline->execute_for_cycles(2);
@@ -232,7 +232,7 @@ namespace {
         *pipeline
             >> BufferOperation::capture_from(source).for_cycles(5).as_circular(static_cast<uint32_t>(2 * block)).on_data_ready(advancing_source())
             >> BufferOperation::transform([&](DataVariant& data, uint32_t) {
-                   seen = values_of(data);
+                   seen = buffer_pipeline_values_of(data);
                    return data;
                });
         pipeline->execute_for_cycles(1);
@@ -249,7 +249,7 @@ namespace {
         *pipeline
             >> BufferOperation::capture_from(source).for_cycles(5).with_window(static_cast<uint32_t>(2 * block), 0.5F).on_data_ready(advancing_source())
             >> BufferOperation::transform([&](DataVariant& data, uint32_t) {
-                   seen = values_of(data);
+                   seen = buffer_pipeline_values_of(data);
                    return data;
                });
         pipeline->execute_for_cycles(1);
@@ -266,7 +266,7 @@ namespace {
         *pipeline
             >> BufferOperation::capture_from(source).for_cycles(5).with_window(static_cast<uint32_t>(2 * block), 0.0F).on_data_ready(advancing_source())
             >> BufferOperation::transform([&](DataVariant& data, uint32_t) {
-                   seen = values_of(data);
+                   seen = buffer_pipeline_values_of(data);
                    return data;
                });
         pipeline->execute_for_cycles(1);
@@ -302,7 +302,7 @@ namespace {
 
         *pipeline
             >> BufferOperation::capture_from(source).for_cycles(3).on_capture_processing().on_data_ready([&](DataVariant& data, uint32_t) {
-                   first_samples.push_back(values_of(data).front());
+                   first_samples.push_back(buffer_pipeline_values_of(data).front());
                });
         pipeline->execute_for_cycles(1);
         run(pipeline);
@@ -330,7 +330,7 @@ namespace {
 
     TEST_F(BufferPipelineTest, ACapturedBlockIsRoutedStraightIntoASoundStream)
     {
-        const auto stream = std::make_shared<DynamicSoundStream>(k_rate, 1);
+        const auto stream = std::make_shared<DynamicSoundStream>(k_buffer_pipeline_rate, 1);
         const auto pipeline = make_pipeline();
 
         *pipeline
@@ -346,7 +346,7 @@ namespace {
 
     TEST_F(BufferPipelineTest, TheRouteChannelSelectsTheStreamChannel)
     {
-        const auto stream = std::make_shared<DynamicSoundStream>(k_rate, 2);
+        const auto stream = std::make_shared<DynamicSoundStream>(k_buffer_pipeline_rate, 2);
         const auto pipeline = make_pipeline();
 
         *pipeline
@@ -363,7 +363,7 @@ namespace {
 
     TEST_F(BufferPipelineTest, WhatIsRoutedIsWhatTheTransformReturned)
     {
-        const auto stream = std::make_shared<DynamicSoundStream>(k_rate, 1);
+        const auto stream = std::make_shared<DynamicSoundStream>(k_buffer_pipeline_rate, 1);
         const auto pipeline = make_pipeline();
 
         *pipeline
@@ -406,7 +406,7 @@ namespace {
 
     TEST_F(BufferPipelineTest, LoadingFillsTheBufferWithTheRequestedRangeEveryCycle)
     {
-        const auto stream = std::make_shared<DynamicSoundStream>(k_rate, 1);
+        const auto stream = std::make_shared<DynamicSoundStream>(k_buffer_pipeline_rate, 1);
         const auto ramp = ramp_blocks(0, 4, block);
         stream->write_frames(std::vector<std::span<const double>> { std::span<const double>(ramp) }, 0);
         const auto target = make_buffer();
@@ -425,7 +425,7 @@ namespace {
 
     TEST_F(BufferPipelineTest, LoadingWithoutALengthTakesTheRestOfTheStream)
     {
-        const auto stream = std::make_shared<DynamicSoundStream>(k_rate, 1);
+        const auto stream = std::make_shared<DynamicSoundStream>(k_buffer_pipeline_rate, 1);
         const auto ramp = ramp_blocks(0, 4, block);
         stream->write_frames(std::vector<std::span<const double>> { std::span<const double>(ramp) }, 0);
         const auto whole = make_buffer();
@@ -443,7 +443,7 @@ namespace {
 
     TEST_F(BufferPipelineTest, LoadingLeavesTheStreamsReadPositionAlone)
     {
-        const auto stream = std::make_shared<DynamicSoundStream>(k_rate, 1);
+        const auto stream = std::make_shared<DynamicSoundStream>(k_buffer_pipeline_rate, 1);
         const auto ramp = ramp_blocks(0, 4, block);
         stream->write_frames(std::vector<std::span<const double>> { std::span<const double>(ramp) }, 0);
         stream->set_read_position({ 7 });
@@ -458,7 +458,7 @@ namespace {
 
     TEST_F(BufferPipelineTest, LoadingStartsAtTheRequestedFrame)
     {
-        const auto stream = std::make_shared<DynamicSoundStream>(k_rate, 1);
+        const auto stream = std::make_shared<DynamicSoundStream>(k_buffer_pipeline_rate, 1);
         const auto ramp = ramp_blocks(0, 4, block);
         stream->write_frames(std::vector<std::span<const double>> { std::span<const double>(ramp) }, 0);
         const auto target = make_buffer();
@@ -503,9 +503,9 @@ namespace {
 
     TEST_F(BufferPipelineTest, FusingStreamsWritesTheFusedResultIntoTheTargetStream)
     {
-        const auto left = std::make_shared<DynamicSoundStream>(k_rate, 1);
-        const auto right = std::make_shared<DynamicSoundStream>(k_rate, 1);
-        const auto target = std::make_shared<DynamicSoundStream>(k_rate, 1);
+        const auto left = std::make_shared<DynamicSoundStream>(k_buffer_pipeline_rate, 1);
+        const auto right = std::make_shared<DynamicSoundStream>(k_buffer_pipeline_rate, 1);
+        const auto target = std::make_shared<DynamicSoundStream>(k_buffer_pipeline_rate, 1);
         const auto ramp = ramp_blocks(0, 1, block);
         const std::vector<double> constant(block, 10.0);
         left->write_frames(std::vector<std::span<const double>> { std::span<const double>(ramp) }, 0);
@@ -562,7 +562,7 @@ namespace {
             >> BufferOperation::capture_from(source).on_data_ready(advancing_source())
             >> BufferOperation::dispatch_to([&](DataVariant& data, uint32_t cycle) {
                    cycles.push_back(cycle);
-                   first_samples.push_back(values_of(data).front());
+                   first_samples.push_back(buffer_pipeline_values_of(data).front());
                });
         pipeline->execute_for_cycles(3);
         run(pipeline);

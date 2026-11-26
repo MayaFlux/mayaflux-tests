@@ -16,7 +16,7 @@ using namespace std::chrono_literals;
 
 namespace {
 
-    constexpr unsigned int SAMPLE_RATE = 48000;
+    constexpr unsigned int CONDITIONAL_WORKER_SAMPLE_RATE = 48000;
 
     struct Visit {
         std::thread::id before;
@@ -71,7 +71,7 @@ namespace {
     }
 
     template <typename Predicate>
-    bool eventually(Predicate&& predicate, std::chrono::milliseconds limit = 2000ms)
+    bool conditional_worker_eventually(Predicate&& predicate, std::chrono::milliseconds limit = 2000ms)
     {
         const auto deadline = std::chrono::steady_clock::now() + limit;
         while (std::chrono::steady_clock::now() < deadline) {
@@ -89,7 +89,7 @@ class ConditionalWorkerTest : public ::testing::Test {
 protected:
     void SetUp() override
     {
-        scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
+        scheduler = std::make_shared<Vruta::TaskScheduler>(CONDITIONAL_WORKER_SAMPLE_RATE);
     }
 
     void TearDown() override
@@ -132,7 +132,7 @@ TEST_F(ConditionalWorkerTest, OnWorkerRunsTheRestOfTheRoutineOnTheWorkerThread)
 
     add(std::make_shared<Vruta::FreeRoutine>(hop(worker, visit)), "hop");
 
-    ASSERT_TRUE(eventually([&] { return visit->done.load(); }));
+    ASSERT_TRUE(conditional_worker_eventually([&] { return visit->done.load(); }));
     EXPECT_EQ(visit->before, std::this_thread::get_id());
     EXPECT_NE(visit->after, std::this_thread::get_id());
 }
@@ -146,7 +146,7 @@ TEST_F(ConditionalWorkerTest, RoutinesOnTheSameWorkerShareAThread)
     add(std::make_shared<Vruta::FreeRoutine>(hop(worker, one)), "one");
     add(std::make_shared<Vruta::FreeRoutine>(hop(worker, two)), "two");
 
-    ASSERT_TRUE(eventually([&] { return one->done.load() && two->done.load(); }));
+    ASSERT_TRUE(conditional_worker_eventually([&] { return one->done.load() && two->done.load(); }));
     EXPECT_EQ(one->after, two->after);
 }
 
@@ -162,7 +162,7 @@ TEST_F(ConditionalWorkerTest, RoutinesOnDifferentWorkersRunOnDifferentThreads)
     add(std::make_shared<Vruta::FreeRoutine>(hop(right, on_right)), "right");
     add(std::make_shared<Vruta::FreeRoutine>(handshake(on_default)), "default");
 
-    ASSERT_TRUE(eventually([&] { return on_left->done.load() && on_right->done.load() && on_default->done.load(); }));
+    ASSERT_TRUE(conditional_worker_eventually([&] { return on_left->done.load() && on_right->done.load() && on_default->done.load(); }));
     EXPECT_NE(on_left->after, on_right->after);
     EXPECT_NE(on_left->after, on_default->after);
     EXPECT_NE(on_right->after, on_default->after);
@@ -174,7 +174,7 @@ TEST_F(ConditionalWorkerTest, GetFreePromiseHandsTheRoutineToTheDefaultWorker)
 
     add(std::make_shared<Vruta::FreeRoutine>(handshake(visit)), "handshake");
 
-    ASSERT_TRUE(eventually([&] { return visit->done.load(); }));
+    ASSERT_TRUE(conditional_worker_eventually([&] { return visit->done.load(); }));
     EXPECT_EQ(visit->before, std::this_thread::get_id());
     EXPECT_NE(visit->after, std::this_thread::get_id());
 }
@@ -187,7 +187,7 @@ TEST_F(ConditionalWorkerTest, AnUnknownWorkerFallsBackToTheDefaultWorker)
     add(std::make_shared<Vruta::FreeRoutine>(hop(Vruta::WorkerId { 99 }, stray)), "stray");
     add(std::make_shared<Vruta::FreeRoutine>(handshake(home)), "home");
 
-    ASSERT_TRUE(eventually([&] { return stray->done.load() && home->done.load(); }));
+    ASSERT_TRUE(conditional_worker_eventually([&] { return stray->done.load() && home->done.load(); }));
     EXPECT_EQ(stray->after, home->after);
 }
 
@@ -198,10 +198,10 @@ TEST_F(ConditionalWorkerTest, ALongRoutineDelaysOthersOnItsWorker)
     auto light = make_visit();
 
     add(std::make_shared<Vruta::FreeRoutine>(work_for(worker, 250ms, heavy)), "heavy");
-    ASSERT_TRUE(eventually([&] { return heavy->started.load(); }));
+    ASSERT_TRUE(conditional_worker_eventually([&] { return heavy->started.load(); }));
     add(std::make_shared<Vruta::FreeRoutine>(delayed(worker, 0.02, light)), "light");
 
-    ASSERT_TRUE(eventually([&] { return light->done.load(); }));
+    ASSERT_TRUE(conditional_worker_eventually([&] { return light->done.load(); }));
     EXPECT_TRUE(heavy->done.load());
 }
 
@@ -213,10 +213,10 @@ TEST_F(ConditionalWorkerTest, ALongRoutineDoesNotDelayAnotherWorker)
     auto light = make_visit();
 
     add(std::make_shared<Vruta::FreeRoutine>(work_for(busy, 400ms, heavy)), "heavy");
-    ASSERT_TRUE(eventually([&] { return heavy->started.load(); }));
+    ASSERT_TRUE(conditional_worker_eventually([&] { return heavy->started.load(); }));
     add(std::make_shared<Vruta::FreeRoutine>(delayed(free, 0.02, light)), "light");
 
-    ASSERT_TRUE(eventually([&] { return light->done.load(); }, 300ms));
+    ASSERT_TRUE(conditional_worker_eventually([&] { return light->done.load(); }, 300ms));
     EXPECT_FALSE(heavy->done.load());
 }
 
@@ -235,7 +235,7 @@ TEST_F(ConditionalWorkerTest, WakeConditionalWithNoArgumentWakesEveryWorker)
     flag->store(true);
     scheduler->wake_conditional();
 
-    EXPECT_TRUE(eventually([&] { return on_left->done.load() && on_right->done.load(); }));
+    EXPECT_TRUE(conditional_worker_eventually([&] { return on_left->done.load() && on_right->done.load(); }));
 }
 
 TEST_F(ConditionalWorkerTest, WakeConditionalWithAWorkerWakesOnlyThatWorker)
@@ -253,12 +253,12 @@ TEST_F(ConditionalWorkerTest, WakeConditionalWithAWorkerWakesOnlyThatWorker)
     flag->store(true);
     scheduler->wake_conditional(left);
 
-    EXPECT_TRUE(eventually([&] { return on_left->done.load(); }));
+    EXPECT_TRUE(conditional_worker_eventually([&] { return on_left->done.load(); }));
     std::this_thread::sleep_for(100ms);
     EXPECT_FALSE(on_right->done.load());
 
     scheduler->wake_conditional();
-    EXPECT_TRUE(eventually([&] { return on_right->done.load(); }));
+    EXPECT_TRUE(conditional_worker_eventually([&] { return on_right->done.load(); }));
 }
 
 TEST_F(ConditionalWorkerTest, CancellingByNameReachesARoutineOnAnotherWorker)
@@ -275,7 +275,7 @@ TEST_F(ConditionalWorkerTest, CancellingByNameReachesARoutineOnAnotherWorker)
 
     EXPECT_TRUE(scheduler->cancel_task("cancel_by_name"));
 
-    EXPECT_TRUE(eventually([&] { return completed->load(); }, 1000ms));
+    EXPECT_TRUE(conditional_worker_eventually([&] { return completed->load(); }, 1000ms));
 }
 
 TEST_F(ConditionalWorkerTest, CancellingByRoutineReachesARoutineOnAnotherWorker)
@@ -288,11 +288,11 @@ TEST_F(ConditionalWorkerTest, CancellingByRoutineReachesARoutineOnAnotherWorker)
     auto routine = std::make_shared<Vruta::FreeRoutine>(wake_gated(worker, flag, visit));
     routine->on_complete([completed]() { completed->store(true); });
     add(routine, "cancel_by_routine");
-    ASSERT_TRUE(eventually([&] { return !scheduler->get_tasks_for_token(Vruta::ProcessingToken::CONDITIONAL).empty(); }));
+    ASSERT_TRUE(conditional_worker_eventually([&] { return !scheduler->get_tasks_for_token(Vruta::ProcessingToken::CONDITIONAL).empty(); }));
 
     EXPECT_TRUE(scheduler->cancel_task(routine));
 
-    EXPECT_TRUE(eventually([&] { return completed->load(); }, 1000ms));
+    EXPECT_TRUE(conditional_worker_eventually([&] { return completed->load(); }, 1000ms));
 }
 
 TEST_F(ConditionalWorkerTest, ShutdownStopsEveryWorker)

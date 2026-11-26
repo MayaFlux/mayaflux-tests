@@ -16,7 +16,7 @@ namespace {
     using Nodes::Network::make_mesh_network;
     using Nodes::Network::MeshPartPlacement;
 
-    glm::mat4 shifted(float x)
+    glm::mat4 mesh_network_part_shifted(float x)
     {
         return glm::translate(glm::mat4(1.0F), glm::vec3(x, 0.0F, 0.0F));
     }
@@ -44,10 +44,10 @@ namespace {
             points.positions = { glm::vec3(0.0F) };
             const auto dust = assembly->add_source({ .geometry = points, .name = "dust" });
 
-            const auto level = assembly->add_placement({ .name = "level", .local = shifted(10.0F) }).value();
+            const auto level = assembly->add_placement({ .name = "level", .local = mesh_network_part_shifted(10.0F) }).value();
             std::ignore = assembly->add_placement({ .name = "wall", .parent = level, .source = mesh });
-            const auto left = assembly->add_placement({ .name = "left", .parent = level, .source = mesh, .local = shifted(1.0F) }).value();
-            std::ignore = assembly->add_placement({ .name = "right", .parent = level, .source = mesh, .local = shifted(-1.0F) });
+            const auto left = assembly->add_placement({ .name = "left", .parent = level, .source = mesh, .local = mesh_network_part_shifted(1.0F) }).value();
+            std::ignore = assembly->add_placement({ .name = "right", .parent = level, .source = mesh, .local = mesh_network_part_shifted(-1.0F) });
             const auto mount = assembly->add_placement({ .name = "mount", .parent = left, .local = glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 5.0F, 0.0F)) }).value();
             std::ignore = assembly->add_placement({ .name = "lamp", .parent = mount, .source = mesh });
             std::ignore = assembly->add_placement({ .name = "dust", .source = dust });

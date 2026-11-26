@@ -17,10 +17,10 @@ using Complex = std::complex<double>;
 
 namespace {
 
-    constexpr double kRate = 48000.0;
-    constexpr double kSound = 343.0;
-    constexpr double kDensity = 1.2;
-    constexpr double kRadius = 0.0075;
+    constexpr double kAcousticsRadiationRate = 48000.0;
+    constexpr double kAcousticsRadiationSound = 343.0;
+    constexpr double kAcousticsRadiationDensity = 1.2;
+    constexpr double kAcousticsRadiationRadius = 0.0075;
 
     Complex load_impedance(const RadiationModel& model, Complex s)
     {
@@ -44,7 +44,7 @@ namespace {
 
     RadiationSpec spec_for(const RadiationModel& model)
     {
-        return { .model = model, .radius = kRadius, .sound_speed = kSound, .air_density = kDensity, .time_step = 1.0 / kRate };
+        return { .model = model, .radius = kAcousticsRadiationRadius, .sound_speed = kAcousticsRadiationSound, .air_density = kAcousticsRadiationDensity, .time_step = 1.0 / kAcousticsRadiationRate };
     }
 
 }
@@ -101,7 +101,7 @@ TEST(RadiationLoadTest, TheLoadPassesHighFrequenciesAndReflectsLowOnes)
 TEST(RadiationLoadTest, CoefficientsNeedPositiveFiniteInputs)
 {
     const RadiationSpec spec = spec_for(Acoustics::unflanged_radiation);
-    const double area = std::numbers::pi * kRadius * kRadius;
+    const double area = std::numbers::pi * kAcousticsRadiationRadius * kAcousticsRadiationRadius;
 
     EXPECT_TRUE(Acoustics::make_radiation_coefficients(spec, area, 1.0e6).has_value());
 
@@ -122,16 +122,16 @@ TEST(RadiationLoadTest, CoefficientsNeedPositiveFiniteInputs)
 
 TEST(RadiationLoadTest, SteadyStateAdmittanceIsTheTrapezoidalImageOfTheNetwork)
 {
-    const double area = std::numbers::pi * kRadius * kRadius;
-    const double impedance = kDensity * kSound / area;
-    const double k = 1.0 / kRate;
+    const double area = std::numbers::pi * kAcousticsRadiationRadius * kAcousticsRadiationRadius;
+    const double impedance = kAcousticsRadiationDensity * kAcousticsRadiationSound / area;
+    const double k = 1.0 / kAcousticsRadiationRate;
 
     for (const RadiationModel& model : { Acoustics::unflanged_radiation, Acoustics::flanged_radiation }) {
         const auto coefficients = Acoustics::make_radiation_coefficients(spec_for(model), area, 1e-30);
         ASSERT_TRUE(coefficients.has_value());
 
         for (const size_t period : { size_t { 96 }, size_t { 24 }, size_t { 8 } }) {
-            const double omega = 2.0 * std::numbers::pi * kRate / static_cast<double>(period);
+            const double omega = 2.0 * std::numbers::pi * kAcousticsRadiationRate / static_cast<double>(period);
             RadiationState state;
 
             Complex pressure_sum;
@@ -151,7 +151,7 @@ TEST(RadiationLoadTest, SteadyStateAdmittanceIsTheTrapezoidalImageOfTheNetwork)
             }
 
             const double warped = 2.0 / k * std::tan(omega * k / 2.0);
-            const Complex expected = 1.0 / (impedance * load_impedance(model, Complex(0.0, warped * kRadius / kSound)));
+            const Complex expected = 1.0 / (impedance * load_impedance(model, Complex(0.0, warped * kAcousticsRadiationRadius / kAcousticsRadiationSound)));
             const Complex measured_admittance = flow_sum / pressure_sum;
 
             EXPECT_NEAR(std::abs(measured_admittance - expected), 0.0, 1e-6 * std::abs(expected))
@@ -162,19 +162,19 @@ TEST(RadiationLoadTest, SteadyStateAdmittanceIsTheTrapezoidalImageOfTheNetwork)
 
 TEST(RadiationLoadTest, ABoreWithAnOpenEndOnlyEverLosesEnergy)
 {
-    Acoustics::DuctSpec bore { .length = 0.6, .sample_rate = kRate };
-    const auto grid = Acoustics::make_duct_grid(bore, [](double) { return kRadius; });
+    Acoustics::DuctSpec bore { .length = 0.6, .sample_rate = kAcousticsRadiationRate };
+    const auto grid = Acoustics::make_duct_grid(bore, [](double) { return kAcousticsRadiationRadius; });
     ASSERT_TRUE(grid.has_value());
 
-    const double area = std::numbers::pi * kRadius * kRadius;
+    const double area = std::numbers::pi * kAcousticsRadiationRadius * kAcousticsRadiationRadius;
     const auto coefficients = Acoustics::make_radiation_coefficients(
         spec_for(Acoustics::unflanged_radiation), area, grid->pressure_gain.back());
     ASSERT_TRUE(coefficients.has_value());
 
     const auto [gamma, lambda, theta] = Acoustics::unflanged_radiation;
-    const double impedance = kDensity * kSound / area;
-    const double inductance = lambda * (kRadius / kSound) * impedance;
-    const double capacitance = theta * (kRadius / kSound) / impedance;
+    const double impedance = kAcousticsRadiationDensity * kAcousticsRadiationSound / area;
+    const double inductance = lambda * (kAcousticsRadiationRadius / kAcousticsRadiationSound) * impedance;
+    const double capacitance = theta * (kAcousticsRadiationRadius / kAcousticsRadiationSound) / impedance;
 
     std::vector<double> pressure(grid->intervals + 1, 0.0);
     std::vector<double> velocity(grid->intervals, 0.0);
@@ -209,11 +209,11 @@ TEST(RadiationLoadTest, ABoreWithAnOpenEndOnlyEverLosesEnergy)
 
 TEST(RadiationLoadTest, RadiatedPressureIsTheRateOfChangeOfFlowOverFourPiR)
 {
-    const double pressure = Acoustics::radiated_pressure(3.0, 1.0, 1.0 / kRate, kDensity);
+    const double pressure = Acoustics::radiated_pressure(3.0, 1.0, 1.0 / kAcousticsRadiationRate, kAcousticsRadiationDensity);
 
-    EXPECT_NEAR(pressure, kDensity / (4.0 * std::numbers::pi) * 2.0 * kRate, 1e-9);
-    EXPECT_NEAR(Acoustics::radiated_pressure(3.0, 1.0, 1.0 / kRate, kDensity, 2.0), 0.5 * pressure, 1e-9);
-    EXPECT_DOUBLE_EQ(Acoustics::radiated_pressure(1.0, 1.0, 1.0 / kRate, kDensity), 0.0);
+    EXPECT_NEAR(pressure, kAcousticsRadiationDensity / (4.0 * std::numbers::pi) * 2.0 * kAcousticsRadiationRate, 1e-9);
+    EXPECT_NEAR(Acoustics::radiated_pressure(3.0, 1.0, 1.0 / kAcousticsRadiationRate, kAcousticsRadiationDensity, 2.0), 0.5 * pressure, 1e-9);
+    EXPECT_DOUBLE_EQ(Acoustics::radiated_pressure(1.0, 1.0, 1.0 / kAcousticsRadiationRate, kAcousticsRadiationDensity), 0.0);
 }
 
 } // namespace MayaFlux::Test

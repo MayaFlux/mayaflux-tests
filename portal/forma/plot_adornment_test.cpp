@@ -15,7 +15,7 @@ using Portal::Graphics::PrimitiveTopology;
 
 namespace {
 
-    bool contains(const std::vector<uint32_t>& ids, uint32_t id)
+    bool plot_adornment_contains(const std::vector<uint32_t>& ids, uint32_t id)
     {
         return std::ranges::find(ids, id) != ids.end();
     }
@@ -252,7 +252,7 @@ TEST_F(FormaPlotAdornmentTest, ARectIsAPassiveElementRelatedToItsParentWhenAsked
     EXPECT_FALSE(element->interactive);
     EXPECT_EQ(element->name, "swatch");
     EXPECT_EQ(element->buffer, buffer);
-    EXPECT_TRUE(contains(surface->layer().related_ids(parent), id));
+    EXPECT_TRUE(plot_adornment_contains(surface->layer().related_ids(parent), id));
 }
 
 TEST_F(FormaPlotAdornmentTest, AnInteractiveRectIsHitTestable)

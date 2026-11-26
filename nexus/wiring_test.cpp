@@ -27,7 +27,7 @@ namespace {
 
     constexpr uint64_t k_interval_samples = 48;
 
-    Vruta::SoundRoutine counting_routine(int* counter)
+    Vruta::SoundRoutine wiring_counting_routine(int* counter)
     {
         ++*counter;
         co_return;
@@ -717,7 +717,7 @@ namespace {
     {
         int runs {};
         fabric.wire(make_counting_emitter())
-            .use([&runs]() { return counting_routine(&runs); })
+            .use([&runs]() { return wiring_counting_routine(&runs); })
             .on_complete(note_completion())
             .on_detach(note_detach())
             .finalise();
@@ -1171,7 +1171,7 @@ namespace {
         int runs {};
         const auto emitter = make_counting_emitter();
 
-        fabric.wire(emitter).use("custom", [&runs]() { return counting_routine(&runs); }).finalise();
+        fabric.wire(emitter).use("custom", [&runs]() { return wiring_counting_routine(&runs); }).finalise();
         run_samples(1);
 
         EXPECT_EQ(runs, 1);
@@ -1184,7 +1184,7 @@ namespace {
         int runs {};
         const auto emitter = make_counting_emitter();
 
-        fabric.wire(emitter).use([&runs]() { return counting_routine(&runs); }).finalise();
+        fabric.wire(emitter).use([&runs]() { return wiring_counting_routine(&runs); }).finalise();
         run_samples(1);
         fabric.commit();
 

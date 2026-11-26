@@ -20,8 +20,8 @@ namespace {
     using Yantra::SegmentedReductionContext;
     using Yantra::SegmentGeometry;
 
-    constexpr double k_inf = std::numeric_limits<double>::infinity();
-    constexpr double k_nan = std::numeric_limits<double>::quiet_NaN();
+    constexpr double k_segmented_reduction_inf = std::numeric_limits<double>::infinity();
+    constexpr double k_segmented_reduction_nan = std::numeric_limits<double>::quiet_NaN();
     constexpr double k_min_normal = std::numeric_limits<double>::min();
     constexpr double k_min_subnormal = std::numeric_limits<double>::denorm_min();
 
@@ -94,7 +94,7 @@ namespace {
             0.0, 1.0, -1.0, 3.0, 0.1, 0.2, 1.0e300, -1.0e300, 1.0e-300, k_min_normal, -k_min_normal,
             k_min_normal / 2.0, 1.0e-310, k_min_subnormal, -k_min_subnormal, 1.0 + 0x1.0p-52,
             0x1.0p-53, 0x1.8p-53, 0x1.0p-537, 0x1.8p-537, 0x1.0p-538, 0x1.fffffffffffffp-538,
-            1.7976931348623157e308, k_inf, -k_inf
+            1.7976931348623157e308, k_segmented_reduction_inf, -k_segmented_reduction_inf
         };
     }
 
@@ -153,8 +153,8 @@ namespace {
         const auto values = counting(8);
 
         EXPECT_TRUE(same_double(sum.reduce(values, tiled(0, 1)).at(0), 0.0));
-        EXPECT_TRUE(same_double(max.reduce(values, tiled(0, 1)).at(0), -k_inf));
-        EXPECT_TRUE(same_double(min.reduce(values, tiled(0, 1)).at(0), k_nan));
+        EXPECT_TRUE(same_double(max.reduce(values, tiled(0, 1)).at(0), -k_segmented_reduction_inf));
+        EXPECT_TRUE(same_double(min.reduce(values, tiled(0, 1)).at(0), k_segmented_reduction_nan));
     }
 
     TYPED_TEST(SegmentedReductionGpuTest, NoSegmentsReturnsNothing)
@@ -175,8 +175,8 @@ namespace {
         for (int i = 0; i < 4 * 300; ++i) {
             values.push_back(random.any_finite());
         }
-        values[10] = k_inf;
-        values[450] = -k_inf;
+        values[10] = k_segmented_reduction_inf;
+        values[450] = -k_segmented_reduction_inf;
 
         const auto highs = max.reduce(values, tiled(300, 4));
         const auto lows = min.reduce(values, tiled(300, 4));
@@ -201,11 +201,11 @@ namespace {
     {
         SegmentedReductionContext max(KernelOp::Max);
         SegmentedReductionContext min(KernelOp::Min);
-        const std::vector<double> values { 1.0, k_nan, -5.0, 2.0, k_nan, k_nan };
+        const std::vector<double> values { 1.0, k_segmented_reduction_nan, -5.0, 2.0, k_segmented_reduction_nan, k_segmented_reduction_nan };
 
-        EXPECT_TRUE(same_double(max.reduce(values, tiled(3, 1)).at(0), k_nan));
+        EXPECT_TRUE(same_double(max.reduce(values, tiled(3, 1)).at(0), k_segmented_reduction_nan));
         EXPECT_TRUE(same_double(min.reduce(values, tiled(3, 1)).at(0), -5.0));
-        EXPECT_TRUE(same_double(min.reduce(std::span<const double>(values).subspan(4), tiled(2, 1)).at(0), k_nan));
+        EXPECT_TRUE(same_double(min.reduce(std::span<const double>(values).subspan(4), tiled(2, 1)).at(0), k_segmented_reduction_nan));
     }
 
     TYPED_TEST(SegmentedReductionGpuTest, AbsMapFindsTheLargestMagnitude)
@@ -231,7 +231,7 @@ namespace {
     {
         SegmentedReductionContext context(KernelOp::Sum, ReductionMap::Square);
         auto values = edge_values();
-        values.push_back(k_nan);
+        values.push_back(k_segmented_reduction_nan);
         values.push_back(-0.0);
 
         const auto squares = context.reduce(values, tiled(1, static_cast<uint32_t>(values.size())));
@@ -309,14 +309,14 @@ namespace {
     TYPED_TEST(SegmentedReductionGpuTest, InfinitiesAndNaNPropagateThroughASum)
     {
         SegmentedReductionContext context(KernelOp::Sum);
-        const std::vector<double> values { 1.0, k_inf, 2.0, k_nan, k_inf, -k_inf, -k_inf, 4.0 };
+        const std::vector<double> values { 1.0, k_segmented_reduction_inf, 2.0, k_segmented_reduction_nan, k_segmented_reduction_inf, -k_segmented_reduction_inf, -k_segmented_reduction_inf, 4.0 };
 
         const auto sums = context.reduce(values, tiled(2, 4));
 
-        EXPECT_TRUE(same_double(sums[0], k_inf));
-        EXPECT_TRUE(same_double(sums[1], k_nan));
-        EXPECT_TRUE(same_double(sums[2], k_nan));
-        EXPECT_TRUE(same_double(sums[3], -k_inf));
+        EXPECT_TRUE(same_double(sums[0], k_segmented_reduction_inf));
+        EXPECT_TRUE(same_double(sums[1], k_segmented_reduction_nan));
+        EXPECT_TRUE(same_double(sums[2], k_segmented_reduction_nan));
+        EXPECT_TRUE(same_double(sums[3], -k_segmented_reduction_inf));
     }
 
     TYPED_TEST(SegmentedReductionGpuTest, ReducingFewerSegmentsAfterMoreReturnsOnlyTheRequestedCount)

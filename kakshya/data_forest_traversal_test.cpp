@@ -61,7 +61,7 @@ namespace {
         return row.get<uint64_t>("parent");
     }
 
-    std::string name_of(const Composite& row)
+    std::string data_forest_traversal_name_of(const Composite& row)
     {
         return std::string(row.text("name").value_or(""));
     }
@@ -161,7 +161,7 @@ namespace {
 
         const auto collect = [&](auto walk) {
             std::vector<std::string> names;
-            EXPECT_TRUE(walk([&](size_t, const Composite& row) { names.push_back(name_of(row)); }));
+            EXPECT_TRUE(walk([&](size_t, const Composite& row) { names.push_back(data_forest_traversal_name_of(row)); }));
             return names;
         };
         using Names = std::vector<std::string>;
@@ -221,16 +221,16 @@ namespace {
         const auto branch = forest.subtree(2);
         ASSERT_TRUE(branch);
         ASSERT_EQ(branch->size(), 2U);
-        EXPECT_EQ(name_of(*branch->at(0)), "C");
+        EXPECT_EQ(data_forest_traversal_name_of(*branch->at(0)), "C");
 
         DataFieldTraversal<CompositeSlice> window(*branch, 1);
         ASSERT_TRUE(window.current());
         EXPECT_EQ(window.current()->size(), 1U);
         window.advance();
-        EXPECT_EQ(name_of(*window.current()->at(0)), "D");
+        EXPECT_EQ(data_forest_traversal_name_of(*window.current()->at(0)), "D");
 
         std::vector<std::string> names;
-        window.for_each([&](const Composite& row) { names.push_back(name_of(row)); });
+        window.for_each([&](const Composite& row) { names.push_back(data_forest_traversal_name_of(row)); });
         EXPECT_EQ(names, (std::vector<std::string> { "C", "D" }));
 
         const auto weights = window.to_nddata<uint32_t>("weight");
@@ -262,7 +262,7 @@ namespace {
 
         DataForestTraversal<CompositeArray> forest(rows, *index);
         std::vector<std::string> names;
-        forest.for_each_descendant(0, [&](size_t, const Composite& row) { names.push_back(name_of(row)); });
+        forest.for_each_descendant(0, [&](size_t, const Composite& row) { names.push_back(data_forest_traversal_name_of(row)); });
         EXPECT_EQ(names, (std::vector<std::string> { "C", "D" }));
     }
 
@@ -403,7 +403,7 @@ namespace {
         const auto selected = rows.slice(*region);
         ASSERT_TRUE(selected);
         EXPECT_EQ(selected->size(), 2U);
-        EXPECT_EQ(name_of(*selected->at(1)), "D");
+        EXPECT_EQ(data_forest_traversal_name_of(*selected->at(1)), "D");
     }
 
     TEST(CompositeForestTest, ARegionCopyThroughTheContainerKeepsGlobalParentLinks)
@@ -436,7 +436,7 @@ namespace {
         const auto branch = Kakshya::copy_forest_subtree(rows, *index, "parent", 2, error);
         ASSERT_TRUE(branch) << error;
         ASSERT_EQ(branch->size(), 2U);
-        EXPECT_EQ(name_of(*branch->at(0)), "C");
+        EXPECT_EQ(data_forest_traversal_name_of(*branch->at(0)), "C");
         EXPECT_FALSE(branch->at(0)->has("parent"));
         EXPECT_EQ(branch->at(1)->get<uint64_t>("parent"), std::optional<uint64_t> { 0 });
 
@@ -447,7 +447,7 @@ namespace {
         const auto reindexed = Kakshya::index_composite_forest(*branch, "parent", error);
         ASSERT_TRUE(reindexed) << error;
         EXPECT_EQ(to_vector(reindexed->roots()), (Rows { 0 }));
-        EXPECT_EQ(name_of(*rows.at(2)), "C");
+        EXPECT_EQ(data_forest_traversal_name_of(*rows.at(2)), "C");
     }
 
     TEST(CompositeForestTest, CopySubtreeRejectsBadInput)
@@ -477,7 +477,7 @@ namespace {
 
         std::vector<std::string> names;
         forest->traversal().for_each_child(0, [&](size_t, const Composite& row) {
-            names.push_back(name_of(row));
+            names.push_back(data_forest_traversal_name_of(row));
         });
         EXPECT_EQ(names, (std::vector<std::string> { "B", "C" }));
 
@@ -507,8 +507,8 @@ namespace {
         ASSERT_TRUE(inner);
         EXPECT_EQ(inner->size(), 2U);
         EXPECT_EQ(inner->start(), 2U);
-        EXPECT_EQ(name_of(*inner->at(0)), "C");
-        EXPECT_EQ(name_of(*inner->at(1)), "D");
+        EXPECT_EQ(data_forest_traversal_name_of(*inner->at(0)), "C");
+        EXPECT_EQ(data_forest_traversal_name_of(*inner->at(1)), "D");
 
         const auto empty = outer->slice(4, 0);
         ASSERT_TRUE(empty);
@@ -540,7 +540,7 @@ namespace {
         EXPECT_TRUE(forest.matches());
 
         std::vector<std::string> names;
-        forest.for_each_child(0, [&](size_t, const Composite& row) { names.push_back(name_of(row)); });
+        forest.for_each_child(0, [&](size_t, const Composite& row) { names.push_back(data_forest_traversal_name_of(row)); });
         EXPECT_EQ(names, (std::vector<std::string> { "B", "C" }));
 
         const auto branch = forest.subtree(2);
@@ -566,8 +566,8 @@ namespace {
         ASSERT_TRUE(container.materialize_subtree(*index, "parent", 2, error)) << error;
         const CompositeArray& window = container.get_materialized_data();
         ASSERT_EQ(window.size(), 2U);
-        EXPECT_EQ(name_of(*window.at(0)), "C");
-        EXPECT_EQ(name_of(*window.at(1)), "D");
+        EXPECT_EQ(data_forest_traversal_name_of(*window.at(0)), "C");
+        EXPECT_EQ(data_forest_traversal_name_of(*window.at(1)), "D");
         EXPECT_FALSE(window.at(0)->has("parent"));
         EXPECT_EQ(window.at(1)->get<uint64_t>("parent"), std::optional<uint64_t> { 0 });
         EXPECT_EQ(container.position(), 0U);
@@ -587,7 +587,7 @@ namespace {
         EXPECT_FALSE(error.empty());
 
         ASSERT_EQ(container.get_materialized_data().size(), 1U);
-        EXPECT_EQ(name_of(*container.get_materialized_data().at(0)), "A");
+        EXPECT_EQ(data_forest_traversal_name_of(*container.get_materialized_data().at(0)), "A");
         EXPECT_EQ(container.position(), 1U);
     }
 

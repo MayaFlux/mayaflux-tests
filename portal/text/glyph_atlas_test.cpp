@@ -16,7 +16,7 @@ namespace {
     using Portal::Text::GlyphAtlas;
     using Portal::Text::GlyphMetrics;
 
-    constexpr uint32_t k_pixel_size = 24;
+    constexpr uint32_t k_glyph_atlas_pixel_size = 24;
 
     struct PixelRect {
         uint32_t x;
@@ -63,7 +63,7 @@ namespace {
             if (HasFatalFailure()) {
                 return;
             }
-            atlas = std::make_unique<GlyphAtlas>(face, k_pixel_size, 512);
+            atlas = std::make_unique<GlyphAtlas>(face, k_glyph_atlas_pixel_size, 512);
         }
 
         void TearDown() override
@@ -81,7 +81,7 @@ namespace {
 
     TEST_F(GlyphAtlasTest, ConstructsAnEmptyCleanAtlasOfTheRequestedSize)
     {
-        EXPECT_EQ(atlas->pixel_size(), k_pixel_size);
+        EXPECT_EQ(atlas->pixel_size(), k_glyph_atlas_pixel_size);
         EXPECT_EQ(atlas->atlas_size(), 512U);
         EXPECT_FALSE(atlas->is_dirty());
         EXPECT_EQ(&atlas->get_face(), &face);
@@ -92,14 +92,14 @@ namespace {
     {
         EXPECT_GT(atlas->ascender(), 0U);
         EXPECT_GT(atlas->line_height(), atlas->ascender());
-        EXPECT_GE(atlas->line_height(), k_pixel_size);
+        EXPECT_GE(atlas->line_height(), k_glyph_atlas_pixel_size);
     }
 
     TEST_F(GlyphAtlasTest, UnloadedFaceFallsBackToPixelSizeMetricsAndYieldsNoGlyphs)
     {
         face.unload();
-        EXPECT_EQ(atlas->line_height(), k_pixel_size);
-        EXPECT_EQ(atlas->ascender(), k_pixel_size);
+        EXPECT_EQ(atlas->line_height(), k_glyph_atlas_pixel_size);
+        EXPECT_EQ(atlas->ascender(), k_glyph_atlas_pixel_size);
         EXPECT_EQ(atlas->get_or_rasterize(static_cast<FT_ULong>('A')), nullptr);
     }
 
@@ -210,7 +210,7 @@ namespace {
     {
         constexpr std::string_view chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-        GlyphAtlas reference(face, k_pixel_size, 1024);
+        GlyphAtlas reference(face, k_glyph_atlas_pixel_size, 1024);
         std::vector<std::vector<uint8_t>> expected;
         for (const char c : chars) {
             const GlyphMetrics* m = reference.get_or_rasterize(static_cast<FT_ULong>(c));
@@ -219,7 +219,7 @@ namespace {
         }
         ASSERT_EQ(reference.atlas_size(), 1024U);
 
-        GlyphAtlas small(face, k_pixel_size, 32);
+        GlyphAtlas small(face, k_glyph_atlas_pixel_size, 32);
         for (const char c : chars) {
             ASSERT_NE(small.get_or_rasterize(static_cast<FT_ULong>(c)), nullptr) << c;
         }

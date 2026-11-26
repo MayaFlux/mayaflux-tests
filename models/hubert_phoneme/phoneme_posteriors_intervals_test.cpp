@@ -31,10 +31,10 @@ namespace {
 
     using Intervals = std::vector<std::pair<size_t, size_t>>;
 
-    const fs::path k_hubert_weights = "data/tensors/hubert_phoneme/hubert_base_phoneme_en.safetensors";
-    const fs::path k_speech = "tests/models/hubert_phoneme/hubert_speech_audio.f32";
+    const fs::path k_phoneme_posteriors_intervals_hubert_weights = "data/tensors/hubert_phoneme/hubert_base_phoneme_en.safetensors";
+    const fs::path k_phoneme_posteriors_intervals_speech = "tests/models/hubert_phoneme/hubert_speech_audio.f32";
 
-    std::optional<TensorSet> read_weights(const fs::path& path)
+    std::optional<TensorSet> phoneme_posteriors_intervals_read_weights(const fs::path& path)
     {
         if (!fs::exists(path)) {
             return std::nullopt;
@@ -46,7 +46,7 @@ namespace {
         return reader.read_tensors();
     }
 
-    std::vector<float> read_floats(const fs::path& path)
+    std::vector<float> phoneme_posteriors_intervals_read_floats(const fs::path& path)
     {
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file) {
@@ -81,8 +81,8 @@ namespace {
 
     TYPED_TEST(PhonemePosteriorsIntervalsGpuTest, EveryClassColumnOfThePosteriorsGivesItsOwnIntervals)
     {
-        const auto weights = read_weights(k_hubert_weights);
-        const auto speech = read_floats(k_speech);
+        const auto weights = phoneme_posteriors_intervals_read_weights(k_phoneme_posteriors_intervals_hubert_weights);
+        const auto speech = phoneme_posteriors_intervals_read_floats(k_phoneme_posteriors_intervals_speech);
         if (!weights || speech.empty()) {
             GTEST_SKIP() << "the HuBERT weights or the speech fixture are not present";
         }
@@ -118,8 +118,8 @@ namespace {
 
     TYPED_TEST(PhonemePosteriorsIntervalsGpuTest, BroadClassesGetTheSameSettingsAsTheHostScanner)
     {
-        const auto weights = read_weights(k_hubert_weights);
-        const auto speech = read_floats(k_speech);
+        const auto weights = phoneme_posteriors_intervals_read_weights(k_phoneme_posteriors_intervals_hubert_weights);
+        const auto speech = phoneme_posteriors_intervals_read_floats(k_phoneme_posteriors_intervals_speech);
         if (!weights || speech.empty()) {
             GTEST_SKIP() << "the HuBERT weights or the speech fixture are not present";
         }

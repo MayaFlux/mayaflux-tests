@@ -14,10 +14,10 @@ namespace {
     using Kriya::CourseTime;
 
     /** Eight steps a second, so every step is an exact eighth of a second. */
-    constexpr double k_rate = 8.0;
-    constexpr double k_step = 0.125;
+    constexpr double k_course_time_rate = 8.0;
+    constexpr double k_course_time_step = 0.125;
 
-    CourseTime fresh(double step_rate = k_rate)
+    CourseTime fresh(double step_rate = k_course_time_rate)
     {
         auto made = CourseTime::create(step_rate);
         if (!made) {
@@ -26,7 +26,7 @@ namespace {
         return *made;
     }
 
-    CourseSetting over(double in, double out, CourseEdge edge = CourseEdge::Once, double speed = 1.0)
+    CourseSetting course_time_over(double in, double out, CourseEdge edge = CourseEdge::Once, double speed = 1.0)
     {
         CourseSetting setting;
         setting.in = in;
@@ -36,7 +36,7 @@ namespace {
         return setting;
     }
 
-    std::shared_ptr<const Kinesis::TimeMap> map(std::function<double(double)> fn)
+    std::shared_ptr<const Kinesis::TimeMap> course_time_map(std::function<double(double)> fn)
     {
         return std::make_shared<const Kinesis::TimeMap>(Kinesis::TimeMap {
             .fn = [fn = std::move(fn)](const double& x) { return fn(x); } });
@@ -72,29 +72,29 @@ namespace {
         const double nan = std::numeric_limits<double>::quiet_NaN();
         const double inf = std::numeric_limits<double>::infinity();
 
-        auto bad = over(0.0, 1.0);
+        auto bad = course_time_over(0.0, 1.0);
         bad.speed = nan;
         EXPECT_FALSE(course.step(bad).has_value());
-        bad = over(0.0, 1.0);
+        bad = course_time_over(0.0, 1.0);
         bad.speed = inf;
         EXPECT_FALSE(course.step(bad).has_value());
-        bad = over(0.0, 1.0);
+        bad = course_time_over(0.0, 1.0);
         bad.offset = nan;
         EXPECT_FALSE(course.step(bad).has_value());
-        EXPECT_FALSE(course.step(over(nan, 1.0)).has_value());
-        EXPECT_FALSE(course.step(over(0.0, inf)).has_value());
-        EXPECT_FALSE(course.step(over(1.0, 1.0)).has_value());
-        EXPECT_FALSE(course.step(over(2.0, 1.0)).has_value());
+        EXPECT_FALSE(course.step(course_time_over(nan, 1.0)).has_value());
+        EXPECT_FALSE(course.step(course_time_over(0.0, inf)).has_value());
+        EXPECT_FALSE(course.step(course_time_over(1.0, 1.0)).has_value());
+        EXPECT_FALSE(course.step(course_time_over(2.0, 1.0)).has_value());
 
         EXPECT_EQ(course.steps(), 0U);
         EXPECT_EQ(course.clock(), 0.0);
-        EXPECT_NEAR(take(course, over(0.0, 1.0)).time, k_step, 1.0E-12);
+        EXPECT_NEAR(take(course, course_time_over(0.0, 1.0)).time, k_course_time_step, 1.0E-12);
     }
 
     TEST(CourseTimeTest, OnceRunsToTheEndFinishesThereAndHolds)
     {
         auto course = fresh();
-        const auto setting = over(0.0, 1.0);
+        const auto setting = course_time_over(0.0, 1.0);
 
         const auto before = take(course, setting, 7);
         EXPECT_DOUBLE_EQ(before.time, 0.875);
@@ -117,7 +117,7 @@ namespace {
     TEST(CourseTimeTest, ANegativeSpeedStartsAtTheEndAndFinishesBelowTheStart)
     {
         auto course = fresh();
-        const auto setting = over(0.0, 1.0, CourseEdge::Once, -1.0);
+        const auto setting = course_time_over(0.0, 1.0, CourseEdge::Once, -1.0);
 
         EXPECT_DOUBLE_EQ(take(course, setting).time, 0.875);
         const auto at_start = take(course, setting, 7);
@@ -132,7 +132,7 @@ namespace {
     TEST(CourseTimeTest, SeekingToTheStartThenRunningBackwardsFinishesAtOnce)
     {
         auto course = fresh();
-        const auto setting = over(0.0, 1.0, CourseEdge::Once, -1.0);
+        const auto setting = course_time_over(0.0, 1.0, CourseEdge::Once, -1.0);
 
         ASSERT_TRUE(course.seek(0.0, setting));
 
@@ -144,14 +144,14 @@ namespace {
     TEST(CourseTimeTest, HoldClampsAndNeverFinishes)
     {
         auto course = fresh();
-        const auto forward = over(0.0, 1.0, CourseEdge::Hold);
+        const auto forward = course_time_over(0.0, 1.0, CourseEdge::Hold);
 
         const auto end = take(course, forward, 100);
         EXPECT_DOUBLE_EQ(end.time, 1.0);
         EXPECT_FALSE(end.finished);
         EXPECT_EQ(end.crossings, 0U);
 
-        const auto backward = over(0.0, 1.0, CourseEdge::Hold, -50.0);
+        const auto backward = course_time_over(0.0, 1.0, CourseEdge::Hold, -50.0);
         EXPECT_DOUBLE_EQ(take(course, backward, 100).time, 0.0);
         EXPECT_FALSE(course.finished());
     }
@@ -159,7 +159,7 @@ namespace {
     TEST(CourseTimeTest, LoopWrapsAndCountsEveryCrossing)
     {
         auto course = fresh();
-        const auto setting = over(0.0, 1.0, CourseEdge::Loop);
+        const auto setting = course_time_over(0.0, 1.0, CourseEdge::Loop);
 
         uint64_t crossings = 0;
         for (int n = 1; n <= 24; ++n) {
@@ -179,7 +179,7 @@ namespace {
     TEST(CourseTimeTest, LoopFinishesAfterItsEdgeCountHoldingTheEdgeItReached)
     {
         auto course = fresh();
-        auto setting = over(0.0, 1.0, CourseEdge::Loop);
+        auto setting = course_time_over(0.0, 1.0, CourseEdge::Loop);
         setting.loop_count = 2;
 
         EXPECT_FALSE(take(course, setting, 15).finished);
@@ -196,7 +196,7 @@ namespace {
     TEST(CourseTimeTest, ALoopRunningBackwardsFinishesAtTheStartItReached)
     {
         auto course = fresh();
-        auto setting = over(0.0, 1.0, CourseEdge::Loop, -1.0);
+        auto setting = course_time_over(0.0, 1.0, CourseEdge::Loop, -1.0);
         setting.loop_count = 1;
 
         const auto last = take(course, setting, 9);
@@ -208,7 +208,7 @@ namespace {
     TEST(CourseTimeTest, ALoopRunningBackwardsCountsTheCrossingBelowTheStart)
     {
         auto course = fresh();
-        const auto setting = over(0.0, 1.0, CourseEdge::Loop, -1.0);
+        const auto setting = course_time_over(0.0, 1.0, CourseEdge::Loop, -1.0);
 
         EXPECT_EQ(take(course, setting, 8).crossings, 0U);
         const auto below = take(course, setting);
@@ -219,7 +219,7 @@ namespace {
     TEST(CourseTimeTest, TheFirstStepCountsACrossingFromTheStartingPosition)
     {
         auto course = fresh();
-        const auto setting = over(0.0, 1.0, CourseEdge::Loop, -1.0);
+        const auto setting = course_time_over(0.0, 1.0, CourseEdge::Loop, -1.0);
         ASSERT_TRUE(course.seek(0.0, setting));
 
         const auto first = take(course, setting);
@@ -231,7 +231,7 @@ namespace {
     TEST(CourseTimeTest, PingPongReflectsAndFlagsTheBackwardPass)
     {
         auto course = fresh();
-        const auto setting = over(0.0, 1.0, CourseEdge::PingPong);
+        const auto setting = course_time_over(0.0, 1.0, CourseEdge::PingPong);
 
         const auto turn = take(course, setting, 8);
         EXPECT_DOUBLE_EQ(turn.time, 1.0);
@@ -260,7 +260,7 @@ namespace {
         for (const auto edge : { CourseEdge::Once, CourseEdge::Hold, CourseEdge::Loop, CourseEdge::PingPong }) {
             auto course = fresh(60.0);
             for (int i = 0; i < 4000; ++i) {
-                auto setting = over(-3.0 + next(), 2.0 + 5.0 * next(), edge, 40.0 * (next() - 0.5));
+                auto setting = course_time_over(-3.0 + next(), 2.0 + 5.0 * next(), edge, 40.0 * (next() - 0.5));
                 setting.offset = 10.0 * (next() - 0.5);
                 const auto step = course.step(setting);
                 ASSERT_TRUE(step.has_value());
@@ -276,7 +276,7 @@ namespace {
     TEST(CourseTimeTest, ASpeedChangeCarriesOnFromWhereTheClockIs)
     {
         auto course = fresh();
-        auto setting = over(0.0, 10.0, CourseEdge::Hold);
+        auto setting = course_time_over(0.0, 10.0, CourseEdge::Hold);
 
         EXPECT_DOUBLE_EQ(take(course, setting, 4).time, 0.5);
 
@@ -294,7 +294,7 @@ namespace {
     TEST(CourseTimeTest, RunningBackwardsRetracesTheForwardPath)
     {
         auto course = fresh();
-        auto setting = over(0.0, 10.0, CourseEdge::Hold);
+        auto setting = course_time_over(0.0, 10.0, CourseEdge::Hold);
 
         std::vector<double> forward;
         forward.reserve(6);
@@ -311,8 +311,8 @@ namespace {
     TEST(CourseTimeTest, ATimeMapReplacesTheClockAndIgnoresTheStart)
     {
         auto course = fresh();
-        auto setting = over(0.0, 10.0, CourseEdge::Hold);
-        setting.time_map = map([](double x) { return 2.0 * x + 0.25; });
+        auto setting = course_time_over(0.0, 10.0, CourseEdge::Hold);
+        setting.time_map = course_time_map([](double x) { return 2.0 * x + 0.25; });
 
         EXPECT_DOUBLE_EQ(take(course, setting).time, 0.5);
         EXPECT_DOUBLE_EQ(take(course, setting).time, 0.75);
@@ -321,8 +321,8 @@ namespace {
     TEST(CourseTimeTest, TheOffsetIsAddedBeforeTheTimeMap)
     {
         auto course = fresh();
-        auto setting = over(0.0, 100.0, CourseEdge::Hold);
-        setting.time_map = map([](double x) { return x * x; });
+        auto setting = course_time_over(0.0, 100.0, CourseEdge::Hold);
+        setting.time_map = course_time_map([](double x) { return x * x; });
         setting.offset = 1.0;
 
         EXPECT_DOUBLE_EQ(take(course, setting).time, 1.125 * 1.125);
@@ -331,17 +331,17 @@ namespace {
     TEST(CourseTimeTest, TheOffsetShiftsAnUnwarpedCourseFromItsStart)
     {
         auto course = fresh();
-        auto setting = over(2.0, 100.0, CourseEdge::Hold);
+        auto setting = course_time_over(2.0, 100.0, CourseEdge::Hold);
         setting.offset = 0.5;
 
-        EXPECT_DOUBLE_EQ(take(course, setting).time, 2.0 + 0.5 + k_step);
+        EXPECT_DOUBLE_EQ(take(course, setting).time, 2.0 + 0.5 + k_course_time_step);
     }
 
     TEST(CourseTimeTest, ATimeMapThatAnswersNothingFiniteStepsNothing)
     {
         auto course = fresh();
-        auto setting = over(0.0, 10.0, CourseEdge::Hold);
-        setting.time_map = map([](double x) { return x > 0.3 ? std::numeric_limits<double>::quiet_NaN() : x; });
+        auto setting = course_time_over(0.0, 10.0, CourseEdge::Hold);
+        setting.time_map = course_time_map([](double x) { return x > 0.3 ? std::numeric_limits<double>::quiet_NaN() : x; });
 
         EXPECT_DOUBLE_EQ(take(course, setting, 2).time, 0.25);
         EXPECT_FALSE(course.step(setting).has_value());
@@ -349,16 +349,16 @@ namespace {
         EXPECT_EQ(course.steps(), 2U);
         EXPECT_DOUBLE_EQ(course.clock(), 0.25);
 
-        setting.time_map = map([](double x) { return x; });
+        setting.time_map = course_time_map([](double x) { return x; });
         EXPECT_DOUBLE_EQ(take(course, setting).time, 0.375);
     }
 
     TEST(CourseTimeTest, ARepeatRestartsTheTimeMapFromZeroWithoutCountingACrossing)
     {
         auto course = fresh();
-        auto setting = over(0.0, 0.4, CourseEdge::Loop);
-        setting.time_map = map([](double x) { return x; });
-        setting.repeat = map([](double) { return 0.5; });
+        auto setting = course_time_over(0.0, 0.4, CourseEdge::Loop);
+        setting.time_map = course_time_map([](double x) { return x; });
+        setting.repeat = course_time_map([](double) { return 0.5; });
 
         EXPECT_DOUBLE_EQ(take(course, setting).time, 0.125);
         EXPECT_DOUBLE_EQ(take(course, setting).time, 0.25);
@@ -375,9 +375,9 @@ namespace {
     TEST(CourseTimeTest, ARepeatLengthThatShrinksGivesAStutter)
     {
         auto course = fresh();
-        auto setting = over(0.0, 100.0, CourseEdge::Hold);
-        setting.time_map = map([](double x) { return x; });
-        setting.repeat = map([](double at) { return at < 0.5 ? 0.5 : 0.25; });
+        auto setting = course_time_over(0.0, 100.0, CourseEdge::Hold);
+        setting.time_map = course_time_map([](double x) { return x; });
+        setting.repeat = course_time_map([](double at) { return at < 0.5 ? 0.5 : 0.25; });
 
         std::vector<double> times;
         times.reserve(8);
@@ -393,9 +393,9 @@ namespace {
         for (const double length : { 0.0, -5.0, 1.0E-12, std::numeric_limits<double>::quiet_NaN(),
                  -std::numeric_limits<double>::infinity() }) {
             auto course = fresh();
-            auto setting = over(0.0, 100.0, CourseEdge::Hold);
-            setting.time_map = map([](double x) { return x; });
-            setting.repeat = map([length](double) { return length; });
+            auto setting = course_time_over(0.0, 100.0, CourseEdge::Hold);
+            setting.time_map = course_time_map([](double x) { return x; });
+            setting.repeat = course_time_map([length](double) { return length; });
 
             for (int i = 0; i < 5; ++i) {
                 EXPECT_DOUBLE_EQ(take(course, setting).time, 0.0) << length;
@@ -406,9 +406,9 @@ namespace {
     TEST(CourseTimeTest, ARepeatThatRunsBackwardsRestartsOnTheSameLength)
     {
         auto course = fresh();
-        auto setting = over(-100.0, 100.0, CourseEdge::Hold, -1.0);
-        setting.time_map = map([](double x) { return x; });
-        setting.repeat = map([](double) { return 0.5; });
+        auto setting = course_time_over(-100.0, 100.0, CourseEdge::Hold, -1.0);
+        setting.time_map = course_time_map([](double x) { return x; });
+        setting.repeat = course_time_map([](double) { return 0.5; });
 
         std::vector<double> times;
         times.reserve(5);
@@ -422,9 +422,9 @@ namespace {
     TEST(CourseTimeTest, PassesCountTheRepeatsBegunAndStartOverWithANewPass)
     {
         auto course = fresh();
-        auto setting = over(0.0, 100.0, CourseEdge::Hold);
-        setting.time_map = map([](double x) { return x; });
-        setting.repeat = map([](double) { return 0.5; });
+        auto setting = course_time_over(0.0, 100.0, CourseEdge::Hold);
+        setting.time_map = course_time_map([](double x) { return x; });
+        setting.repeat = course_time_map([](double) { return 0.5; });
 
         EXPECT_EQ(take(course, setting, 3).passes, 0U);
         EXPECT_EQ(take(course, setting).passes, 1U);
@@ -439,9 +439,9 @@ namespace {
     TEST(CourseTimeTest, RemovingTheRepeatForgetsItsOrigin)
     {
         auto course = fresh();
-        auto setting = over(0.0, 100.0, CourseEdge::Hold);
-        setting.time_map = map([](double x) { return x; });
-        setting.repeat = map([](double) { return 0.5; });
+        auto setting = course_time_over(0.0, 100.0, CourseEdge::Hold);
+        setting.time_map = course_time_map([](double x) { return x; });
+        setting.repeat = course_time_map([](double) { return 0.5; });
 
         take(course, setting, 5);
         EXPECT_DOUBLE_EQ(course.clock(), 0.625);
@@ -453,7 +453,7 @@ namespace {
     TEST(CourseTimeTest, SeekPutsTheSourceTimeAndStartsAFreshPass)
     {
         auto course = fresh();
-        auto setting = over(0.0, 1.0);
+        auto setting = course_time_over(0.0, 1.0);
 
         take(course, setting, 8);
         ASSERT_TRUE(course.finished());
@@ -468,7 +468,7 @@ namespace {
     TEST(CourseTimeTest, SeekTakesTheOffsetIntoAccount)
     {
         auto course = fresh();
-        auto setting = over(0.0, 10.0, CourseEdge::Hold);
+        auto setting = course_time_over(0.0, 10.0, CourseEdge::Hold);
         setting.offset = 1.0;
 
         ASSERT_TRUE(course.seek(3.0, setting));
@@ -480,14 +480,14 @@ namespace {
     TEST(CourseTimeTest, SeekRefusesATimeMapAnUnusableSettingAndANonFiniteTime)
     {
         auto course = fresh();
-        auto setting = over(0.0, 10.0, CourseEdge::Hold);
+        auto setting = course_time_over(0.0, 10.0, CourseEdge::Hold);
         take(course, setting, 3);
 
         auto warped = setting;
-        warped.time_map = map([](double x) { return x; });
+        warped.time_map = course_time_map([](double x) { return x; });
         EXPECT_FALSE(course.seek(1.0, warped));
         EXPECT_FALSE(course.seek(std::numeric_limits<double>::quiet_NaN(), setting));
-        EXPECT_FALSE(course.seek(1.0, over(1.0, 1.0)));
+        EXPECT_FALSE(course.seek(1.0, course_time_over(1.0, 1.0)));
 
         EXPECT_DOUBLE_EQ(course.clock(), 0.375);
         EXPECT_DOUBLE_EQ(take(course, setting).time, 0.5);
@@ -496,8 +496,8 @@ namespace {
     TEST(CourseTimeTest, SeekClockMovesATimeMapedCourse)
     {
         auto course = fresh();
-        auto setting = over(0.0, 10.0, CourseEdge::Once);
-        setting.time_map = map([](double x) { return x; });
+        auto setting = course_time_over(0.0, 10.0, CourseEdge::Once);
+        setting.time_map = course_time_map([](double x) { return x; });
 
         ASSERT_TRUE(course.seek_clock(0.5));
         EXPECT_DOUBLE_EQ(take(course, setting).time, 0.625);
@@ -509,7 +509,7 @@ namespace {
     TEST(CourseTimeTest, RestartGoesBackToTheStartAndKeepsCountingSteps)
     {
         auto course = fresh();
-        auto setting = over(0.0, 1.0);
+        auto setting = course_time_over(0.0, 1.0);
         take(course, setting, 8);
 
         course.restart();
@@ -525,7 +525,7 @@ namespace {
     TEST(CourseTimeTest, ResolveReadsAnOffsetPartWithoutSteppingOrChangingAnything)
     {
         auto course = fresh();
-        const auto setting = over(0.0, 1.0, CourseEdge::Loop);
+        const auto setting = course_time_over(0.0, 1.0, CourseEdge::Loop);
         take(course, setting, 2);
 
         EXPECT_DOUBLE_EQ(*course.resolve(setting), 0.25);
@@ -533,7 +533,7 @@ namespace {
         EXPECT_NEAR(*course.resolve(setting, 0.9), 0.15, 1.0E-12);
         EXPECT_DOUBLE_EQ(*course.resolve(setting, -0.5), 0.75);
         EXPECT_FALSE(course.resolve(setting, std::numeric_limits<double>::quiet_NaN()).has_value());
-        EXPECT_FALSE(course.resolve(over(1.0, 0.0)).has_value());
+        EXPECT_FALSE(course.resolve(course_time_over(1.0, 0.0)).has_value());
 
         EXPECT_EQ(course.steps(), 2U);
         EXPECT_DOUBLE_EQ(take(course, setting).time, 0.375);
@@ -542,7 +542,7 @@ namespace {
     TEST(CourseTimeTest, ResolveOfAFinishedCourseIsItsHeldTime)
     {
         auto course = fresh();
-        const auto setting = over(0.0, 1.0);
+        const auto setting = course_time_over(0.0, 1.0);
         take(course, setting, 9);
 
         EXPECT_DOUBLE_EQ(*course.resolve(setting), 1.0);
@@ -552,7 +552,7 @@ namespace {
     TEST(CourseTimeTest, LoweringTheEdgeCountMidRunFinishesWhereTheCourseIs)
     {
         auto course = fresh();
-        auto setting = over(0.0, 1.0, CourseEdge::Loop);
+        auto setting = course_time_over(0.0, 1.0, CourseEdge::Loop);
         take(course, setting, 12);
         ASSERT_EQ(course.crossings(), 1U);
 
@@ -567,7 +567,7 @@ namespace {
     TEST(CourseTimeTest, ChangingTheRangeMidRunNeverEscapesTheNewOne)
     {
         auto course = fresh();
-        auto setting = over(0.0, 10.0, CourseEdge::Loop);
+        auto setting = course_time_over(0.0, 10.0, CourseEdge::Loop);
         take(course, setting, 40);
 
         setting.in = 1.0;
@@ -582,7 +582,7 @@ namespace {
     TEST(CourseTimeTest, ALongRunStaysExactBecauseTheClockIsTheStepCount)
     {
         auto course = fresh(60.0);
-        const auto setting = over(0.0, 1.0E9, CourseEdge::Hold);
+        const auto setting = course_time_over(0.0, 1.0E9, CourseEdge::Hold);
 
         constexpr int steps = 2'000'000;
         for (int i = 0; i < steps; ++i) {
@@ -596,7 +596,7 @@ namespace {
     TEST(CourseTimeTest, ASpeedThatOverflowsTheClockStepsNothing)
     {
         auto course = fresh(1.0E-5);
-        auto setting = over(0.0, 1.0, CourseEdge::Hold, 1.0E308);
+        auto setting = course_time_over(0.0, 1.0, CourseEdge::Hold, 1.0E308);
 
         EXPECT_FALSE(course.step(setting).has_value());
         EXPECT_EQ(course.steps(), 0U);
@@ -609,7 +609,7 @@ namespace {
     TEST(CourseTimeTest, HugeUnfoldedTimesStillFoldIntoTheRange)
     {
         auto course = fresh();
-        auto setting = over(0.0, 1.0, CourseEdge::PingPong, 1.0E300);
+        auto setting = course_time_over(0.0, 1.0, CourseEdge::PingPong, 1.0E300);
 
         for (int i = 0; i < 10; ++i) {
             const auto step = take(course, setting);
@@ -622,7 +622,7 @@ namespace {
     {
         auto a = fresh();
         auto b = fresh();
-        const auto setting = over(0.0, 1.0, CourseEdge::Loop);
+        const auto setting = course_time_over(0.0, 1.0, CourseEdge::Loop);
 
         take(a, setting, 5);
         take(b, setting, 2);

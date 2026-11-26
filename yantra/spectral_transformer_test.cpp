@@ -15,7 +15,7 @@ namespace {
     using Yantra::SpectralTransformerConfig;
     namespace D = Kinesis::Discrete;
 
-    constexpr std::size_t k_samples = 4096;
+    constexpr std::size_t k_spectral_transformer_samples = 4096;
     constexpr double k_sample_rate = 48000.0;
 
     const char* operation_name(SpectralOperation op)
@@ -71,9 +71,9 @@ namespace {
         return {};
     }
 
-    Yantra::Datum<std::vector<Kakshya::DataVariant>> two_channel_input()
+    Yantra::Datum<std::vector<Kakshya::DataVariant>> spectral_transformer_two_channel_input()
     {
-        return to_datum({ sine_samples(k_samples, 440.0, k_sample_rate, 0.5), sine_samples(k_samples, 3000.0, k_sample_rate, 0.25) });
+        return to_datum({ sine_samples(k_spectral_transformer_samples, 440.0, k_sample_rate, 0.5), sine_samples(k_spectral_transformer_samples, 3000.0, k_sample_rate, 0.25) });
     }
 
     class SpectralOperationTest : public ::testing::TestWithParam<SpectralOperation> {
@@ -94,18 +94,18 @@ namespace {
     {
         SpectralTransformer<> transformer(config_for(GetParam()));
 
-        const auto result = transformer.apply_operation(two_channel_input());
+        const auto result = transformer.apply_operation(spectral_transformer_two_channel_input());
 
         ASSERT_EQ(result.data.size(), 2U);
-        EXPECT_EQ(channel_samples(result, 0).size(), k_samples);
-        EXPECT_EQ(channel_samples(result, 1).size(), k_samples);
+        EXPECT_EQ(channel_samples(result, 0).size(), k_spectral_transformer_samples);
+        EXPECT_EQ(channel_samples(result, 1).size(), k_spectral_transformer_samples);
     }
 
     TEST_P(SpectralOperationTest, EveryOutputSampleIsFinite)
     {
         SpectralTransformer<> transformer(config_for(GetParam()));
 
-        const auto result = transformer.apply_operation(two_channel_input());
+        const auto result = transformer.apply_operation(spectral_transformer_two_channel_input());
 
         for (std::size_t ch = 0; ch < 2; ++ch) {
             for (double sample : channel_samples(result, ch)) {
@@ -119,7 +119,7 @@ namespace {
         const auto cfg = config_for(GetParam());
         SpectralTransformer<> transformer(cfg);
 
-        const auto input = two_channel_input();
+        const auto input = spectral_transformer_two_channel_input();
         const auto result = transformer.apply_operation(input);
 
         for (std::size_t ch = 0; ch < 2; ++ch) {
@@ -157,7 +157,7 @@ namespace {
         filter.sample_rate = k_sample_rate;
         transformer.set_config(filter);
 
-        const auto input = two_channel_input();
+        const auto input = spectral_transformer_two_channel_input();
         const auto result = transformer.apply_operation(input);
 
         const auto expected = D::spectral_filter(channel_samples(input, 0), 200.0, 4000.0, k_sample_rate, 1024, 512);

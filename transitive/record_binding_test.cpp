@@ -129,7 +129,7 @@ namespace {
     using Element = RecordBindingElement;
     using Attributes = std::vector<std::pair<std::string, std::string>>;
 
-    Element make_element(std::string name, uint64_t location, Attributes attributes = {},
+    Element record_binding_make_element(std::string name, uint64_t location, Attributes attributes = {},
         std::vector<Element> children = {})
     {
         return Element {
@@ -314,7 +314,7 @@ namespace {
         binding.required("title");
         std::string error;
         uint64_t location = 99;
-        const auto list = binding.read(make_element("list", 4, { { "title", "Notes" } }), error, &location);
+        const auto list = binding.read(record_binding_make_element("list", 4, { { "title", "Notes" } }), error, &location);
         ASSERT_TRUE(list) << error;
         EXPECT_EQ(list->title, "Notes");
         EXPECT_TRUE(list->items.empty());
@@ -327,11 +327,11 @@ namespace {
         binding.required("title");
         std::string error;
         uint64_t location = 0;
-        EXPECT_FALSE(binding.read(make_element("list", 6), error, &location));
+        EXPECT_FALSE(binding.read(record_binding_make_element("list", 6), error, &location));
         EXPECT_EQ(error, "<list> needs a title attribute");
         EXPECT_EQ(location, 6U);
 
-        EXPECT_FALSE(binding.read(make_element("list", 6, { { "id", "main" } }), error));
+        EXPECT_FALSE(binding.read(record_binding_make_element("list", 6, { { "id", "main" } }), error));
         EXPECT_EQ(error, "<main> needs a title attribute");
     }
 
@@ -340,7 +340,7 @@ namespace {
         Reflect::RecordBinding<RecordBindingList, Element> binding;
         std::string error;
         EXPECT_FALSE(binding.read(
-            make_element("list", 0, { { "title", "t" }, { "id", "a1" } }), error));
+            record_binding_make_element("list", 0, { { "title", "t" }, { "id", "a1" } }), error));
         EXPECT_NE(error.find("unsupported attribute id"), std::string::npos);
     }
 
@@ -351,16 +351,16 @@ namespace {
         std::string error;
 
         const auto item = binding.read(
-            make_element("item", 0, { { "id", "a" }, { "form", "f" }, { "x", "2" } }), error);
+            record_binding_make_element("item", 0, { { "id", "a" }, { "form", "f" }, { "x", "2" } }), error);
         ASSERT_TRUE(item) << error;
         EXPECT_EQ(item->x, 2.F);
 
         EXPECT_FALSE(binding.read(
-            make_element("item", 0, { { "id", "a" }, { "x", "abc" } }), error));
+            record_binding_make_element("item", 0, { { "id", "a" }, { "x", "abc" } }), error));
         EXPECT_NE(error.find("invalid x attribute"), std::string::npos);
 
         EXPECT_FALSE(binding.read(
-            make_element("item", 0, { { "id", "a" }, { "other", "1" } }), error));
+            record_binding_make_element("item", 0, { { "id", "a" }, { "other", "1" } }), error));
         EXPECT_NE(error.find("unsupported attribute other"), std::string::npos);
     }
 
@@ -371,14 +371,14 @@ namespace {
         std::string error;
 
         const auto item = binding.read(
-            make_element("item", 0, { { "mf:hidden", "true" }, { "mf:anything", "else" }, { "x", "2" } }), error);
+            record_binding_make_element("item", 0, { { "mf:hidden", "true" }, { "mf:anything", "else" }, { "x", "2" } }), error);
         ASSERT_TRUE(item) << error;
         EXPECT_EQ(item->x, 2.F);
 
-        EXPECT_FALSE(binding.read(make_element("item", 0, { { "other", "1" } }), error));
+        EXPECT_FALSE(binding.read(record_binding_make_element("item", 0, { { "other", "1" } }), error));
         EXPECT_NE(error.find("unsupported attribute other"), std::string::npos);
 
-        EXPECT_FALSE(binding.read(make_element("item", 0, { { "mfx", "1" } }), error));
+        EXPECT_FALSE(binding.read(record_binding_make_element("item", 0, { { "mfx", "1" } }), error));
         EXPECT_NE(error.find("unsupported attribute mfx"), std::string::npos);
     }
 
@@ -389,12 +389,12 @@ namespace {
         std::string error;
 
         const auto item = binding.read(
-            make_element("item", 0, { { "id", "a" }, { "mf:front", "true" }, { "y", "3" } }), error);
+            record_binding_make_element("item", 0, { { "id", "a" }, { "mf:front", "true" }, { "y", "3" } }), error);
         ASSERT_TRUE(item) << error;
         EXPECT_EQ(item->y, 3.F);
 
         EXPECT_FALSE(binding.read(
-            make_element("item", 0, { { "mf:front", "true" }, { "x", "abc" } }), error));
+            record_binding_make_element("item", 0, { { "mf:front", "true" }, { "x", "abc" } }), error));
         EXPECT_NE(error.find("invalid x attribute"), std::string::npos);
     }
 
@@ -405,11 +405,11 @@ namespace {
         std::string error;
 
         const auto item = binding.read(
-            make_element("item", 0, { { "x", "2" } }, { make_element("on", 1), make_element("on", 2) }), error);
+            record_binding_make_element("item", 0, { { "x", "2" } }, { record_binding_make_element("on", 1), record_binding_make_element("on", 2) }), error);
         ASSERT_TRUE(item) << error;
         EXPECT_EQ(item->x, 2.F);
 
-        EXPECT_FALSE(binding.read(make_element("item", 0, {}, { make_element("legend", 3) }), error));
+        EXPECT_FALSE(binding.read(record_binding_make_element("item", 0, {}, { record_binding_make_element("legend", 3) }), error));
         EXPECT_NE(error.find("<legend> is not allowed in <item>"), std::string::npos);
     }
 
@@ -418,10 +418,10 @@ namespace {
         const auto binding = list_binding();
         std::string error;
         const auto list = binding.read(
-            make_element("list", 0, { { "title", "t" } },
-                { make_element("defaults", 1, { { "tag", "base" }, { "y", "9" } }),
-                    make_element("item", 2, { { "x", "1" } }),
-                    make_element("item", 3, { { "x", "2" }, { "tag", "own" } }) }),
+            record_binding_make_element("list", 0, { { "title", "t" } },
+                { record_binding_make_element("defaults", 1, { { "tag", "base" }, { "y", "9" } }),
+                    record_binding_make_element("item", 2, { { "x", "1" } }),
+                    record_binding_make_element("item", 3, { { "x", "2" }, { "tag", "own" } }) }),
             error);
         ASSERT_TRUE(list) << error;
         ASSERT_EQ(list->items.size(), 2U);
@@ -439,8 +439,8 @@ namespace {
         std::string error;
         uint64_t location = 0;
         EXPECT_FALSE(binding.read(
-            make_element("list", 0, { { "title", "t" } },
-                { make_element("defaults", 5, { { "x", "1" } }) }),
+            record_binding_make_element("list", 0, { { "title", "t" } },
+                { record_binding_make_element("defaults", 5, { { "x", "1" } }) }),
             error, &location));
         EXPECT_EQ(error, "<defaults> has an unsupported attribute x");
         EXPECT_EQ(location, 5U);
@@ -451,16 +451,16 @@ namespace {
         const auto binding = list_binding();
         std::string error;
         EXPECT_FALSE(binding.read(
-            make_element("list", 0, { { "title", "t" } },
-                { make_element("item", 1, { { "x", "1" } }),
-                    make_element("defaults", 2, { { "tag", "late" } }) }),
+            record_binding_make_element("list", 0, { { "title", "t" } },
+                { record_binding_make_element("item", 1, { { "x", "1" } }),
+                    record_binding_make_element("defaults", 2, { { "tag", "late" } }) }),
             error));
         EXPECT_NE(error.find("must appear once before"), std::string::npos);
 
         EXPECT_FALSE(binding.read(
-            make_element("list", 0, { { "title", "t" } },
-                { make_element("defaults", 1), make_element("defaults", 2),
-                    make_element("item", 3, { { "x", "1" } }) }),
+            record_binding_make_element("list", 0, { { "title", "t" } },
+                { record_binding_make_element("defaults", 1), record_binding_make_element("defaults", 2),
+                    record_binding_make_element("item", 3, { { "x", "1" } }) }),
             error));
         EXPECT_NE(error.find("must appear once before"), std::string::npos);
     }
@@ -471,7 +471,7 @@ namespace {
         std::string error;
         uint64_t location = 0;
         EXPECT_FALSE(binding.read(
-            make_element("list", 8, { { "title", "t" } }), error, &location));
+            record_binding_make_element("list", 8, { { "title", "t" } }), error, &location));
         EXPECT_EQ(error, "<list> needs at least 1 item children");
         EXPECT_EQ(location, 8U);
     }
@@ -482,15 +482,15 @@ namespace {
         std::string error;
         uint64_t location = 0;
         EXPECT_FALSE(binding.read(
-            make_element("list", 0, { { "title", "t" } },
-                { make_element("item", 4, { { "tag", "no x" } }) }),
+            record_binding_make_element("list", 0, { { "title", "t" } },
+                { record_binding_make_element("item", 4, { { "tag", "no x" } }) }),
             error, &location));
         EXPECT_EQ(error, "<item> needs a x attribute");
         EXPECT_EQ(location, 4U);
 
         EXPECT_FALSE(binding.read(
-            make_element("list", 0, { { "title", "t" } },
-                { make_element("item", 4, { { "x", "1" } }, { make_element("inner", 5) }) }),
+            record_binding_make_element("list", 0, { { "title", "t" } },
+                { record_binding_make_element("item", 4, { { "x", "1" } }, { record_binding_make_element("inner", 5) }) }),
             error));
         EXPECT_EQ(error, "<item> may not have children");
     }
@@ -501,8 +501,8 @@ namespace {
         std::string error;
         uint64_t location = 0;
         EXPECT_FALSE(binding.read(
-            make_element("list", 0, { { "title", "t" } },
-                { make_element("item", 1, { { "x", "1" } }), make_element("other", 7) }),
+            record_binding_make_element("list", 0, { { "title", "t" } },
+                { record_binding_make_element("item", 1, { { "x", "1" } }), record_binding_make_element("other", 7) }),
             error, &location));
         EXPECT_EQ(error, "<other> is not allowed in <list>");
         EXPECT_EQ(location, 7U);

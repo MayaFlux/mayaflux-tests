@@ -12,7 +12,7 @@ namespace {
     using Nodes::MeshVertex;
     using Nodes::GpuSync::MeshWriterNode;
 
-    MeshVertex make_vertex(float seed)
+    MeshVertex mesh_writer_node_make_vertex(float seed)
     {
         MeshVertex v;
         v.position = { seed, seed + 1.0F, seed + 2.0F };
@@ -23,12 +23,12 @@ namespace {
         return v;
     }
 
-    std::vector<MeshVertex> make_vertices(uint32_t count, float first = 1.0F)
+    std::vector<MeshVertex> mesh_writer_node_make_vertices(uint32_t count, float first = 1.0F)
     {
         std::vector<MeshVertex> v;
         v.reserve(count);
         for (uint32_t i = 0; i < count; ++i) {
-            v.push_back(make_vertex(first + static_cast<float>(i)));
+            v.push_back(mesh_writer_node_make_vertex(first + static_cast<float>(i)));
         }
         return v;
     }
@@ -51,7 +51,7 @@ namespace {
 
         void load_quad()
         {
-            node.set_mesh(make_vertices(4), QUAD_INDICES);
+            node.set_mesh(mesh_writer_node_make_vertices(4), QUAD_INDICES);
         }
 
         void expect_uploaded(const std::vector<MeshVertex>& vertices, const std::vector<uint32_t>& indices) const
@@ -88,7 +88,7 @@ namespace {
 
     TEST_F(MeshWriterNodeTest, SetMeshStoresVerticesAndIndices)
     {
-        const auto verts = make_vertices(4);
+        const auto verts = mesh_writer_node_make_vertices(4);
         node.set_mesh(verts, QUAD_INDICES);
 
         ASSERT_EQ(node.get_mesh_vertex_count(), 4U);
@@ -102,7 +102,7 @@ namespace {
     TEST_F(MeshWriterNodeTest, SetMeshReplacesThePreviousMesh)
     {
         load_quad();
-        node.set_mesh(make_vertices(3, 10.0F), std::vector<uint32_t> { 0, 1, 2 });
+        node.set_mesh(mesh_writer_node_make_vertices(3, 10.0F), std::vector<uint32_t> { 0, 1, 2 });
 
         EXPECT_EQ(node.get_mesh_vertex_count(), 3U);
         EXPECT_EQ(node.get_mesh_face_count(), 1U);
@@ -111,7 +111,7 @@ namespace {
     TEST_F(MeshWriterNodeTest, SettingVerticesLeavesTheIndicesAlone)
     {
         load_quad();
-        node.set_mesh_vertices(make_vertices(6, 20.0F));
+        node.set_mesh_vertices(mesh_writer_node_make_vertices(6, 20.0F));
 
         EXPECT_EQ(node.get_mesh_vertex_count(), 6U);
         EXPECT_EQ(node.get_mesh_indices(), QUAD_INDICES);
@@ -132,7 +132,7 @@ namespace {
         node.compute_frame();
 
         node.clear_gpu_update_flag();
-        node.set_mesh_vertices(make_vertices(4));
+        node.set_mesh_vertices(mesh_writer_node_make_vertices(4));
         EXPECT_TRUE(node.needs_vertex_data_update());
         EXPECT_TRUE(node.needs_layout_update());
 
@@ -154,7 +154,7 @@ namespace {
 
     TEST_F(MeshWriterNodeTest, MeshDataRoundTripsThroughAnotherNode)
     {
-        const auto verts = make_vertices(4);
+        const auto verts = mesh_writer_node_make_vertices(4);
         node.set_mesh(verts, QUAD_INDICES);
 
         const auto data = node.get_mesh_data();
@@ -172,7 +172,7 @@ namespace {
 
     TEST_F(MeshWriterNodeTest, MeshDataNeedsBothVerticesAndIndices)
     {
-        node.set_mesh_vertices(make_vertices(3));
+        node.set_mesh_vertices(mesh_writer_node_make_vertices(3));
         EXPECT_FALSE(node.get_mesh_data().has_value());
 
         node.clear_mesh();
@@ -192,7 +192,7 @@ namespace {
 
     TEST_F(MeshWriterNodeTest, ComputeFrameUploadsVerticesAndIndices)
     {
-        const auto verts = make_vertices(4);
+        const auto verts = mesh_writer_node_make_vertices(4);
         node.set_mesh(verts, QUAD_INDICES);
 
         node.compute_frame();
@@ -252,7 +252,7 @@ namespace {
         load_quad();
         node.compute_frame();
 
-        const auto bigger = make_vertices(6, 30.0F);
+        const auto bigger = mesh_writer_node_make_vertices(6, 30.0F);
         const std::vector<uint32_t> indices { 0, 1, 2, 3, 4, 5 };
         node.set_mesh(bigger, indices);
         node.compute_frame();
@@ -263,7 +263,7 @@ namespace {
 
     TEST_F(MeshWriterNodeTest, VerticesWithoutIndicesStillUpload)
     {
-        const auto verts = make_vertices(3);
+        const auto verts = mesh_writer_node_make_vertices(3);
         node.set_mesh_vertices(verts);
         node.compute_frame();
 
@@ -287,7 +287,7 @@ namespace {
     {
         node.compute_frame();
 
-        node.set_mesh_vertices(make_vertices(3));
+        node.set_mesh_vertices(mesh_writer_node_make_vertices(3));
         node.compute_frame();
         EXPECT_EQ(node.get_vertex_count(), 3U);
         EXPECT_FALSE(node.has_indices());
@@ -354,7 +354,7 @@ namespace {
 
     Kakshya::MeshData quad_with_parts()
     {
-        auto corners = make_vertices(4);
+        auto corners = mesh_writer_node_make_vertices(4);
         corners[0].position = { 0.0F, 0.0F, 0.0F };
         corners[1].position = { 1.0F, 0.0F, 0.0F };
         corners[2].position = { 1.0F, 1.0F, 0.0F };
@@ -419,7 +419,7 @@ namespace {
     {
         node.set_mesh(quad_with_parts());
 
-        node.set_mesh_vertices(make_vertices(4, 9.0F));
+        node.set_mesh_vertices(mesh_writer_node_make_vertices(4, 9.0F));
 
         EXPECT_TRUE(node.get_mesh_submeshes().has_value());
         EXPECT_TRUE(node.get_mesh_faces().has_value());
@@ -429,7 +429,7 @@ namespace {
     {
         node.set_mesh(quad_with_parts());
 
-        node.set_mesh_vertices(make_vertices(5));
+        node.set_mesh_vertices(mesh_writer_node_make_vertices(5));
 
         EXPECT_FALSE(node.get_mesh_submeshes().has_value());
         EXPECT_FALSE(node.get_mesh_faces().has_value());

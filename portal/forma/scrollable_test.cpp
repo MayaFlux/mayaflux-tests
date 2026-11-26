@@ -24,7 +24,7 @@ namespace {
     constexpr float k_row_h = 0.25F;
     constexpr size_t k_rows = 8;
 
-    void expect_near(const AABB2D& a, const AABB2D& b)
+    void scrollable_expect_near(const AABB2D& a, const AABB2D& b)
     {
         EXPECT_NEAR(a.min.x, b.min.x, 1e-5F);
         EXPECT_NEAR(a.min.y, b.min.y, 1e-5F);
@@ -93,10 +93,10 @@ TEST_F(FormaScrollableTest, PlaceRegistersTheViewportAsAnInteractiveElement)
 
     ASSERT_NE(panel.viewport_id, 0U);
     ASSERT_NE(layer->get(panel.viewport_id), nullptr);
-    expect_near(*layer->get(panel.viewport_id)->bounds_hint, k_viewport);
+    scrollable_expect_near(*layer->get(panel.viewport_id)->bounds_hint, k_viewport);
     EXPECT_EQ(layer->hit_test(glm::vec2(0.F)), panel.viewport_id);
     EXPECT_FALSE(layer->hit_test(glm::vec2(0.9F)).has_value());
-    expect_near(panel.bounds(), k_viewport);
+    scrollable_expect_near(panel.bounds(), k_viewport);
 }
 
 TEST_F(FormaScrollableTest, PlacePopulatesTheSharedScrollState)
@@ -106,8 +106,8 @@ TEST_F(FormaScrollableTest, PlacePopulatesTheSharedScrollState)
     ASSERT_NE(panel.scroll, nullptr);
     ASSERT_NE(panel.offset, nullptr);
     EXPECT_EQ(panel.scroll->offset, glm::vec2(0.F));
-    expect_near(panel.scroll->viewport_bounds, k_viewport);
-    expect_near(panel.scroll->content_bounds, k_viewport);
+    scrollable_expect_near(panel.scroll->viewport_bounds, k_viewport);
+    scrollable_expect_near(panel.scroll->content_bounds, k_viewport);
     EXPECT_EQ(panel.offset->value, glm::vec2(0.F));
 }
 
@@ -118,8 +118,8 @@ TEST_F(FormaScrollableTest, CursorStartsAtTheViewportTopAndStacksDownwardInItsCo
     const AABB2D first = panel.cursor_out.advance(k_row_h);
     const AABB2D second = panel.cursor_out.advance(k_row_h);
 
-    expect_near(first, AABB2D { .min = { -0.5F, 0.25F }, .max = { 0.5F, 0.5F } });
-    expect_near(second, AABB2D { .min = { -0.5F, 0.F }, .max = { 0.5F, 0.25F } });
+    scrollable_expect_near(first, AABB2D { .min = { -0.5F, 0.25F }, .max = { 0.5F, 0.5F } });
+    scrollable_expect_near(second, AABB2D { .min = { -0.5F, 0.F }, .max = { 0.5F, 0.25F } });
 }
 
 TEST_F(FormaScrollableTest, SettersConfigureBeforePlace)
@@ -194,8 +194,8 @@ TEST_F(FormaScrollableTest, TrackingWhileScrolledStoresTheUnscrolledAnchor)
     panel.track(*layer, id, placed, [drawn](AABB2D shifted) { *drawn = shifted; });
     panel.scroll_by(*layer, { 0.F, 0.F });
 
-    expect_near(*drawn, placed);
-    expect_near(*layer->get(id)->bounds_hint, placed);
+    scrollable_expect_near(*drawn, placed);
+    scrollable_expect_near(*layer->get(id)->bounds_hint, placed);
 }
 
 // =============================================================================
@@ -211,8 +211,8 @@ TEST_F(FormaScrollableTest, ScrollByShiftsEveryTrackedRowAndTellsItsCallback)
 
     for (const auto& row : rows) {
         const AABB2D expected = row.base.translated({ 0.F, 0.3F });
-        expect_near(*layer->get(row.id)->bounds_hint, expected);
-        expect_near(*row.drawn, expected);
+        scrollable_expect_near(*layer->get(row.id)->bounds_hint, expected);
+        scrollable_expect_near(*row.drawn, expected);
         EXPECT_EQ(*row.repositions, 1);
     }
     EXPECT_NEAR(panel.scroll->offset.y, 0.3F, 1e-6F);
@@ -300,7 +300,7 @@ TEST_F(FormaScrollableTest, TrackedRowsKeepTheViewportAsTheirClip)
 
     for (const auto& row : rows) {
         ASSERT_TRUE(layer->get(row.id)->clip.has_value());
-        expect_near(*layer->get(row.id)->clip, k_viewport);
+        scrollable_expect_near(*layer->get(row.id)->clip, k_viewport);
     }
     EXPECT_FALSE(layer->get(panel.viewport_id)->clip.has_value());
 }
@@ -316,7 +316,7 @@ TEST_F(FormaScrollableTest, TrackingABufferThatHasNoRenderProcessorYetStillClips
     panel.track(*layer, id, bounds, [](AABB2D) { }, buf);
 
     ASSERT_TRUE(layer->get(id)->clip.has_value());
-    expect_near(*layer->get(id)->clip, k_viewport);
+    scrollable_expect_near(*layer->get(id)->clip, k_viewport);
 }
 
 TEST_F(FormaScrollableTest, TheClipSurvivesAGeometryFunctionRewritingTheBounds)
@@ -339,7 +339,7 @@ TEST_F(FormaScrollableTest, DrawnBoundsAreNeverClipped)
 
     panel.scroll_by(*layer, { 0.F, 0.5F });
 
-    expect_near(*rows[0].drawn, rows[0].base.translated({ 0.F, 0.5F }));
+    scrollable_expect_near(*rows[0].drawn, rows[0].base.translated({ 0.F, 0.5F }));
     EXPECT_GT(rows[0].drawn->max.y, k_viewport.max.y);
 }
 
@@ -521,7 +521,7 @@ TEST_F(FormaScrollableIndicatorTest, DraggingTheIndicatorReflowsTheRows)
     window->press(MouseButtons::Left);
     window->move_to_ndc({ 0.65F, 0.F });
 
-    expect_near(*rows[0].drawn, rows[0].base.translated(panel.scroll->offset));
+    scrollable_expect_near(*rows[0].drawn, rows[0].base.translated(panel.scroll->offset));
 }
 
 TEST_F(FormaScrollableIndicatorTest, IndicatorBeforePlaceIsIgnored)

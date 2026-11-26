@@ -15,7 +15,7 @@ using Nodes::Network::ResonatorNetwork;
 
 namespace {
 
-    std::shared_ptr<Polynomial> constant_source(double value)
+    std::shared_ptr<Polynomial> resonator_controls_constant_source(double value)
     {
         auto source = std::make_shared<Polynomial>([value](double) { return value; });
         source->process_sample(0.0);
@@ -64,8 +64,8 @@ TEST(ResonatorControlsTest, ANodeRetuneKeepsTheRingWhereANodeFrequencyClearsIt)
     render(cleared, 256);
     render(kept, 256);
 
-    cleared->set({ .frequency = constant_source(1250.0) });
-    kept->set({ .retune = constant_source(1250.0) });
+    cleared->set({ .frequency = resonator_controls_constant_source(1250.0) });
+    kept->set({ .retune = resonator_controls_constant_source(1250.0) });
 
     const auto after_clear = render(cleared, 1);
     const auto after_retune = render(kept, 1);
@@ -102,7 +102,7 @@ TEST(ResonatorControlsTest, ANodeDecaySetsTheRingTime)
 {
     auto network = single(1000.0, 30.0);
 
-    network->set({ .decay = constant_source(0.25) });
+    network->set({ .decay = resonator_controls_constant_source(0.25) });
     network->process_batch(1);
 
     EXPECT_NEAR(network->get_resonators().at(0).q,
@@ -113,7 +113,7 @@ TEST(ResonatorControlsTest, FrequencyIsAppliedBeforeDecay)
 {
     auto network = single(1000.0, 30.0);
 
-    network->set({ .frequency = constant_source(1400.0), .decay = constant_source(0.25) });
+    network->set({ .frequency = resonator_controls_constant_source(1400.0), .decay = resonator_controls_constant_source(0.25) });
     network->process_batch(1);
 
     EXPECT_DOUBLE_EQ(network->get_resonators().at(0).frequency, 1400.0);
@@ -138,7 +138,7 @@ TEST(ResonatorControlsTest, ANodeIsAppliedEveryBlock)
 {
     auto network = single(1000.0, 30.0);
 
-    network->set({ .q = constant_source(12.0) });
+    network->set({ .q = resonator_controls_constant_source(12.0) });
     network->process_batch(1);
     network->set_q(0, 50.0);
     network->process_batch(1);
@@ -215,7 +215,7 @@ TEST(ResonatorControlsTest, ANodeScaleChangesTheMix)
 {
     auto reference = single(1000.0, 30.0);
     auto scaled = single(1000.0, 30.0);
-    scaled->set({ .scale = constant_source(0.25) });
+    scaled->set({ .scale = resonator_controls_constant_source(0.25) });
 
     const auto original = render(reference, 64);
     const auto reduced = render(scaled, 64);
@@ -231,14 +231,14 @@ TEST(ResonatorControlsTest, TypedAndStringMappingsRenderTheSameSound)
     auto by_string = single(1000.0, 30.0);
     auto by_control = single(1000.0, 30.0);
 
-    by_string->map_parameter("retune", constant_source(1300.0));
-    by_string->map_parameter("decay", constant_source(0.5));
-    by_string->map_parameter("gain", constant_source(1.5));
-    by_string->map_parameter("scale", constant_source(0.5));
-    by_control->set({ .scale = constant_source(0.5),
-        .gain = constant_source(1.5),
-        .retune = constant_source(1300.0),
-        .decay = constant_source(0.5) });
+    by_string->map_parameter("retune", resonator_controls_constant_source(1300.0));
+    by_string->map_parameter("decay", resonator_controls_constant_source(0.5));
+    by_string->map_parameter("gain", resonator_controls_constant_source(1.5));
+    by_string->map_parameter("scale", resonator_controls_constant_source(0.5));
+    by_control->set({ .scale = resonator_controls_constant_source(0.5),
+        .gain = resonator_controls_constant_source(1.5),
+        .retune = resonator_controls_constant_source(1300.0),
+        .decay = resonator_controls_constant_source(0.5) });
 
     const auto expected = render(by_string, 256);
     const auto actual = render(by_control, 256);

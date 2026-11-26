@@ -11,7 +11,7 @@ namespace {
     using Kakshya::DynamicSoundStream;
     using Kakshya::StreamSlice;
 
-    std::shared_ptr<DynamicSoundStream> make_stream(uint32_t channels, uint64_t frames)
+    std::shared_ptr<DynamicSoundStream> stream_slice_make_stream(uint32_t channels, uint64_t frames)
     {
         auto stream = std::make_shared<DynamicSoundStream>(48000, channels);
         stream->ensure_capacity(frames);
@@ -20,7 +20,7 @@ namespace {
 
     TEST(StreamSliceTest, AWholeStreamSliceSpansEveryFrameAndChannel)
     {
-        const auto stream = make_stream(3, 100);
+        const auto stream = stream_slice_make_stream(3, 100);
 
         const StreamSlice slice = StreamSlice::from_stream(stream);
 
@@ -33,7 +33,7 @@ namespace {
 
     TEST(StreamSliceTest, AnEmptyStreamSlicesToAZeroFrameRange)
     {
-        const StreamSlice slice = StreamSlice::from_stream(make_stream(2, 0));
+        const StreamSlice slice = StreamSlice::from_stream(stream_slice_make_stream(2, 0));
 
         EXPECT_EQ(slice.start_frame(), 0U);
         EXPECT_EQ(slice.end_frame(), 0U);
@@ -42,7 +42,7 @@ namespace {
 
     TEST(StreamSliceTest, ASliceStartsWithNeutralPlaybackState)
     {
-        const StreamSlice slice = StreamSlice::from_stream(make_stream(2, 10));
+        const StreamSlice slice = StreamSlice::from_stream(stream_slice_make_stream(2, 10));
 
         EXPECT_DOUBLE_EQ(slice.speed, 1.0);
         EXPECT_DOUBLE_EQ(slice.scale, 1.0);
@@ -58,14 +58,14 @@ namespace {
 
     TEST(StreamSliceTest, ASliceCarriesItsIndex)
     {
-        EXPECT_EQ(StreamSlice::from_stream(make_stream(2, 10), 5).index, 5U);
-        EXPECT_EQ(StreamSlice::from_frame_range(make_stream(2, 10), 1, 2, 6).index, 6U);
-        EXPECT_EQ(StreamSlice::from_region(make_stream(2, 10), 1, 2, 0, 1, 7).index, 7U);
+        EXPECT_EQ(StreamSlice::from_stream(stream_slice_make_stream(2, 10), 5).index, 5U);
+        EXPECT_EQ(StreamSlice::from_frame_range(stream_slice_make_stream(2, 10), 1, 2, 6).index, 6U);
+        EXPECT_EQ(StreamSlice::from_region(stream_slice_make_stream(2, 10), 1, 2, 0, 1, 7).index, 7U);
     }
 
     TEST(StreamSliceTest, AFrameRangeSliceSpansEveryChannel)
     {
-        const auto stream = make_stream(4, 100);
+        const auto stream = stream_slice_make_stream(4, 100);
 
         const StreamSlice slice = StreamSlice::from_frame_range(stream, 10, 59);
 
@@ -77,7 +77,7 @@ namespace {
 
     TEST(StreamSliceTest, ARegionSliceTakesBothFrameAndChannelBounds)
     {
-        const auto stream = make_stream(4, 100);
+        const auto stream = stream_slice_make_stream(4, 100);
 
         const StreamSlice slice = StreamSlice::from_region(stream, 5, 20, 1, 2);
 
@@ -89,7 +89,7 @@ namespace {
 
     TEST(StreamSliceTest, TheRegionIsAnAudioRegion)
     {
-        const StreamSlice slice = StreamSlice::from_frame_range(make_stream(2, 10), 2, 4);
+        const StreamSlice slice = StreamSlice::from_frame_range(stream_slice_make_stream(2, 10), 2, 4);
 
         EXPECT_EQ(slice.region.start_coordinates, (std::vector<uint64_t> { 2, 0 }));
         EXPECT_EQ(slice.region.end_coordinates, (std::vector<uint64_t> { 4, 1 }));
@@ -98,7 +98,7 @@ namespace {
 
     TEST(StreamSliceTest, BuilderCallsSetTheirFieldAndChain)
     {
-        StreamSlice slice = StreamSlice::from_stream(make_stream(2, 10));
+        StreamSlice slice = StreamSlice::from_stream(stream_slice_make_stream(2, 10));
 
         StreamSlice& chained = slice.with_speed(2.0).with_looping(true).with_scale(0.5).with_loop_count(3).with_source_channel(1);
 
@@ -112,7 +112,7 @@ namespace {
 
     TEST(StreamSliceTest, ATimeMapIsStoredAndEvaluates)
     {
-        StreamSlice slice = StreamSlice::from_stream(make_stream(2, 10));
+        StreamSlice slice = StreamSlice::from_stream(stream_slice_make_stream(2, 10));
 
         slice.with_time_map(Kinesis::TimeMap { .fn = [](const double& t) { return t * 3.0; } });
 
@@ -122,7 +122,7 @@ namespace {
 
     TEST(StreamSliceTest, ARepeatLengthIsStoredAndEvaluates)
     {
-        StreamSlice slice = StreamSlice::from_stream(make_stream(2, 10));
+        StreamSlice slice = StreamSlice::from_stream(stream_slice_make_stream(2, 10));
 
         slice.with_repeat(Kinesis::TimeMap { .fn = [](const double& t) { return 1.0 + t; } });
 
@@ -132,7 +132,7 @@ namespace {
 
     TEST(StreamSliceTest, CopiesShareTheStreamAndTheirMaps)
     {
-        StreamSlice slice = StreamSlice::from_stream(make_stream(2, 10));
+        StreamSlice slice = StreamSlice::from_stream(stream_slice_make_stream(2, 10));
         slice.with_time_map(Kinesis::TimeMap { .fn = [](const double& t) { return t; } });
 
         const StreamSlice copy = slice;
@@ -143,7 +143,7 @@ namespace {
 
     TEST(StreamSliceTest, ReplacingAMapOnACopyLeavesTheOriginalAlone)
     {
-        StreamSlice slice = StreamSlice::from_stream(make_stream(2, 10));
+        StreamSlice slice = StreamSlice::from_stream(stream_slice_make_stream(2, 10));
         slice.with_time_map(Kinesis::TimeMap { .fn = [](const double& t) { return t; } });
         StreamSlice copy = slice;
 

@@ -25,7 +25,7 @@ namespace {
     const Facet<bool> reject_stage {};
     const Facet<int> source_id {};
 
-    void expect_channels(const DataIO& actual, const Channels& expected)
+    void computepipeline_expect_channels(const DataIO& actual, const Channels& expected)
     {
         ASSERT_EQ(actual.data.size(), expected.size());
         for (size_t channel = 0; channel < expected.size(); ++channel) {
@@ -39,7 +39,7 @@ namespace {
         }
     }
 
-    std::shared_ptr<OperationRegistry> registry()
+    std::shared_ptr<OperationRegistry> computepipeline_registry()
     {
         auto result = std::make_shared<OperationRegistry>();
         result->catalog<MathematicalOperation, MathematicalTransformer<>>();
@@ -83,7 +83,7 @@ namespace {
             break;
         }
         case PipelinePath::AssembledGrammar:
-            pipeline->set_grammar(ComputationGrammar::assemble(registry(), affine_signature(),
+            pipeline->set_grammar(ComputationGrammar::assemble(computepipeline_registry(), affine_signature(),
                 {
                     MathematicalTransformerConfig { .offset_value = 3.0 },
                     MathematicalTransformerConfig { .gain_factor = 2.0 },
@@ -94,13 +94,13 @@ namespace {
         return pipeline;
     }
 
-    struct ChannelCase {
+    struct ComputepipelineChannelCase {
         const char* name;
         Channels input;
         Channels expected;
     };
 
-    const ChannelCase channel_cases[] {
+    const ComputepipelineChannelCase computepipeline_channel_cases[] {
         { "Mono", { { -3.0, 1.0, 4.0, 0.5 } }, { { 7.0, 14.0, 8.0, 0.0 } } },
         { "UnequalChannels", { { -2.0, 0.0, 3.0 }, { 5.0, -1.0 } }, { { 12.0, 6.0, 2.0 }, { 4.0, 16.0 } } },
         { "SingleSamples", { { 2.0 }, { -3.0 } }, { { 10.0 }, { 0.0 } } },
@@ -111,9 +111,9 @@ namespace {
                 { -6.0, -8.0, -10.0 }, { 0.0, -2.0, -4.0 }, { 26.0, 24.0, 22.0 }, { -10.0, -12.0, -14.0 } } },
     };
 
-    using ExecutionParam = std::tuple<PipelinePath, ChannelCase>;
+    using ComputepipelineExecutionParam = std::tuple<PipelinePath, ComputepipelineChannelCase>;
 
-    class PipelineExecutionTest : public ::testing::TestWithParam<ExecutionParam> {
+    class PipelineExecutionTest : public ::testing::TestWithParam<ComputepipelineExecutionParam> {
     protected:
         DataIO process(ComputationPipeline<>& pipeline, const DataIO& input) const
         {
@@ -127,8 +127,8 @@ namespace {
         ::testing::Combine(
             ::testing::Values(PipelinePath::CreatedStages, PipelinePath::SuppliedStages,
                 PipelinePath::ExplicitSignature, PipelinePath::AssembledGrammar),
-            ::testing::ValuesIn(channel_cases)),
-        [](const ::testing::TestParamInfo<ExecutionParam>& info) {
+            ::testing::ValuesIn(computepipeline_channel_cases)),
+        [](const ::testing::TestParamInfo<ComputepipelineExecutionParam>& info) {
             return std::string(Reflect::enum_to_string(std::get<0>(info.param))) + "_" + std::get<1>(info.param).name;
         });
 
@@ -137,7 +137,7 @@ namespace {
         const auto pipeline = pipeline_for(std::get<0>(GetParam()));
         const auto& data = std::get<1>(GetParam());
 
-        expect_channels(process(*pipeline, to_datum(data.input)), data.expected);
+        computepipeline_expect_channels(process(*pipeline, to_datum(data.input)), data.expected);
     }
 
     TEST_P(PipelineExecutionTest, BufferedExecutionDoesNotMutateTheCallersInput)
@@ -146,8 +146,8 @@ namespace {
         const auto& data = std::get<1>(GetParam());
         const auto input = to_datum(data.input);
 
-        expect_channels(process(*pipeline, input), data.expected);
-        expect_channels(input, data.input);
+        computepipeline_expect_channels(process(*pipeline, input), data.expected);
+        computepipeline_expect_channels(input, data.input);
     }
 
     TEST_P(PipelineExecutionTest, ReusesThePipelineAcrossChangingChannelCountsAndLengths)
@@ -155,10 +155,10 @@ namespace {
         const auto pipeline = pipeline_for(std::get<0>(GetParam()));
         const auto& data = std::get<1>(GetParam());
 
-        expect_channels(process(*pipeline, to_datum(data.input)), data.expected);
-        expect_channels(process(*pipeline, to_datum({ { 10.0, -10.0 }, { 0.0 }, { -3.0, 2.0, 7.0 } })),
+        computepipeline_expect_channels(process(*pipeline, to_datum(data.input)), data.expected);
+        computepipeline_expect_channels(process(*pipeline, to_datum({ { 10.0, -10.0 }, { 0.0 }, { -3.0, 2.0, 7.0 } })),
             { { -14.0, 26.0 }, { 6.0 }, { 20.0, 10.0, 0.0 } });
-        expect_channels(process(*pipeline, to_datum(data.input)), data.expected);
+        computepipeline_expect_channels(process(*pipeline, to_datum(data.input)), data.expected);
     }
 
     using EmptyParam = std::tuple<EmptyPipeline, EmptyInput>;
@@ -206,7 +206,7 @@ namespace {
 
         const auto result = pipeline->process(input, {});
 
-        expect_channels(result, channels);
+        computepipeline_expect_channels(result, channels);
         const auto* carried = result.facets.get(source_id);
         ASSERT_NE(carried, nullptr);
         EXPECT_EQ(*carried, 73);
@@ -289,7 +289,7 @@ namespace {
             auto stage = pipeline.get_operation<MathematicalTransformer<>>("scale");
             ASSERT_NE(stage, nullptr);
             stage->set_config(MathematicalTransformerConfig { .gain_factor = 4.0 });
-            expect_channels(pipeline.process(input), { { -8.0, 4.0, 12.0 } });
+            computepipeline_expect_channels(pipeline.process(input), { { -8.0, 4.0, 12.0 } });
             break;
         }
         case Lookup::MissingName:
@@ -298,14 +298,14 @@ namespace {
                 operation->set_config(MathematicalTransformerConfig { .gain_factor = 4.0 });
             }));
             EXPECT_FALSE(pipeline.remove_operation("missing"));
-            expect_channels(pipeline.process(input), { { -4.0, 2.0, 6.0 } });
+            computepipeline_expect_channels(pipeline.process(input), { { -4.0, 2.0, 6.0 } });
             break;
         case Lookup::WrongType:
             EXPECT_EQ(pipeline.get_operation<TemporalTransformer<>>("scale"), nullptr);
             EXPECT_FALSE(pipeline.configure_operation<TemporalTransformer<>>("scale", [](auto operation) {
                 operation->set_config(TemporalTransformerConfig {});
             }));
-            expect_channels(pipeline.process(input), { { -4.0, 2.0, 6.0 } });
+            computepipeline_expect_channels(pipeline.process(input), { { -4.0, 2.0, 6.0 } });
             break;
         }
     }
@@ -361,13 +361,13 @@ namespace {
         EXPECT_EQ(rejected.data, (Samples { 1.0, 3.0 }));
     }
 
-    struct Admission {
+    struct ComputepipelineAdmission {
         bool enabled {};
     };
 
-    bool admitted(const std::any&, const ExecutionContext& context)
+    bool computepipeline_admitted(const std::any&, const ExecutionContext& context)
     {
-        const auto* admission = context.facets.get<Admission>();
+        const auto* admission = context.facets.get<ComputepipelineAdmission>();
         return admission && admission->enabled;
     }
 
@@ -379,7 +379,7 @@ namespace {
 
     TEST_P(PipelineSignatureTest, AnExplicitSignatureSelectsItsOwnStagesInsteadOfTheAssembledDefault)
     {
-        const auto grammar = ComputationGrammar::Builder(registry())
+        const auto grammar = ComputationGrammar::Builder(computepipeline_registry())
             .rule(MathematicalOperation::GAIN, MathematicalTransformerConfig { .gain_factor = 2.0 })
             .build();
         grammar->add_operation_rule<MathematicalTransformer<>>("offset", MathematicalOperation::OFFSET,
@@ -389,14 +389,14 @@ namespace {
         ComputationPipeline<> pipeline(grammar);
         const auto input = to_datum({ { -2.0, 1.0, 3.0 } });
 
-        expect_channels(pipeline.process(input), { { -4.0, 2.0, 6.0 } });
+        computepipeline_expect_channels(pipeline.process(input), { { -4.0, 2.0, 6.0 } });
         if (GetParam()) {
-            expect_channels(pipeline.process(input, MathematicalOperation::OFFSET | MathematicalOperation::GAIN),
+            computepipeline_expect_channels(pipeline.process(input, MathematicalOperation::OFFSET | MathematicalOperation::GAIN),
                 { { 2.0, 8.0, 12.0 } });
         } else {
-            expect_channels(pipeline.process(input, MathematicalOperation::OFFSET), { { 1.0, 4.0, 6.0 } });
+            computepipeline_expect_channels(pipeline.process(input, MathematicalOperation::OFFSET), { { 1.0, 4.0, 6.0 } });
         }
-        expect_channels(pipeline.process(input), { { -4.0, 2.0, 6.0 } });
+        computepipeline_expect_channels(pipeline.process(input), { { -4.0, 2.0, 6.0 } });
     }
 
     class PipelineContextTest : public ::testing::TestWithParam<bool> {
@@ -407,31 +407,31 @@ namespace {
 
     TEST_P(PipelineContextTest, ForwardsTypedContextToEveryRequestedStage)
     {
-        const auto grammar = ComputationGrammar::Builder(registry())
+        const auto grammar = ComputationGrammar::Builder(computepipeline_registry())
             .rule(MathematicalOperation::GAIN, MathematicalTransformerConfig { .gain_factor = 2.0 })
-            .when(admitted)
+            .when(computepipeline_admitted)
             .rule(TemporalOperation::TIME_REVERSE)
-            .when(admitted)
+            .when(computepipeline_admitted)
             .build();
         ComputationPipeline<> pipeline(grammar);
         const auto input = to_datum({ { -2.0, 1.0, 3.0 } });
         ExecutionContext rejected;
         ExecutionContext accepted;
-        accepted.facets.set(Admission { true });
+        accepted.facets.set(ComputepipelineAdmission { true });
 
         if (GetParam()) {
             const auto signature = MathematicalOperation::GAIN | TemporalOperation::TIME_REVERSE;
             EXPECT_THROW(pipeline.process(input, signature, rejected), std::runtime_error);
-            expect_channels(pipeline.process(input, signature, accepted), { { 6.0, 2.0, -4.0 } });
+            computepipeline_expect_channels(pipeline.process(input, signature, accepted), { { 6.0, 2.0, -4.0 } });
         } else {
             EXPECT_THROW(pipeline.process(input, rejected), std::runtime_error);
-            expect_channels(pipeline.process(input, accepted), { { 6.0, 2.0, -4.0 } });
+            computepipeline_expect_channels(pipeline.process(input, accepted), { { 6.0, 2.0, -4.0 } });
         }
     }
 
     TEST_P(PipelineSignatureTest, RejectsUnresolvableSignaturesInsteadOfReturningUnprocessedInput)
     {
-        const auto grammar = ComputationGrammar::Builder(registry())
+        const auto grammar = ComputationGrammar::Builder(computepipeline_registry())
             .rule(MathematicalOperation::GAIN, MathematicalTransformerConfig { .gain_factor = 2.0 })
             .build();
         ComputationPipeline<> pipeline(grammar);
@@ -442,7 +442,7 @@ namespace {
         } else {
             EXPECT_THROW(pipeline.process(input, PipelineMethod::Unknown), std::runtime_error);
         }
-        expect_channels(pipeline.process(input), { { 2.0 } });
+        computepipeline_expect_channels(pipeline.process(input), { { 2.0 } });
     }
 
     enum class FinalType { DeclaredOutput, IncompatibleOutput };

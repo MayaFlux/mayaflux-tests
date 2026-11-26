@@ -13,8 +13,8 @@ namespace Acoustics = Kinesis::Acoustics;
 
 namespace {
 
-    constexpr double kSound = 343.0;
-    constexpr double kDensity = 1.2;
+    constexpr double kAcousticsLossSound = 343.0;
+    constexpr double kAcousticsLossDensity = 1.2;
 
     Acoustics::DuctGrid cone_grid()
     {
@@ -62,7 +62,7 @@ TEST(DuctLossTest, FrictionAndViscosityMatchTheAttenuationAtTheTwoFrequenciesOfT
 
     const auto model = [&](double frequency) {
         const double omega = 2.0 * std::numbers::pi * frequency;
-        return friction / (2.0 * kSound) + viscosity * omega * omega / (2.0 * kSound * kSound * kSound);
+        return friction / (2.0 * kAcousticsLossSound) + viscosity * omega * omega / (2.0 * kAcousticsLossSound * kAcousticsLossSound * kAcousticsLossSound);
     };
 
     EXPECT_GT(friction, 0.0);
@@ -74,7 +74,7 @@ TEST(DuctLossTest, FrictionAndViscosityMatchTheAttenuationAtTheTwoFrequenciesOfT
     EXPECT_NEAR(wide_friction, 0.5 * friction, 1e-9 * friction);
     EXPECT_NEAR(wide_viscosity, 0.5 * viscosity, 1e-9 * viscosity);
 
-    EXPECT_EQ(Acoustics::viscothermal_rates(radius, kSound, kDensity, 3000.0, 150.0), std::make_pair(0.0, 0.0));
+    EXPECT_EQ(Acoustics::viscothermal_rates(radius, kAcousticsLossSound, kAcousticsLossDensity, 3000.0, 150.0), std::make_pair(0.0, 0.0));
     EXPECT_EQ(Acoustics::viscothermal_rates(-1.0), std::make_pair(0.0, 0.0));
 }
 

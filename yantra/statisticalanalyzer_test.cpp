@@ -21,10 +21,10 @@ namespace {
     using VariantStatisticalMatrix = StatisticalAnalyzer<std::vector<DataVariant>, Eigen::MatrixXd>;
     using ContainerStatisticalMatrix = StatisticalAnalyzer<std::shared_ptr<Kakshya::SignalSourceContainer>, Eigen::MatrixXd>;
 
-    constexpr uint32_t k_window = 10;
-    constexpr uint32_t k_hop = 5;
+    constexpr uint32_t k_statisticalanalyzer_window = 10;
+    constexpr uint32_t k_statisticalanalyzer_hop = 5;
 
-    StatisticalAnalyzerConfig config_for(StatisticalMethod method, uint32_t window = k_window, uint32_t hop = k_hop)
+    StatisticalAnalyzerConfig config_for(StatisticalMethod method, uint32_t window = k_statisticalanalyzer_window, uint32_t hop = k_statisticalanalyzer_hop)
     {
         return StatisticalAnalyzerConfig { { .window_size = window, .hop_size = hop, .classification_enabled = true }, method, 25.0 };
     }
@@ -42,43 +42,43 @@ namespace {
     std::vector<double> kinesis_statistic(StatisticalMethod method, std::span<const double> data)
     {
         namespace D = Kinesis::Discrete;
-        const size_t windows = D::num_windows(data.size(), k_window, k_hop);
+        const size_t windows = D::num_windows(data.size(), k_statisticalanalyzer_window, k_statisticalanalyzer_hop);
 
         switch (method) {
         case StatisticalMethod::MEAN:
-            return D::mean(data, windows, k_hop, k_window);
+            return D::mean(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window);
         case StatisticalMethod::VARIANCE:
-            return D::variance(data, windows, k_hop, k_window, true);
+            return D::variance(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window, true);
         case StatisticalMethod::STD_DEV:
-            return D::std_dev(data, windows, k_hop, k_window, true);
+            return D::std_dev(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window, true);
         case StatisticalMethod::SKEWNESS:
-            return D::skewness(data, windows, k_hop, k_window);
+            return D::skewness(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window);
         case StatisticalMethod::KURTOSIS:
-            return D::kurtosis(data, windows, k_hop, k_window);
+            return D::kurtosis(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window);
         case StatisticalMethod::MIN:
-            return D::min(data, windows, k_hop, k_window);
+            return D::min(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window);
         case StatisticalMethod::MAX:
-            return D::max(data, windows, k_hop, k_window);
+            return D::max(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window);
         case StatisticalMethod::MEDIAN:
-            return D::median(data, windows, k_hop, k_window);
+            return D::median(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window);
         case StatisticalMethod::RANGE:
-            return D::range(data, windows, k_hop, k_window);
+            return D::range(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window);
         case StatisticalMethod::PERCENTILE:
-            return D::percentile(data, windows, k_hop, k_window, 25.0);
+            return D::percentile(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window, 25.0);
         case StatisticalMethod::MODE:
-            return D::mode(data, windows, k_hop, k_window);
+            return D::mode(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window);
         case StatisticalMethod::MAD:
-            return D::mad(data, windows, k_hop, k_window);
+            return D::mad(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window);
         case StatisticalMethod::CV:
-            return D::coefficient_of_variation(data, windows, k_hop, k_window, true);
+            return D::coefficient_of_variation(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window, true);
         case StatisticalMethod::SUM:
-            return D::sum(data, windows, k_hop, k_window);
+            return D::sum(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window);
         case StatisticalMethod::COUNT:
-            return D::count(data, windows, k_hop, k_window);
+            return D::count(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window);
         case StatisticalMethod::ENTROPY:
-            return D::entropy(data, windows, k_hop, k_window);
+            return D::entropy(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window);
         case StatisticalMethod::ZSCORE:
-            return D::mean_zscore(data, windows, k_hop, k_window, true);
+            return D::mean_zscore(data, windows, k_statisticalanalyzer_hop, k_statisticalanalyzer_window, true);
         }
         return {};
     }
@@ -179,8 +179,8 @@ namespace {
         const auto stats = analyzer->analyze_statistics(input);
 
         EXPECT_EQ(StatisticalMethod(stats.config.method), GetParam());
-        EXPECT_EQ(stats.config.window_size, k_window);
-        EXPECT_EQ(stats.config.hop_size, k_hop);
+        EXPECT_EQ(stats.config.window_size, k_statisticalanalyzer_window);
+        EXPECT_EQ(stats.config.hop_size, k_statisticalanalyzer_hop);
         EXPECT_DOUBLE_EQ(stats.config.percentile, 25.0);
     }
 
@@ -235,21 +235,21 @@ namespace {
         EXPECT_EQ(stats.channel_statistics[1].statistical_values, kinesis_statistic(GetParam(), reversed));
     }
 
-    struct InvalidCase {
+    struct StatisticalanalyzerInvalidCase {
         const char* name;
         StatisticalAnalyzerConfig config;
     };
 
-    class StatisticInvalidConfigTest : public ::testing::TestWithParam<InvalidCase> { };
+    class StatisticInvalidConfigTest : public ::testing::TestWithParam<StatisticalanalyzerInvalidCase> { };
 
     INSTANTIATE_TEST_SUITE_P(Configs, StatisticInvalidConfigTest,
         ::testing::Values(
-            InvalidCase { "ZeroWindow", StatisticalAnalyzerConfig { { .window_size = 0, .hop_size = 1 } } },
-            InvalidCase { "ZeroHop", StatisticalAnalyzerConfig { { .window_size = 8, .hop_size = 0 } } },
-            InvalidCase { "HopLargerThanWindow", StatisticalAnalyzerConfig { { .window_size = 8, .hop_size = 16 } } },
-            InvalidCase { "PercentileAboveRange", StatisticalAnalyzerConfig { {}, StatisticalMethod::PERCENTILE, 150.0 } },
-            InvalidCase { "PercentileBelowRange", StatisticalAnalyzerConfig { {}, StatisticalMethod::PERCENTILE, -1.0 } }),
-        [](const ::testing::TestParamInfo<InvalidCase>& info) {
+            StatisticalanalyzerInvalidCase { "ZeroWindow", StatisticalAnalyzerConfig { { .window_size = 0, .hop_size = 1 } } },
+            StatisticalanalyzerInvalidCase { "ZeroHop", StatisticalAnalyzerConfig { { .window_size = 8, .hop_size = 0 } } },
+            StatisticalanalyzerInvalidCase { "HopLargerThanWindow", StatisticalAnalyzerConfig { { .window_size = 8, .hop_size = 16 } } },
+            StatisticalanalyzerInvalidCase { "PercentileAboveRange", StatisticalAnalyzerConfig { {}, StatisticalMethod::PERCENTILE, 150.0 } },
+            StatisticalanalyzerInvalidCase { "PercentileBelowRange", StatisticalAnalyzerConfig { {}, StatisticalMethod::PERCENTILE, -1.0 } }),
+        [](const ::testing::TestParamInfo<StatisticalanalyzerInvalidCase>& info) {
             return std::string(info.param.name);
         });
 
@@ -320,7 +320,7 @@ namespace {
 
         ASSERT_EQ(stats.channel_statistics.size(), 1U);
         EXPECT_EQ(stats.channel_statistics[0].statistical_values,
-            Kinesis::Discrete::variance(one_to_ten(), 1, k_hop, k_window, false));
+            Kinesis::Discrete::variance(one_to_ten(), 1, k_statisticalanalyzer_hop, k_statisticalanalyzer_window, false));
     }
 
     TEST_F(StatisticAnalysisTest, EmptyInputThrows)

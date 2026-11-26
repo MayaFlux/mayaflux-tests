@@ -20,7 +20,7 @@ using Nodes::Generator::Phasor;
 
 namespace {
 
-    constexpr uint32_t k_block = 32;
+    constexpr uint32_t k_node_buffer_block = 32;
     constexpr float k_mix = 0.5F;
 
     std::vector<double> phasor_reference(size_t count, float mix)
@@ -35,20 +35,20 @@ namespace {
 
     class NodeSourceProcessorTest : public ::testing::Test {
     protected:
-        std::shared_ptr<AudioBuffer> buffer { std::make_shared<AudioBuffer>(0, k_block) };
+        std::shared_ptr<AudioBuffer> buffer { std::make_shared<AudioBuffer>(0, k_node_buffer_block) };
         std::shared_ptr<Constant> constant { std::make_shared<Constant>(0.5) };
         std::shared_ptr<Phasor> phasor { std::make_shared<Phasor>(1.0F, 1.0) };
 
         void fill(double value)
         {
-            buffer->get_data().assign(k_block, value);
+            buffer->get_data().assign(k_node_buffer_block, value);
         }
     };
 
     class NodeBufferTest : public ::testing::Test {
     protected:
         std::shared_ptr<Constant> constant { std::make_shared<Constant>(0.5) };
-        std::shared_ptr<NodeBuffer> node_buffer { std::make_shared<NodeBuffer>(0, k_block, constant) };
+        std::shared_ptr<NodeBuffer> node_buffer { std::make_shared<NodeBuffer>(0, k_node_buffer_block, constant) };
 
         void SetUp() override
         {
@@ -131,16 +131,16 @@ TEST_F(NodeSourceProcessorTest, InactiveNodeContinuesItsSequenceAcrossBlocks)
 {
     fill(0.0);
     NodeSourceProcessor processor(phasor, 1.0F);
-    const auto expected = phasor_reference(static_cast<size_t>(k_block) * 2, 1.0F);
+    const auto expected = phasor_reference(static_cast<size_t>(k_node_buffer_block) * 2, 1.0F);
 
     processor.process(buffer);
     const std::vector<double> first = buffer->get_data();
     processor.process(buffer);
     const std::vector<double> second = buffer->get_data();
 
-    for (uint32_t i = 0; i < k_block; ++i) {
+    for (uint32_t i = 0; i < k_node_buffer_block; ++i) {
         EXPECT_DOUBLE_EQ(first[i], expected[i]);
-        EXPECT_DOUBLE_EQ(second[i], expected[k_block + i]);
+        EXPECT_DOUBLE_EQ(second[i], expected[k_node_buffer_block + i]);
     }
 }
 
@@ -149,7 +149,7 @@ TEST_F(NodeSourceProcessorTest, ActiveNodeIsSampledWithoutAdvancing)
     phasor->m_state.store(NodeState::ACTIVE);
     fill(0.0);
     NodeSourceProcessor processor(phasor, 1.0F);
-    const auto expected = phasor_reference(k_block, 1.0F);
+    const auto expected = phasor_reference(k_node_buffer_block, 1.0F);
 
     processor.process(buffer);
     const std::vector<double> first = buffer->get_data();
@@ -157,7 +157,7 @@ TEST_F(NodeSourceProcessorTest, ActiveNodeIsSampledWithoutAdvancing)
     const std::vector<double> second = buffer->get_data();
 
     EXPECT_DOUBLE_EQ(phasor->get_phase(), 0.0);
-    for (uint32_t i = 0; i < k_block; ++i) {
+    for (uint32_t i = 0; i < k_node_buffer_block; ++i) {
         EXPECT_DOUBLE_EQ(first[i], expected[i]);
         EXPECT_DOUBLE_EQ(second[i], expected[i]);
     }

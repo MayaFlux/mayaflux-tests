@@ -45,7 +45,7 @@ namespace {
         int frames { 0 };
     };
 
-    std::vector<ProbeVertex> make_vertices(uint32_t count)
+    std::vector<ProbeVertex> graphics_node_make_vertices(uint32_t count)
     {
         std::vector<ProbeVertex> v;
         for (uint32_t i = 0; i < count; ++i) {
@@ -103,7 +103,7 @@ protected:
 
     void load(uint32_t count)
     {
-        const auto v = make_vertices(count);
+        const auto v = graphics_node_make_vertices(count);
         node->set_vertex_data(v.data(), v.size() * sizeof(ProbeVertex));
     }
 
@@ -200,7 +200,7 @@ TEST_F(GeometryWriterBaseTest, ResizeWithoutPreservingDiscardsContents)
 
 TEST_F(GeometryWriterBaseTest, SetVertexDataStoresBytesAndDerivesCount)
 {
-    const auto v = make_vertices(3);
+    const auto v = graphics_node_make_vertices(3);
     node->set_vertex_data(v.data(), v.size() * sizeof(ProbeVertex));
 
     EXPECT_EQ(node->get_vertex_count(), 3U);
@@ -226,7 +226,7 @@ TEST_F(GeometryWriterBaseTest, SetVertexDataRejectsNullAndZeroSize)
     node->clear_gpu_update_flag();
 
     node->set_vertex_data(nullptr, 24);
-    const auto v = make_vertices(1);
+    const auto v = graphics_node_make_vertices(1);
     node->set_vertex_data(v.data(), 0);
 
     EXPECT_EQ(node->get_vertex_count(), 2U);
@@ -235,7 +235,7 @@ TEST_F(GeometryWriterBaseTest, SetVertexDataRejectsNullAndZeroSize)
 
 TEST_F(GeometryWriterBaseTest, SetVertexDataWithPartialTrailingVertexCountsWholeVerticesOnly)
 {
-    const auto v = make_vertices(3);
+    const auto v = graphics_node_make_vertices(3);
     node->set_vertex_data(v.data(), 2 * sizeof(ProbeVertex) + 4);
 
     EXPECT_EQ(node->get_vertex_count(), 2U);
@@ -244,7 +244,7 @@ TEST_F(GeometryWriterBaseTest, SetVertexDataWithPartialTrailingVertexCountsWhole
 TEST_F(GeometryWriterBaseTest, SetVertexDataWithoutStrideIsRejected)
 {
     ProbeGeometry nostride { 0 };
-    const auto v = make_vertices(2);
+    const auto v = graphics_node_make_vertices(2);
     nostride.set_vertex_data(v.data(), v.size() * sizeof(ProbeVertex));
 
     EXPECT_EQ(nostride.get_vertex_count(), 0U);
@@ -321,7 +321,7 @@ TEST_F(GeometryWriterBaseTest, GetVertexReturnsExactlyOneStrideOfBytes)
 
 TEST_F(GeometryWriterBaseTest, GetVertexAddressesTheRequestedVertex)
 {
-    const auto v = make_vertices(3);
+    const auto v = graphics_node_make_vertices(3);
     node->set_vertex_data(v.data(), v.size() * sizeof(ProbeVertex));
 
     for (uint32_t i = 0; i < 3; ++i) {
@@ -360,7 +360,7 @@ TEST_F(GeometryWriterBaseTest, GetVertexTypedBeyondRangeReturnsDefault)
 TEST_F(GeometryWriterBaseTest, SetVerticesAdoptsStrideCountAndContents)
 {
     ProbeGeometry fresh { 0 };
-    const auto v = make_vertices(4);
+    const auto v = graphics_node_make_vertices(4);
     fresh.set_vertices<ProbeVertex>(v);
 
     EXPECT_EQ(fresh.get_vertex_stride(), sizeof(ProbeVertex));

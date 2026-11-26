@@ -34,7 +34,7 @@ namespace {
     using RoundTrip::path_in_cwd;
     using Scope = Kakshya::SpatialScope;
 
-    struct Owned {
+    struct SpatialSequenceOwned {
         PrimitiveTopology topology { PrimitiveTopology::POINT_LIST };
         std::vector<glm::vec3> positions;
         std::vector<int32_t> counts;
@@ -55,7 +55,7 @@ namespace {
         }
     };
 
-    std::vector<glm::vec3> points(size_t count, float offset = 0.0F)
+    std::vector<glm::vec3> spatial_sequence_points(size_t count, float offset = 0.0F)
     {
         std::vector<glm::vec3> out;
         out.reserve(count);
@@ -66,7 +66,7 @@ namespace {
         return out;
     }
 
-    std::vector<float> floats(size_t count, float scale = 1.0F)
+    std::vector<float> spatial_sequence_floats(size_t count, float scale = 1.0F)
     {
         std::vector<float> out(count);
         for (size_t i = 0; i < count; ++i) {
@@ -76,7 +76,7 @@ namespace {
     }
 
     template <class T>
-    Kakshya::SpatialAttribute attribute(const std::string& name, Scope scope, std::vector<T> values)
+    Kakshya::SpatialAttribute spatial_sequence_attribute(const std::string& name, Scope scope, std::vector<T> values)
     {
         return { .name = name, .scope = scope, .values = Kakshya::DataVariant { std::move(values) } };
     }
@@ -91,23 +91,23 @@ namespace {
         return nullptr;
     }
 
-    Owned cloud(size_t count, float offset = 0.0F)
+    SpatialSequenceOwned cloud(size_t count, float offset = 0.0F)
     {
-        Owned owned;
-        owned.positions = points(count, offset);
+        SpatialSequenceOwned owned;
+        owned.positions = spatial_sequence_points(count, offset);
         owned.ids.resize(count);
         std::iota(owned.ids.begin(), owned.ids.end(), uint64_t { 100 });
-        owned.velocities = points(count, offset + 5.0F);
-        owned.attributes = { attribute<float>("mass", Scope::Varying, floats(count)) };
+        owned.velocities = spatial_sequence_points(count, offset + 5.0F);
+        owned.attributes = { spatial_sequence_attribute<float>("mass", Scope::Varying, spatial_sequence_floats(count)) };
         return owned;
     }
 
-    Owned strips(const std::vector<int32_t>& counts)
+    SpatialSequenceOwned spatial_sequence_strips(const std::vector<int32_t>& counts)
     {
-        Owned owned;
+        SpatialSequenceOwned owned;
         owned.topology = PrimitiveTopology::LINE_STRIP;
         owned.counts = counts;
-        owned.positions = points(static_cast<size_t>(std::accumulate(counts.begin(), counts.end(), 0)));
+        owned.positions = spatial_sequence_points(static_cast<size_t>(std::accumulate(counts.begin(), counts.end(), 0)));
         return owned;
     }
 
@@ -162,12 +162,12 @@ namespace {
         source.attributes.clear();
 
         EXPECT_EQ(data.topology, PrimitiveTopology::POINT_LIST);
-        EXPECT_EQ(data.positions, points(4));
+        EXPECT_EQ(data.positions, spatial_sequence_points(4));
         EXPECT_EQ(data.ids, (std::vector<uint64_t> { 100, 101, 102, 103 }));
-        EXPECT_EQ(data.velocities, points(4, 5.0F));
+        EXPECT_EQ(data.velocities, spatial_sequence_points(4, 5.0F));
         ASSERT_EQ(data.attributes.size(), 1U);
         EXPECT_EQ(data.attributes.front().name, "mass");
-        EXPECT_EQ(std::get<std::vector<float>>(data.attributes.front().values), floats(4));
+        EXPECT_EQ(std::get<std::vector<float>>(data.attributes.front().values), spatial_sequence_floats(4));
     }
 
     TEST_F(SpatialSequenceTest, AStreamIsServedFrameByFrameAndTimedByTheArchive)
@@ -183,7 +183,7 @@ namespace {
         for (size_t i = 0; i < k_sizes.size(); ++i) {
             const auto frame = frames->read(i);
             ASSERT_NE(frame, nullptr) << i;
-            EXPECT_EQ(frame->positions, points(k_sizes[i], static_cast<float>(i))) << i;
+            EXPECT_EQ(frame->positions, spatial_sequence_points(k_sizes[i], static_cast<float>(i))) << i;
             EXPECT_EQ(frame->ids.size(), k_sizes[i]) << i;
             EXPECT_EQ(frame->velocities.size(), k_sizes[i]) << i;
             EXPECT_TRUE(frame->vertex_counts_per_curve.empty()) << i;
@@ -196,7 +196,7 @@ namespace {
     TEST_F(SpatialSequenceTest, ACurvesStreamKeepsItsCountsAndHasNoIds)
     {
         const auto path = path_in_cwd("curves.abc");
-        const auto source = strips({ 3, 4, 2 });
+        const auto source = spatial_sequence_strips({ 3, 4, 2 });
         ASSERT_TRUE(write_all(path, [&](IO::SpatialCache& cache) { return cache.write("web", source.view()); }));
 
         const auto frames = IO::SpatialFileFrames::create(path);
@@ -225,8 +225,8 @@ namespace {
     {
         const auto path = path_in_cwd("curves_max.abc");
         ASSERT_TRUE(write_all(path, [&](IO::SpatialCache& cache) {
-            return cache.write("web", strips({ 3, 4 }).view()) && cache.write("web", strips({ 5, 5, 5 }).view())
-                && cache.write("web", strips({ 2 }).view());
+            return cache.write("web", spatial_sequence_strips({ 3, 4 }).view()) && cache.write("web", spatial_sequence_strips({ 5, 5, 5 }).view())
+                && cache.write("web", spatial_sequence_strips({ 2 }).view());
         }));
 
         const auto frames = IO::SpatialFileFrames::create(path);
@@ -238,8 +238,8 @@ namespace {
     TEST_F(SpatialSequenceTest, AStreamWithNoAttributesGivesFramesWithNone)
     {
         const auto path = path_in_cwd("bare.abc");
-        Owned bare;
-        bare.positions = points(3);
+        SpatialSequenceOwned bare;
+        bare.positions = spatial_sequence_points(3);
         ASSERT_TRUE(write_all(path, [&](IO::SpatialCache& cache) { return cache.write("bare", bare.view()); }));
 
         const auto frames = IO::SpatialFileFrames::create(path);
@@ -247,7 +247,7 @@ namespace {
         ASSERT_NE(frames, nullptr);
         const auto frame = frames->read(0);
         ASSERT_NE(frame, nullptr);
-        EXPECT_EQ(frame->positions, points(3));
+        EXPECT_EQ(frame->positions, spatial_sequence_points(3));
         EXPECT_TRUE(frame->attributes.empty());
         EXPECT_TRUE(frame->ids.empty());
     }
@@ -257,9 +257,9 @@ namespace {
         const auto path = path_in_cwd("scopes.abc");
         auto source = cloud(4);
         source.attributes = {
-            attribute<float>("mass", Scope::Varying, floats(4)),
-            attribute<float>("gravity", Scope::Constant, { 9.5F }),
-            attribute<float>("group", Scope::Uniform, { 3.0F }),
+            spatial_sequence_attribute<float>("mass", Scope::Varying, spatial_sequence_floats(4)),
+            spatial_sequence_attribute<float>("gravity", Scope::Constant, { 9.5F }),
+            spatial_sequence_attribute<float>("group", Scope::Uniform, { 3.0F }),
         };
         ASSERT_TRUE(write_all(path, [&](IO::SpatialCache& cache) { return cache.write("scoped", source.view()); }));
 
@@ -275,7 +275,7 @@ namespace {
         ASSERT_NE(gravity, nullptr);
         ASSERT_NE(group, nullptr);
         EXPECT_EQ(mass->scope, Scope::Varying);
-        EXPECT_EQ(std::get<std::vector<float>>(mass->values), floats(4));
+        EXPECT_EQ(std::get<std::vector<float>>(mass->values), spatial_sequence_floats(4));
         EXPECT_EQ(gravity->scope, Scope::Constant);
         EXPECT_EQ(std::get<std::vector<float>>(gravity->values), std::vector<float> { 9.5F });
         EXPECT_EQ(group->scope, Scope::Uniform);
@@ -364,7 +364,7 @@ namespace {
                 for (size_t pass = 0; pass < 50; ++pass) {
                     const size_t index = (t + pass) % k_sizes.size();
                     const auto frame = frames->read(index);
-                    if (!frame || frame->positions != points(k_sizes[index], static_cast<float>(index))) {
+                    if (!frame || frame->positions != spatial_sequence_points(k_sizes[index], static_cast<float>(index))) {
                         ++wrong;
                     }
                 }

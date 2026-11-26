@@ -16,7 +16,7 @@ namespace {
     using Core::TabletLayout;
     using Core::TabletToolType;
 
-    constexpr uint16_t k_page_generic = 0x01;
+    constexpr uint16_t k_tablet_backend_page_generic = 0x01;
     constexpr uint16_t k_page_digitizer = 0x0D;
 
     TabletLayout layout_of(const std::vector<uint8_t>& descriptor)
@@ -105,8 +105,8 @@ namespace {
             { k_page_digitizer, 0x44, 1, 1 },
             { k_page_digitizer, 0x3C, 2, 1 },
             { k_page_digitizer, 0x32, 3, 1 },
-            { k_page_generic, 0x30, 8, 16 },
-            { k_page_generic, 0x31, 24, 16 },
+            { k_tablet_backend_page_generic, 0x30, 8, 16 },
+            { k_tablet_backend_page_generic, 0x31, 24, 16 },
             { k_page_digitizer, 0x30, 40, 16 },
             { k_page_digitizer, 0x3D, 56, 8 },
             { k_page_digitizer, 0x3E, 64, 8 },
@@ -125,8 +125,8 @@ namespace {
     {
         const TabletLayout layout = layout_of(pen_descriptor());
 
-        EXPECT_EQ(find_field(layout, k_page_generic, 0x30)->slot, TabletFrame::X);
-        EXPECT_EQ(find_field(layout, k_page_generic, 0x31)->slot, TabletFrame::Y);
+        EXPECT_EQ(find_field(layout, k_tablet_backend_page_generic, 0x30)->slot, TabletFrame::X);
+        EXPECT_EQ(find_field(layout, k_tablet_backend_page_generic, 0x31)->slot, TabletFrame::Y);
         EXPECT_EQ(find_field(layout, k_page_digitizer, 0x30)->slot, TabletFrame::PRESSURE);
         EXPECT_EQ(find_field(layout, k_page_digitizer, 0x3D)->slot, TabletFrame::TILT_X);
         EXPECT_EQ(find_field(layout, k_page_digitizer, 0x3E)->slot, TabletFrame::TILT_Y);
@@ -156,7 +156,7 @@ namespace {
     {
         const TabletLayout layout = layout_of(pen_descriptor());
 
-        const TabletField* x = find_field(layout, k_page_generic, 0x30);
+        const TabletField* x = find_field(layout, k_tablet_backend_page_generic, 0x30);
         const TabletField* pressure = find_field(layout, k_page_digitizer, 0x30);
         const TabletField* tilt = find_field(layout, k_page_digitizer, 0x3D);
         ASSERT_NE(x, nullptr);
@@ -181,7 +181,7 @@ namespace {
 
         const TabletField* serial = find_field(layout, k_page_digitizer, 0x5B);
         const TabletField* twist = find_field(layout, k_page_digitizer, 0x41);
-        const TabletField* wheel = find_field(layout, k_page_generic, 0x38);
+        const TabletField* wheel = find_field(layout, k_tablet_backend_page_generic, 0x38);
         ASSERT_NE(serial, nullptr);
         ASSERT_NE(twist, nullptr);
         ASSERT_NE(wheel, nullptr);

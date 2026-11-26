@@ -16,9 +16,9 @@ namespace {
     namespace D = Kinesis::Discrete;
 
     constexpr double k_sample_rate = 8000.0;
-    constexpr double k_tol = 1e-6;
+    constexpr double k_discrete_spectral_tol = 1e-6;
 
-    std::vector<double> sine(size_t n, double freq_hz, double amplitude = 1.0)
+    std::vector<double> discrete_spectral_sine(size_t n, double freq_hz, double amplitude = 1.0)
     {
         std::vector<double> data(n);
         for (size_t i = 0; i < n; ++i) {
@@ -52,7 +52,7 @@ namespace {
         constexpr size_t n = 512;
         constexpr uint32_t window = 64;
         constexpr uint32_t hop = 32;
-        const auto src = sine(n, 1000.0);
+        const auto src = discrete_spectral_sine(n, 1000.0);
 
         std::vector<size_t> seen;
         (void)D::apply_spectral(src, window, hop,
@@ -67,7 +67,7 @@ namespace {
 
     TEST(KinesisSpectralEngineTest, ShortInputGetsOneFrameAndKeepsItsLength)
     {
-        const auto src = sine(10, 1000.0);
+        const auto src = discrete_spectral_sine(10, 1000.0);
         size_t calls = 0;
         const auto out = D::apply_spectral(src, 64, 16,
             [&calls](std::vector<std::complex<double>>&, size_t) { ++calls; });
@@ -86,23 +86,23 @@ namespace {
     TEST(KinesisSpectralEngineTest, IdentityProcessorReconstructsTheInterior)
     {
         constexpr uint32_t window = 64;
-        const auto src = sine(512, 440.0, 0.8);
+        const auto src = discrete_spectral_sine(512, 440.0, 0.8);
 
         const auto out = D::apply_spectral(src, window, 16,
             [](std::vector<std::complex<double>>&, size_t) { });
 
         for (size_t i = window; i + window < src.size(); ++i) {
-            EXPECT_NEAR(out[i], src[i], k_tol) << "index " << i;
+            EXPECT_NEAR(out[i], src[i], k_discrete_spectral_tol) << "index " << i;
         }
     }
 
     TEST(KinesisSpectralEngineTest, GateAboveEverythingSilencesOutput)
     {
-        const auto src = sine(512, 440.0);
+        const auto src = discrete_spectral_sine(512, 440.0);
         const auto out = D::spectral_gate(src, 300.0, 64, 16);
 
         for (double v : out) {
-            EXPECT_NEAR(v, 0.0, k_tol);
+            EXPECT_NEAR(v, 0.0, k_discrete_spectral_tol);
         }
     }
 
@@ -110,7 +110,7 @@ namespace {
     {
         constexpr size_t n = 4096;
         constexpr uint32_t window = 512;
-        const auto src = sine(n, 1000.0);
+        const auto src = discrete_spectral_sine(n, 1000.0);
 
         const auto out = D::spectral_filter(src, 2000.0, 4000.0, k_sample_rate, window, 128);
 
@@ -123,7 +123,7 @@ namespace {
     {
         constexpr size_t n = 4096;
         constexpr uint32_t window = 512;
-        const auto src = sine(n, 1000.0);
+        const auto src = discrete_spectral_sine(n, 1000.0);
 
         const auto out = D::spectral_filter(src, 500.0, 1500.0, k_sample_rate, window, 128);
 
@@ -134,7 +134,7 @@ namespace {
 
     TEST(KinesisSpectralTransformTest, InvertKeepsToneLevel)
     {
-        const auto src = sine(4096, 440.0, 0.5);
+        const auto src = discrete_spectral_sine(4096, 440.0, 0.5);
         const auto out = D::spectral_invert(src, 512, 128);
 
         const double in_rms = rms(src, 512, src.size() - 512);
@@ -144,24 +144,24 @@ namespace {
 
     TEST(KinesisSpectralTransformTest, UnitEnhancementIsIdentityInTheInterior)
     {
-        const auto src = sine(512, 440.0, 0.5);
+        const auto src = discrete_spectral_sine(512, 440.0, 0.5);
         const auto out = D::harmonic_enhance(src, 1.0, 64, 16);
 
         for (size_t i = 64; i + 64 < src.size(); ++i) {
-            EXPECT_NEAR(out[i], src[i], k_tol) << "index " << i;
+            EXPECT_NEAR(out[i], src[i], k_discrete_spectral_tol) << "index " << i;
         }
     }
 
     TEST(KinesisSpectralPhaseVocoderTest, UnitStretchIsCopy)
     {
-        const auto src = sine(2048, 300.0);
+        const auto src = discrete_spectral_sine(2048, 300.0);
         const auto out = D::phase_vocoder_stretch(src, 1.0, 256, 64);
         EXPECT_EQ(out, src);
     }
 
     TEST(KinesisSpectralPhaseVocoderTest, OutputLengthFollowsStretchFactor)
     {
-        const auto src = sine(2048, 300.0);
+        const auto src = discrete_spectral_sine(2048, 300.0);
         EXPECT_EQ(D::phase_vocoder_stretch(src, 2.0, 256, 64).size(), 4096U);
         EXPECT_EQ(D::phase_vocoder_stretch(src, 0.5, 256, 64).size(), 1024U);
         EXPECT_TRUE(D::phase_vocoder_stretch(src, 0.0, 256, 64).empty());
@@ -182,13 +182,13 @@ namespace {
 
     TEST(KinesisSpectralPhaseVocoderTest, PitchShiftZeroIsCopy)
     {
-        const auto src = sine(2048, 300.0);
+        const auto src = discrete_spectral_sine(2048, 300.0);
         EXPECT_EQ(D::pitch_shift(src, 0.0, 256, 64), src);
     }
 
     TEST(KinesisSpectralPhaseVocoderTest, PitchShiftOctaveDoublesFrequency)
     {
-        const auto src = sine(8000, 100.0);
+        const auto src = discrete_spectral_sine(8000, 100.0);
         const auto out = D::pitch_shift(src, 12.0, 512, 128);
 
         ASSERT_EQ(out.size(), src.size());
@@ -235,7 +235,7 @@ namespace {
     {
         constexpr uint32_t window = 64;
         constexpr size_t bins = window / 2 + 1;
-        const std::vector<double> signal = sine(300, 500.0);
+        const std::vector<double> signal = discrete_spectral_sine(300, 500.0);
         const std::vector<double> weights(3 * bins, 1.0);
 
         const auto out = D::spectral_projection(signal, window, 32, weights);

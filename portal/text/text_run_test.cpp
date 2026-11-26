@@ -20,7 +20,7 @@ namespace {
     using Portal::Text::TextRun;
     using Portal::Text::TypeFaceFoundry;
 
-    constexpr uint32_t k_pixel_size = 24;
+    constexpr uint32_t k_text_run_pixel_size = 24;
 
     class TextRunTest : public SystemFontTest {
     protected:
@@ -31,7 +31,7 @@ namespace {
                 return;
             }
             auto& foundry = TypeFaceFoundry::instance();
-            ASSERT_TRUE(foundry.set_default_font(font_path, k_pixel_size, 512));
+            ASSERT_TRUE(foundry.set_default_font(font_path, k_text_run_pixel_size, 512));
             atlas = foundry.get_default_glyph_atlas();
             ASSERT_NE(atlas, nullptr);
         }
@@ -203,7 +203,7 @@ namespace {
 
     TEST_F(TextRunTest, AGrownAtlasMakesTheRunStaleAndVerticesLayItOutAgain)
     {
-        GlyphAtlas small(face, k_pixel_size, 32);
+        GlyphAtlas small(face, k_text_run_pixel_size, 32);
         auto p = params(400, 100);
         p.atlas = &small;
         TextRun run(p);
@@ -222,7 +222,7 @@ namespace {
 
     TEST_F(TextRunTest, ChangingTheAtlasInTheParamsLaysTheTextOutAgainstIt)
     {
-        GlyphAtlas other(face, k_pixel_size, 256);
+        GlyphAtlas other(face, k_text_run_pixel_size, 256);
         TextRun run(params(400, 100));
         run.set("a");
 

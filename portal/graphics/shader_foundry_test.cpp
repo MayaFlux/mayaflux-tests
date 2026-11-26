@@ -23,12 +23,12 @@ namespace {
     using Portal::Graphics::ShaderSpec;
     using Portal::Graphics::ShaderStage;
 
-    ShaderFoundry& foundry()
+    ShaderFoundry& shader_foundry()
     {
         return Portal::Graphics::get_shader_foundry();
     }
 
-    constexpr std::string_view k_compute_source = R"(#version 460
+    constexpr std::string_view k_shader_foundry_compute_source = R"(#version 460
 layout(local_size_x = 8, local_size_y = 4, local_size_z = 1) in;
 layout(set = 0, binding = 0, std430) buffer Data { float values[]; };
 layout(push_constant) uniform PC { float gain; } pc;
@@ -60,12 +60,12 @@ void main() {
             if (!s_backend) {
                 GTEST_SKIP() << "No usable Vulkan device: " << vulkan_unavailable_reason();
             }
-            foundry().shutdown();
+            shader_foundry().shutdown();
         }
 
         void TearDown() override
         {
-            foundry().shutdown();
+            shader_foundry().shutdown();
         }
 
         static const std::shared_ptr<Core::VulkanBackend>& backend() { return s_backend; }
@@ -121,35 +121,35 @@ void main() {
 
     TEST_F(ShaderFoundryTest, UninitializedFoundryLoadsNothing)
     {
-        EXPECT_FALSE(foundry().is_initialized());
-        EXPECT_EQ(foundry().load_shader(std::string(k_compute_source), ShaderStage::COMPUTE), INVALID_SHADER);
+        EXPECT_FALSE(shader_foundry().is_initialized());
+        EXPECT_EQ(shader_foundry().load_shader(std::string(k_shader_foundry_compute_source), ShaderStage::COMPUTE), INVALID_SHADER);
     }
 
     TEST_F(ShaderFoundryTest, InitializeRejectsANullBackend)
     {
-        EXPECT_FALSE(foundry().initialize(nullptr));
-        EXPECT_FALSE(foundry().is_initialized());
+        EXPECT_FALSE(shader_foundry().initialize(nullptr));
+        EXPECT_FALSE(shader_foundry().is_initialized());
     }
 
     TEST_F(ShaderFoundryTest, InitializingAgainReportsSuccess)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
 
-        EXPECT_TRUE(foundry().initialize(backend()));
-        EXPECT_TRUE(foundry().is_initialized());
+        EXPECT_TRUE(shader_foundry().initialize(backend()));
+        EXPECT_TRUE(shader_foundry().is_initialized());
     }
 
     TEST_F(ShaderFoundryTest, ShutdownIsRepeatableAndTheFoundryLoadsAgainAfterReinitialize)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
-        ASSERT_NE(foundry().load_shader(std::string(k_compute_source), ShaderStage::COMPUTE), INVALID_SHADER);
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
+        ASSERT_NE(shader_foundry().load_shader(std::string(k_shader_foundry_compute_source), ShaderStage::COMPUTE), INVALID_SHADER);
 
-        foundry().shutdown();
-        EXPECT_NO_THROW(foundry().shutdown());
-        EXPECT_FALSE(foundry().is_initialized());
+        shader_foundry().shutdown();
+        EXPECT_NO_THROW(shader_foundry().shutdown());
+        EXPECT_FALSE(shader_foundry().is_initialized());
 
-        ASSERT_TRUE(foundry().initialize(backend()));
-        EXPECT_NE(foundry().load_shader(std::string(k_compute_source), ShaderStage::COMPUTE), INVALID_SHADER);
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
+        EXPECT_NE(shader_foundry().load_shader(std::string(k_shader_foundry_compute_source), ShaderStage::COMPUTE), INVALID_SHADER);
     }
 
     // ------------------------------------------------------------------
@@ -158,10 +158,10 @@ void main() {
 
     TEST_F(ShaderFoundryTest, GlslSourceCompilesToAShaderIdAndTheSameSourceReturnsTheSameId)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
 
-        const ShaderID first = foundry().load_shader(std::string(k_compute_source), ShaderStage::COMPUTE);
-        const ShaderID again = foundry().load_shader(std::string(k_compute_source), ShaderStage::COMPUTE);
+        const ShaderID first = shader_foundry().load_shader(std::string(k_shader_foundry_compute_source), ShaderStage::COMPUTE);
+        const ShaderID again = shader_foundry().load_shader(std::string(k_shader_foundry_compute_source), ShaderStage::COMPUTE);
 
         ASSERT_NE(first, INVALID_SHADER);
         EXPECT_EQ(again, first);
@@ -169,49 +169,49 @@ void main() {
 
     TEST_F(ShaderFoundryTest, SourceWithoutAStageIsRefused)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
 
-        EXPECT_EQ(foundry().load_shader(std::string(k_compute_source)), INVALID_SHADER);
+        EXPECT_EQ(shader_foundry().load_shader(std::string(k_shader_foundry_compute_source)), INVALID_SHADER);
     }
 
     TEST_F(ShaderFoundryTest, BrokenGlslIsRefused)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
 
-        EXPECT_EQ(foundry().load_shader("#version 460\nvoid main() { not valid }\n", ShaderStage::COMPUTE), INVALID_SHADER);
+        EXPECT_EQ(shader_foundry().load_shader("#version 460\nvoid main() { not valid }\n", ShaderStage::COMPUTE), INVALID_SHADER);
     }
 
     TEST_F(ShaderFoundryTest, SuppliedShaderFileLoadsWithItsStageDetectedAndIsCachedByName)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
 
-        const ShaderID id = foundry().load_shader("dilate.comp");
+        const ShaderID id = shader_foundry().load_shader("dilate.comp");
 
         ASSERT_NE(id, INVALID_SHADER);
-        EXPECT_EQ(foundry().get_shader_stage(id), ShaderStage::COMPUTE);
-        EXPECT_EQ(foundry().load_shader("dilate.comp"), id);
-        EXPECT_TRUE(foundry().is_cached("dilate.comp"));
+        EXPECT_EQ(shader_foundry().get_shader_stage(id), ShaderStage::COMPUTE);
+        EXPECT_EQ(shader_foundry().load_shader("dilate.comp"), id);
+        EXPECT_TRUE(shader_foundry().is_cached("dilate.comp"));
     }
 
     TEST_F(ShaderFoundryTest, UnknownFileNameIsRefused)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
 
-        EXPECT_EQ(foundry().load_shader("no_such_shader_file.comp"), INVALID_SHADER);
-        EXPECT_EQ(foundry().load_shader("no_such_shader_file.comp", ShaderStage::COMPUTE), INVALID_SHADER);
+        EXPECT_EQ(shader_foundry().load_shader("no_such_shader_file.comp"), INVALID_SHADER);
+        EXPECT_EQ(shader_foundry().load_shader("no_such_shader_file.comp", ShaderStage::COMPUTE), INVALID_SHADER);
     }
 
     TEST_F(ShaderFoundryTest, GeneratedAssemblyShaderReturnsTheSameIdForTheSameSpec)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
         const auto spec = ShaderSpec::Assemble {}
                               .ssbo("sig", BindingDirection::InOut, Kakshya::GpuDataFormat::FLOAT32)
                               .pc("gain")
                               .op(KernelOp::Scale)
                               .build();
 
-        const ShaderID first = foundry().load_shader(spec);
-        const ShaderID again = foundry().load_shader(spec);
+        const ShaderID first = shader_foundry().load_shader(spec);
+        const ShaderID again = shader_foundry().load_shader(spec);
 
         ASSERT_NE(first, INVALID_SHADER);
         EXPECT_EQ(again, first);
@@ -219,32 +219,32 @@ void main() {
 
     TEST_F(ShaderFoundryTest, GeneratedSpecWithADoubleBindingIsRejected)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
         const auto spec = ShaderSpec::Assemble {}
                               .ssbo("sig", BindingDirection::InOut, Kakshya::GpuDataFormat::FLOAT64)
                               .pc("gain")
                               .op(KernelOp::Scale)
                               .build();
 
-        EXPECT_EQ(foundry().load_shader(spec), INVALID_SHADER);
+        EXPECT_EQ(shader_foundry().load_shader(spec), INVALID_SHADER);
     }
 
     TEST_F(ShaderFoundryTest, GeneratedSpecWithADoublePushConstantIsRejected)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
         const auto spec = ShaderSpec::Assemble {}
                               .ssbo("sig", BindingDirection::InOut, Kakshya::GpuDataFormat::FLOAT32)
                               .pc("gain", Kakshya::GpuDataFormat::FLOAT64)
                               .op(KernelOp::Scale)
                               .build();
 
-        EXPECT_EQ(foundry().load_shader(spec), INVALID_SHADER);
+        EXPECT_EQ(shader_foundry().load_shader(spec), INVALID_SHADER);
     }
 
     MAYAFLUX_TEST_WITH(TEST_F, ShaderFoundryTest, UserKernelWithADoubleBindingLoadsWhenTheDeviceSupportsIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::shader_float64, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
-        if (!foundry().get_physical_device().getFeatures().shaderFloat64) {
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
+        if (!shader_foundry().get_physical_device().getFeatures().shaderFloat64) {
             GTEST_SKIP() << "Selected device does not report shaderFloat64";
         }
         const auto spec = ShaderSpec::Assemble {}
@@ -253,20 +253,20 @@ void main() {
                               .kernel(MF_KERNEL([](double* sig, double gain, uint32_t i) { sig[i] = sig[i] * gain; }))
                               .build();
 
-        EXPECT_NE(foundry().load_shader(spec), INVALID_SHADER);
+        EXPECT_NE(shader_foundry().load_shader(spec), INVALID_SHADER);
     }
 
     TEST_F(ShaderFoundryTest, GeneratedKernelShaderReturnsTheSameIdForTheSameSpec)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
         const auto spec = ShaderSpec::Assemble {}
                               .ssbo("sig", BindingDirection::InOut, Kakshya::GpuDataFormat::FLOAT32)
                               .pc("gain")
                               .kernel(MF_KERNEL([](float* sig, float gain, uint32_t i) { sig[i] = sig[i] * gain; }))
                               .build();
 
-        const ShaderID first = foundry().load_shader(spec);
-        const ShaderID again = foundry().load_shader(spec);
+        const ShaderID first = shader_foundry().load_shader(spec);
+        const ShaderID again = shader_foundry().load_shader(spec);
 
         ASSERT_NE(first, INVALID_SHADER);
         EXPECT_EQ(again, first);
@@ -278,11 +278,11 @@ void main() {
 
     TEST_F(ShaderFoundryTest, ReflectionDescribesWorkgroupBindingsAndPushConstants)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
-        const ShaderID id = foundry().load_shader(std::string(k_compute_source), ShaderStage::COMPUTE);
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
+        const ShaderID id = shader_foundry().load_shader(std::string(k_shader_foundry_compute_source), ShaderStage::COMPUTE);
         ASSERT_NE(id, INVALID_SHADER);
 
-        const auto info = foundry().get_shader_reflection(id);
+        const auto info = shader_foundry().get_shader_reflection(id);
 
         EXPECT_EQ(info.stage, ShaderStage::COMPUTE);
         EXPECT_EQ(info.entry_point, "main");
@@ -298,39 +298,39 @@ void main() {
 
     TEST_F(ShaderFoundryTest, UnknownShaderIdHasDefaultStageEntryPointAndEmptyReflection)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
 
-        EXPECT_EQ(foundry().get_shader_stage(9999), ShaderStage::COMPUTE);
-        EXPECT_EQ(foundry().get_shader_entry_point(9999), "main");
-        EXPECT_TRUE(foundry().get_shader_reflection(9999).descriptor_bindings.empty());
+        EXPECT_EQ(shader_foundry().get_shader_stage(9999), ShaderStage::COMPUTE);
+        EXPECT_EQ(shader_foundry().get_shader_entry_point(9999), "main");
+        EXPECT_TRUE(shader_foundry().get_shader_reflection(9999).descriptor_bindings.empty());
     }
 
     TEST_F(ShaderFoundryTest, DestroyShaderDropsItsCacheEntryAndTheShaderLoadsAgain)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
-        const ShaderID id = foundry().load_shader("dilate.comp");
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
+        const ShaderID id = shader_foundry().load_shader("dilate.comp");
         ASSERT_NE(id, INVALID_SHADER);
 
-        foundry().destroy_shader(id);
+        shader_foundry().destroy_shader(id);
 
-        EXPECT_FALSE(foundry().is_cached("dilate.comp"));
-        EXPECT_NE(foundry().load_shader("dilate.comp"), INVALID_SHADER);
+        EXPECT_FALSE(shader_foundry().is_cached("dilate.comp"));
+        EXPECT_NE(shader_foundry().load_shader("dilate.comp"), INVALID_SHADER);
     }
 
     TEST_F(ShaderFoundryTest, DestroyingAnUnknownShaderIsIgnored)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
 
-        EXPECT_NO_THROW(foundry().destroy_shader(9999));
+        EXPECT_NO_THROW(shader_foundry().destroy_shader(9999));
     }
 
     TEST_F(ShaderFoundryTest, ReloadShaderReturnsAFreshId)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
-        const ShaderID original = foundry().load_shader("dilate.comp");
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
+        const ShaderID original = shader_foundry().load_shader("dilate.comp");
         ASSERT_NE(original, INVALID_SHADER);
 
-        const ShaderID reloaded = foundry().reload_shader("dilate.comp");
+        const ShaderID reloaded = shader_foundry().reload_shader("dilate.comp");
 
         EXPECT_NE(reloaded, INVALID_SHADER);
         EXPECT_NE(reloaded, original);
@@ -338,31 +338,31 @@ void main() {
 
     TEST_F(ShaderFoundryTest, CacheKeysAreListedAndCanBeInvalidatedOrCleared)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
-        ASSERT_NE(foundry().load_shader("dilate.comp"), INVALID_SHADER);
-        ASSERT_NE(foundry().load_shader("erode.comp"), INVALID_SHADER);
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
+        ASSERT_NE(shader_foundry().load_shader("dilate.comp"), INVALID_SHADER);
+        ASSERT_NE(shader_foundry().load_shader("erode.comp"), INVALID_SHADER);
 
-        const auto keys = foundry().get_cached_keys();
+        const auto keys = shader_foundry().get_cached_keys();
         EXPECT_NE(std::ranges::find(keys, "dilate.comp"), keys.end());
         EXPECT_NE(std::ranges::find(keys, "erode.comp"), keys.end());
 
-        foundry().invalidate_cache("dilate.comp");
-        EXPECT_FALSE(foundry().is_cached("dilate.comp"));
-        EXPECT_TRUE(foundry().is_cached("erode.comp"));
+        shader_foundry().invalidate_cache("dilate.comp");
+        EXPECT_FALSE(shader_foundry().is_cached("dilate.comp"));
+        EXPECT_TRUE(shader_foundry().is_cached("erode.comp"));
 
-        foundry().clear_cache();
-        EXPECT_TRUE(foundry().get_cached_keys().empty());
+        shader_foundry().clear_cache();
+        EXPECT_TRUE(shader_foundry().get_cached_keys().empty());
     }
 
     TEST_F(ShaderFoundryTest, HotReloadCompilesTheFileAgainAndKeepsItCached)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
-        ASSERT_NE(foundry().load_shader("dilate.comp"), INVALID_SHADER);
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
+        ASSERT_NE(shader_foundry().load_shader("dilate.comp"), INVALID_SHADER);
 
-        const auto reloaded = foundry().hot_reload("dilate.comp");
+        const auto reloaded = shader_foundry().hot_reload("dilate.comp");
 
         EXPECT_NE(reloaded, nullptr);
-        EXPECT_TRUE(foundry().is_cached("dilate.comp"));
+        EXPECT_TRUE(shader_foundry().is_cached("dilate.comp"));
     }
 
     // ------------------------------------------------------------------
@@ -376,41 +376,41 @@ void main() { }
 
     MAYAFLUX_TEST_WITH(TEST_F, ShaderFoundryTest, UserShaderDirectoryWinsOverALibraryShaderOfTheSameName, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
         ScopedWorkingDir cwd;
         cwd.write("shaders/dilate.comp", std::string(k_user_dilate_source));
 
-        const ShaderID id = foundry().load_shader("dilate.comp");
+        const ShaderID id = shader_foundry().load_shader("dilate.comp");
 
         ASSERT_NE(id, INVALID_SHADER);
-        const auto workgroup = foundry().get_shader_reflection(id).workgroup_size;
+        const auto workgroup = shader_foundry().get_shader_reflection(id).workgroup_size;
         ASSERT_TRUE(workgroup.has_value());
         EXPECT_EQ(*workgroup, (std::array<uint32_t, 3> { 4, 2, 1 }));
     }
 
     MAYAFLUX_TEST_WITH(TEST_F, ShaderFoundryTest, DataShadersDirectoryAlsoWinsOverALibraryShaderOfTheSameName, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
         ScopedWorkingDir cwd;
         cwd.write("data/shaders/dilate.comp", std::string(k_user_dilate_source));
 
-        const ShaderID id = foundry().load_shader("dilate.comp");
+        const ShaderID id = shader_foundry().load_shader("dilate.comp");
 
         ASSERT_NE(id, INVALID_SHADER);
-        const auto workgroup = foundry().get_shader_reflection(id).workgroup_size;
+        const auto workgroup = shader_foundry().get_shader_reflection(id).workgroup_size;
         ASSERT_TRUE(workgroup.has_value());
         EXPECT_EQ(*workgroup, (std::array<uint32_t, 3> { 4, 2, 1 }));
     }
 
     MAYAFLUX_TEST_WITH(TEST_F, ShaderFoundryTest, LibraryShaderIsUsedWhenNoUserCopyExists, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::writable_temp>() }))
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
         ScopedWorkingDir cwd;
 
-        const ShaderID id = foundry().load_shader("dilate.comp");
+        const ShaderID id = shader_foundry().load_shader("dilate.comp");
 
         ASSERT_NE(id, INVALID_SHADER);
-        const auto workgroup = foundry().get_shader_reflection(id).workgroup_size;
+        const auto workgroup = shader_foundry().get_shader_reflection(id).workgroup_size;
         ASSERT_TRUE(workgroup.has_value());
         EXPECT_EQ(*workgroup, (std::array<uint32_t, 3> { 8, 8, 1 }));
     }
@@ -421,24 +421,24 @@ void main() { }
 
     TEST_F(ShaderFoundryTest, DefinesReachTheCompiler)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
         const std::string source = "#version 460\n#ifndef MF_TEST_FLAG\n#error flag missing\n#endif\n"
                                    "layout(local_size_x = 1) in;\nvoid main() { }\n";
-        ASSERT_EQ(foundry().load_shader(source, ShaderStage::COMPUTE), INVALID_SHADER);
+        ASSERT_EQ(shader_foundry().load_shader(source, ShaderStage::COMPUTE), INVALID_SHADER);
 
-        foundry().add_define("MF_TEST_FLAG", "1");
+        shader_foundry().add_define("MF_TEST_FLAG", "1");
 
-        EXPECT_NE(foundry().load_shader(source, ShaderStage::COMPUTE), INVALID_SHADER);
+        EXPECT_NE(shader_foundry().load_shader(source, ShaderStage::COMPUTE), INVALID_SHADER);
     }
 
     TEST_F(ShaderFoundryTest, DefaultIncludeDirectoriesSurviveSetConfig)
     {
-        ASSERT_TRUE(foundry().initialize(backend()));
-        ASSERT_NE(foundry().load_shader("dilate.comp"), INVALID_SHADER);
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
+        ASSERT_NE(shader_foundry().load_shader("dilate.comp"), INVALID_SHADER);
 
-        foundry().set_config(ShaderCompilerConfig {});
+        shader_foundry().set_config(ShaderCompilerConfig {});
 
-        EXPECT_NE(foundry().hot_reload("dilate.comp"), nullptr);
+        EXPECT_NE(shader_foundry().hot_reload("dilate.comp"), nullptr);
     }
 
 } // namespace

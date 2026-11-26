@@ -268,7 +268,7 @@ void main() {
 }
 )";
 
-    constexpr const char* k_red_fragment = R"(#version 460
+    constexpr const char* k_render_processor_red_fragment = R"(#version 460
 layout(location = 0) out vec4 color;
 void main() { color = vec4(1.0, 0.0, 0.0, 1.0); }
 )";
@@ -285,7 +285,7 @@ layout(location = 0) out vec4 color;
 void main() { color = vec4(data.values[0], 0.0, 0.0, 1.0); }
 )";
 
-    constexpr const char* k_sample_fragment = R"(#version 460
+    constexpr const char* k_render_processor_sample_fragment = R"(#version 460
 layout(set = 1, binding = 0) uniform sampler2D tex;
 layout(location = 0) out vec4 color;
 void main() { color = texture(tex, vec2(0.5)); }
@@ -354,7 +354,7 @@ void main() { color = texture(tex, vec2(0.5)); }
         }
 
         void prepare_draw(const char* vertex_source, bool with_layout = true, size_t push_constant_size = 0,
-            const char* fragment_source = k_red_fragment, size_t buffer_size = 64)
+            const char* fragment_source = k_render_processor_red_fragment, size_t buffer_size = 64)
         {
             window = make_window();
             ASSERT_NE(window, nullptr);
@@ -447,7 +447,7 @@ void main() { color = texture(tex, vec2(0.5)); }
 
     MAYAFLUX_TEST_WITH(TEST_F, RenderProcessorPresentationTest, RecordedTexturedDrawSurvivesImageResidencyClearBeforePresentation, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present, ::MayaFlux::Test::Meta::Capability::vulkan_validation>() }))
     {
-        prepare_draw(k_plain_vertex, true, 0, k_sample_fragment);
+        prepare_draw(k_plain_vertex, true, 0, k_render_processor_sample_fragment);
         auto borrowed_backend = std::shared_ptr<Core::VulkanBackend>(&backend(), [](Core::VulkanBackend*) {});
         auto& loom = Portal::Graphics::get_texture_manager();
         ASSERT_TRUE(loom.initialize(borrowed_backend));

@@ -20,7 +20,7 @@ namespace {
     using Kakshya::VideoStreamContainer;
     using namespace VideoSupport;
 
-    struct FormatCase {
+    struct VideoStreamContainerFormatCase {
         ImageFormat format;
         uint32_t channels;
         size_t bytes_per_pixel;
@@ -29,23 +29,23 @@ namespace {
         const char* name;
     };
 
-    class VideoStreamContainerFormatTest : public ::testing::TestWithParam<FormatCase> {
+    class VideoStreamContainerFormatTest : public ::testing::TestWithParam<VideoStreamContainerFormatCase> {
     };
 
     INSTANTIATE_TEST_SUITE_P(Formats, VideoStreamContainerFormatTest,
         ::testing::Values(
-            FormatCase { ImageFormat::R8, 1, 1, typeid(uint8_t), DataModality::VIDEO_COLOR, "R8" },
-            FormatCase { ImageFormat::RG8, 2, 2, typeid(uint8_t), DataModality::VIDEO_COLOR, "RG8" },
-            FormatCase { ImageFormat::RGB8, 3, 3, typeid(uint8_t), DataModality::VIDEO_COLOR, "RGB8" },
-            FormatCase { ImageFormat::RGBA8, 4, 4, typeid(uint8_t), DataModality::VIDEO_COLOR, "RGBA8" },
-            FormatCase { ImageFormat::BGRA8, 4, 4, typeid(uint8_t), DataModality::VIDEO_COLOR, "BGRA8" },
-            FormatCase { ImageFormat::R16, 1, 2, typeid(uint16_t), DataModality::VIDEO_COLOR, "R16" },
-            FormatCase { ImageFormat::RGBA16, 4, 8, typeid(uint16_t), DataModality::VIDEO_COLOR, "RGBA16" },
-            FormatCase { ImageFormat::R32F, 1, 4, typeid(float), DataModality::VIDEO_COLOR, "R32F" },
-            FormatCase { ImageFormat::RGBA32F, 4, 16, typeid(float), DataModality::VIDEO_COLOR, "RGBA32F" },
-            FormatCase { ImageFormat::DEPTH16, 1, 2, typeid(uint16_t), DataModality::VIDEO_DEPTH, "DEPTH16" },
-            FormatCase { ImageFormat::DEPTH32F, 1, 4, typeid(float), DataModality::VIDEO_DEPTH, "DEPTH32F" }),
-        [](const ::testing::TestParamInfo<FormatCase>& info) { return std::string(info.param.name); });
+            VideoStreamContainerFormatCase { ImageFormat::R8, 1, 1, typeid(uint8_t), DataModality::VIDEO_COLOR, "R8" },
+            VideoStreamContainerFormatCase { ImageFormat::RG8, 2, 2, typeid(uint8_t), DataModality::VIDEO_COLOR, "RG8" },
+            VideoStreamContainerFormatCase { ImageFormat::RGB8, 3, 3, typeid(uint8_t), DataModality::VIDEO_COLOR, "RGB8" },
+            VideoStreamContainerFormatCase { ImageFormat::RGBA8, 4, 4, typeid(uint8_t), DataModality::VIDEO_COLOR, "RGBA8" },
+            VideoStreamContainerFormatCase { ImageFormat::BGRA8, 4, 4, typeid(uint8_t), DataModality::VIDEO_COLOR, "BGRA8" },
+            VideoStreamContainerFormatCase { ImageFormat::R16, 1, 2, typeid(uint16_t), DataModality::VIDEO_COLOR, "R16" },
+            VideoStreamContainerFormatCase { ImageFormat::RGBA16, 4, 8, typeid(uint16_t), DataModality::VIDEO_COLOR, "RGBA16" },
+            VideoStreamContainerFormatCase { ImageFormat::R32F, 1, 4, typeid(float), DataModality::VIDEO_COLOR, "R32F" },
+            VideoStreamContainerFormatCase { ImageFormat::RGBA32F, 4, 16, typeid(float), DataModality::VIDEO_COLOR, "RGBA32F" },
+            VideoStreamContainerFormatCase { ImageFormat::DEPTH16, 1, 2, typeid(uint16_t), DataModality::VIDEO_DEPTH, "DEPTH16" },
+            VideoStreamContainerFormatCase { ImageFormat::DEPTH32F, 1, 4, typeid(float), DataModality::VIDEO_DEPTH, "DEPTH32F" }),
+        [](const ::testing::TestParamInfo<VideoStreamContainerFormatCase>& info) { return std::string(info.param.name); });
 
     TEST_P(VideoStreamContainerFormatTest, ConstructionDerivesStorageFromTheFormat)
     {

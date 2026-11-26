@@ -18,17 +18,17 @@ namespace {
     using Samples = std::vector<double>;
     using Channels = std::vector<Samples>;
 
-    constexpr uint64_t k_frames = 5;
+    constexpr uint64_t k_region_extraction_frames = 5;
 
     std::vector<DataDimension> stereo_dimensions()
     {
-        return { DataDimension::time(k_frames), DataDimension::channel(2) };
+        return { DataDimension::time(k_region_extraction_frames), DataDimension::channel(2) };
     }
 
     Samples interleaved_stereo()
     {
-        Samples data(k_frames * 2);
-        for (uint64_t frame = 0; frame < k_frames; ++frame) {
+        Samples data(k_region_extraction_frames * 2);
+        for (uint64_t frame = 0; frame < k_region_extraction_frames; ++frame) {
             for (uint64_t channel = 0; channel < 2; ++channel) {
                 data[frame * 2 + channel] = static_cast<double>(10 * frame + channel);
             }
@@ -38,9 +38,9 @@ namespace {
 
     Channels planar_stereo()
     {
-        Channels data(2, Samples(k_frames));
+        Channels data(2, Samples(k_region_extraction_frames));
         for (uint64_t channel = 0; channel < 2; ++channel) {
-            for (uint64_t frame = 0; frame < k_frames; ++frame) {
+            for (uint64_t frame = 0; frame < k_region_extraction_frames; ++frame) {
                 data[channel][frame] = static_cast<double>(10 * frame + channel);
             }
         }
@@ -201,7 +201,7 @@ namespace {
 
     TEST(RegionExtractionDimensionTest, TheChannelCoordinateIsRemovedWhereverItSits)
     {
-        const std::vector<DataDimension> channel_first { DataDimension::channel(2), DataDimension::time(k_frames) };
+        const std::vector<DataDimension> channel_first { DataDimension::channel(2), DataDimension::time(k_region_extraction_frames) };
         const Region region({ 0, 1 }, { 1, 3 });
 
         const auto without = Kakshya::remove_channel_dimension(region, channel_first);
@@ -212,7 +212,7 @@ namespace {
 
     TEST(RegionExtractionDimensionTest, ARegionWithoutAChannelDimensionIsUnchanged)
     {
-        const std::vector<DataDimension> time_only { DataDimension::time(k_frames) };
+        const std::vector<DataDimension> time_only { DataDimension::time(k_region_extraction_frames) };
         const auto region = Region::time_span(1, 3);
 
         EXPECT_EQ(Kakshya::remove_channel_dimension(region, time_only), region);
@@ -345,7 +345,7 @@ namespace {
 
     TEST(RegionExtractionWriteTest, WritesTheRegionAndLeavesTheRestUntouched)
     {
-        Samples dest(k_frames * 2, -1.0);
+        Samples dest(k_region_extraction_frames * 2, -1.0);
         const Samples source { 1, 2, 3, 4 };
 
         Kakshya::set_or_update_region_data<double>(
@@ -356,7 +356,7 @@ namespace {
 
     TEST(RegionExtractionWriteTest, ASourceLongerThanTheRegionStopsAtTheRegion)
     {
-        Samples dest(k_frames * 2, -1.0);
+        Samples dest(k_region_extraction_frames * 2, -1.0);
         const Samples source { 1, 2, 3, 4, 5, 6 };
 
         Kakshya::set_or_update_region_data<double>(
@@ -367,7 +367,7 @@ namespace {
 
     TEST(RegionExtractionWriteTest, ASourceShorterThanTheRegionFillsItsStart)
     {
-        Samples dest(k_frames * 2, -1.0);
+        Samples dest(k_region_extraction_frames * 2, -1.0);
         const Samples source { 1, 2, 3 };
 
         Kakshya::set_or_update_region_data<double>(
@@ -378,7 +378,7 @@ namespace {
 
     TEST(RegionExtractionWriteTest, WhatIsWrittenIsWhatIsExtracted)
     {
-        Samples dest(k_frames * 2, 0.0);
+        Samples dest(k_region_extraction_frames * 2, 0.0);
         const Samples source { 9, 8, 7, 6, 5, 4 };
         const auto region = Region::audio_span(0, 2, 0, 1);
 
@@ -389,7 +389,7 @@ namespace {
 
     TEST(RegionExtractionWriteTest, PlanarChannelsReceiveTheirOwnSource)
     {
-        Channels dest(2, Samples(k_frames, -1.0));
+        Channels dest(2, Samples(k_region_extraction_frames, -1.0));
         std::vector<std::span<double>> dest_spans { std::span<double>(dest[0]), std::span<double>(dest[1]) };
         const Channels source { { 1, 2 }, { 3, 4 } };
 

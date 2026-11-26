@@ -114,7 +114,7 @@ namespace {
         return ring;
     }
 
-    std::vector<MeshVertex> vertices_of(const MeshData& mesh)
+    std::vector<MeshVertex> model_reader_writer_vertices_of(const MeshData& mesh)
     {
         const auto& bytes = std::get<std::vector<uint8_t>>(mesh.vertex_variant);
         std::vector<MeshVertex> vertices(bytes.size() / sizeof(MeshVertex));
@@ -122,7 +122,7 @@ namespace {
         return vertices;
     }
 
-    const std::vector<uint32_t>& indices_of(const MeshData& mesh)
+    const std::vector<uint32_t>& model_reader_writer_indices_of(const MeshData& mesh)
     {
         return std::get<std::vector<uint32_t>>(mesh.index_variant);
     }
@@ -131,7 +131,7 @@ namespace {
     {
         size_t total = 0;
         for (const auto& mesh : meshes) {
-            total += indices_of(mesh).size() / 3;
+            total += model_reader_writer_indices_of(mesh).size() / 3;
         }
         return total;
     }
@@ -213,10 +213,10 @@ namespace {
 
         ASSERT_EQ(loaded.size(), 1U) << reader.get_last_error();
         EXPECT_EQ(triangles_in(loaded), 12U);
-        EXPECT_TRUE(covers_positions(vertices_of(loaded.front()), vertices_of(source)));
+        EXPECT_TRUE(covers_positions(model_reader_writer_vertices_of(loaded.front()), model_reader_writer_vertices_of(source)));
         EXPECT_EQ(loaded.front().layout.stride_bytes, sizeof(MeshVertex));
 
-        const auto [lo, hi] = bounds_of(vertices_of(loaded.front()));
+        const auto [lo, hi] = bounds_of(model_reader_writer_vertices_of(loaded.front()));
         EXPECT_TRUE(near(lo, glm::vec3(-1.0F)));
         EXPECT_TRUE(near(hi, glm::vec3(1.0F)));
     }
@@ -254,9 +254,9 @@ namespace {
         const auto loaded = reader.load(path);
         ASSERT_EQ(loaded.size(), 1U) << reader.get_last_error();
 
-        const auto read_back = vertices_of(loaded.front());
+        const auto read_back = model_reader_writer_vertices_of(loaded.front());
         EXPECT_EQ(read_back.size(), 24U);
-        for (const auto& original : vertices_of(source)) {
+        for (const auto& original : model_reader_writer_vertices_of(source)) {
             const auto* match = find_vertex(read_back, original.position, &original.normal);
             ASSERT_NE(match, nullptr) << "no vertex at " << original.position.x << ' ' << original.position.y << ' ' << original.position.z;
             EXPECT_NEAR(match->uv.x, original.uv.x, 1e-4F);
@@ -285,7 +285,7 @@ namespace {
         EXPECT_EQ(mesh.face_count(), 2U);
         EXPECT_EQ(mesh.faces->sizes, (std::vector<uint32_t> { 4 }));
         EXPECT_TRUE(mesh.is_valid());
-        EXPECT_TRUE(covers_positions(vertices_of(mesh), vertices_of(source)));
+        EXPECT_TRUE(covers_positions(model_reader_writer_vertices_of(mesh), model_reader_writer_vertices_of(source)));
     }
 
     TEST_F(ModelFileTest, PolygonsAreOffByDefaultAndTheSameFileComesBackAsTriangles)
@@ -345,7 +345,7 @@ namespace {
         const auto loaded = reader.load(path);
 
         ASSERT_EQ(loaded.size(), 1U) << reader.get_last_error();
-        for (const auto& vertex : vertices_of(loaded.front())) {
+        for (const auto& vertex : model_reader_writer_vertices_of(loaded.front())) {
             EXPECT_TRUE(near(vertex.normal, glm::vec3(0.0F, 1.0F, 0.0F)));
         }
     }
@@ -370,7 +370,7 @@ namespace {
         const auto loaded = reader.load(path);
 
         ASSERT_EQ(loaded.size(), 1U) << reader.get_last_error();
-        for (const auto& vertex : vertices_of(loaded.front())) {
+        for (const auto& vertex : model_reader_writer_vertices_of(loaded.front())) {
             EXPECT_TRUE(near(vertex.normal, glm::vec3(0.0F, 1.0F, 0.0F)));
         }
     }
@@ -410,8 +410,8 @@ namespace {
         const auto loaded = reader.load(path);
         ASSERT_EQ(loaded.size(), 1U) << reader.get_last_error();
 
-        const auto read_back = vertices_of(loaded.front());
-        for (const auto& original : vertices_of(source)) {
+        const auto read_back = model_reader_writer_vertices_of(loaded.front());
+        for (const auto& original : model_reader_writer_vertices_of(source)) {
             const auto* match = find_vertex(read_back, original.position, &original.normal);
             ASSERT_NE(match, nullptr);
             EXPECT_TRUE(near(match->color, glm::vec4(0.0F)));
@@ -429,8 +429,8 @@ namespace {
         const auto loaded = reader.load(path);
         ASSERT_EQ(loaded.size(), 1U);
 
-        const auto read_back = vertices_of(loaded.front());
-        for (const auto& original : vertices_of(source)) {
+        const auto read_back = model_reader_writer_vertices_of(loaded.front());
+        for (const auto& original : model_reader_writer_vertices_of(source)) {
             const auto* match = find_vertex(read_back, original.position, &original.normal);
             ASSERT_NE(match, nullptr);
             EXPECT_TRUE(near(match->color, original.color, 1e-5F));
@@ -458,7 +458,7 @@ namespace {
 
         ASSERT_EQ(loaded.size(), 1U) << reader.get_last_error();
         EXPECT_EQ(loaded.front().vertex_count(), 4U);
-        EXPECT_EQ(indices_of(loaded.front()).size(), 6U);
+        EXPECT_EQ(model_reader_writer_indices_of(loaded.front()).size(), 6U);
     }
 
     TEST_F(ModelFileTest, ObjRoundTripKeepsMeshAndMaterialNames)
@@ -502,7 +502,7 @@ namespace {
         ASSERT_EQ(loaded.size(), 2U);
 
         for (const auto& mesh : loaded) {
-            const auto [lo, hi] = bounds_of(vertices_of(mesh));
+            const auto [lo, hi] = bounds_of(model_reader_writer_vertices_of(mesh));
             const float center_x = 0.5F * (lo.x + hi.x);
             EXPECT_TRUE(near(center_x, -3.0F) || near(center_x, 3.0F)) << center_x;
             EXPECT_TRUE(near(hi.x - lo.x, 2.0F));
@@ -831,8 +831,8 @@ namespace {
         const auto via_load = loader.load(path);
 
         ASSERT_EQ(via_extract.size(), via_load.size());
-        EXPECT_EQ(vertices_of(via_extract.front()).size(), vertices_of(via_load.front()).size());
-        EXPECT_EQ(indices_of(via_extract.front()), indices_of(via_load.front()));
+        EXPECT_EQ(model_reader_writer_vertices_of(via_extract.front()).size(), model_reader_writer_vertices_of(via_load.front()).size());
+        EXPECT_EQ(model_reader_writer_indices_of(via_extract.front()), model_reader_writer_indices_of(via_load.front()));
     }
 
     TEST_F(ModelFileTest, OpeningASecondFileReplacesTheFirst)
@@ -946,7 +946,7 @@ namespace {
         const auto loaded = reader.load(path);
         ASSERT_EQ(loaded.size(), 1U);
 
-        const auto [lo, hi] = bounds_of(vertices_of(loaded.front()));
+        const auto [lo, hi] = bounds_of(model_reader_writer_vertices_of(loaded.front()));
         EXPECT_TRUE(near(lo, glm::vec3(0.0F, 0.0F, 0.0F)));
         EXPECT_TRUE(near(hi, glm::vec3(1.0F, 1.0F, 0.0F)));
     }
@@ -1046,7 +1046,7 @@ namespace {
 
         std::vector<MeshVertex> all;
         for (const auto& mesh : loaded) {
-            const auto vertices = vertices_of(mesh);
+            const auto vertices = model_reader_writer_vertices_of(mesh);
             all.insert(all.end(), vertices.begin(), vertices.end());
         }
         EXPECT_NE(find_vertex(all, { 10.0F, 0.0F, 0.0F }), nullptr);
@@ -1574,7 +1574,7 @@ namespace {
 
         std::vector<MeshVertex> baked;
         for (const auto& mesh : loaded) {
-            const auto vertices = vertices_of(mesh);
+            const auto vertices = model_reader_writer_vertices_of(mesh);
             baked.insert(baked.end(), vertices.begin(), vertices.end());
         }
 

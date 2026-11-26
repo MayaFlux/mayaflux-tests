@@ -40,9 +40,9 @@ void main() {
 }
 )";
 
-    class TemporaryShader {
+    class ComputeProcessorTemporaryShader {
     public:
-        TemporaryShader(const void* owner, const char* source)
+        ComputeProcessorTemporaryShader(const void* owner, const char* source)
             : m_path(std::filesystem::temp_directory_path()
                   / ("mayaflux_compute_processor_" + std::to_string(reinterpret_cast<std::uintptr_t>(owner)) + ".comp"))
         {
@@ -50,12 +50,12 @@ void main() {
             file << source;
         }
 
-        TemporaryShader(const TemporaryShader&) = delete;
-        TemporaryShader& operator=(const TemporaryShader&) = delete;
-        TemporaryShader(TemporaryShader&&) = delete;
-        TemporaryShader& operator=(TemporaryShader&&) = delete;
+        ComputeProcessorTemporaryShader(const ComputeProcessorTemporaryShader&) = delete;
+        ComputeProcessorTemporaryShader& operator=(const ComputeProcessorTemporaryShader&) = delete;
+        ComputeProcessorTemporaryShader(ComputeProcessorTemporaryShader&&) = delete;
+        ComputeProcessorTemporaryShader& operator=(ComputeProcessorTemporaryShader&&) = delete;
 
-        ~TemporaryShader()
+        ~ComputeProcessorTemporaryShader()
         {
             std::error_code error;
             std::filesystem::remove(m_path, error);
@@ -146,7 +146,7 @@ void main() {
             return buffer;
         }
 
-        static std::unique_ptr<ComputeProcessorProbe> scale_processor(const TemporaryShader& shader)
+        static std::unique_ptr<ComputeProcessorProbe> scale_processor(const ComputeProcessorTemporaryShader& shader)
         {
             auto processor = std::make_unique<ComputeProcessorProbe>(shader.path(), 4);
             processor->add_binding("data", ShaderBinding { 0, 0 });
@@ -174,7 +174,7 @@ void main() {
 
     TEST_F(ComputeProcessorDeviceTest, ProcessorConstantsReachTheDispatch)
     {
-        TemporaryShader shader(this, k_scale_shader);
+        ComputeProcessorTemporaryShader shader(this, k_scale_shader);
         auto processor = scale_processor(shader);
         auto buffer = tracked_buffer({ 1.0F, 2.0F, 3.0F, 4.0F });
         processor->bind_buffer("data", buffer);
@@ -188,7 +188,7 @@ void main() {
 
     TEST_F(ComputeProcessorDeviceTest, EachHookRunsOncePerProcessCycle)
     {
-        TemporaryShader shader(this, k_scale_shader);
+        ComputeProcessorTemporaryShader shader(this, k_scale_shader);
         auto processor = scale_processor(shader);
         auto buffer = tracked_buffer({ 1.0F, 2.0F, 3.0F, 4.0F });
         processor->bind_buffer("data", buffer);
@@ -203,7 +203,7 @@ void main() {
 
     TEST_F(ComputeProcessorDeviceTest, ARefusedCycleDispatchesNothing)
     {
-        TemporaryShader shader(this, k_scale_shader);
+        ComputeProcessorTemporaryShader shader(this, k_scale_shader);
         auto processor = scale_processor(shader);
         auto buffer = tracked_buffer({ 1.0F, 2.0F, 3.0F, 4.0F });
         processor->bind_buffer("data", buffer);
@@ -221,7 +221,7 @@ void main() {
 
     TEST_F(ComputeProcessorDeviceTest, BufferPushConstantFragmentMergesOverTheProcessorConstants)
     {
-        TemporaryShader shader(this, k_scale_shader);
+        ComputeProcessorTemporaryShader shader(this, k_scale_shader);
         auto processor = scale_processor(shader);
         auto buffer = tracked_buffer({ 1.0F, 2.0F, 3.0F, 4.0F });
         processor->bind_buffer("data", buffer);
@@ -239,7 +239,7 @@ void main() {
 
     TEST_F(ComputeProcessorDeviceTest, LateFeedIsPumpedIntoTheDispatchThatRecordsIt)
     {
-        TemporaryShader shader(this, k_scale_shader);
+        ComputeProcessorTemporaryShader shader(this, k_scale_shader);
         auto processor = scale_processor(shader);
         auto buffer = tracked_buffer({ 1.0F, 2.0F, 3.0F, 4.0F });
         processor->bind_buffer("data", buffer);
@@ -253,7 +253,7 @@ void main() {
 
     TEST_F(ComputeProcessorDeviceTest, LateFeedBeyondTheCreatedRangeGetsAPipelineThatCoversItBeforeItIsPushed)
     {
-        TemporaryShader shader(this, k_scale_shader_with_unused_tail);
+        ComputeProcessorTemporaryShader shader(this, k_scale_shader_with_unused_tail);
         auto processor = scale_processor(shader);
         auto buffer = tracked_buffer({ 1.0F, 2.0F, 3.0F, 4.0F });
         processor->bind_buffer("data", buffer);
@@ -270,7 +270,7 @@ void main() {
 
     TEST_F(ComputeProcessorDeviceTest, RebindingAnExistingNameKeepsOnePipelineAndRedirectsTheDispatch)
     {
-        TemporaryShader shader(this, k_scale_shader);
+        ComputeProcessorTemporaryShader shader(this, k_scale_shader);
         auto processor = scale_processor(shader);
         auto first = tracked_buffer({ 1.0F, 1.0F, 1.0F, 1.0F });
         auto second = tracked_buffer({ 2.0F, 2.0F, 2.0F, 2.0F });
@@ -287,7 +287,7 @@ void main() {
 
     TEST_F(ComputeProcessorDeviceTest, ReplacingThePipelineRetiresTheOldOne)
     {
-        TemporaryShader shader(this, k_scale_shader);
+        ComputeProcessorTemporaryShader shader(this, k_scale_shader);
         auto processor = scale_processor(shader);
         auto buffer = tracked_buffer({ 1.0F, 2.0F, 3.0F, 4.0F });
         processor->bind_buffer("data", buffer);
@@ -308,7 +308,7 @@ void main() {
 
     TEST_F(ComputeProcessorDeviceTest, DestroyingTheProcessorReleasesItsPipeline)
     {
-        TemporaryShader shader(this, k_scale_shader);
+        ComputeProcessorTemporaryShader shader(this, k_scale_shader);
         auto processor = scale_processor(shader);
         auto buffer = tracked_buffer({ 1.0F, 2.0F, 3.0F, 4.0F });
         processor->bind_buffer("data", buffer);

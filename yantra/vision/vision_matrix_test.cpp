@@ -17,13 +17,13 @@ namespace {
 
 using Fixture = VisionGpuFixture;
 
-bool color_close(glm::vec4 a, glm::vec4 b, float tolerance)
+bool vision_matrix_color_close(glm::vec4 a, glm::vec4 b, float tolerance)
 {
     return std::abs(a.r - b.r) < tolerance && std::abs(a.g - b.g) < tolerance
         && std::abs(a.b - b.b) < tolerance && std::abs(a.a - b.a) < tolerance;
 }
 
-glm::vec4 read_pixel(const ImageHandle& image, uint32_t x, uint32_t y, uint32_t w)
+glm::vec4 vision_matrix_read_pixel(const ImageHandle& image, uint32_t x, uint32_t y, uint32_t w)
 {
     Kakshya::TextureContainer readback(image, Portal::Graphics::ImageFormat::RGBA8);
     const auto pixels = readback.as_normalised_float(0);
@@ -110,9 +110,9 @@ bool tiles_match(const ImageHandle& atlas, const std::array<glm::vec4, 3>& colou
         return false;
     std::array<bool, 3> seen {};
     for (uint32_t t = 0; t < 3; ++t) {
-        const auto centre = read_pixel(atlas, t * tile + tile / 2, tile / 2, tile * 3);
+        const auto centre = vision_matrix_read_pixel(atlas, t * tile + tile / 2, tile / 2, tile * 3);
         for (size_t c = 0; c < colours.size(); ++c)
-            seen[c] = seen[c] || color_close(centre, colours[c], 0.05F);
+            seen[c] = seen[c] || vision_matrix_color_close(centre, colours[c], 0.05F);
     }
     return seen[0] && seen[1] && seen[2];
 }

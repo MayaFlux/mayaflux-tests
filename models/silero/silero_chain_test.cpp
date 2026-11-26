@@ -41,7 +41,7 @@ namespace {
         return reader.read_tensors();
     }
 
-    std::vector<float> read_floats(const fs::path& path)
+    std::vector<float> silero_chain_read_floats(const fs::path& path)
     {
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file) {
@@ -71,7 +71,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, SileroChainGpuTest, TheNetworkAndTheScanShareOneSubmissionAndGiveTheOfflineIntervals, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
-        const auto audio = read_floats("tests/models/silero/silero_reference_audio.f32");
+        const auto audio = silero_chain_read_floats("tests/models/silero/silero_reference_audio.f32");
         if (!weights || audio.empty()) {
             GTEST_SKIP() << "the Silero weights or the reference fixture are not present";
         }
@@ -105,7 +105,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, SileroChainGpuTest, ASubmittedChainCompletesWithoutBlockingTheCaller, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
-        const auto audio = read_floats("tests/models/silero/silero_reference_audio.f32");
+        const auto audio = silero_chain_read_floats("tests/models/silero/silero_reference_audio.f32");
         if (!weights || audio.empty()) {
             GTEST_SKIP() << "the Silero weights or the reference fixture are not present";
         }
@@ -175,7 +175,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, SileroChainGpuTest, AVadAnalyzerSharesItsRecordingAndTheScanReadsItsProbabilitiesInPlace, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto weights = load_weights();
-        const auto audio = read_floats("tests/models/silero/silero_reference_audio.f32");
+        const auto audio = silero_chain_read_floats("tests/models/silero/silero_reference_audio.f32");
         if (!weights || audio.empty()) {
             GTEST_SKIP() << "the Silero weights or the reference fixture are not present";
         }

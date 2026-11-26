@@ -46,13 +46,13 @@ namespace {
         return !acceptor.listen(asio::socket_base::max_listen_connections, ec);
     }
 
-    struct Received {
+    struct TcpBackendReceived {
         uint64_t id {};
         std::vector<uint8_t> bytes;
         std::string sender;
     };
 
-    struct StateEvent {
+    struct TcpBackendStateEvent {
         uint64_t id {};
         EndpointState previous {};
         EndpointState current {};
@@ -130,7 +130,7 @@ namespace {
 
         [[nodiscard]] bool saw(uint64_t id, EndpointState previous, EndpointState current) const
         {
-            return std::ranges::any_of(states, [&](const StateEvent& event) {
+            return std::ranges::any_of(states, [&](const TcpBackendStateEvent& event) {
                 return event.id == id && event.previous == previous && event.current == current;
             });
         }
@@ -183,8 +183,8 @@ namespace {
         asio::io_context context;
         TCPBackend backend;
         uint64_t next_accepted_id { k_first_accepted_id };
-        std::vector<Received> received;
-        std::vector<StateEvent> states;
+        std::vector<TcpBackendReceived> received;
+        std::vector<TcpBackendStateEvent> states;
     };
 
     std::vector<uint8_t> bytes_of(std::initializer_list<uint8_t> values)

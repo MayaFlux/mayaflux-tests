@@ -29,7 +29,7 @@ namespace {
     using Kriya::WeightedFrame;
 
     /** Eight cycles a second, so every advance is an exact eighth of a second. */
-    constexpr double k_rate = 8.0;
+    constexpr double k_reflow_rate = 8.0;
 
     TimeSampling every(double step)
     {
@@ -51,7 +51,7 @@ namespace {
         return ResidentFrames<int>::create(every(step), std::move(frames));
     }
 
-    CourseSetting over(double in, double out, CourseEdge edge = CourseEdge::Once, double speed = 1.0)
+    CourseSetting reflow_over(double in, double out, CourseEdge edge = CourseEdge::Once, double speed = 1.0)
     {
         CourseSetting setting;
         setting.in = in;
@@ -120,7 +120,7 @@ namespace {
 
     ReflowBuilder<int> builder(const std::shared_ptr<const FrameSource<int>>& source, Written& written)
     {
-        return ReflowBuilder<int>(source, written.sink(), k_rate);
+        return ReflowBuilder<int>(source, written.sink(), k_reflow_rate);
     }
 
     void run(Reflow<int>& reflow, int cycles)
@@ -135,8 +135,8 @@ namespace {
         Written written;
         const auto frames = numbers(4);
 
-        EXPECT_EQ(ReflowBuilder<int>(nullptr, written.sink(), k_rate).build(), nullptr);
-        EXPECT_EQ(ReflowBuilder<int>(frames, nullptr, k_rate).build(), nullptr);
+        EXPECT_EQ(ReflowBuilder<int>(nullptr, written.sink(), k_reflow_rate).build(), nullptr);
+        EXPECT_EQ(ReflowBuilder<int>(frames, nullptr, k_reflow_rate).build(), nullptr);
         EXPECT_EQ(builder(std::make_shared<Empty>(), written).build(), nullptr);
 
         EXPECT_EQ(builder(frames, written).operation(FrameOperation<int>::transform({})).build(), nullptr);
@@ -151,7 +151,7 @@ namespace {
             nullptr);
         EXPECT_NE(builder(frames, written).operation(FrameOperation<int>::mix(mix)).build(), nullptr);
 
-        EXPECT_EQ(builder(frames, written).course(over(1.0, 1.0)).build(), nullptr);
+        EXPECT_EQ(builder(frames, written).course(reflow_over(1.0, 1.0)).build(), nullptr);
     }
 
     TEST(ReflowTest, TheDefaultCoursePlaysTheWholeSourceOnceFromTheStartAndHolds)
@@ -239,8 +239,8 @@ namespace {
         Written written;
         const auto source = numbers(9);
         auto reflow = builder(source, written)
-                          .course(over(0.0, 0.5, CourseEdge::Hold, 0.0))
-                          .course(over(0.5, 1.0, CourseEdge::Hold, 0.0))
+                          .course(reflow_over(0.0, 0.5, CourseEdge::Hold, 0.0))
+                          .course(reflow_over(0.5, 1.0, CourseEdge::Hold, 0.0))
                           .build();
         ASSERT_NE(reflow, nullptr);
         const auto courses = reflow->courses();
@@ -262,8 +262,8 @@ namespace {
     {
         Written written;
         auto reflow = builder(numbers(9), written)
-                          .course(over(0.0, 1.0, CourseEdge::Hold))
-                          .course(over(0.0, 1.0, CourseEdge::Hold, 0.0))
+                          .course(reflow_over(0.0, 1.0, CourseEdge::Hold))
+                          .course(reflow_over(0.0, 1.0, CourseEdge::Hold, 0.0))
                           .build();
         const auto courses = reflow->courses();
         ASSERT_TRUE(courses[0]->weight(0.0));
@@ -281,8 +281,8 @@ namespace {
         std::vector<double> weights;
         size_t seen_courses = 0;
         auto reflow = builder(numbers(9), written)
-                          .course(over(0.0, 1.0, CourseEdge::Hold, 0.0))
-                          .course(over(0.5, 1.0, CourseEdge::Hold, 0.0))
+                          .course(reflow_over(0.0, 1.0, CourseEdge::Hold, 0.0))
+                          .course(reflow_over(0.5, 1.0, CourseEdge::Hold, 0.0))
                           .operation(FrameOperation<int>::mix([&](const FrameContext& context, std::span<const WeightedFrame<int>> picks) {
                               seen_courses = context.courses.size();
                               for (const auto& pick : picks) {
@@ -392,7 +392,7 @@ namespace {
                     }
                     values.push_back(*frame);
                 },
-                k_rate)
+                k_reflow_rate)
                               .build();
 
             run(*reflow, 4);
@@ -438,7 +438,7 @@ namespace {
     TEST(ReflowTest, APausedCourseShowsItsStartAndMovesWhenStarted)
     {
         Written written;
-        auto reflow = builder(numbers(6), written).course(over(0.0, 1.0), true).build();
+        auto reflow = builder(numbers(6), written).course(reflow_over(0.0, 1.0), true).build();
         const auto course = reflow->courses().front();
 
         run(*reflow, 4);
@@ -452,7 +452,7 @@ namespace {
     TEST(ReflowTest, SeekingAPausedCourseScrubsWhatIsWritten)
     {
         Written written;
-        auto reflow = builder(numbers(9), written).course(over(0.0, 1.0, CourseEdge::Hold), true).build();
+        auto reflow = builder(numbers(9), written).course(reflow_over(0.0, 1.0, CourseEdge::Hold), true).build();
         const auto course = reflow->courses().front();
 
         run(*reflow, 1);
@@ -467,10 +467,10 @@ namespace {
     TEST(ReflowTest, CoursesCanBeAddedAndRemovedWhileRunning)
     {
         Written written;
-        auto reflow = builder(numbers(9), written).course(over(0.0, 1.0, CourseEdge::Hold, 0.0)).build();
+        auto reflow = builder(numbers(9), written).course(reflow_over(0.0, 1.0, CourseEdge::Hold, 0.0)).build();
         ASSERT_EQ(reflow->courses().size(), 1U);
 
-        const auto extra = reflow->add_course(over(0.5, 1.0, CourseEdge::Hold, 0.0));
+        const auto extra = reflow->add_course(reflow_over(0.5, 1.0, CourseEdge::Hold, 0.0));
         ASSERT_NE(extra, nullptr);
         ASSERT_TRUE(extra->weight(5.0));
         EXPECT_EQ(reflow->courses().size(), 2U);
@@ -482,14 +482,14 @@ namespace {
         run(*reflow, 1);
         EXPECT_EQ(written.values, (std::vector<int> { 40, 0 }));
 
-        EXPECT_EQ(reflow->add_course(over(1.0, 1.0)), nullptr);
+        EXPECT_EQ(reflow->add_course(reflow_over(1.0, 1.0)), nullptr);
         EXPECT_EQ(reflow->courses().size(), 1U);
     }
 
     TEST(ReflowTest, NothingToShowWritesNothingAndWarnsOnce)
     {
         Written written;
-        auto reflow = builder(numbers(4), written).course(over(0.0, 1.0)).build();
+        auto reflow = builder(numbers(4), written).course(reflow_over(0.0, 1.0)).build();
         ASSERT_TRUE(reflow->courses().front()->weight(0.0));
 
         run(*reflow, 5);

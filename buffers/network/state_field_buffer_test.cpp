@@ -35,15 +35,15 @@ namespace {
 
         using namespace MayaFlux::ShaderCompat;
 
-        const auto shift_x = MF_FIELD(shift_x, [](vec3 p) -> vec3 {
+        const auto state_field_buffer_shift_x = MF_FIELD(state_field_buffer_shift_x, [](vec3 p) -> vec3 {
             return p * 0.0f + vec3(0.25f, 0.0f, 0.0f);
         });
 
     } // namespace fields
 
-    constexpr uint32_t k_records = 64;
-    constexpr uint32_t k_stride_words = 17;
-    constexpr float k_cell_size = 0.5F;
+    constexpr uint32_t k_state_field_buffer_records = 64;
+    constexpr uint32_t k_state_field_buffer_stride_words = 17;
+    constexpr float k_state_field_buffer_cell_size = 0.5F;
 
     /**
      * @brief The smallest concrete StateFieldBuffer: vertex storage and nothing that feeds it.
@@ -72,9 +72,9 @@ namespace {
 
     glm::uvec3 cell_dims() { return glm::uvec3(4U); }
 
-    uint32_t cell_of(const glm::vec3& p)
+    uint32_t state_field_buffer_cell_of(const glm::vec3& p)
     {
-        glm::ivec3 c = glm::ivec3(glm::floor((p - glm::vec3(-1.0F)) / k_cell_size));
+        glm::ivec3 c = glm::ivec3(glm::floor((p - glm::vec3(-1.0F)) / k_state_field_buffer_cell_size));
         c = glm::clamp(c, glm::ivec3(0), glm::ivec3(cell_dims()) - glm::ivec3(1));
         return static_cast<uint32_t>(c.x) + static_cast<uint32_t>(c.y) * 4U + static_cast<uint32_t>(c.z) * 16U;
     }
@@ -91,9 +91,9 @@ namespace {
         return SpatialHashConfig {
             .grid_min = glm::vec3(-1.0F),
             .grid_dims = cell_dims(),
-            .cell_size = k_cell_size,
+            .cell_size = k_state_field_buffer_cell_size,
             .particle_count = particle_count,
-            .stride_words = k_stride_words,
+            .stride_words = k_state_field_buffer_stride_words,
             .position_word_offset = 0,
         };
     }
@@ -140,10 +140,10 @@ namespace {
             NetworkBufferDeviceTest::TearDown();
         }
 
-        void make_probe(uint32_t records = k_records)
+        void make_probe(uint32_t records = k_state_field_buffer_records)
         {
             record_count = records;
-            probe = std::make_shared<ProbeBuffer>(static_cast<size_t>(records) * k_stride_words * 4);
+            probe = std::make_shared<ProbeBuffer>(static_cast<size_t>(records) * k_state_field_buffer_stride_words * 4);
             service->initialize_buffer(probe);
             ASSERT_TRUE(probe->is_initialized());
             probe->setup_processors(Buffers::ProcessingToken::GRAPHICS_BACKEND);
@@ -153,11 +153,11 @@ namespace {
         /** @brief One vertex record per position: position in the first three words, the rest zero. */
         static std::vector<float> records_at(const std::vector<glm::vec3>& positions)
         {
-            std::vector<float> words(positions.size() * k_stride_words, 0.0F);
+            std::vector<float> words(positions.size() * k_state_field_buffer_stride_words, 0.0F);
             for (size_t i = 0; i < positions.size(); ++i) {
-                words[i * k_stride_words] = positions[i].x;
-                words[i * k_stride_words + 1] = positions[i].y;
-                words[i * k_stride_words + 2] = positions[i].z;
+                words[i * k_state_field_buffer_stride_words] = positions[i].x;
+                words[i * k_state_field_buffer_stride_words + 1] = positions[i].y;
+                words[i * k_state_field_buffer_stride_words + 2] = positions[i].z;
             }
             return words;
         }
@@ -182,7 +182,7 @@ namespace {
 
         [[nodiscard]] std::vector<float> read_words()
         {
-            std::vector<float> words(static_cast<size_t>(record_count) * k_stride_words);
+            std::vector<float> words(static_cast<size_t>(record_count) * k_state_field_buffer_stride_words);
             Buffers::download_from_gpu(probe, words.data(), words.size() * sizeof(float));
             return words;
         }
@@ -228,7 +228,7 @@ namespace {
             std::vector<uint32_t> counts(64, 0U);
             for (size_t i = 0; i < positions_in_use.size(); ++i) {
                 if (alive.empty() || alive[i]) {
-                    ++counts[cell_of(positions_in_use[i])];
+                    ++counts[state_field_buffer_cell_of(positions_in_use[i])];
                 }
             }
             return counts;
@@ -402,7 +402,7 @@ namespace {
     TEST_F(StateFieldBufferTest, DeclaringFieldsLeavesTheVertexStorageAlone)
     {
         make_probe();
-        fill(scattered(k_records));
+        fill(scattered(k_state_field_buffer_records));
         const auto before = read_words();
 
         ASSERT_TRUE(probe->declare_state("one", 16, 4, false));
@@ -421,7 +421,7 @@ namespace {
         EXPECT_FALSE(probe->ensure_cluster_ids());
         EXPECT_FALSE(probe->has_state("hash_cluster_id"));
 
-        ASSERT_TRUE(probe->declare_state("hash_cluster_id", k_records, sizeof(uint32_t), false));
+        ASSERT_TRUE(probe->declare_state("hash_cluster_id", k_state_field_buffer_records, sizeof(uint32_t), false));
         const auto handle = probe->read_state_handle("hash_cluster_id");
 
         EXPECT_TRUE(probe->ensure_cluster_ids());
@@ -472,33 +472,33 @@ namespace {
     TEST_F(StateFieldBufferTest, DeclareFieldsSizesEveryHashFieldOnAnyStateFieldBuffer)
     {
         make_probe();
-        explicit_config(k_records).declare_fields(probe);
+        explicit_config(k_state_field_buffer_records).declare_fields(probe);
 
         EXPECT_EQ(probe->get_state_bytes("hash_cell_count"), 64 * sizeof(uint32_t));
         EXPECT_EQ(probe->get_state_bytes("hash_cell_start"), 64 * sizeof(uint32_t));
         EXPECT_EQ(probe->get_state_bytes("hash_cell_cursor"), 64 * sizeof(uint32_t));
-        EXPECT_EQ(probe->get_state_bytes("hash_particle_index"), k_records * sizeof(uint32_t));
-        EXPECT_EQ(probe->get_state_bytes("hash_cluster_id"), k_records * sizeof(uint32_t));
+        EXPECT_EQ(probe->get_state_bytes("hash_particle_index"), k_state_field_buffer_records * sizeof(uint32_t));
+        EXPECT_EQ(probe->get_state_bytes("hash_cluster_id"), k_state_field_buffer_records * sizeof(uint32_t));
     }
 
     TEST_F(StateFieldBufferTest, DeclareFieldsKeepsAClusterFieldThatIsAlreadyThere)
     {
         make_probe();
-        ASSERT_TRUE(probe->declare_state("hash_cluster_id", k_records, sizeof(uint32_t), false));
-        probe_write<uint32_t>("hash_cluster_id", std::vector<uint32_t>(k_records, 3U));
+        ASSERT_TRUE(probe->declare_state("hash_cluster_id", k_state_field_buffer_records, sizeof(uint32_t), false));
+        probe_write<uint32_t>("hash_cluster_id", std::vector<uint32_t>(k_state_field_buffer_records, 3U));
         const auto handle = probe->read_state_handle("hash_cluster_id");
 
-        explicit_config(k_records).declare_fields(probe);
+        explicit_config(k_state_field_buffer_records).declare_fields(probe);
 
         EXPECT_EQ(probe->read_state_handle("hash_cluster_id"), handle);
-        EXPECT_EQ(probe_read<uint32_t>("hash_cluster_id"), std::vector<uint32_t>(k_records, 3U));
+        EXPECT_EQ(probe_read<uint32_t>("hash_cluster_id"), std::vector<uint32_t>(k_state_field_buffer_records, 3U));
     }
 
     TEST_F(StateFieldBufferTest, HashStagesBucketEveryRecordOfAProbeBuffer)
     {
         make_probe();
-        fill(scattered(k_records));
-        const auto config = explicit_config(k_records);
+        fill(scattered(k_state_field_buffer_records));
+        const auto config = explicit_config(k_state_field_buffer_records);
         config.declare_fields(probe);
         add_hash_build(config);
 
@@ -506,14 +506,14 @@ namespace {
 
         const auto counts = probe_read<uint32_t>("hash_cell_count");
         EXPECT_EQ(counts, expected_counts());
-        EXPECT_EQ(std::accumulate(counts.begin(), counts.end(), 0U), k_records);
+        EXPECT_EQ(std::accumulate(counts.begin(), counts.end(), 0U), k_state_field_buffer_records);
     }
 
     TEST_F(StateFieldBufferTest, HashScanOverAProbeBufferIsAnExclusivePrefixSum)
     {
         make_probe();
-        fill(scattered(k_records));
-        const auto config = explicit_config(k_records);
+        fill(scattered(k_state_field_buffer_records));
+        const auto config = explicit_config(k_state_field_buffer_records);
         config.declare_fields(probe);
         add_hash_build(config);
 
@@ -528,8 +528,8 @@ namespace {
     TEST_F(StateFieldBufferTest, HashScatterOverAProbeBufferListsExactlyTheRecordsOfEachCell)
     {
         make_probe();
-        fill(scattered(k_records));
-        const auto config = explicit_config(k_records);
+        fill(scattered(k_state_field_buffer_records));
+        const auto config = explicit_config(k_state_field_buffer_records);
         config.declare_fields(probe);
         add_hash_build(config);
 
@@ -540,8 +540,8 @@ namespace {
         const auto index = probe_read<uint32_t>("hash_particle_index");
 
         std::vector<std::set<uint32_t>> expected(64);
-        for (uint32_t i = 0; i < k_records; ++i) {
-            expected[cell_of(positions_in_use[i])].insert(i);
+        for (uint32_t i = 0; i < k_state_field_buffer_records; ++i) {
+            expected[state_field_buffer_cell_of(positions_in_use[i])].insert(i);
         }
         for (uint32_t c = 0; c < 64; ++c) {
             const std::set<uint32_t> listed(index.begin() + starts[c], index.begin() + starts[c] + counts[c]);
@@ -552,9 +552,9 @@ namespace {
     TEST_F(StateFieldBufferTest, TheHashFollowsRecordsThatMoveBetweenCycles)
     {
         make_probe();
-        auto positions = scattered(k_records);
+        auto positions = scattered(k_state_field_buffer_records);
         fill(positions);
-        const auto config = explicit_config(k_records);
+        const auto config = explicit_config(k_state_field_buffer_records);
         config.declare_fields(probe);
         add_hash_build(config);
         run_stages();
@@ -599,7 +599,7 @@ namespace {
         const MutationConfig claim_config { .hash = config, .absorb_radius = 0.1F };
         claim_config.declare_fields(probe);
         auto op = std::make_shared<GpuFieldOperator>(
-            Kakshya::VertexLayout::for_points(), SpatialFieldConfig { .cell_size = k_cell_size, .absorb_radius = 0.1F });
+            Kakshya::VertexLayout::for_points(), SpatialFieldConfig { .cell_size = k_state_field_buffer_cell_size, .absorb_radius = 0.1F });
 
         add_hash_build(config);
         add(std::make_shared<Buffers::ClaimInitProcessor>(claim_config));
@@ -630,7 +630,7 @@ namespace {
         const MutationConfig claim_config { .hash = config, .absorb_radius = 0.1F };
         claim_config.declare_fields(probe);
         auto op = std::make_shared<GpuFieldOperator>(
-            Kakshya::VertexLayout::for_points(), SpatialFieldConfig { .cell_size = k_cell_size, .absorb_radius = 0.1F });
+            Kakshya::VertexLayout::for_points(), SpatialFieldConfig { .cell_size = k_state_field_buffer_cell_size, .absorb_radius = 0.1F });
 
         add_hash_build(config);
         add(std::make_shared<Buffers::ClaimInitProcessor>(claim_config));
@@ -668,12 +668,12 @@ namespace {
 
         const auto words = read_words();
         for (uint32_t i = live; i < total; ++i) {
-            for (uint32_t w = 0; w < k_stride_words; ++w) {
-                EXPECT_EQ(words[i * k_stride_words + w], 0.0F) << "record " << i << " word " << w;
+            for (uint32_t w = 0; w < k_state_field_buffer_stride_words; ++w) {
+                EXPECT_EQ(words[i * k_state_field_buffer_stride_words + w], 0.0F) << "record " << i << " word " << w;
             }
         }
         for (uint32_t i = 0; i < live; ++i) {
-            EXPECT_NE(words[i * k_stride_words], 0.0F) << "record " << i;
+            EXPECT_NE(words[i * k_state_field_buffer_stride_words], 0.0F) << "record " << i;
         }
     }
 
@@ -857,17 +857,17 @@ namespace {
     TEST_F(StateFieldBufferTest, TheFieldPassDisplacesEveryRecordOfAProbeBuffer)
     {
         make_probe();
-        fill(scattered(k_records));
+        fill(scattered(k_state_field_buffer_records));
         const auto before = read_words();
         auto op = std::make_shared<GpuFieldOperator>(Kakshya::VertexLayout::for_points());
-        op->bind(FieldTarget::POSITION, fields::shift_x);
+        op->bind(FieldTarget::POSITION, fields::state_field_buffer_shift_x);
         add(std::make_shared<Buffers::VertexFieldProcessor>(op));
 
         run_stages();
 
         const auto after = read_words();
-        for (uint32_t i = 0; i < k_records; ++i) {
-            const size_t base = static_cast<size_t>(i) * k_stride_words;
+        for (uint32_t i = 0; i < k_state_field_buffer_records; ++i) {
+            const size_t base = static_cast<size_t>(i) * k_state_field_buffer_stride_words;
             EXPECT_NEAR(after[base], before[base] + 0.25F, 1e-5F) << "record " << i;
             EXPECT_EQ(after[base + 1], before[base + 1]) << "record " << i;
             EXPECT_EQ(after[base + 2], before[base + 2]) << "record " << i;
@@ -877,24 +877,24 @@ namespace {
     TEST_F(StateFieldBufferTest, AClusterScopedBindingMovesOnlyItsClusterOfAProbeBuffer)
     {
         make_probe();
-        fill(scattered(k_records));
+        fill(scattered(k_state_field_buffer_records));
         const auto before = read_words();
-        ASSERT_TRUE(probe->declare_state("hash_cluster_id", k_records, sizeof(uint32_t), false));
-        std::vector<uint32_t> clusters(k_records);
-        for (uint32_t i = 0; i < k_records; ++i) {
+        ASSERT_TRUE(probe->declare_state("hash_cluster_id", k_state_field_buffer_records, sizeof(uint32_t), false));
+        std::vector<uint32_t> clusters(k_state_field_buffer_records);
+        for (uint32_t i = 0; i < k_state_field_buffer_records; ++i) {
             clusters[i] = i % 2U;
         }
         probe_write<uint32_t>("hash_cluster_id", clusters);
 
         auto op = std::make_shared<GpuFieldOperator>(Kakshya::VertexLayout::for_points());
-        op->bind(FieldTarget::POSITION, fields::shift_x, 1U);
+        op->bind(FieldTarget::POSITION, fields::state_field_buffer_shift_x, 1U);
         add(std::make_shared<Buffers::VertexFieldProcessor>(op));
 
         run_stages();
 
         const auto after = read_words();
-        for (uint32_t i = 0; i < k_records; ++i) {
-            const size_t base = static_cast<size_t>(i) * k_stride_words;
+        for (uint32_t i = 0; i < k_state_field_buffer_records; ++i) {
+            const size_t base = static_cast<size_t>(i) * k_state_field_buffer_stride_words;
             const float shift = clusters[i] == 1U ? 0.25F : 0.0F;
             EXPECT_NEAR(after[base], before[base] + shift, 1e-5F) << "record " << i;
         }
@@ -903,10 +903,10 @@ namespace {
     TEST_F(StateFieldBufferTest, AClusterScopedBindingOverAProbeWithoutClusterIdsMovesNothing)
     {
         make_probe();
-        fill(scattered(k_records));
+        fill(scattered(k_state_field_buffer_records));
         const auto before = read_words();
         auto op = std::make_shared<GpuFieldOperator>(Kakshya::VertexLayout::for_points());
-        op->bind(FieldTarget::POSITION, fields::shift_x, 1U);
+        op->bind(FieldTarget::POSITION, fields::state_field_buffer_shift_x, 1U);
         add(std::make_shared<Buffers::VertexFieldProcessor>(op));
 
         run_stages();

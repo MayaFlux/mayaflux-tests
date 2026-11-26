@@ -20,16 +20,16 @@ namespace {
     using Portal::Graphics::DrawRun;
     using Portal::Graphics::PrimitiveTopology;
 
-    constexpr uint32_t k_stride = 8;
+    constexpr uint32_t k_staging_utils_stride = 8;
     constexpr auto k_topology = PrimitiveTopology::TRIANGLE_LIST;
     constexpr uint8_t k_sentinel = 0xEE;
 
-    std::vector<uint8_t> vertices(size_t count, uint8_t fill)
+    std::vector<uint8_t> staging_utils_vertices(size_t count, uint8_t fill)
     {
-        return std::vector<uint8_t>(count * k_stride, fill);
+        return std::vector<uint8_t>(count * k_staging_utils_stride, fill);
     }
 
-    std::vector<uint8_t> concat(std::initializer_list<std::vector<uint8_t>> parts)
+    std::vector<uint8_t> staging_utils_concat(std::initializer_list<std::vector<uint8_t>> parts)
     {
         std::vector<uint8_t> out;
         for (const auto& part : parts) {
@@ -50,11 +50,11 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, AddReturnsDistinctNonZeroIdsAndRejectsPartialVertices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
+        SliceSet set(k_staging_utils_stride, k_topology);
 
-        const auto first = set.add(vertices(2, 1));
-        const auto second = set.add(vertices(1, 2));
-        const std::vector<uint8_t> partial(k_stride + 1, 3);
+        const auto first = set.add(staging_utils_vertices(2, 1));
+        const auto second = set.add(staging_utils_vertices(1, 2));
+        const std::vector<uint8_t> partial(k_staging_utils_stride + 1, 3);
         const auto rejected = set.add(partial);
 
         EXPECT_NE(first, 0U);
@@ -65,12 +65,12 @@ namespace {
         EXPECT_TRUE(set.contains(second));
         EXPECT_FALSE(set.contains(rejected));
         EXPECT_EQ(set.vertex_count(), 3U);
-        EXPECT_EQ(set.size_bytes(), 3U * k_stride);
+        EXPECT_EQ(set.size_bytes(), 3U * k_staging_utils_stride);
     }
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, FreshSetReportsOneEmptyRunListThenNothing, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
+        SliceSet set(k_staging_utils_stride, k_topology);
 
         const auto runs = set.take_runs();
         ASSERT_TRUE(runs.has_value());
@@ -80,10 +80,10 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, AdjacentVisibleSlicesCoalesceIntoOneRun, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
-        set.add(vertices(2, 1));
-        set.add(vertices(3, 2));
-        set.add(vertices(1, 3));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        set.add(staging_utils_vertices(2, 1));
+        set.add(staging_utils_vertices(3, 2));
+        set.add(staging_utils_vertices(1, 3));
 
         const auto runs = set.take_runs();
         ASSERT_TRUE(runs.has_value());
@@ -95,9 +95,9 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, StripAndFanTopologiesNeverCoalesceAdjacentSlices, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         for (const auto topology : { PrimitiveTopology::LINE_STRIP, PrimitiveTopology::TRIANGLE_STRIP, PrimitiveTopology::TRIANGLE_FAN }) {
-            SliceSet set(k_stride, topology);
-            set.add(vertices(3, 1));
-            set.add(vertices(4, 2));
+            SliceSet set(k_staging_utils_stride, topology);
+            set.add(staging_utils_vertices(3, 1));
+            set.add(staging_utils_vertices(4, 2));
 
             const auto runs = set.take_runs();
 
@@ -113,12 +113,12 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, SliceTopologyDefaultsToTheSetsAndDifferingNeighboursStaySeparate, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, PrimitiveTopology::TRIANGLE_LIST);
-        set.add(vertices(3, 1));
-        set.add(vertices(4, 2), PrimitiveTopology::TRIANGLE_STRIP);
-        set.add(vertices(3, 3));
-        set.add(vertices(3, 4), PrimitiveTopology::TRIANGLE_LIST);
-        set.add(vertices(2, 5), PrimitiveTopology::LINE_LIST);
+        SliceSet set(k_staging_utils_stride, PrimitiveTopology::TRIANGLE_LIST);
+        set.add(staging_utils_vertices(3, 1));
+        set.add(staging_utils_vertices(4, 2), PrimitiveTopology::TRIANGLE_STRIP);
+        set.add(staging_utils_vertices(3, 3));
+        set.add(staging_utils_vertices(3, 4), PrimitiveTopology::TRIANGLE_LIST);
+        set.add(staging_utils_vertices(2, 5), PrimitiveTopology::LINE_LIST);
 
         const auto runs = set.take_runs();
 
@@ -136,10 +136,10 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, HidingTheMiddleSliceSplitsTheRun, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
-        const auto a = set.add(vertices(2, 1));
-        const auto b = set.add(vertices(3, 2));
-        const auto c = set.add(vertices(1, 3));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        const auto a = set.add(staging_utils_vertices(2, 1));
+        const auto b = set.add(staging_utils_vertices(3, 2));
+        const auto c = set.add(staging_utils_vertices(1, 3));
         static_cast<void>(set.take_runs());
 
         set.set_visible(b, false);
@@ -162,8 +162,8 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, SettingTheCurrentVisibilityReportsNoChange, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
-        const auto a = set.add(vertices(2, 1));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        const auto a = set.add(staging_utils_vertices(2, 1));
         static_cast<void>(set.take_runs());
 
         set.set_visible(a, true);
@@ -173,10 +173,10 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, BringToFrontReordersDrawsWithoutMovingMemory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
-        const auto a = set.add(vertices(2, 1));
-        set.add(vertices(3, 2));
-        set.add(vertices(1, 3));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        const auto a = set.add(staging_utils_vertices(2, 1));
+        set.add(staging_utils_vertices(3, 2));
+        set.add(staging_utils_vertices(1, 3));
         static_cast<void>(set.take_runs());
 
         set.bring_to_front(a);
@@ -186,15 +186,15 @@ namespace {
         ASSERT_EQ(runs->size(), 2U);
         EXPECT_TRUE(same_run((*runs)[0], 2, 4));
         EXPECT_TRUE(same_run((*runs)[1], 0, 2));
-        EXPECT_EQ(set.size_bytes(), 6U * k_stride);
+        EXPECT_EQ(set.size_bytes(), 6U * k_staging_utils_stride);
     }
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, SendToBackReordersDrawsWithoutMovingMemory, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
-        set.add(vertices(2, 1));
-        set.add(vertices(3, 2));
-        const auto c = set.add(vertices(1, 3));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        set.add(staging_utils_vertices(2, 1));
+        set.add(staging_utils_vertices(3, 2));
+        const auto c = set.add(staging_utils_vertices(1, 3));
         static_cast<void>(set.take_runs());
 
         set.send_to_back(c);
@@ -208,9 +208,9 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, ReorderingTheOnlyEdgeSliceIsANoOp, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
-        set.add(vertices(1, 1));
-        const auto last = set.add(vertices(1, 2));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        set.add(staging_utils_vertices(1, 1));
+        const auto last = set.add(staging_utils_vertices(1, 2));
         static_cast<void>(set.take_runs());
 
         set.bring_to_front(last);
@@ -220,10 +220,10 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, RemovingASliceShiftsLaterSlicesDown, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
-        set.add(vertices(2, 1));
-        const auto b = set.add(vertices(3, 2));
-        const auto c = set.add(vertices(1, 3));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        set.add(staging_utils_vertices(2, 1));
+        const auto b = set.add(staging_utils_vertices(3, 2));
+        const auto c = set.add(staging_utils_vertices(1, 3));
         static_cast<void>(set.take_runs());
 
         set.remove(b);
@@ -239,11 +239,11 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, SameSizeUpdateKeepsTheRunsUnchanged, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
-        const auto a = set.add(vertices(2, 1));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        const auto a = set.add(staging_utils_vertices(2, 1));
         static_cast<void>(set.take_runs());
 
-        set.update(a, vertices(2, 9));
+        set.update(a, staging_utils_vertices(2, 9));
 
         EXPECT_FALSE(set.take_runs().has_value());
         EXPECT_EQ(set.vertex_count(), 2U);
@@ -251,13 +251,13 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, ResizingASliceShiftsTheOnesAfterIt, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
-        const auto a = set.add(vertices(2, 1));
-        const auto b = set.add(vertices(1, 2));
-        const auto c = set.add(vertices(2, 3));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        const auto a = set.add(staging_utils_vertices(2, 1));
+        const auto b = set.add(staging_utils_vertices(1, 2));
+        const auto c = set.add(staging_utils_vertices(2, 3));
         static_cast<void>(set.take_runs());
 
-        set.update(b, vertices(3, 9));
+        set.update(b, staging_utils_vertices(3, 9));
         EXPECT_EQ(set.vertex_count(), 7U);
 
         const auto grown = set.take_runs();
@@ -276,9 +276,9 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, EmptySliceProducesNoRunButStaysLive, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
+        SliceSet set(k_staging_utils_stride, k_topology);
         const auto empty = set.add({});
-        set.add(vertices(2, 1));
+        set.add(staging_utils_vertices(2, 1));
 
         const auto runs = set.take_runs();
 
@@ -291,11 +291,11 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, UnknownIdsAreIgnored, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
-        set.add(vertices(2, 1));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        set.add(staging_utils_vertices(2, 1));
         static_cast<void>(set.take_runs());
 
-        set.update(999, vertices(2, 2));
+        set.update(999, staging_utils_vertices(2, 2));
         set.remove(999);
         set.set_visible(999, false);
         set.bring_to_front(999);
@@ -307,11 +307,11 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, UpdateWithPartialVerticesIsRejected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
-        const auto a = set.add(vertices(2, 1));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        const auto a = set.add(staging_utils_vertices(2, 1));
         static_cast<void>(set.take_runs());
 
-        const std::vector<uint8_t> partial(k_stride + 3, 5);
+        const std::vector<uint8_t> partial(k_staging_utils_stride + 3, 5);
         set.update(a, partial);
 
         EXPECT_EQ(set.vertex_count(), 2U);
@@ -336,7 +336,7 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SliceSetTest, FlushRejectsANullTarget, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        SliceSet set(k_stride, k_topology);
+        SliceSet set(k_staging_utils_stride, k_topology);
         std::shared_ptr<VKBuffer> staging;
 
         EXPECT_THROW(set.flush(nullptr, staging), std::invalid_argument);
@@ -617,47 +617,47 @@ namespace {
 
     TEST_P(StagingUtilsDeviceTest, FlushUploadsEveryBlockAtItsOffset)
     {
-        SliceSet set(k_stride, k_topology);
-        set.add(vertices(2, 1));
-        set.add(vertices(1, 2));
-        set.add(vertices(3, 3));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        set.add(staging_utils_vertices(2, 1));
+        set.add(staging_utils_vertices(1, 2));
+        set.add(staging_utils_vertices(3, 3));
         auto buffer = make_filled(set.size_bytes(), 0xAA);
         std::shared_ptr<VKBuffer> staging;
 
         set.flush(buffer, staging);
         track(staging);
 
-        EXPECT_EQ(read_all(buffer), concat({ vertices(2, 1), vertices(1, 2), vertices(3, 3) }));
+        EXPECT_EQ(read_all(buffer), staging_utils_concat({ staging_utils_vertices(2, 1), staging_utils_vertices(1, 2), staging_utils_vertices(3, 3) }));
     }
 
     TEST_P(StagingUtilsDeviceTest, SecondFlushUploadsOnlyTheDirtyRange)
     {
-        SliceSet set(k_stride, k_topology);
-        const auto a = set.add(vertices(2, 1));
-        set.add(vertices(1, 2));
-        set.add(vertices(2, 3));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        const auto a = set.add(staging_utils_vertices(2, 1));
+        set.add(staging_utils_vertices(1, 2));
+        set.add(staging_utils_vertices(2, 3));
         auto buffer = make_filled(set.size_bytes(), 0xAA);
         std::shared_ptr<VKBuffer> staging;
         set.flush(buffer, staging);
 
-        const std::vector<uint8_t> marker(2 * k_stride, k_sentinel);
-        Buffers::upload_to_gpu(marker.data(), marker.size(), buffer, nullptr, 3 * k_stride);
-        set.update(a, vertices(2, 9));
+        const std::vector<uint8_t> marker(2 * k_staging_utils_stride, k_sentinel);
+        Buffers::upload_to_gpu(marker.data(), marker.size(), buffer, nullptr, 3 * k_staging_utils_stride);
+        set.update(a, staging_utils_vertices(2, 9));
         set.flush(buffer, staging);
         track(staging);
 
-        EXPECT_EQ(read_all(buffer), concat({ vertices(2, 9), vertices(1, 2), vertices(2, k_sentinel) }));
+        EXPECT_EQ(read_all(buffer), staging_utils_concat({ staging_utils_vertices(2, 9), staging_utils_vertices(1, 2), staging_utils_vertices(2, k_sentinel) }));
     }
 
     TEST_P(StagingUtilsDeviceTest, FlushWithNothingChangedLeavesTheBufferAlone)
     {
-        SliceSet set(k_stride, k_topology);
-        set.add(vertices(2, 1));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        set.add(staging_utils_vertices(2, 1));
         auto buffer = make_filled(set.size_bytes(), 0xAA);
         std::shared_ptr<VKBuffer> staging;
         set.flush(buffer, staging);
 
-        const std::vector<uint8_t> marker(2 * k_stride, k_sentinel);
+        const std::vector<uint8_t> marker(2 * k_staging_utils_stride, k_sentinel);
         Buffers::upload_to_gpu(marker.data(), marker.size(), buffer);
         set.flush(buffer, staging);
         track(staging);
@@ -667,29 +667,29 @@ namespace {
 
     TEST_P(StagingUtilsDeviceTest, ResizingABlockUploadsTheShiftedTail)
     {
-        SliceSet set(k_stride, k_topology);
-        set.add(vertices(2, 1));
-        const auto b = set.add(vertices(1, 2));
-        set.add(vertices(2, 3));
-        auto buffer = make_filled(set.size_bytes() + 4 * k_stride, 0xAA);
+        SliceSet set(k_staging_utils_stride, k_topology);
+        set.add(staging_utils_vertices(2, 1));
+        const auto b = set.add(staging_utils_vertices(1, 2));
+        set.add(staging_utils_vertices(2, 3));
+        auto buffer = make_filled(set.size_bytes() + 4 * k_staging_utils_stride, 0xAA);
         std::shared_ptr<VKBuffer> staging;
         set.flush(buffer, staging);
 
-        set.update(b, vertices(3, 9));
+        set.update(b, staging_utils_vertices(3, 9));
         set.flush(buffer, staging);
         track(staging);
 
         const auto bytes = read_all(buffer);
-        const auto expected = concat({ vertices(2, 1), vertices(3, 9), vertices(2, 3) });
+        const auto expected = staging_utils_concat({ staging_utils_vertices(2, 1), staging_utils_vertices(3, 9), staging_utils_vertices(2, 3) });
         EXPECT_TRUE(std::equal(expected.begin(), expected.end(), bytes.begin()));
     }
 
     TEST_P(StagingUtilsDeviceTest, RemovingABlockCompactsTheUploadedData)
     {
-        SliceSet set(k_stride, k_topology);
-        set.add(vertices(2, 1));
-        const auto b = set.add(vertices(1, 2));
-        set.add(vertices(2, 3));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        set.add(staging_utils_vertices(2, 1));
+        const auto b = set.add(staging_utils_vertices(1, 2));
+        set.add(staging_utils_vertices(2, 3));
         auto buffer = make_filled(set.size_bytes(), 0xAA);
         std::shared_ptr<VKBuffer> staging;
         set.flush(buffer, staging);
@@ -699,15 +699,15 @@ namespace {
         track(staging);
 
         const auto bytes = read_all(buffer);
-        const auto expected = concat({ vertices(2, 1), vertices(2, 3) });
+        const auto expected = staging_utils_concat({ staging_utils_vertices(2, 1), staging_utils_vertices(2, 3) });
         EXPECT_TRUE(std::equal(expected.begin(), expected.end(), bytes.begin()));
     }
 
     TEST_P(StagingUtilsDeviceTest, FlushGrowsAnUndersizedTargetAndUploadsEverything)
     {
-        SliceSet set(k_stride, k_topology);
-        set.add(vertices(4, 1));
-        set.add(vertices(6, 2));
+        SliceSet set(k_staging_utils_stride, k_topology);
+        set.add(staging_utils_vertices(4, 1));
+        set.add(staging_utils_vertices(6, 2));
         auto buffer = make_filled(16, 0xAA);
         std::shared_ptr<VKBuffer> staging;
 
@@ -716,24 +716,24 @@ namespace {
 
         ASSERT_GE(buffer->get_size_bytes(), set.size_bytes());
         const auto bytes = read_all(buffer);
-        const auto expected = concat({ vertices(4, 1), vertices(6, 2) });
+        const auto expected = staging_utils_concat({ staging_utils_vertices(4, 1), staging_utils_vertices(6, 2) });
         EXPECT_TRUE(std::equal(expected.begin(), expected.end(), bytes.begin()));
     }
 
     TEST_P(StagingUtilsDeviceTest, ManyDirtyBlocksUploadCorrectlyInOneFlush)
     {
         constexpr size_t block_count = 200;
-        SliceSet set(k_stride, k_topology);
+        SliceSet set(k_staging_utils_stride, k_topology);
         std::vector<SliceSet::SliceId> ids;
         for (size_t i = 0; i < block_count; ++i) {
-            ids.push_back(set.add(vertices(1, static_cast<uint8_t>(i))));
+            ids.push_back(set.add(staging_utils_vertices(1, static_cast<uint8_t>(i))));
         }
         auto buffer = make_filled(set.size_bytes(), 0xAA);
         std::shared_ptr<VKBuffer> staging;
         set.flush(buffer, staging);
 
         for (size_t i = 0; i < block_count; i += 2) {
-            set.update(ids[i], vertices(1, static_cast<uint8_t>(255 - i)));
+            set.update(ids[i], staging_utils_vertices(1, static_cast<uint8_t>(255 - i)));
         }
         set.flush(buffer, staging);
         track(staging);
@@ -741,7 +741,7 @@ namespace {
         const auto bytes = read_all(buffer);
         for (size_t i = 0; i < block_count; ++i) {
             const auto expected = static_cast<uint8_t>(i % 2 == 0 ? 255 - i : i);
-            EXPECT_EQ(bytes[i * k_stride], expected) << "block " << i;
+            EXPECT_EQ(bytes[i * k_staging_utils_stride], expected) << "block " << i;
         }
     }
 

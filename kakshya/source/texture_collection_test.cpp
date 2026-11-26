@@ -24,7 +24,7 @@ namespace {
         return TextureLoom::instance();
     }
 
-    std::vector<uint8_t> ramp(size_t n, uint8_t seed = 0)
+    std::vector<uint8_t> texture_collection_ramp(size_t n, uint8_t seed = 0)
     {
         std::vector<uint8_t> out(n);
         for (size_t i = 0; i < n; ++i) {
@@ -33,7 +33,7 @@ namespace {
         return out;
     }
 
-    std::vector<uint8_t> uniform(size_t n, uint8_t value)
+    std::vector<uint8_t> texture_collection_uniform(size_t n, uint8_t value)
     {
         return std::vector<uint8_t>(n, value);
     }
@@ -104,8 +104,8 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST_F, TextureCollectionGpuTest, AppendStoresEachImageAsTheNextLayer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureCollection collection(TextureCollectionSpec { .width = 2, .height = 2 });
-        const auto first = ramp(16, 3);
-        const auto second = ramp(16, 91);
+        const auto first = texture_collection_ramp(16, 3);
+        const auto second = texture_collection_ramp(16, 91);
 
         ASSERT_TRUE(collection.append(make_image(2, 2, first)));
         EXPECT_EQ(collection.get_layer_count(), 1U);
@@ -131,7 +131,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST_F, TextureCollectionGpuTest, SmallerImageIsCenteredOnAZeroedBackground, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureCollection collection(TextureCollectionSpec { .width = 4, .height = 4 });
-        const auto source = ramp(2U * 4U * 4U, 7);
+        const auto source = texture_collection_ramp(2U * 4U * 4U, 7);
 
         ASSERT_TRUE(collection.append(make_image(2, 4, source)));
 
@@ -152,19 +152,19 @@ namespace {
     {
         TextureCollection collection(TextureCollectionSpec { .width = 4, .height = 4 });
 
-        ASSERT_TRUE(collection.append(make_image(8, 8, uniform(8U * 8U * 4U, 200))));
-        EXPECT_EQ(read_layer(collection, 0, 4U * 4U * 4U), uniform(4U * 4U * 4U, 200));
+        ASSERT_TRUE(collection.append(make_image(8, 8, texture_collection_uniform(8U * 8U * 4U, 200))));
+        EXPECT_EQ(read_layer(collection, 0, 4U * 4U * 4U), texture_collection_uniform(4U * 4U * 4U, 200));
     }
 
     MAYAFLUX_TEST_WITH(TEST_F, TextureCollectionGpuTest, LinearCollectionStopsAtTheByteCap, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureCollection collection(TextureCollectionSpec { .width = 2, .height = 2, .max_bytes = 32 });
-        ASSERT_TRUE(collection.append(make_image(2, 2, ramp(16, 1))));
+        ASSERT_TRUE(collection.append(make_image(2, 2, texture_collection_ramp(16, 1))));
         EXPECT_FALSE(collection.is_full());
-        ASSERT_TRUE(collection.append(make_image(2, 2, ramp(16, 2))));
+        ASSERT_TRUE(collection.append(make_image(2, 2, texture_collection_ramp(16, 2))));
         EXPECT_TRUE(collection.is_full());
 
-        EXPECT_FALSE(collection.append(make_image(2, 2, ramp(16, 3))));
+        EXPECT_FALSE(collection.append(make_image(2, 2, texture_collection_ramp(16, 3))));
         EXPECT_EQ(collection.get_layer_count(), 2U);
         EXPECT_EQ(collection.get_write_head(), 2U);
     }
@@ -173,9 +173,9 @@ namespace {
     {
         TextureCollection collection(TextureCollectionSpec {
             .width = 2, .height = 2, .max_bytes = 16, .ring_layers = 2 });
-        const auto a = ramp(16, 10);
-        const auto b = ramp(16, 20);
-        const auto c = ramp(16, 30);
+        const auto a = texture_collection_ramp(16, 10);
+        const auto b = texture_collection_ramp(16, 20);
+        const auto c = texture_collection_ramp(16, 30);
 
         ASSERT_TRUE(collection.append(make_image(2, 2, a)));
         ASSERT_TRUE(collection.append(make_image(2, 2, b)));
@@ -191,7 +191,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST_F, TextureCollectionGpuTest, AsyncAppendIsReadableAfterwards, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureCollection collection(TextureCollectionSpec { .width = 2, .height = 2 });
-        const auto pixels = ramp(16, 44);
+        const auto pixels = texture_collection_ramp(16, 44);
 
         ASSERT_TRUE(collection.append(make_image(2, 2, pixels), SubmitMode::ASYNC));
         EXPECT_EQ(read_layer(collection, 0, pixels.size()), pixels);

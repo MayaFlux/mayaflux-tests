@@ -34,7 +34,7 @@ namespace {
     const char* const k_vad_weights = "data/tensors/silero/silero_vad_16k.safetensors";
     const char* const k_speech = "tests/models/hubert_phoneme/hubert_speech_audio.f32";
 
-    std::vector<double> tone(size_t count, double period)
+    std::vector<double> speech_segmenter_tone(size_t count, double period)
     {
         std::vector<double> out(count);
         for (size_t i = 0; i < count; ++i) {
@@ -131,7 +131,7 @@ namespace {
     TYPED_TEST(SpeechSegmenterGpuTest, ASteadyToneIsFullyVoicedAtItsFrequency)
     {
         StandardWaveformAnalyzer analyzer(voicing_analyzer_config(k_rate));
-        const auto samples = tone(16000, 80.0);
+        const auto samples = speech_segmenter_tone(16000, 80.0);
 
         const auto voicing = measure_voicing(analyzer, samples, { { 0, 16000 } }, 0.5);
         ASSERT_EQ(voicing.voiced_fraction.size(), 1U);
@@ -152,7 +152,7 @@ namespace {
     TYPED_TEST(SpeechSegmenterGpuTest, SilenceBetweenTonesGivesNoVoicingAndNoPitch)
     {
         StandardWaveformAnalyzer analyzer(voicing_analyzer_config(k_rate));
-        auto samples = tone(24000, 80.0);
+        auto samples = speech_segmenter_tone(24000, 80.0);
         std::fill(samples.begin() + 8000, samples.begin() + 16000, 0.0);
         const Intervals intervals { { 0, 7680 }, { 8192, 15616 }, { 16512, 24000 } };
 
@@ -170,7 +170,7 @@ namespace {
     {
         constexpr uint32_t hop = 64;
         StandardWaveformAnalyzer analyzer(voicing_analyzer_config(k_rate, hop));
-        auto samples = tone(24000, 80.0);
+        auto samples = speech_segmenter_tone(24000, 80.0);
         std::fill(samples.begin() + 8000, samples.begin() + 16000, 0.0);
 
         const auto voiced = voiced_intervals(analyzer, samples, 0.5, hop);
@@ -188,13 +188,13 @@ namespace {
     {
         StandardWaveformAnalyzer analyzer(voicing_analyzer_config(k_rate, 64));
         EXPECT_TRUE(voiced_intervals(analyzer, noise(16000, 7), 0.5, 64).empty());
-        EXPECT_TRUE(voiced_intervals(analyzer, tone(100, 80.0), 0.5, 64).empty());
+        EXPECT_TRUE(voiced_intervals(analyzer, speech_segmenter_tone(100, 80.0), 0.5, 64).empty());
     }
 
     TYPED_TEST(SpeechSegmenterGpuTest, AnInputShorterThanOneWindowGivesZeros)
     {
         StandardWaveformAnalyzer analyzer(voicing_analyzer_config(k_rate));
-        const auto voicing = measure_voicing(analyzer, tone(100, 80.0), { { 0, 100 } }, 0.5);
+        const auto voicing = measure_voicing(analyzer, speech_segmenter_tone(100, 80.0), { { 0, 100 } }, 0.5);
         ASSERT_EQ(voicing.voiced_fraction.size(), 1U);
         EXPECT_DOUBLE_EQ(voicing.voiced_fraction[0], 0.0);
         EXPECT_DOUBLE_EQ(voicing.f0[0], 0.0);

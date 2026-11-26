@@ -18,7 +18,7 @@ namespace {
     const Facet<double> rms {};
     const Facet<double> brightness {};
 
-    Kakshya::Region make_region(std::optional<double> rms_value, std::optional<double> brightness_value)
+    Kakshya::Region sorter_keys_make_region(std::optional<double> rms_value, std::optional<double> brightness_value)
     {
         Kakshya::Region region { { 0 }, { 5 } };
         if (rms_value) {
@@ -32,7 +32,7 @@ namespace {
 
     TEST(SortKeyScoreTest, SingleAscendingKeyScoresItsValue)
     {
-        auto region = make_region(2.0, std::nullopt);
+        auto region = sorter_keys_make_region(2.0, std::nullopt);
         const std::vector<SortKey> keys { { rms, SortingDirection::ASCENDING, 1.0, false } };
 
         const auto score = Yantra::weighted_sort_score(region, keys);
@@ -42,7 +42,7 @@ namespace {
 
     TEST(SortKeyScoreTest, DescendingKeyNegatesAndScalesByWeight)
     {
-        auto region = make_region(2.0, std::nullopt);
+        auto region = sorter_keys_make_region(2.0, std::nullopt);
         const std::vector<SortKey> keys { { rms, SortingDirection::DESCENDING, 2.0, false } };
 
         const auto score = Yantra::weighted_sort_score(region, keys);
@@ -52,7 +52,7 @@ namespace {
 
     TEST(SortKeyScoreTest, TermsAddUpWithTheirSigns)
     {
-        auto region = make_region(1.0, 3.0);
+        auto region = sorter_keys_make_region(1.0, 3.0);
         const std::vector<SortKey> keys {
             { rms, SortingDirection::ASCENDING, 2.0, false },
             { brightness, SortingDirection::DESCENDING, 1.0, false },
@@ -65,7 +65,7 @@ namespace {
 
     TEST(SortKeyScoreTest, NormalizeSquashesTheValueWithTanh)
     {
-        auto region = make_region(2.0, std::nullopt);
+        auto region = sorter_keys_make_region(2.0, std::nullopt);
         const std::vector<SortKey> keys { { rms, SortingDirection::ASCENDING, 3.0, true } };
 
         const auto score = Yantra::weighted_sort_score(region, keys);
@@ -75,7 +75,7 @@ namespace {
 
     TEST(SortKeyScoreTest, MissingFeatureGivesNoScore)
     {
-        auto region = make_region(1.0, std::nullopt);
+        auto region = sorter_keys_make_region(1.0, std::nullopt);
         const std::vector<SortKey> keys {
             { rms, SortingDirection::ASCENDING, 1.0, false },
             { brightness, SortingDirection::ASCENDING, 1.0, false },
@@ -87,9 +87,9 @@ namespace {
     TEST(SortKeyScoreTest, OrdersElementsByScore)
     {
         std::vector<Kakshya::Region> regions {
-            make_region(1.0, 0.0),
-            make_region(4.0, 0.0),
-            make_region(2.0, 0.0),
+            sorter_keys_make_region(1.0, 0.0),
+            sorter_keys_make_region(4.0, 0.0),
+            sorter_keys_make_region(2.0, 0.0),
         };
         const std::vector<SortKey> keys { { rms, SortingDirection::DESCENDING, 1.0, false } };
 

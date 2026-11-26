@@ -20,19 +20,19 @@ using Buffers::RootAudioBuffer;
 
 namespace {
 
-    class PreferredSizeGuard {
+    class BufferManagerPreferredSizeGuard {
     public:
-        PreferredSizeGuard()
+        BufferManagerPreferredSizeGuard()
             : m_saved(Buffers::s_preferred_buffer_size)
         {
         }
 
-        PreferredSizeGuard(const PreferredSizeGuard&) = delete;
-        PreferredSizeGuard& operator=(const PreferredSizeGuard&) = delete;
-        PreferredSizeGuard(PreferredSizeGuard&&) = delete;
-        PreferredSizeGuard& operator=(PreferredSizeGuard&&) = delete;
+        BufferManagerPreferredSizeGuard(const BufferManagerPreferredSizeGuard&) = delete;
+        BufferManagerPreferredSizeGuard& operator=(const BufferManagerPreferredSizeGuard&) = delete;
+        BufferManagerPreferredSizeGuard(BufferManagerPreferredSizeGuard&&) = delete;
+        BufferManagerPreferredSizeGuard& operator=(BufferManagerPreferredSizeGuard&&) = delete;
 
-        ~PreferredSizeGuard() { Buffers::s_preferred_buffer_size = m_saved; }
+        ~BufferManagerPreferredSizeGuard() { Buffers::s_preferred_buffer_size = m_saved; }
 
     private:
         uint32_t m_saved;
@@ -78,7 +78,7 @@ namespace {
             return child;
         }
 
-        PreferredSizeGuard guard;
+        BufferManagerPreferredSizeGuard guard;
         std::shared_ptr<BufferManager> manager;
     };
 

@@ -15,14 +15,14 @@ using Acoustics::DuctSpec;
 
 namespace {
 
-    constexpr double kRadius = 0.0075;
+    constexpr double kAcousticsDuctRadius = 0.0075;
 
     DuctSpec flute_spec()
     {
         return { .length = 0.6, .sample_rate = 48000.0 };
     }
 
-    DuctGrid cylinder(const DuctSpec& spec, double radius = kRadius)
+    DuctGrid cylinder(const DuctSpec& spec, double radius = kAcousticsDuctRadius)
     {
         const auto grid = Acoustics::make_duct_grid(spec, [radius](double) { return radius; });
         return grid.value();
@@ -85,8 +85,8 @@ TEST(DuctGridTest, ACylinderGetsTheLargestGridThatKeepsTheCourantNumberUnderOne)
     EXPECT_NEAR(grid.courant, 0.9885, 1e-4);
     EXPECT_LE(grid.courant, 1.0);
     EXPECT_NEAR(grid.bandwidth, 48000.0 * std::asin(grid.courant) / std::numbers::pi, 1e-9);
-    EXPECT_DOUBLE_EQ(grid.start_radius, kRadius);
-    EXPECT_DOUBLE_EQ(grid.end_radius, kRadius);
+    EXPECT_DOUBLE_EQ(grid.start_radius, kAcousticsDuctRadius);
+    EXPECT_DOUBLE_EQ(grid.end_radius, kAcousticsDuctRadius);
 }
 
 TEST(DuctGridTest, GainsFollowCellVolumesAndEndCellsAreHalfCells)
@@ -94,7 +94,7 @@ TEST(DuctGridTest, GainsFollowCellVolumesAndEndCellsAreHalfCells)
     const DuctSpec spec = flute_spec();
     const DuctGrid grid = cylinder(spec);
 
-    const double area = std::numbers::pi * kRadius * kRadius;
+    const double area = std::numbers::pi * kAcousticsDuctRadius * kAcousticsDuctRadius;
     const double velocity_gain = grid.time_step * area / (spec.air_density * grid.spacing);
     const double interior = spec.air_density * spec.sound_speed * spec.sound_speed * grid.time_step
         / (grid.spacing * area);
@@ -131,7 +131,7 @@ TEST(DuctGridTest, ACallableAndASampledProfileOfACone)
 
 TEST(DuctGridTest, SpecsAndProfilesThatCannotBuildAGridSayWhy)
 {
-    const auto unit = [](double) { return kRadius; };
+    const auto unit = [](double) { return kAcousticsDuctRadius; };
 
     DuctSpec spec = flute_spec();
     spec.length = 0.0;
@@ -169,7 +169,7 @@ TEST(DuctGridTest, TheCourantNumberStaysInTheTopOfItsRangeAcrossLengthsAndRates)
     for (const double rate : { 44100.0, 48000.0, 96000.0 }) {
         for (double length = 0.1; length < 2.0; length += 0.0731) {
             const DuctSpec spec { .length = length, .sample_rate = rate };
-            const auto grid = Acoustics::make_duct_grid(spec, [](double) { return kRadius; });
+            const auto grid = Acoustics::make_duct_grid(spec, [](double) { return kAcousticsDuctRadius; });
             ASSERT_TRUE(grid.has_value());
 
             const auto n = static_cast<double>(grid->intervals);
@@ -185,10 +185,10 @@ TEST(DuctGridTest, AMouthVolumeAddsComplianceToTheFirstCellOnly)
     DuctSpec with_volume = flute_spec();
     with_volume.mouth_volume = 2.0e-6;
 
-    const DuctGrid a = Acoustics::make_duct_grid(plain, [](double) { return kRadius; }).value();
-    const DuctGrid b = Acoustics::make_duct_grid(with_volume, [](double) { return kRadius; }).value();
+    const DuctGrid a = Acoustics::make_duct_grid(plain, [](double) { return kAcousticsDuctRadius; }).value();
+    const DuctGrid b = Acoustics::make_duct_grid(with_volume, [](double) { return kAcousticsDuctRadius; }).value();
 
-    const double area = std::numbers::pi * kRadius * kRadius;
+    const double area = std::numbers::pi * kAcousticsDuctRadius * kAcousticsDuctRadius;
     const double stiffness = plain.air_density * plain.sound_speed * plain.sound_speed * a.time_step;
 
     EXPECT_NEAR(b.pressure_gain.front(), stiffness / (0.5 * a.spacing * area + 2.0e-6), 1e-12 * b.pressure_gain.front());
@@ -204,10 +204,10 @@ TEST(DuctGridTest, ANegativeOrNonFiniteMouthVolumeIsAnInvalidSpec)
     DuctSpec spec = flute_spec();
 
     spec.mouth_volume = -1.0e-6;
-    EXPECT_EQ(Acoustics::make_duct_grid(spec, [](double) { return kRadius; }).error(), DuctError::INVALID_SPEC);
+    EXPECT_EQ(Acoustics::make_duct_grid(spec, [](double) { return kAcousticsDuctRadius; }).error(), DuctError::INVALID_SPEC);
 
     spec.mouth_volume = std::numeric_limits<double>::infinity();
-    EXPECT_EQ(Acoustics::make_duct_grid(spec, [](double) { return kRadius; }).error(), DuctError::INVALID_SPEC);
+    EXPECT_EQ(Acoustics::make_duct_grid(spec, [](double) { return kAcousticsDuctRadius; }).error(), DuctError::INVALID_SPEC);
 }
 
 TEST(StaggeredLineTest, ASealedCylinderConservesItsDiscreteEnergy)

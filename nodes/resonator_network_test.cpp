@@ -34,7 +34,7 @@ namespace {
         return net;
     }
 
-    std::vector<double> render(const std::shared_ptr<ResonatorNetwork>& net, unsigned int samples)
+    std::vector<double> resonator_network_render(const std::shared_ptr<ResonatorNetwork>& net, unsigned int samples)
     {
         net->process_batch(samples);
         return net->get_audio_buffer().value_or(std::vector<double> {});
@@ -122,7 +122,7 @@ TEST(ResonatorExcitationTest, SilentWithoutExciter)
     auto net = std::make_shared<ResonatorNetwork>(
         std::vector<double> { 1000.0 }, std::vector<double> { 30.0 });
 
-    const auto y = render(net, 512);
+    const auto y = resonator_network_render(net, 512);
 
     ASSERT_EQ(y.size(), 512U);
     EXPECT_EQ(peak(y), 0.0);
@@ -134,7 +134,7 @@ TEST(ResonatorExcitationTest, ImpulseRingsAtDesignFrequencyAndDies)
     auto net = make_single(frequency, 30.0);
     const double sample_rate = net->get_sample_rate();
 
-    const auto y = render(net, 8192);
+    const auto y = resonator_network_render(net, 8192);
 
     size_t crossings = 0;
     for (size_t n = 1; n < 400; ++n) {
@@ -179,8 +179,8 @@ TEST(ResonatorGainTest, GainScalesOutputLinearly)
     auto doubled = make_single(1000.0, 30.0);
     doubled->set_resonator_gain(0, 2.0);
 
-    const auto a = render(unit, 512);
-    const auto b = render(doubled, 512);
+    const auto a = resonator_network_render(unit, 512);
+    const auto b = resonator_network_render(doubled, 512);
 
     ASSERT_EQ(a.size(), b.size());
     for (size_t n = 0; n < a.size(); ++n) {
@@ -193,14 +193,14 @@ TEST(ResonatorRetuneTest, SetFrequencyClearsStateRetuneKeepsIt)
     auto cleared = make_single(1200.0, 30.0);
     auto kept = make_single(1200.0, 30.0);
 
-    render(cleared, 256);
-    render(kept, 256);
+    resonator_network_render(cleared, 256);
+    resonator_network_render(kept, 256);
 
     cleared->set_frequency(0, 1250.0);
     kept->retune(0, 1250.0);
 
-    const auto after_clear = render(cleared, 1);
-    const auto after_retune = render(kept, 1);
+    const auto after_clear = resonator_network_render(cleared, 1);
+    const auto after_retune = resonator_network_render(kept, 1);
 
     EXPECT_EQ(after_clear.at(0), 0.0);
     EXPECT_GT(std::abs(after_retune.at(0)), 1e-9);
@@ -238,7 +238,7 @@ TEST(ResonatorDecayTest, RingEnvelopeFallsByOneOverEPerDecayTime)
     const auto early = static_cast<size_t>(0.02 * sample_rate);
     const auto late = early + static_cast<size_t>(decay * sample_rate);
 
-    const auto y = render(net, static_cast<unsigned int>(late + period));
+    const auto y = resonator_network_render(net, static_cast<unsigned int>(late + period));
 
     const double ratio = rms(y, late, period) / rms(y, early, period);
     EXPECT_NEAR(ratio, std::exp(-1.0), 0.1 * std::exp(-1.0));
@@ -266,10 +266,10 @@ TEST(ResonatorDecayTest, ExtremeDecayStaysStable)
 TEST(ResonatorDecayTest, SetDecayKeepsRingingState)
 {
     auto net = make_single(1200.0, 30.0);
-    render(net, 256);
+    resonator_network_render(net, 256);
 
     net->set_decay(0, 0.01);
-    const auto after = render(net, 1);
+    const auto after = resonator_network_render(net, 1);
 
     EXPECT_GT(std::abs(after.at(0)), 1e-9);
 }
@@ -289,14 +289,14 @@ TEST(ResonatorMappingTest, MappedRetuneKeepsTheRingWhereMappedFrequencyClearsIt)
 
     auto cleared = make_single(1200.0, 30.0);
     auto kept = make_single(1200.0, 30.0);
-    render(cleared, 256);
-    render(kept, 256);
+    resonator_network_render(cleared, 256);
+    resonator_network_render(kept, 256);
 
     cleared->map_parameter("frequency", target);
     kept->map_parameter("retune", target);
 
-    const auto after_clear = render(cleared, 1);
-    const auto after_retune = render(kept, 1);
+    const auto after_clear = resonator_network_render(cleared, 1);
+    const auto after_retune = resonator_network_render(kept, 1);
 
     EXPECT_EQ(after_clear.at(0), 0.0);
     EXPECT_GT(std::abs(after_retune.at(0)), 1e-9);

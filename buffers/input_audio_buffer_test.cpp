@@ -21,21 +21,21 @@ namespace {
     static_assert(!std::is_copy_constructible_v<InputAudioBuffer>);
     static_assert(!std::is_move_constructible_v<InputAudioBuffer>);
 
-    class PreferredSizeGuard {
+    class InputAudioBufferPreferredSizeGuard {
     public:
-        PreferredSizeGuard() = default;
+        InputAudioBufferPreferredSizeGuard() = default;
 
-        explicit PreferredSizeGuard(uint32_t block)
+        explicit InputAudioBufferPreferredSizeGuard(uint32_t block)
         {
             Buffers::s_preferred_buffer_size = block;
         }
 
-        PreferredSizeGuard(const PreferredSizeGuard&) = delete;
-        PreferredSizeGuard& operator=(const PreferredSizeGuard&) = delete;
-        PreferredSizeGuard(PreferredSizeGuard&&) = delete;
-        PreferredSizeGuard& operator=(PreferredSizeGuard&&) = delete;
+        InputAudioBufferPreferredSizeGuard(const InputAudioBufferPreferredSizeGuard&) = delete;
+        InputAudioBufferPreferredSizeGuard& operator=(const InputAudioBufferPreferredSizeGuard&) = delete;
+        InputAudioBufferPreferredSizeGuard(InputAudioBufferPreferredSizeGuard&&) = delete;
+        InputAudioBufferPreferredSizeGuard& operator=(InputAudioBufferPreferredSizeGuard&&) = delete;
 
-        ~PreferredSizeGuard() { Buffers::s_preferred_buffer_size = m_saved; }
+        ~InputAudioBufferPreferredSizeGuard() { Buffers::s_preferred_buffer_size = m_saved; }
 
     private:
         uint32_t m_saved { Buffers::s_preferred_buffer_size };
@@ -363,7 +363,7 @@ namespace {
 
     TEST(BufferInputControlTest, TheBufferLengthIsTheEnginesBlockNotTheRequestedSize)
     {
-        const PreferredSizeGuard guard(8);
+        const InputAudioBufferPreferredSizeGuard guard(8);
         BufferInputControl control;
 
         control.setup_audio_input_buffers(1, 16);
@@ -373,7 +373,7 @@ namespace {
 
     TEST(BufferInputControlTest, SettingUpCreatesOneBufferPerChannel)
     {
-        const PreferredSizeGuard guard(16);
+        const InputAudioBufferPreferredSizeGuard guard(16);
         BufferInputControl control;
 
         control.setup_audio_input_buffers(3, 16);
@@ -399,7 +399,7 @@ namespace {
 
     TEST(BufferInputControlTest, SettingUpAgainReplacesTheBuffersAndTheirListeners)
     {
-        const PreferredSizeGuard guard(8);
+        const InputAudioBufferPreferredSizeGuard guard(8);
         BufferInputControl control;
         control.setup_audio_input_buffers(2, 4);
         const auto old_buffer = control.get_input_buffer(0);
@@ -415,7 +415,7 @@ namespace {
 
     TEST(BufferInputControlTest, InterleavedInputIsSplitIntoChannelsAndDelivered)
     {
-        const PreferredSizeGuard guard(4);
+        const InputAudioBufferPreferredSizeGuard guard(4);
         BufferInputControl control;
         control.setup_audio_input_buffers(2, 4);
         const auto left = make_listener();
@@ -434,7 +434,7 @@ namespace {
 
     TEST(BufferInputControlTest, InputBuildsTheBuffersWhenNoneExist)
     {
-        const PreferredSizeGuard guard(3);
+        const InputAudioBufferPreferredSizeGuard guard(3);
         BufferInputControl control;
         std::vector<double> input { 1, -1, 2, -2, 3, -3 };
 
@@ -448,7 +448,7 @@ namespace {
 
     TEST(BufferInputControlTest, MoreChannelsThanBuffersRebuildsTheBuffers)
     {
-        const PreferredSizeGuard guard(2);
+        const InputAudioBufferPreferredSizeGuard guard(2);
         BufferInputControl control;
         control.setup_audio_input_buffers(1, 2);
         std::vector<double> input { 1, 10, 100, 2, 20, 200 };
@@ -461,7 +461,7 @@ namespace {
 
     TEST(BufferInputControlTest, ABlockShorterThanTheBufferIsZeroPadded)
     {
-        const PreferredSizeGuard guard(8);
+        const InputAudioBufferPreferredSizeGuard guard(8);
         BufferInputControl control;
         control.setup_audio_input_buffers(1, 8);
         std::vector<double> input { 1, 2, 3, 4 };
@@ -473,7 +473,7 @@ namespace {
 
     TEST(BufferInputControlTest, ABlockLongerThanTheBufferIsCutToTheBuffer)
     {
-        const PreferredSizeGuard guard(4);
+        const InputAudioBufferPreferredSizeGuard guard(4);
         BufferInputControl control;
         control.setup_audio_input_buffers(1, 4);
         std::vector<double> input { 1, 2, 3, 4, 5, 6, 7, 8 };
@@ -486,7 +486,7 @@ namespace {
 
     TEST(BufferInputControlTest, ABufferForAChannelTheDataLacksIsSilenced)
     {
-        const PreferredSizeGuard guard(4);
+        const InputAudioBufferPreferredSizeGuard guard(4);
         BufferInputControl control;
         control.setup_audio_input_buffers(3, 4);
         control.get_input_buffer(2)->get_data() = { 9, 9, 9, 9 };
@@ -501,7 +501,7 @@ namespace {
 
     TEST(BufferInputControlTest, NullInputLeavesTheBuffersAlone)
     {
-        const PreferredSizeGuard guard(4);
+        const InputAudioBufferPreferredSizeGuard guard(4);
         BufferInputControl control;
         control.setup_audio_input_buffers(1, 4);
         control.get_input_buffer(0)->get_data() = { 1, 2, 3, 4 };
@@ -513,7 +513,7 @@ namespace {
 
     TEST(BufferInputControlTest, InputGrowthRebuildsTheBuffersAndDropsTheirListeners)
     {
-        const PreferredSizeGuard guard(4);
+        const InputAudioBufferPreferredSizeGuard guard(4);
         BufferInputControl control;
         control.setup_audio_input_buffers(1, 4);
         const auto old_buffer = control.get_input_buffer(0);
@@ -531,7 +531,7 @@ namespace {
 
     TEST(BufferInputControlTest, AListenerOnASilencedChannelReceivesZeros)
     {
-        const PreferredSizeGuard guard(4);
+        const InputAudioBufferPreferredSizeGuard guard(4);
         BufferInputControl control;
         control.setup_audio_input_buffers(2, 4);
         const auto right = make_listener();
@@ -548,7 +548,7 @@ namespace {
 
     TEST(BufferInputControlTest, ANullListenerIsIgnored)
     {
-        const PreferredSizeGuard guard(4);
+        const InputAudioBufferPreferredSizeGuard guard(4);
         BufferInputControl control;
         control.setup_audio_input_buffers(1, 4);
 
@@ -559,7 +559,7 @@ namespace {
 
     TEST(BufferInputControlTest, ProcessingWithNoChannelsIsANoOp)
     {
-        const PreferredSizeGuard guard(4);
+        const InputAudioBufferPreferredSizeGuard guard(4);
         BufferInputControl control;
         std::vector<double> input { 1, 2, 3, 4 };
 
@@ -570,7 +570,7 @@ namespace {
 
     TEST(BufferInputControlTest, ListenersFollowEachBlock)
     {
-        const PreferredSizeGuard guard(2);
+        const InputAudioBufferPreferredSizeGuard guard(2);
         BufferInputControl control;
         control.setup_audio_input_buffers(1, 2);
         const auto listener = make_listener(2);
@@ -587,7 +587,7 @@ namespace {
 
     TEST(BufferInputControlTest, UnregisteringStopsDelivery)
     {
-        const PreferredSizeGuard guard(2);
+        const InputAudioBufferPreferredSizeGuard guard(2);
         BufferInputControl control;
         control.setup_audio_input_buffers(1, 2);
         const auto listener = make_listener(2);
@@ -616,7 +616,7 @@ namespace {
 
     TEST(BufferManagerInputTest, WithoutInputChannelsThereAreNoInputBuffers)
     {
-        const PreferredSizeGuard guard;
+        const InputAudioBufferPreferredSizeGuard guard;
         const BufferManager manager(2, 0, 48000, 4);
 
         EXPECT_EQ(manager.get_num_input_channels(), 0U);
@@ -625,7 +625,7 @@ namespace {
 
     TEST(BufferManagerInputTest, InputChannelsGetBuffersOfTheManagersBlockSize)
     {
-        const PreferredSizeGuard guard;
+        const InputAudioBufferPreferredSizeGuard guard;
         const BufferManager manager(2, 2, 48000, 4);
 
         ASSERT_EQ(manager.get_num_input_channels(), 2U);
@@ -635,7 +635,7 @@ namespace {
 
     TEST(BufferManagerInputTest, InputIsDeliveredToRegisteredListeners)
     {
-        const PreferredSizeGuard guard;
+        const InputAudioBufferPreferredSizeGuard guard;
         BufferManager manager(2, 2, 48000, 4);
         const auto left = make_listener();
         const auto right = make_listener();
@@ -651,7 +651,7 @@ namespace {
 
     TEST(BufferManagerInputTest, AnUnregisteredListenerStopsReceivingInput)
     {
-        const PreferredSizeGuard guard;
+        const InputAudioBufferPreferredSizeGuard guard;
         BufferManager manager(2, 1, 48000, 4);
         const auto listener = make_listener();
         manager.register_input_listener(listener, 0);

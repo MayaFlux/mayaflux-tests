@@ -17,7 +17,7 @@ namespace {
 
     constexpr double k_pass_latency = 1.5;
 
-    std::shared_ptr<Polynomial> constant_source(double value)
+    std::shared_ptr<Polynomial> waveguide_controls_constant_source(double value)
     {
         auto source = std::make_shared<Polynomial>([value](double) { return value; });
         source->process_sample(0.0);
@@ -30,7 +30,7 @@ namespace {
         return network.get_audio_buffer().value_or(std::vector<double> {});
     }
 
-    double peak(std::span<const double> samples)
+    double waveguide_controls_peak(std::span<const double> samples)
     {
         double result = 0.0;
         for (double sample : samples) {
@@ -45,7 +45,7 @@ TEST(WaveguideControlsTest, ANodeFrequencyRecomputesTheDelay)
 {
     WaveguideNetwork network(GuideType::STRING, 480.0);
 
-    network.set({ .frequency = constant_source(120.0) });
+    network.set({ .frequency = waveguide_controls_constant_source(120.0) });
     render(network, 1);
 
     EXPECT_DOUBLE_EQ(network.get_fundamental(), 120.0);
@@ -78,7 +78,7 @@ TEST(WaveguideControlsTest, ANodeDampingSetsTheLossFactor)
 {
     WaveguideNetwork network(GuideType::STRING, 480.0);
 
-    network.set({ .damping = constant_source(0.7) });
+    network.set({ .damping = waveguide_controls_constant_source(0.7) });
     render(network, 1);
 
     EXPECT_DOUBLE_EQ(network.get_loss_factor(), 0.7);
@@ -111,7 +111,7 @@ TEST(WaveguideControlsTest, APositionMovesThePickup)
 {
     WaveguideNetwork network(GuideType::STRING, 480.0);
 
-    network.set({ .position = constant_source(0.25) });
+    network.set({ .position = waveguide_controls_constant_source(0.25) });
     render(network, 1);
 
     EXPECT_NEAR(network.get_pickup_position(), 0.25, 0.01);
@@ -135,7 +135,7 @@ TEST(WaveguideControlsTest, ANodeScaleChangesTheAudioMix)
     WaveguideNetwork scaled(GuideType::STRING, 480.0);
     reference.pluck(0.5);
     scaled.pluck(0.5);
-    scaled.set({ .scale = constant_source(0.25) });
+    scaled.set({ .scale = waveguide_controls_constant_source(0.25) });
 
     const auto original = render(reference, 256);
     const auto reduced = render(scaled, 256);
@@ -151,9 +151,9 @@ TEST(WaveguideControlsTest, ANegativeScaleMutesTheAudioMix)
     WaveguideNetwork network(GuideType::STRING, 480.0);
     network.pluck(0.5);
 
-    network.set({ .scale = constant_source(-1.0) });
+    network.set({ .scale = waveguide_controls_constant_source(-1.0) });
 
-    EXPECT_DOUBLE_EQ(peak(render(network, 256)), 0.0);
+    EXPECT_DOUBLE_EQ(waveguide_controls_peak(render(network, 256)), 0.0);
 }
 
 TEST(WaveguideControlsTest, TypedAndStringMappingsRenderTheSameSound)
@@ -163,14 +163,14 @@ TEST(WaveguideControlsTest, TypedAndStringMappingsRenderTheSameSound)
     by_string.pluck(0.5);
     by_control.pluck(0.5);
 
-    by_string.map_parameter("frequency", constant_source(240.0));
-    by_string.map_parameter("damping", constant_source(0.9));
-    by_string.map_parameter("position", constant_source(0.3));
-    by_string.map_parameter("scale", constant_source(0.5));
-    by_control.set({ .scale = constant_source(0.5),
-        .frequency = constant_source(240.0),
-        .damping = constant_source(0.9),
-        .position = constant_source(0.3) });
+    by_string.map_parameter("frequency", waveguide_controls_constant_source(240.0));
+    by_string.map_parameter("damping", waveguide_controls_constant_source(0.9));
+    by_string.map_parameter("position", waveguide_controls_constant_source(0.3));
+    by_string.map_parameter("scale", waveguide_controls_constant_source(0.5));
+    by_control.set({ .scale = waveguide_controls_constant_source(0.5),
+        .frequency = waveguide_controls_constant_source(240.0),
+        .damping = waveguide_controls_constant_source(0.9),
+        .position = waveguide_controls_constant_source(0.3) });
 
     const auto expected = render(by_string, 256);
     const auto actual = render(by_control, 256);
@@ -200,7 +200,7 @@ TEST(WaveguideControlsTest, GetReportsValuesChangedThroughTheNetworkItself)
 TEST(WaveguideControlsTest, GetKeepsAMappedMemberMapped)
 {
     WaveguideNetwork network(GuideType::STRING, 480.0);
-    network.set({ .damping = constant_source(0.7) });
+    network.set({ .damping = waveguide_controls_constant_source(0.7) });
     render(network, 1);
 
     const auto controls = network.get();
@@ -304,7 +304,7 @@ TEST(WaveguideControlsTest, ANodeAboveHalfSelectsVelocityMeasurement)
     by_enum.pluck(0.3);
     pressure.pluck(0.3);
 
-    by_node.set({ .measurement_mode = constant_source(1.0) });
+    by_node.set({ .measurement_mode = waveguide_controls_constant_source(1.0) });
     by_enum.set({ .measurement_mode = WaveguideNetwork::MeasurementMode::VELOCITY });
 
     const auto expected = render(by_enum, 256);

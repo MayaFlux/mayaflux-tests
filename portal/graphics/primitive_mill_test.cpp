@@ -159,13 +159,13 @@ namespace {
     // Layout translation
     // ------------------------------------------------------------------
 
-    struct FormatCase {
+    struct PrimitiveMillFormatCase {
         std::string_view name;
         DataModality modality;
         vk::Format format;
     };
 
-    class ModalityFormatTest : public ::testing::TestWithParam<FormatCase> { };
+    class ModalityFormatTest : public ::testing::TestWithParam<PrimitiveMillFormatCase> { };
 
     MAYAFLUX_TEST_WITH(TEST_P, ModalityFormatTest, MapsToItsVertexFormat, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
@@ -174,16 +174,16 @@ namespace {
 
     INSTANTIATE_TEST_SUITE_P(Modalities, ModalityFormatTest,
         ::testing::Values(
-            FormatCase { "Positions", DataModality::VERTEX_POSITIONS_3D, vk::Format::eR32G32B32Sfloat },
-            FormatCase { "Normals", DataModality::VERTEX_NORMALS_3D, vk::Format::eR32G32B32Sfloat },
-            FormatCase { "Tangents", DataModality::VERTEX_TANGENTS_3D, vk::Format::eR32G32B32Sfloat },
-            FormatCase { "ColorsRgb", DataModality::VERTEX_COLORS_RGB, vk::Format::eR32G32B32Sfloat },
-            FormatCase { "ColorsRgba", DataModality::VERTEX_COLORS_RGBA, vk::Format::eR32G32B32A32Sfloat },
-            FormatCase { "TextureCoords", DataModality::TEXTURE_COORDS_2D, vk::Format::eR32G32Sfloat },
-            FormatCase { "Audio", DataModality::AUDIO_1D, vk::Format::eR64Sfloat },
-            FormatCase { "Spectral", DataModality::SPECTRAL_2D, vk::Format::eR32G32Sfloat },
-            FormatCase { "Scalar", DataModality::SCALAR_F32, vk::Format::eR32Sfloat }),
-        [](const ::testing::TestParamInfo<FormatCase>& info) { return std::string(info.param.name); });
+            PrimitiveMillFormatCase { "Positions", DataModality::VERTEX_POSITIONS_3D, vk::Format::eR32G32B32Sfloat },
+            PrimitiveMillFormatCase { "Normals", DataModality::VERTEX_NORMALS_3D, vk::Format::eR32G32B32Sfloat },
+            PrimitiveMillFormatCase { "Tangents", DataModality::VERTEX_TANGENTS_3D, vk::Format::eR32G32B32Sfloat },
+            PrimitiveMillFormatCase { "ColorsRgb", DataModality::VERTEX_COLORS_RGB, vk::Format::eR32G32B32Sfloat },
+            PrimitiveMillFormatCase { "ColorsRgba", DataModality::VERTEX_COLORS_RGBA, vk::Format::eR32G32B32A32Sfloat },
+            PrimitiveMillFormatCase { "TextureCoords", DataModality::TEXTURE_COORDS_2D, vk::Format::eR32G32Sfloat },
+            PrimitiveMillFormatCase { "Audio", DataModality::AUDIO_1D, vk::Format::eR64Sfloat },
+            PrimitiveMillFormatCase { "Spectral", DataModality::SPECTRAL_2D, vk::Format::eR32G32Sfloat },
+            PrimitiveMillFormatCase { "Scalar", DataModality::SCALAR_F32, vk::Format::eR32Sfloat }),
+        [](const ::testing::TestParamInfo<PrimitiveMillFormatCase>& info) { return std::string(info.param.name); });
 
     MAYAFLUX_TEST_WITH(TEST, VertexLayoutTranslatorTest, TranslateGivesOneBindingAndOneAttributePerAttributeInOrder, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {

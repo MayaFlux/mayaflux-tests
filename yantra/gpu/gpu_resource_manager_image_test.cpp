@@ -18,10 +18,10 @@ namespace {
     using Yantra::GpuResourceManager;
 
     constexpr uint32_t k_width = 16;
-    constexpr size_t k_row_bytes = static_cast<size_t>(k_width) * 4;
+    constexpr size_t k_gpu_resource_manager_image_row_bytes = static_cast<size_t>(k_width) * 4;
     constexpr std::array<uint32_t, 3> k_one { 1, 1, 1 };
 
-    constexpr std::string_view k_paint_source = R"(#version 450
+    constexpr std::string_view k_gpu_resource_manager_image_paint_source = R"(#version 450
 layout(local_size_x = 16) in;
 layout(set = 0, binding = 0, rgba8) uniform writeonly image2D out_image;
 void main()
@@ -66,8 +66,8 @@ void main()
     class GpuImageManagerTest : public Fixture {
     };
 
-    using ImageHardwareOptions = ::testing::Types<GpuImageFixture<true>, GpuImageFixture<false>>;
-    TYPED_TEST_SUITE(GpuImageManagerTest, ImageHardwareOptions);
+    using GpuResourceManagerImageImageHardwareOptions = ::testing::Types<GpuImageFixture<true>, GpuImageFixture<false>>;
+    TYPED_TEST_SUITE(GpuImageManagerTest, GpuResourceManagerImageImageHardwareOptions);
 
     TYPED_TEST(GpuImageManagerTest, TransitionImageUpdatesTheTrackedLayoutWithAndWithoutARecording)
     {
@@ -148,7 +148,7 @@ void main()
             GpuResourceManager manager(false);
             manager.set_recording(recorded ? recording : nullptr);
 
-            const auto shader = load_compute(k_paint_source);
+            const auto shader = load_compute(k_gpu_resource_manager_image_paint_source);
             ASSERT_NE(shader, Portal::Graphics::INVALID_SHADER);
             const auto binding = storage_image_binding(0);
             ASSERT_TRUE(manager.initialise("paint", compute_config(shader, 0), { binding }));
@@ -167,9 +167,9 @@ void main()
                 recording->wait();
             }
 
-            std::vector<uint8_t> pixels(k_row_bytes, 0);
+            std::vector<uint8_t> pixels(k_gpu_resource_manager_image_row_bytes, 0);
             Portal::Graphics::get_texture_manager().download_data(image, pixels.data(), pixels.size());
-            EXPECT_EQ(pixels, std::vector<uint8_t>(k_row_bytes, 255));
+            EXPECT_EQ(pixels, std::vector<uint8_t>(k_gpu_resource_manager_image_row_bytes, 255));
         }
     }
 
@@ -178,7 +178,7 @@ void main()
         auto recording = std::make_shared<GpuDispatchRecorder>(false);
         GpuResourceManager manager(false);
         manager.set_recording(recording);
-        const auto shader = load_compute(k_paint_source);
+        const auto shader = load_compute(k_gpu_resource_manager_image_paint_source);
         ASSERT_NE(shader, Portal::Graphics::INVALID_SHADER);
         const auto binding = storage_image_binding(0);
         ASSERT_TRUE(manager.initialise("paint", compute_config(shader, 0), { binding }));

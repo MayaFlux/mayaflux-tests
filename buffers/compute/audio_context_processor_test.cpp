@@ -19,7 +19,7 @@ namespace {
     using Portal::Graphics::GpuBufferBinding;
     using Yantra::WordPairExecutionContext;
 
-    constexpr uint64_t k_sign_bit = uint64_t { 1 } << 63U;
+    constexpr uint64_t k_audio_context_processor_sign_bit = uint64_t { 1 } << 63U;
 
     constexpr std::string_view k_invert_source = R"(#version 460
 layout(local_size_x = 64) in;
@@ -62,15 +62,15 @@ void main() {
             Yantra::GpuComputeConfig {}, std::vector<GpuBufferBinding> { block }, false);
     }
 
-    double with_sign_flipped(double value)
+    double audio_context_processor_with_sign_flipped(double value)
     {
-        return std::bit_cast<double>(std::bit_cast<uint64_t>(value) ^ k_sign_bit);
+        return std::bit_cast<double>(std::bit_cast<uint64_t>(value) ^ k_audio_context_processor_sign_bit);
     }
 
-    std::vector<double> sign_flipped(const std::vector<double>& input)
+    std::vector<double> audio_context_processor_sign_flipped(const std::vector<double>& input)
     {
         std::vector<double> expected(input.size());
-        std::ranges::transform(input, expected.begin(), with_sign_flipped);
+        std::ranges::transform(input, expected.begin(), audio_context_processor_with_sign_flipped);
         return expected;
     }
 
@@ -83,7 +83,7 @@ void main() {
         return out;
     }
 
-    void expect_bits_equal(const std::vector<double>& actual, const std::vector<double>& expected)
+    void audio_context_processor_expect_bits_equal(const std::vector<double>& actual, const std::vector<double>& expected)
     {
         ASSERT_EQ(actual.size(), expected.size());
         for (size_t i = 0; i < expected.size(); ++i) {
@@ -167,9 +167,9 @@ void main() {
         this->run(child, second);
         expect_silent(child->get_data());
         this->run(child, third);
-        expect_bits_equal(child->get_data(), sign_flipped(first));
+        audio_context_processor_expect_bits_equal(child->get_data(), audio_context_processor_sign_flipped(first));
         this->run(child, fourth);
-        expect_bits_equal(child->get_data(), sign_flipped(second));
+        audio_context_processor_expect_bits_equal(child->get_data(), audio_context_processor_sign_flipped(second));
 
         EXPECT_EQ(processor->missed(), uint64_t { 0 });
         processor->on_detach(child);
@@ -187,7 +187,7 @@ void main() {
         this->run(child, first);
         expect_silent(child->get_data());
         this->run(child, second);
-        expect_bits_equal(child->get_data(), sign_flipped(first));
+        audio_context_processor_expect_bits_equal(child->get_data(), audio_context_processor_sign_flipped(first));
 
         processor->on_detach(child);
     }
@@ -219,7 +219,7 @@ void main() {
         this->run(child, first);
         this->run(child, ramp(200, 1.5));
 
-        expect_bits_equal(child->get_data(), sign_flipped(first));
+        audio_context_processor_expect_bits_equal(child->get_data(), audio_context_processor_sign_flipped(first));
         processor->on_detach(child);
     }
 

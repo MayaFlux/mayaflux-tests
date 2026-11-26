@@ -25,15 +25,15 @@ namespace {
     using Yantra::SileroVadModel;
     using Yantra::StandardVadAnalyzer;
 
-    const fs::path k_weights = "data/tensors/silero/silero_vad_16k.safetensors";
+    const fs::path k_silero_vad_weights = "data/tensors/silero/silero_vad_16k.safetensors";
 
-    std::optional<TensorSet> load_weights()
+    std::optional<TensorSet> silero_vad_load_weights()
     {
-        if (!fs::exists(k_weights)) {
+        if (!fs::exists(k_silero_vad_weights)) {
             return std::nullopt;
         }
         SafetensorsReader reader;
-        if (!reader.open(k_weights.string())) {
+        if (!reader.open(k_silero_vad_weights.string())) {
             return std::nullopt;
         }
         return reader.read_tensors();
@@ -185,7 +185,7 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, ProbabilitiesMatchAnIndependentHostForwardPass, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        const auto weights = load_weights();
+        const auto weights = silero_vad_load_weights();
         if (!weights) {
             GTEST_SKIP() << "data/tensors/silero/silero_vad_16k.safetensors is not present";
         }
@@ -204,7 +204,7 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, ASplitStreamGivesTheSameProbabilitiesAsOneCall, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        const auto weights = load_weights();
+        const auto weights = silero_vad_load_weights();
         if (!weights) {
             GTEST_SKIP() << "data/tensors/silero/silero_vad_16k.safetensors is not present";
         }
@@ -225,7 +225,7 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, ACompletedChunkLeavesThePartialOneWaitingUntilFlushed, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        const auto weights = load_weights();
+        const auto weights = silero_vad_load_weights();
         if (!weights) {
             GTEST_SKIP() << "data/tensors/silero/silero_vad_16k.safetensors is not present";
         }
@@ -250,7 +250,7 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, ResetRestoresTheInitialState, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        const auto weights = load_weights();
+        const auto weights = silero_vad_load_weights();
         if (!weights) {
             GTEST_SKIP() << "data/tensors/silero/silero_vad_16k.safetensors is not present";
         }
@@ -267,7 +267,7 @@ namespace {
         }
     }
 
-    std::vector<float> read_floats(const fs::path& path)
+    std::vector<float> silero_vad_read_floats(const fs::path& path)
     {
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file) {
@@ -281,9 +281,9 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, ProbabilitiesMatchTheOriginalNetworkOnTheReferenceSignal, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        const auto weights = load_weights();
-        const auto audio = read_floats("tests/models/silero/silero_reference_audio.f32");
-        const auto want = read_floats("tests/models/silero/silero_reference_probabilities.f32");
+        const auto weights = silero_vad_load_weights();
+        const auto audio = silero_vad_read_floats("tests/models/silero/silero_reference_audio.f32");
+        const auto want = silero_vad_read_floats("tests/models/silero/silero_reference_probabilities.f32");
         if (!weights || audio.empty() || want.empty()) {
             GTEST_SKIP() << "the Silero weights or the reference fixture are not present";
         }
@@ -300,7 +300,7 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, SilenceIsNotSpeech, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        const auto weights = load_weights();
+        const auto weights = silero_vad_load_weights();
         if (!weights) {
             GTEST_SKIP() << "data/tensors/silero/silero_vad_16k.safetensors is not present";
         }
@@ -317,7 +317,7 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TYPED_TEST, SileroVadGpuTest, TheAnalyzerContinuesAStreamAndFlushesTheTail, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        const auto weights = load_weights();
+        const auto weights = silero_vad_load_weights();
         if (!weights) {
             GTEST_SKIP() << "data/tensors/silero/silero_vad_16k.safetensors is not present";
         }
@@ -373,7 +373,7 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, SileroVadRateTest, TheAnalyzerRefusesAnotherRateAtConstructionAndWhenTheConfigChanges, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::silero_weights>() }))
     {
-        const auto weights = load_weights();
+        const auto weights = silero_vad_load_weights();
         if (!weights) {
             GTEST_SKIP() << "data/tensors/silero/silero_vad_16k.safetensors is not present";
         }
@@ -392,7 +392,7 @@ namespace {
         const TensorSet empty;
         EXPECT_EQ(SileroVadModel::diagnose(empty), "missing tensor 'stft_conv.weight'");
 
-        auto weights = load_weights();
+        auto weights = silero_vad_load_weights();
         if (!weights) {
             GTEST_SKIP() << "data/tensors/silero/silero_vad_16k.safetensors is not present";
         }

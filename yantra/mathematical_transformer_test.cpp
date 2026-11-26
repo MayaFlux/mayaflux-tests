@@ -17,8 +17,8 @@ namespace {
     using Yantra::TransformationStrategy;
     namespace D = Kinesis::Discrete;
 
-    constexpr std::size_t k_samples = 256;
-    constexpr double k_tolerance = 1e-9;
+    constexpr std::size_t k_mathematical_transformer_samples = 256;
+    constexpr double k_mathematical_transformer_tolerance = 1e-9;
 
     const char* operation_name(MathematicalOperation op)
     {
@@ -54,9 +54,9 @@ namespace {
         return cfg;
     }
 
-    Yantra::Datum<std::vector<Kakshya::DataVariant>> two_channel_input()
+    Yantra::Datum<std::vector<Kakshya::DataVariant>> mathematical_transformer_two_channel_input()
     {
-        return to_datum({ sine_samples(k_samples, 440.0, 48000.0, 0.5), ramp_samples(k_samples) });
+        return to_datum({ sine_samples(k_mathematical_transformer_samples, 440.0, 48000.0, 0.5), ramp_samples(k_mathematical_transformer_samples) });
     }
 
     class MathOperationTest : public ::testing::TestWithParam<MathematicalOperation> {
@@ -81,18 +81,18 @@ namespace {
     {
         MathematicalTransformer<> transformer(config_for(GetParam()));
 
-        const auto result = transformer.apply_operation(two_channel_input());
+        const auto result = transformer.apply_operation(mathematical_transformer_two_channel_input());
 
         ASSERT_EQ(result.data.size(), 2U);
-        EXPECT_EQ(channel_samples(result, 0).size(), k_samples);
-        EXPECT_EQ(channel_samples(result, 1).size(), k_samples);
+        EXPECT_EQ(channel_samples(result, 0).size(), k_mathematical_transformer_samples);
+        EXPECT_EQ(channel_samples(result, 1).size(), k_mathematical_transformer_samples);
     }
 
     TEST_P(MathOperationTest, EveryOutputSampleIsFinite)
     {
         MathematicalTransformer<> transformer(config_for(GetParam()));
 
-        const auto result = transformer.apply_operation(two_channel_input());
+        const auto result = transformer.apply_operation(mathematical_transformer_two_channel_input());
 
         for (std::size_t ch = 0; ch < 2; ++ch) {
             for (double sample : channel_samples(result, ch)) {
@@ -113,7 +113,7 @@ namespace {
     protected:
         Yantra::Datum<std::vector<Kakshya::DataVariant>> ramp_input()
         {
-            return to_datum({ ramp_samples(k_samples) });
+            return to_datum({ ramp_samples(k_mathematical_transformer_samples) });
         }
     };
 
@@ -126,8 +126,8 @@ namespace {
 
         const auto out = channel_samples(result, 0);
         const auto in = channel_samples(input, 0);
-        for (std::size_t i = 0; i < k_samples; ++i) {
-            EXPECT_NEAR(out[i], in[i], k_tolerance) << "Sample " << i;
+        for (std::size_t i = 0; i < k_mathematical_transformer_samples; ++i) {
+            EXPECT_NEAR(out[i], in[i], k_mathematical_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -143,8 +143,8 @@ namespace {
 
         const auto out = channel_samples(result, 0);
         const auto in = channel_samples(input, 0);
-        for (std::size_t i = 0; i < k_samples; ++i) {
-            EXPECT_NEAR(out[i], 2.0 * in[i], k_tolerance) << "Sample " << i;
+        for (std::size_t i = 0; i < k_mathematical_transformer_samples; ++i) {
+            EXPECT_NEAR(out[i], 2.0 * in[i], k_mathematical_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -180,8 +180,8 @@ namespace {
 
         const auto out = channel_samples(result, 0);
         const auto in = channel_samples(input, 0);
-        for (std::size_t i = 0; i < k_samples; ++i) {
-            EXPECT_NEAR(out[i], in[i] + 0.5, k_tolerance) << "Sample " << i;
+        for (std::size_t i = 0; i < k_mathematical_transformer_samples; ++i) {
+            EXPECT_NEAR(out[i], in[i] + 0.5, k_mathematical_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -197,8 +197,8 @@ namespace {
 
         const auto out = channel_samples(result, 0);
         const auto in = channel_samples(input, 0);
-        for (std::size_t i = 0; i < k_samples; ++i) {
-            EXPECT_NEAR(out[i], std::pow(in[i], 3.0), k_tolerance) << "Sample " << i;
+        for (std::size_t i = 0; i < k_mathematical_transformer_samples; ++i) {
+            EXPECT_NEAR(out[i], std::pow(in[i], 3.0), k_mathematical_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -208,15 +208,15 @@ namespace {
         cfg.operation = MathematicalOperation::LOGARITHMIC;
         MathematicalTransformer<> transformer(cfg);
 
-        const auto input = to_datum({ sine_samples(k_samples, 440.0, 48000.0, 0.5) });
+        const auto input = to_datum({ sine_samples(k_mathematical_transformer_samples, 440.0, 48000.0, 0.5) });
         const auto result = transformer.apply_operation(input);
 
         const auto out = channel_samples(result, 0);
         const auto in = channel_samples(input, 0);
-        for (std::size_t i = 0; i < k_samples; ++i) {
+        for (std::size_t i = 0; i < k_mathematical_transformer_samples; ++i) {
             const double arg = in[i] + 1.0;
             const double expected = arg > 0.0 ? std::log(arg) : 0.0;
-            EXPECT_NEAR(out[i], expected, k_tolerance) << "Sample " << i;
+            EXPECT_NEAR(out[i], expected, k_mathematical_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -231,8 +231,8 @@ namespace {
 
         const auto out = channel_samples(result, 0);
         const auto in = channel_samples(input, 0);
-        for (std::size_t i = 0; i < k_samples; ++i) {
-            EXPECT_NEAR(out[i], std::exp(in[i]), k_tolerance) << "Sample " << i;
+        for (std::size_t i = 0; i < k_mathematical_transformer_samples; ++i) {
+            EXPECT_NEAR(out[i], std::exp(in[i]), k_mathematical_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -253,8 +253,8 @@ namespace {
         D::apply_trig(expected, [](double x) { return std::sin(x); }, 2.0, 0.7, 0.25);
 
         const auto out = channel_samples(result, 0);
-        for (std::size_t i = 0; i < k_samples; ++i) {
-            EXPECT_NEAR(out[i], expected[i], k_tolerance) << "Sample " << i;
+        for (std::size_t i = 0; i < k_mathematical_transformer_samples; ++i) {
+            EXPECT_NEAR(out[i], expected[i], k_mathematical_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -272,8 +272,8 @@ namespace {
         D::apply_trig(expected, [](double x) { return std::cos(x); }, 1.0, 1.0, 0.0);
 
         const auto out = channel_samples(result, 0);
-        for (std::size_t i = 0; i < k_samples; ++i) {
-            EXPECT_NEAR(out[i], expected[i], k_tolerance) << "Sample " << i;
+        for (std::size_t i = 0; i < k_mathematical_transformer_samples; ++i) {
+            EXPECT_NEAR(out[i], expected[i], k_mathematical_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -288,9 +288,9 @@ namespace {
 
         const auto out = channel_samples(result, 0);
         ASSERT_EQ(out.size(), 3U);
-        EXPECT_NEAR(out[0], 1.0 / 3.0, k_tolerance);
-        EXPECT_NEAR(out[1], 1.0, k_tolerance);
-        EXPECT_NEAR(out[2], -1.0, k_tolerance);
+        EXPECT_NEAR(out[0], 1.0 / 3.0, k_mathematical_transformer_tolerance);
+        EXPECT_NEAR(out[1], 1.0, k_mathematical_transformer_tolerance);
+        EXPECT_NEAR(out[2], -1.0, k_mathematical_transformer_tolerance);
     }
 
     TEST_F(MathTransformerTest, NormalizeMapsRangeToTargetPeak)
@@ -305,10 +305,10 @@ namespace {
 
         const auto out = channel_samples(result, 0);
         const auto in = channel_samples(input, 0);
-        EXPECT_NEAR(out.front(), -0.8, k_tolerance);
-        EXPECT_NEAR(out.back(), 0.8, k_tolerance);
-        for (std::size_t i = 0; i < k_samples; ++i) {
-            EXPECT_NEAR(out[i], 0.8 * in[i], k_tolerance) << "Sample " << i;
+        EXPECT_NEAR(out.front(), -0.8, k_mathematical_transformer_tolerance);
+        EXPECT_NEAR(out.back(), 0.8, k_mathematical_transformer_tolerance);
+        for (std::size_t i = 0; i < k_mathematical_transformer_samples; ++i) {
+            EXPECT_NEAR(out[i], 0.8 * in[i], k_mathematical_transformer_tolerance) << "Sample " << i;
         }
     }
 
@@ -324,7 +324,7 @@ namespace {
 
         const auto out = channel_samples(result, 0);
         const auto in = channel_samples(input, 0);
-        for (std::size_t i = 0; i < k_samples; ++i) {
+        for (std::size_t i = 0; i < k_mathematical_transformer_samples; ++i) {
             EXPECT_NEAR(out[i], 2.0 * in[i] + 1.0, 1e-6) << "Sample " << i;
         }
     }
@@ -346,8 +346,8 @@ namespace {
 
         const auto out = channel_samples(result, 0);
         const auto in = channel_samples(input, 0);
-        for (std::size_t i = 0; i < k_samples; ++i) {
-            EXPECT_NEAR(out[i], in[i] + 1.0, k_tolerance) << "Sample " << i;
+        for (std::size_t i = 0; i < k_mathematical_transformer_samples; ++i) {
+            EXPECT_NEAR(out[i], in[i] + 1.0, k_mathematical_transformer_tolerance) << "Sample " << i;
         }
     }
 

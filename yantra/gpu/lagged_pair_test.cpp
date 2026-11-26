@@ -23,7 +23,7 @@ namespace {
 
     namespace D = Kinesis::Discrete;
 
-    std::vector<double> random_signal(size_t count, uint64_t seed)
+    std::vector<double> lagged_pair_random_signal(size_t count, uint64_t seed)
     {
         std::mt19937_64 engine(seed);
         std::uniform_real_distribution<double> distribution(-1.0, 1.0);
@@ -112,7 +112,7 @@ namespace {
 
     TYPED_TEST(LaggedPairGpuTest, ProductMatchesAHostSumOverOverlappingWindows)
     {
-        const auto signal = random_signal(2000, 3);
+        const auto signal = lagged_pair_random_signal(2000, 3);
         const SegmentGeometry geometry { .length = 300, .stride = 128, .offset = 0, .count = 14 };
         auto context = make_pass(PairMap::Product, false);
 
@@ -127,7 +127,7 @@ namespace {
 
     TYPED_TEST(LaggedPairGpuTest, CentredProductMatchesAHostSumOfMeanRemovedWindows)
     {
-        auto signal = random_signal(1500, 5);
+        auto signal = lagged_pair_random_signal(1500, 5);
         for (auto& value : signal) {
             value += 3.0;
         }
@@ -188,7 +188,7 @@ namespace {
 
     TYPED_TEST(LaggedPairGpuTest, SignChangeAtLagOneIsTheKinesisCrossingCount)
     {
-        auto signal = random_signal(1200, 9);
+        auto signal = lagged_pair_random_signal(1200, 9);
         signal[10] = 0.0;
         signal[11] = -0.0;
         signal[12] = 0.5;
@@ -208,7 +208,7 @@ namespace {
 
     TYPED_TEST(LaggedPairGpuTest, AbsDifferenceMatchesAHostSum)
     {
-        const auto signal = random_signal(900, 13);
+        const auto signal = lagged_pair_random_signal(900, 13);
         const SegmentGeometry geometry { .length = 150, .stride = 150, .offset = 0, .count = 6 };
         auto context = make_pass(PairMap::AbsDifference, false);
 
@@ -223,7 +223,7 @@ namespace {
 
     TYPED_TEST(LaggedPairGpuTest, ALagAtOrBeyondTheWindowSumsNothing)
     {
-        const auto signal = random_signal(64, 17);
+        const auto signal = lagged_pair_random_signal(64, 17);
         auto context = make_pass(PairMap::Product, false);
 
         const auto got = sums(context, signal, { .length = 8, .stride = 8, .offset = 0, .count = 2 }, 6, 5);
@@ -241,7 +241,7 @@ namespace {
 
     TYPED_TEST(LaggedPairGpuTest, TheGeometryOffsetAndAShortWindowAreRespected)
     {
-        const auto signal = random_signal(100, 21);
+        const auto signal = lagged_pair_random_signal(100, 21);
         const SegmentGeometry geometry { .length = 5, .stride = 11, .offset = 7, .count = 6 };
         auto context = make_pass(PairMap::Product, true);
 
@@ -256,7 +256,7 @@ namespace {
 
     TYPED_TEST(LaggedPairGpuTest, NoWindowsOrNoLagsGiveNothing)
     {
-        const auto signal = random_signal(64, 23);
+        const auto signal = lagged_pair_random_signal(64, 23);
         auto context = make_pass(PairMap::Product, false);
 
         EXPECT_TRUE(sums(context, signal, { .length = 8, .stride = 8, .offset = 0, .count = 0 }, 0, 4).empty());
@@ -265,7 +265,7 @@ namespace {
 
     TYPED_TEST(LaggedPairGpuTest, CentredProductSelectsTheLagsOfKinesisPeriodicity)
     {
-        std::vector<double> signal = random_signal(4096, 29);
+        std::vector<double> signal = lagged_pair_random_signal(4096, 29);
         for (size_t i = 0; i < signal.size(); ++i) {
             const double period = i < 2048 ? 45.0 : 73.0;
             signal[i] = 0.3 * signal[i] + std::sin(2.0 * std::numbers::pi * static_cast<double>(i) / period);

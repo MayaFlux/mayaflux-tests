@@ -24,18 +24,18 @@ namespace {
     using Samples = std::vector<double>;
     using Contributions = std::vector<std::array<uint64_t, 3>>;
 
-    constexpr uint64_t k_frames = 100;
-    constexpr uint32_t k_rate = 1000;
+    constexpr uint64_t k_region_walk_processor_frames = 100;
+    constexpr uint32_t k_region_walk_processor_rate = 1000;
 
     std::shared_ptr<SoundFileContainer> stereo(OrganizationStrategy organization = OrganizationStrategy::PLANAR)
     {
-        std::vector<Samples> channels(2, Samples(k_frames));
+        std::vector<Samples> channels(2, Samples(k_region_walk_processor_frames));
         for (uint64_t channel = 0; channel < 2; ++channel) {
-            for (uint64_t frame = 0; frame < k_frames; ++frame) {
+            for (uint64_t frame = 0; frame < k_region_walk_processor_frames; ++frame) {
                 channels[channel][frame] = static_cast<double>(1000 * channel + frame);
             }
         }
-        return make_audio_container(std::move(channels), k_rate, organization);
+        return make_audio_container(std::move(channels), k_region_walk_processor_rate, organization);
     }
 
     RegionGroup walk_group(RegionSelectionPattern pattern)

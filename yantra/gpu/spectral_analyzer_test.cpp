@@ -34,7 +34,7 @@ namespace {
         return config;
     }
 
-    std::vector<Kakshya::DataVariant> input_of(const std::vector<std::vector<double>>& channels)
+    std::vector<Kakshya::DataVariant> spectral_analyzer_input_of(const std::vector<std::vector<double>>& channels)
     {
         std::vector<Kakshya::DataVariant> out;
         out.reserve(channels.size());
@@ -44,7 +44,7 @@ namespace {
         return out;
     }
 
-    std::vector<double> random_signal(size_t count, uint64_t seed)
+    std::vector<double> spectral_analyzer_random_signal(size_t count, uint64_t seed)
     {
         std::mt19937_64 engine(seed);
         std::uniform_real_distribution<double> distribution(-1.0, 1.0);
@@ -64,7 +64,7 @@ namespace {
         return out;
     }
 
-    void expect_close(double got, double want)
+    void spectral_analyzer_expect_close(double got, double want)
     {
         EXPECT_NEAR(got, want, 1.0e-11 * (1.0 + std::abs(want)));
     }
@@ -78,17 +78,17 @@ namespace {
     TYPED_TEST(SpectralAnalyzerGpuTest, TotalPowerMatchesTheKinesisProjection)
     {
         constexpr uint32_t window = 64;
-        const auto signal = random_signal(1000, 3);
+        const auto signal = spectral_analyzer_random_signal(1000, 3);
         StandardSpectralAnalyzer analyzer(make_config(window, 32, SpectralMethod::TOTAL_POWER));
 
-        const auto analysis = analyzer.analyze_spectrum(input_of({ signal }));
+        const auto analysis = analyzer.analyze_spectrum(spectral_analyzer_input_of({ signal }));
 
         const std::vector<double> ones(window / 2 + 1, 1.0);
         const auto want = D::spectral_projection(signal, window, 32, ones, D::hann(window));
         ASSERT_EQ(analysis.channels.size(), 1U);
         ASSERT_EQ(analysis.channels[0].values.size(), want.size());
         for (size_t w = 0; w < want.size(); ++w) {
-            expect_close(analysis.channels[0].values[w], want[w]);
+            spectral_analyzer_expect_close(analysis.channels[0].values[w], want[w]);
         }
     }
 
@@ -96,10 +96,10 @@ namespace {
     {
         constexpr uint32_t window = 64;
         constexpr size_t bins = window / 2 + 1;
-        const auto signal = random_signal(640, 5);
+        const auto signal = spectral_analyzer_random_signal(640, 5);
         StandardSpectralAnalyzer analyzer(make_config(window, 64, SpectralMethod::TOTAL_POWER, { 0.0, 0.25, 0.5, 1.0 }));
 
-        const auto analysis = analyzer.analyze_spectrum(input_of({ signal }));
+        const auto analysis = analyzer.analyze_spectrum(spectral_analyzer_input_of({ signal }));
 
         std::vector<double> weights(4 * bins, 0.0);
         for (size_t k = 0; k < bins; ++k) {
@@ -117,10 +117,10 @@ namespace {
             ASSERT_EQ(channel.band_energies[w].size(), 3U);
             double sum = 0.0;
             for (size_t b = 0; b < 3; ++b) {
-                expect_close(channel.band_energies[w][b], want[w * 4 + 1 + b]);
+                spectral_analyzer_expect_close(channel.band_energies[w][b], want[w * 4 + 1 + b]);
                 sum += channel.band_energies[w][b];
             }
-            expect_close(sum, want[w * 4]);
+            spectral_analyzer_expect_close(sum, want[w * 4]);
         }
     }
 
@@ -130,8 +130,8 @@ namespace {
         StandardSpectralAnalyzer low(make_config(window, 64, SpectralMethod::CENTROID, { 0.0, 1.0 }, false));
         StandardSpectralAnalyzer high(make_config(window, 64, SpectralMethod::CENTROID, { 0.0, 1.0 }, false));
 
-        const auto at_eight = low.analyze_spectrum(input_of({ tone(256, 8.0, window) }));
-        const auto at_twenty = high.analyze_spectrum(input_of({ tone(256, 20.0, window) }));
+        const auto at_eight = low.analyze_spectrum(spectral_analyzer_input_of({ tone(256, 8.0, window) }));
+        const auto at_twenty = high.analyze_spectrum(spectral_analyzer_input_of({ tone(256, 20.0, window) }));
 
         for (const double centroid : at_eight.channels[0].values) {
             EXPECT_NEAR(centroid, 8.0, 1.0e-9);
@@ -147,8 +147,8 @@ namespace {
         StandardSpectralAnalyzer centroid(make_config(64, 64, SpectralMethod::CENTROID));
         const std::vector<double> silence(256, 0.0);
 
-        const auto total = power.analyze_spectrum(input_of({ silence }));
-        const auto bin = centroid.analyze_spectrum(input_of({ silence }));
+        const auto total = power.analyze_spectrum(spectral_analyzer_input_of({ silence }));
+        const auto bin = centroid.analyze_spectrum(spectral_analyzer_input_of({ silence }));
 
         for (const double value : total.channels[0].values) {
             EXPECT_EQ(value, 0.0);
@@ -166,7 +166,7 @@ namespace {
         signal.insert(signal.end(), burst.begin(), burst.end());
         StandardSpectralAnalyzer analyzer(make_config(window, 64, SpectralMethod::FLUX, { 0.0, 0.25, 0.5, 1.0 }, false));
 
-        const auto analysis = analyzer.analyze_spectrum(input_of({ signal }));
+        const auto analysis = analyzer.analyze_spectrum(spectral_analyzer_input_of({ signal }));
 
         const auto& flux = analysis.channels[0].values;
         ASSERT_EQ(flux.size(), 4U);
@@ -181,7 +181,7 @@ namespace {
         constexpr uint32_t window = 64;
         StandardSpectralAnalyzer analyzer(make_config(window, 64, SpectralMethod::CENTROID, { 0.0, 1.0 }, false));
 
-        const auto analysis = analyzer.analyze_spectrum(input_of({ tone(192, 4.0, window), tone(192, 12.0, window) }));
+        const auto analysis = analyzer.analyze_spectrum(spectral_analyzer_input_of({ tone(192, 4.0, window), tone(192, 12.0, window) }));
 
         ASSERT_EQ(analysis.channels.size(), 2U);
         for (const double centroid : analysis.channels[0].values) {
@@ -196,7 +196,7 @@ namespace {
     {
         StandardSpectralAnalyzer analyzer(make_config(64, 48, SpectralMethod::TOTAL_POWER));
 
-        const auto analysis = analyzer.analyze_spectrum(input_of({ random_signal(300, 7) }));
+        const auto analysis = analyzer.analyze_spectrum(spectral_analyzer_input_of({ spectral_analyzer_random_signal(300, 7) }));
 
         const auto& positions = analysis.channels[0].window_positions;
         ASSERT_EQ(positions.size(), 5U);
@@ -210,7 +210,7 @@ namespace {
     {
         StandardSpectralAnalyzer analyzer(make_config(64, 32, SpectralMethod::TOTAL_POWER));
 
-        const auto analysis = analyzer.analyze_spectrum(input_of({ random_signal(40, 9), random_signal(200, 11) }));
+        const auto analysis = analyzer.analyze_spectrum(spectral_analyzer_input_of({ spectral_analyzer_random_signal(40, 9), spectral_analyzer_random_signal(200, 11) }));
 
         ASSERT_EQ(analysis.channels.size(), 2U);
         EXPECT_TRUE(analysis.channels[0].values.empty());
@@ -222,7 +222,7 @@ namespace {
     {
         StandardSpectralAnalyzer analyzer(make_config(64, 64, SpectralMethod::TOTAL_POWER));
 
-        const auto output = analyzer.apply_operation(Yantra::Datum<std::vector<Kakshya::DataVariant>> { input_of({ random_signal(256, 13) }) });
+        const auto output = analyzer.apply_operation(Yantra::Datum<std::vector<Kakshya::DataVariant>> { spectral_analyzer_input_of({ spectral_analyzer_random_signal(256, 13) }) });
 
         const auto* carried = output.facets.template get<SpectralAnalysis>();
         ASSERT_NE(carried, nullptr);
@@ -233,11 +233,11 @@ namespace {
     TYPED_TEST(SpectralAnalyzerGpuTest, ANewConfigRebuildsTheBandsAndTheTransform)
     {
         StandardSpectralAnalyzer analyzer(make_config(64, 64, SpectralMethod::TOTAL_POWER, { 0.0, 0.5, 1.0 }));
-        const auto signal = random_signal(256, 17);
+        const auto signal = spectral_analyzer_random_signal(256, 17);
 
-        const auto two_bands = analyzer.analyze_spectrum(input_of({ signal }));
+        const auto two_bands = analyzer.analyze_spectrum(spectral_analyzer_input_of({ signal }));
         analyzer.set_config(make_config(128, 128, SpectralMethod::TOTAL_POWER, { 0.0, 0.25, 0.5, 0.75, 1.0 }));
-        const auto four_bands = analyzer.analyze_spectrum(input_of({ signal }));
+        const auto four_bands = analyzer.analyze_spectrum(spectral_analyzer_input_of({ signal }));
 
         EXPECT_EQ(two_bands.channels[0].band_energies[0].size(), 2U);
         EXPECT_EQ(two_bands.channels[0].values.size(), 4U);

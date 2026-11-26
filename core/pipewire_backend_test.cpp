@@ -15,7 +15,7 @@ namespace {
     using namespace std::chrono_literals;
 
     template <typename Predicate>
-    bool eventually(Predicate predicate, std::chrono::milliseconds timeout = 2s)
+    bool pipewire_backend_eventually(Predicate predicate, std::chrono::milliseconds timeout = 2s)
     {
         const auto deadline = std::chrono::steady_clock::now() + timeout;
         while (std::chrono::steady_clock::now() < deadline) {
@@ -131,7 +131,7 @@ namespace {
         stream->open();
         ASSERT_TRUE(stream->is_open());
         stream->start();
-        const bool processed = eventually([&] {
+        const bool processed = pipewire_backend_eventually([&] {
             return callbacks->load(std::memory_order_acquire) >= 2;
         });
         EXPECT_TRUE(processed);
@@ -185,14 +185,14 @@ namespace {
 
         stream->open();
         stream->start();
-        ASSERT_TRUE(eventually([&] { return callbacks->load(std::memory_order_acquire) >= 2; }));
+        ASSERT_TRUE(pipewire_backend_eventually([&] { return callbacks->load(std::memory_order_acquire) >= 2; }));
         stream->stop();
         EXPECT_FALSE(stream->is_running());
         EXPECT_TRUE(stream->is_open());
         const auto before_restart = callbacks->load(std::memory_order_acquire);
 
         stream->start();
-        EXPECT_TRUE(eventually([&] {
+        EXPECT_TRUE(pipewire_backend_eventually([&] {
             return callbacks->load(std::memory_order_acquire) >= before_restart + 2;
         }));
         stream->stop();
@@ -218,14 +218,14 @@ namespace {
 
         stream->open();
         stream->start();
-        ASSERT_TRUE(eventually([&] { return callbacks->load(std::memory_order_acquire) >= 2; }));
+        ASSERT_TRUE(pipewire_backend_eventually([&] { return callbacks->load(std::memory_order_acquire) >= 2; }));
         stream->pause();
         EXPECT_FALSE(stream->is_running());
         EXPECT_TRUE(stream->is_open());
         const auto before_resume = callbacks->load(std::memory_order_acquire);
 
         stream->resume();
-        EXPECT_TRUE(eventually([&] {
+        EXPECT_TRUE(pipewire_backend_eventually([&] {
             return callbacks->load(std::memory_order_acquire) >= before_resume + 2;
         }));
         stream->stop();
@@ -266,7 +266,7 @@ namespace {
 
         stream->open();
         stream->start();
-        EXPECT_TRUE(eventually([&] {
+        EXPECT_TRUE(pipewire_backend_eventually([&] {
             return input_callbacks->load(std::memory_order_acquire) > 0;
         }));
         EXPECT_GT(output_callbacks->load(std::memory_order_acquire), 0U);
@@ -312,7 +312,7 @@ namespace {
 
         stream->open();
         stream->start();
-        ASSERT_TRUE(eventually([&] {
+        ASSERT_TRUE(pipewire_backend_eventually([&] {
             return callbacks->load(std::memory_order_acquire) >= 2;
         }));
 
@@ -321,7 +321,7 @@ namespace {
 
         EXPECT_FALSE(second_devices->get_output_devices().empty());
         const auto callbacks_before_check = callbacks->load(std::memory_order_acquire);
-        EXPECT_TRUE(eventually([&] {
+        EXPECT_TRUE(pipewire_backend_eventually([&] {
             return callbacks->load(std::memory_order_acquire) > callbacks_before_check;
         }));
 

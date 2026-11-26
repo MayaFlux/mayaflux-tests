@@ -17,7 +17,7 @@ namespace {
     using Portal::Text::GlyphMetrics;
     using Portal::Text::LayoutResult;
 
-    constexpr uint32_t k_pixel_size = 32;
+    constexpr uint32_t k_type_setter_pixel_size = 32;
 
     class TypeSetterTest : public SystemFontTest {
     protected:
@@ -27,7 +27,7 @@ namespace {
             if (HasFatalFailure()) {
                 return;
             }
-            atlas = std::make_unique<GlyphAtlas>(face, k_pixel_size, 512);
+            atlas = std::make_unique<GlyphAtlas>(face, k_type_setter_pixel_size, 512);
         }
 
         void TearDown() override

@@ -105,7 +105,7 @@ namespace {
         return indices;
     }
 
-    void* vulkan_handle(vk::Buffer buffer)
+    void* mesh_network_buffer_vulkan_handle(vk::Buffer buffer)
     {
         return static_cast<void*>(static_cast<VkBuffer>(buffer));
     }
@@ -198,7 +198,7 @@ namespace {
             RawVulkanBuffer destination(
                 backend(), byte_count, vk::BufferUsageFlagBits::eTransferDst, true);
             service->copy_buffer(
-                vulkan_handle(source), vulkan_handle(destination.buffer()), byte_count, source_offset, 0);
+                mesh_network_buffer_vulkan_handle(source), mesh_network_buffer_vulkan_handle(destination.buffer()), byte_count, source_offset, 0);
             const auto* data = static_cast<const uint8_t*>(destination.mapped());
             return { data, data + byte_count };
         }

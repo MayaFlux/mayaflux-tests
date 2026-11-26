@@ -21,14 +21,14 @@ namespace {
     template <typename Network, typename Controls>
     concept AcceptsControls = requires(Network& network, Controls controls) { network.set(controls); };
 
-    std::shared_ptr<Polynomial> constant_source(double value)
+    std::shared_ptr<Polynomial> network_controls_constant_source(double value)
     {
         auto source = std::make_shared<Polynomial>([value](double) { return value; });
         source->process_sample(0.0);
         return source;
     }
 
-    std::vector<double> render(ModalNetwork& network, unsigned int samples)
+    std::vector<double> network_controls_render(ModalNetwork& network, unsigned int samples)
     {
         network.process_batch(samples);
         return network.get_audio_buffer().value_or(std::vector<double> {});
@@ -60,7 +60,7 @@ TEST(ControlValueTest, ANumberAnswersForEveryElement)
 
 TEST(ControlValueTest, ANodeSourceIsDueEveryCallAndReadsTheNodeOnRefresh)
 {
-    Control control(constant_source(3.0));
+    Control control(network_controls_constant_source(3.0));
 
     EXPECT_TRUE(control.has_value());
     EXPECT_TRUE(control.sourced());
@@ -110,7 +110,7 @@ TEST(ControlValueTest, ANetworkSourceIsPerElementAndNeverScalar)
 
 TEST(ControlValueTest, ObservingNeverReplacesASource)
 {
-    Control sourced(constant_source(3.0));
+    Control sourced(network_controls_constant_source(3.0));
     sourced.refresh();
     sourced.observe(9.0);
     EXPECT_DOUBLE_EQ(sourced.value(), 3.0);
@@ -135,7 +135,7 @@ TEST(ControlValueTest, ACopyKeepsTheValueTheFlagsAndTheSource)
     EXPECT_TRUE(settled_copy.has_value());
     EXPECT_FALSE(settled_copy.due());
 
-    Control node(constant_source(3.0));
+    Control node(network_controls_constant_source(3.0));
     const Control node_copy = node;
     EXPECT_TRUE(node_copy.sourced());
     EXPECT_FALSE(node_copy.per_element());
@@ -157,7 +157,7 @@ TEST(ControlValueTest, AMoveTakesTheSourceAndLeavesTheValueReadable)
 
 TEST(ControlValueTest, CopyAssignmentReplacesTheValueAndTheSource)
 {
-    Control target(constant_source(3.0));
+    Control target(network_controls_constant_source(3.0));
     ASSERT_TRUE(target.sourced());
 
     target = Control(1.5);
@@ -169,7 +169,7 @@ TEST(ControlValueTest, CopyAssignmentReplacesTheValueAndTheSource)
 
 TEST(ControlValueTest, AssigningANumberOverASourceReplacesIt)
 {
-    Control live(constant_source(3.0));
+    Control live(network_controls_constant_source(3.0));
     ASSERT_TRUE(live.sourced());
 
     live.assign(Control(2.0));
@@ -184,7 +184,7 @@ TEST(ControlValueTest, ASourceAssignedOverANumberIsAdopted)
 {
     Control live = 1.0;
 
-    live.assign(Control(constant_source(3.0)));
+    live.assign(Control(network_controls_constant_source(3.0)));
 
     EXPECT_TRUE(live.sourced());
     live.refresh();
@@ -268,7 +268,7 @@ TEST(NetworkControlsTest, ANetworkSourceIsReadPerElement)
 TEST(NetworkControlsTest, ANumberReplacesTheSourceItFollows)
 {
     ControlsProbeNetwork network;
-    network.set({ .gain = constant_source(8.0) });
+    network.set({ .gain = network_controls_constant_source(8.0) });
     network.process_batch(1);
     ASSERT_TRUE(network.gain_seen.has_value());
     EXPECT_DOUBLE_EQ(*network.gain_seen, 8.0);
@@ -285,7 +285,7 @@ TEST(NetworkControlsTest, ANumberReplacesTheSourceItFollows)
 TEST(NetworkControlsTest, AnEmptyMemberLeavesAnExistingSourceAlone)
 {
     ControlsProbeNetwork network;
-    network.set({ .gain = constant_source(8.0) });
+    network.set({ .gain = network_controls_constant_source(8.0) });
     network.set({ .tilt = 1.0 });
 
     network.process_batch(1);
@@ -363,7 +363,7 @@ TEST(NetworkControlsTest, GetKeepsAMappedMemberMapped)
 {
     ControlsProbeNetwork network;
     network.actual_gain = 3.0;
-    network.set({ .gain = constant_source(8.0) });
+    network.set({ .gain = network_controls_constant_source(8.0) });
     network.process_batch(1);
 
     const auto controls = network.get();
@@ -440,7 +440,7 @@ TEST(ModalControlsTest, ANumberFrequencyRetunesEveryMode)
     ModalNetwork network(std::vector<double> { 1.0, 1.5, 2.0 }, 220.0);
 
     network.set({ .frequency = 330.0 });
-    render(network, 1);
+    network_controls_render(network, 1);
 
     EXPECT_DOUBLE_EQ(network.get().frequency.value(), 330.0);
     EXPECT_DOUBLE_EQ(network.get_mode(0).current_frequency, 330.0);
@@ -452,8 +452,8 @@ TEST(ModalControlsTest, ANodeFrequencyRetunesEveryMode)
 {
     ModalNetwork network(std::vector<double> { 1.0, 1.5, 2.0 }, 220.0);
 
-    network.set({ .frequency = constant_source(330.0) });
-    render(network, 1);
+    network.set({ .frequency = network_controls_constant_source(330.0) });
+    network_controls_render(network, 1);
 
     EXPECT_DOUBLE_EQ(network.get_fundamental(), 330.0);
     EXPECT_DOUBLE_EQ(network.get_mode(1).current_frequency, 495.0);
@@ -464,7 +464,7 @@ TEST(ModalControlsTest, AnUnsetFrequencyLeavesTheTuningAlone)
     ModalNetwork network(2, 220.0);
 
     network.set({ .decay = 2.0 });
-    render(network, 1);
+    network_controls_render(network, 1);
 
     EXPECT_DOUBLE_EQ(network.get().frequency.value(), 220.0);
 }
@@ -474,8 +474,8 @@ TEST(ModalControlsTest, ANodeDecayChangesTheRingingEnvelope)
     ModalNetwork network(1, 440.0, ModalNetwork::Spectrum::HARMONIC, 0.01);
     network.excite_mode(0);
 
-    network.set({ .decay = constant_source(2.0) });
-    render(network, 480);
+    network.set({ .decay = network_controls_constant_source(2.0) });
+    network_controls_render(network, 480);
 
     EXPECT_NEAR(network.get_mode(0).amplitude, std::exp(-0.5), 1e-10);
 }
@@ -485,7 +485,7 @@ TEST(ModalControlsTest, ANumberDecayChangesTheMultiplier)
     ModalNetwork network(1, 440.0);
 
     network.set({ .decay = 2.0 });
-    render(network, 1);
+    network_controls_render(network, 1);
 
     EXPECT_DOUBLE_EQ(network.get().decay.value(), 2.0);
     EXPECT_DOUBLE_EQ(network.get_mode(0).decay_coefficient,
@@ -497,8 +497,8 @@ TEST(ModalControlsTest, ANodeAmplitudeScalesTheCurrentRing)
     ModalNetwork network(1, 440.0);
     network.excite_mode(0);
 
-    network.set({ .amplitude = constant_source(0.25) });
-    render(network, 1);
+    network.set({ .amplitude = network_controls_constant_source(0.25) });
+    network_controls_render(network, 1);
 
     EXPECT_NEAR(network.get_mode(0).amplitude,
         0.25 * network.get_mode(0).decay_coefficient, 1e-12);
@@ -510,19 +510,19 @@ TEST(ModalControlsTest, ANumberAmplitudeScalesTheRingOnce)
     network.excite_mode(0);
 
     network.set({ .amplitude = 0.25 });
-    render(network, 1);
+    network_controls_render(network, 1);
     const double decay = network.get_mode(0).decay_coefficient;
     const double after_first = network.get_mode(0).amplitude;
     EXPECT_NEAR(after_first, 0.25 * decay, 1e-12);
 
-    render(network, 1);
+    network_controls_render(network, 1);
     EXPECT_NEAR(network.get_mode(0).amplitude, after_first * decay, 1e-12);
 }
 
 TEST(ModalControlsTest, ANetworkAmplitudeScalesMatchingModesIndependently)
 {
     auto source = std::make_shared<ModalNetwork>(2, 6000.0);
-    render(*source, 2);
+    network_controls_render(*source, 2);
     const double first = source->get_node_output(0).value();
     const double second = source->get_node_output(1).value();
     ASSERT_GT(first, 0.0);
@@ -532,7 +532,7 @@ TEST(ModalControlsTest, ANetworkAmplitudeScalesMatchingModesIndependently)
     network.excite_mode(0);
     network.excite_mode(1);
     network.set({ .amplitude = source });
-    render(network, 1);
+    network_controls_render(network, 1);
 
     const double decay = network.get_mode(0).decay_coefficient;
     EXPECT_NEAR(network.get_mode(0).amplitude, first * decay, 1e-12);
@@ -542,13 +542,13 @@ TEST(ModalControlsTest, ANetworkAmplitudeScalesMatchingModesIndependently)
 TEST(ModalControlsTest, ANetworkDetuneRetunesMatchingModesIndependently)
 {
     auto source = std::make_shared<ModalNetwork>(2, 6000.0);
-    render(*source, 2);
+    network_controls_render(*source, 2);
     const double first = source->get_node_output(0).value();
     const double second = source->get_node_output(1).value();
 
     ModalNetwork network(2, 440.0);
     network.set({ .detune = source });
-    render(network, 1);
+    network_controls_render(network, 1);
 
     EXPECT_NEAR(network.get_mode(0).current_frequency,
         440.0 * std::pow(2.0, first / 12.0), 1e-12);
@@ -560,8 +560,8 @@ TEST(ModalControlsTest, ANodeDetuneRetunesEveryMode)
 {
     ModalNetwork network(2, 440.0);
 
-    network.set({ .detune = constant_source(12.0) });
-    render(network, 1);
+    network.set({ .detune = network_controls_constant_source(12.0) });
+    network_controls_render(network, 1);
 
     EXPECT_NEAR(network.get_mode(0).current_frequency, 880.0, 1e-9);
     EXPECT_NEAR(network.get_mode(1).current_frequency, 1760.0, 1e-9);
@@ -570,13 +570,13 @@ TEST(ModalControlsTest, ANodeDetuneRetunesEveryMode)
 TEST(ModalControlsTest, ANetworkWithTheWrongModeCountIsSkipped)
 {
     auto source = std::make_shared<ModalNetwork>(1, 6000.0);
-    render(*source, 2);
+    network_controls_render(*source, 2);
 
     ModalNetwork network(2, 440.0);
     network.excite_mode(0);
     network.excite_mode(1);
     network.set({ .amplitude = source });
-    render(network, 1);
+    network_controls_render(network, 1);
 
     const double decay = network.get_mode(0).decay_coefficient;
     EXPECT_NEAR(network.get_mode(0).amplitude, decay, 1e-12);
@@ -587,12 +587,12 @@ TEST(ModalControlsTest, ANodeScaleChangesTheMix)
 {
     ModalNetwork reference(1, 440.0);
     reference.excite_mode(0);
-    const auto original = render(reference, 64);
+    const auto original = network_controls_render(reference, 64);
 
     ModalNetwork scaled(1, 440.0);
     scaled.excite_mode(0);
-    scaled.set({ .scale = constant_source(0.25) });
-    const auto reduced = render(scaled, 64);
+    scaled.set({ .scale = network_controls_constant_source(0.25) });
+    const auto reduced = network_controls_render(scaled, 64);
 
     ASSERT_EQ(reduced.size(), original.size());
     for (size_t i = 0; i < original.size(); ++i) {
@@ -607,15 +607,15 @@ TEST(ModalControlsTest, TypedAndStringMappingsRenderTheSameSound)
     by_string.excite_mode(0);
     by_control.excite_mode(0);
 
-    by_string.map_parameter("decay", constant_source(1.5));
-    by_string.map_parameter("frequency", constant_source(300.0));
-    by_string.map_parameter("scale", constant_source(0.5));
-    by_control.set({ .scale = constant_source(0.5),
-        .frequency = constant_source(300.0),
-        .decay = constant_source(1.5) });
+    by_string.map_parameter("decay", network_controls_constant_source(1.5));
+    by_string.map_parameter("frequency", network_controls_constant_source(300.0));
+    by_string.map_parameter("scale", network_controls_constant_source(0.5));
+    by_control.set({ .scale = network_controls_constant_source(0.5),
+        .frequency = network_controls_constant_source(300.0),
+        .decay = network_controls_constant_source(1.5) });
 
-    const auto expected = render(by_string, 256);
-    const auto actual = render(by_control, 256);
+    const auto expected = network_controls_render(by_string, 256);
+    const auto actual = network_controls_render(by_control, 256);
 
     ASSERT_EQ(actual.size(), expected.size());
     for (size_t i = 0; i < expected.size(); ++i) {
@@ -643,11 +643,11 @@ TEST(ModalControlsTest, CouplingIsEnabledAndDisabledByAControl)
     network.set_mode_coupling(0, 1, 0.5);
 
     network.set({ .coupling_enabled = true });
-    render(network, 1);
+    network_controls_render(network, 1);
     EXPECT_TRUE(network.get().coupling_enabled.value<bool>());
 
     network.set({ .coupling_enabled = false });
-    render(network, 1);
+    network_controls_render(network, 1);
     EXPECT_FALSE(network.get().coupling_enabled.value<bool>());
 }
 
@@ -664,9 +664,9 @@ TEST(ModalControlsTest, EnabledCouplingChangesTheRingAndDisabledCouplingDoesNot)
     coupled.set({ .coupling_enabled = true });
     off.set({ .coupling_enabled = false });
 
-    const auto with = render(coupled, 512);
-    const auto without = render(plain, 512);
-    const auto disabled = render(off, 512);
+    const auto with = network_controls_render(coupled, 512);
+    const auto without = network_controls_render(plain, 512);
+    const auto disabled = network_controls_render(off, 512);
 
     double difference = 0.0;
     for (size_t i = 0; i < with.size(); ++i) {
@@ -681,11 +681,11 @@ TEST(ModalControlsTest, AnExciterDurationIsFlooredLikeTheSetter)
     ModalNetwork network(2, 220.0);
 
     network.set({ .exciter_duration = 0.0001 });
-    render(network, 1);
+    network_controls_render(network, 1);
     EXPECT_DOUBLE_EQ(network.get().exciter_duration.value(), 0.001);
 
     network.set({ .exciter_duration = 0.02 });
-    render(network, 1);
+    network_controls_render(network, 1);
     EXPECT_DOUBLE_EQ(network.get().exciter_duration.value(), 0.02);
 }
 
@@ -702,8 +702,8 @@ TEST(ModalControlsTest, TheDeprecatedSettersRenderTheSameSoundAsTheControls)
     by_setter.excite_mode(0);
     by_control.excite_mode(0);
 
-    const auto expected = render(by_setter, 512);
-    const auto actual = render(by_control, 512);
+    const auto expected = network_controls_render(by_setter, 512);
+    const auto actual = network_controls_render(by_control, 512);
 
     ASSERT_EQ(actual.size(), expected.size());
     for (size_t i = 0; i < expected.size(); ++i) {
@@ -717,7 +717,7 @@ TEST(ModalControlsTest, AnImmediateSetterAfterATypedSetWinsAndBeforeItLoses)
     later.set({ .frequency = 500.0, .decay = 2.0 });
     later.set_fundamental(300.0);
     later.set_decay_multiplier(0.5);
-    render(later, 1);
+    network_controls_render(later, 1);
     EXPECT_DOUBLE_EQ(later.get().frequency.value(), 300.0);
     EXPECT_DOUBLE_EQ(later.get().decay.value(), 0.5);
 
@@ -725,7 +725,7 @@ TEST(ModalControlsTest, AnImmediateSetterAfterATypedSetWinsAndBeforeItLoses)
     earlier.set_fundamental(300.0);
     earlier.set_decay_multiplier(0.5);
     earlier.set({ .frequency = 500.0, .decay = 2.0 });
-    render(earlier, 1);
+    network_controls_render(earlier, 1);
     EXPECT_DOUBLE_EQ(earlier.get().frequency.value(), 500.0);
     EXPECT_DOUBLE_EQ(earlier.get().decay.value(), 2.0);
 }
@@ -749,12 +749,12 @@ TEST(ModalControlsTest, ANodeAboveHalfEnablesCouplingAndBelowItDisables)
         network->set_mode_coupling(0, 1, 0.8);
         network->excite_mode(0);
     }
-    on.set({ .coupling_enabled = constant_source(1.0) });
-    off.set({ .coupling_enabled = constant_source(0.2) });
+    on.set({ .coupling_enabled = network_controls_constant_source(1.0) });
+    off.set({ .coupling_enabled = network_controls_constant_source(0.2) });
 
-    const auto enabled = render(on, 512);
-    const auto disabled = render(off, 512);
-    const auto reference = render(plain, 512);
+    const auto enabled = network_controls_render(on, 512);
+    const auto disabled = network_controls_render(off, 512);
+    const auto reference = network_controls_render(plain, 512);
 
     EXPECT_EQ(disabled, reference);
     EXPECT_NE(enabled, reference);
@@ -765,7 +765,7 @@ TEST(ModalControlsTest, TheDeprecatedGettersAgreeWithGet)
     ModalNetwork network(2, 220.0);
 
     network.set({ .frequency = 330.0, .coupling_enabled = true });
-    render(network, 1);
+    network_controls_render(network, 1);
 
     EXPECT_DOUBLE_EQ(network.get_fundamental(), network.get().frequency.value());
     EXPECT_EQ(network.is_coupling_enabled(), network.get().coupling_enabled.value<bool>());
@@ -891,7 +891,7 @@ TEST(ControlStoreTest, RefreshReadsEveryNodeSource)
 {
     Nodes::Network::ControlStore store;
     auto& live = store.declare<ControlsProbeControls>();
-    store.merge(ControlsProbeControls { .gain = constant_source(3.0), .tilt = constant_source(4.0) });
+    store.merge(ControlsProbeControls { .gain = network_controls_constant_source(3.0), .tilt = network_controls_constant_source(4.0) });
 
     store.refresh();
 
@@ -994,7 +994,7 @@ TEST(ControlTypeTest, AConstexprLocalNeedsNoCaptureInALambda)
 
 TEST(ControlTypeTest, ANodeSourceReadsAsAnyScalarType)
 {
-    Control control(constant_source(3.0));
+    Control control(network_controls_constant_source(3.0));
     control.refresh();
 
     ASSERT_TRUE(control.pending<int>().has_value());
@@ -1006,7 +1006,7 @@ TEST(ControlTypeTest, ANodeSourceReadsAsAnyScalarType)
 
 TEST(ControlTypeTest, ANodeSourceIsNeverAVector)
 {
-    Control control(constant_source(3.0));
+    Control control(network_controls_constant_source(3.0));
     control.refresh();
 
     EXPECT_FALSE(control.pending<glm::vec3>().has_value());
@@ -1145,7 +1145,7 @@ TEST(OperatorControlsTest, ANetworkSourceIsReadPerElement)
 TEST(OperatorControlsTest, ANumberReplacesTheSourceItFollows)
 {
     ControlsProbeOperator op;
-    op.set({ .gain = constant_source(8.0) });
+    op.set({ .gain = network_controls_constant_source(8.0) });
     op.process(1.0F);
     ASSERT_TRUE(op.gain_seen.has_value());
 
@@ -1161,7 +1161,7 @@ TEST(OperatorControlsTest, ANumberReplacesTheSourceItFollows)
 TEST(OperatorControlsTest, AnEmptyMemberLeavesAnExistingSourceAlone)
 {
     ControlsProbeOperator op;
-    op.set({ .gain = constant_source(8.0) });
+    op.set({ .gain = network_controls_constant_source(8.0) });
     op.set({ .tilt = 1.0 });
 
     op.process(1.0F);
@@ -1186,7 +1186,7 @@ TEST(OperatorControlsTest, GetReportsWhatTheOperatorHolds)
 TEST(OperatorControlsTest, GetKeepsAMappedMemberMapped)
 {
     ControlsProbeOperator op;
-    op.set({ .gain = constant_source(8.0) });
+    op.set({ .gain = network_controls_constant_source(8.0) });
     op.process(1.0F);
 
     const auto controls = op.get();

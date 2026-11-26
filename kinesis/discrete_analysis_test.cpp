@@ -43,7 +43,7 @@ namespace {
         return data;
     }
 
-    std::vector<double> alternating(size_t count)
+    std::vector<double> discrete_analysis_alternating(size_t count)
     {
         std::vector<double> data(count);
         for (size_t i = 0; i < count; ++i) {
@@ -325,7 +325,7 @@ namespace {
             EnergyCase { "ConstantPower", std::vector<double>(k_samples, 0.3), [](auto d, auto n, auto h, auto w) { return D::power(d, n, h, w); }, 0.09 * k_window, 1e-9 },
             EnergyCase { "ConstantDynamicRange", std::vector<double>(k_samples, 0.3), [](auto d, auto n, auto h, auto w) { return D::dynamic_range(d, n, h, w); }, 0.0, 1e-9 },
             EnergyCase { "ConstantZeroCrossingRate", std::vector<double>(k_samples, 0.3), [](auto d, auto n, auto h, auto w) { return D::zero_crossing_rate(d, n, h, w); }, 0.0, 1e-12 },
-            EnergyCase { "AlternatingZeroCrossingRate", alternating(k_samples), [](auto d, auto n, auto h, auto w) { return D::zero_crossing_rate(d, n, h, w); }, 1.0, 1e-9 }),
+            EnergyCase { "AlternatingZeroCrossingRate", discrete_analysis_alternating(k_samples), [](auto d, auto n, auto h, auto w) { return D::zero_crossing_rate(d, n, h, w); }, 1.0, 1e-9 }),
         [](const ::testing::TestParamInfo<EnergyCase>& info) {
             return std::string(info.param.name);
         });
@@ -349,7 +349,7 @@ namespace {
 
     TEST_F(DiscretePositionsTest, AnAlternatingSignalCrossesZeroOnEveryStep)
     {
-        const auto positions = D::zero_crossing_positions(alternating(16));
+        const auto positions = D::zero_crossing_positions(discrete_analysis_alternating(16));
 
         ASSERT_EQ(positions.size(), 15U);
         EXPECT_EQ(std::ranges::adjacent_find(positions, std::greater_equal<size_t> {}), positions.end());

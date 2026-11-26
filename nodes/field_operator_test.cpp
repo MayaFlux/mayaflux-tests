@@ -51,7 +51,7 @@ namespace {
         return Kinesis::SpatialField { .fn = [value](const glm::vec3&) { return value; } };
     }
 
-    std::vector<PointVertex> point_vertices(uint32_t count)
+    std::vector<PointVertex> field_operator_point_vertices(uint32_t count)
     {
         std::vector<PointVertex> out;
         for (uint32_t i = 0; i < count; ++i) {
@@ -120,10 +120,10 @@ namespace {
                 .type_name = "PointVertex",
                 .make = [](uint32_t n) {
                     auto op = std::make_unique<FieldOperator>();
-                    op->initialize(point_vertices(n));
+                    op->initialize(field_operator_point_vertices(n));
                     return op; },
                 .round_trips = [](const FieldOperator& op, uint32_t n) {
-                    return raw_bytes(op.extract_point_vertices()) == raw_bytes(point_vertices(n)); },
+                    return raw_bytes(op.extract_point_vertices()) == raw_bytes(field_operator_point_vertices(n)); },
                 .scalar_at = [](const FieldOperator& op, size_t i) { return op.extract_point_vertices()[i].size; } },
             { .name = "Line",
                 .type_name = "LineVertex",
@@ -190,7 +190,7 @@ namespace {
     protected:
         FieldOperator op;
 
-        void SetUp() override { op.initialize(point_vertices(4)); }
+        void SetUp() override { op.initialize(field_operator_point_vertices(4)); }
 
         [[nodiscard]] PointVertex vertex(size_t i) const { return op.extract_point_vertices()[i]; }
     };
@@ -377,14 +377,14 @@ namespace {
     TEST(FieldOperatorSeedTest, EmptyOperatorSeedsFromPhysicsAsPointVertices)
     {
         PhysicsOperator upstream;
-        upstream.initialize(point_vertices(5));
+        upstream.initialize(field_operator_point_vertices(5));
         FieldOperator op;
 
         op.seed_from_upstream(&upstream);
 
         EXPECT_EQ(op.get_vertex_count(), 5U);
         EXPECT_STREQ(op.get_vertex_type_name(), "PointVertex");
-        EXPECT_TRUE(raw_bytes(op.extract_point_vertices()) == raw_bytes(point_vertices(5)));
+        EXPECT_TRUE(raw_bytes(op.extract_point_vertices()) == raw_bytes(field_operator_point_vertices(5)));
     }
 
     TEST(FieldOperatorSeedTest, UnrecognisedUpstreamTypeSeedsAsLineVertices)
@@ -402,9 +402,9 @@ namespace {
     TEST(FieldOperatorSeedTest, PopulatedOperatorIgnoresUpstream)
     {
         PhysicsOperator upstream;
-        upstream.initialize(point_vertices(5));
+        upstream.initialize(field_operator_point_vertices(5));
         FieldOperator op;
-        op.initialize(point_vertices(3));
+        op.initialize(field_operator_point_vertices(3));
 
         op.seed_from_upstream(&upstream);
 

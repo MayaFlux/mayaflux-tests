@@ -29,15 +29,15 @@ namespace {
 
         using namespace MayaFlux::ShaderCompat;
 
-        const auto shift_x = MF_FIELD(shift_x, [](vec3 p) -> vec3 {
+        const auto spatial_field_wiring_shift_x = MF_FIELD(spatial_field_wiring_shift_x, [](vec3 p) -> vec3 {
             return p * 0.0f + vec3(0.25f, 0.0f, 0.0f);
         });
 
     } // namespace fields
 
     constexpr uint32_t k_records = 64;
-    constexpr uint32_t k_stride_words = 17;
-    constexpr float k_cell_size = 0.5F;
+    constexpr uint32_t k_spatial_field_wiring_stride_words = 17;
+    constexpr float k_spatial_field_wiring_cell_size = 0.5F;
 
     /**
      * @brief Vertex storage and nothing that feeds it: a buffer with no network behind it.
@@ -96,12 +96,12 @@ namespace {
 
     using Names = std::vector<std::string>;
 
-    SamplerBounds unit_bounds() { return SamplerBounds { glm::vec3(-1.0F), glm::vec3(1.0F) }; }
+    SamplerBounds spatial_field_wiring_unit_bounds() { return SamplerBounds { glm::vec3(-1.0F), glm::vec3(1.0F) }; }
 
     std::optional<SpatialHashConfig> probe_hash(uint32_t count = k_records)
     {
         return SpatialHashConfig::from_bounds(
-            unit_bounds(), Kakshya::VertexLayout::for_points(), count, k_cell_size);
+            spatial_field_wiring_unit_bounds(), Kakshya::VertexLayout::for_points(), count, k_spatial_field_wiring_cell_size);
     }
 
     std::vector<uint32_t> counting_ids(uint32_t count)
@@ -111,9 +111,9 @@ namespace {
         return ids;
     }
 
-    uint32_t cell_of(const glm::vec3& p)
+    uint32_t spatial_field_wiring_cell_of(const glm::vec3& p)
     {
-        glm::ivec3 c = glm::ivec3(glm::floor((p - glm::vec3(-1.0F)) / k_cell_size));
+        glm::ivec3 c = glm::ivec3(glm::floor((p - glm::vec3(-1.0F)) / k_spatial_field_wiring_cell_size));
         c = glm::clamp(c, glm::ivec3(0), glm::ivec3(3));
         return static_cast<uint32_t>(c.x) + static_cast<uint32_t>(c.y) * 4U + static_cast<uint32_t>(c.z) * 16U;
     }
@@ -128,9 +128,9 @@ namespace {
         EXPECT_EQ(config->grid_min, glm::vec3(-1.0F));
         EXPECT_EQ(config->grid_dims, glm::uvec3(4U));
         EXPECT_EQ(config->cell_count(), 64U);
-        EXPECT_EQ(config->cell_size, k_cell_size);
+        EXPECT_EQ(config->cell_size, k_spatial_field_wiring_cell_size);
         EXPECT_EQ(config->particle_count, k_records);
-        EXPECT_EQ(config->stride_words, k_stride_words);
+        EXPECT_EQ(config->stride_words, k_spatial_field_wiring_stride_words);
         EXPECT_EQ(config->position_word_offset, 0U);
     }
 
@@ -139,7 +139,7 @@ namespace {
         const SamplerBounds bounds { glm::vec3(0.0F), glm::vec3(2.2F, 0.4F, 1.0F) };
 
         const auto config = SpatialHashConfig::from_bounds(
-            bounds, Kakshya::VertexLayout::for_points(), 10, k_cell_size);
+            bounds, Kakshya::VertexLayout::for_points(), 10, k_spatial_field_wiring_cell_size);
 
         ASSERT_TRUE(config.has_value());
         EXPECT_EQ(config->grid_dims, glm::uvec3(5U, 1U, 2U));
@@ -151,7 +151,7 @@ namespace {
         const SamplerBounds bounds { glm::vec3(0.0F), glm::vec3(1.0F, 0.0F, 1.0F) };
 
         const auto config = SpatialHashConfig::from_bounds(
-            bounds, Kakshya::VertexLayout::for_points(), 10, k_cell_size);
+            bounds, Kakshya::VertexLayout::for_points(), 10, k_spatial_field_wiring_cell_size);
 
         ASSERT_TRUE(config.has_value());
         EXPECT_EQ(config->grid_dims, glm::uvec3(2U, 1U, 2U));
@@ -161,8 +161,8 @@ namespace {
     {
         const auto layout = Kakshya::VertexLayout::for_points();
 
-        EXPECT_FALSE(SpatialHashConfig::from_bounds(unit_bounds(), layout, k_records, 0.0F).has_value());
-        EXPECT_FALSE(SpatialHashConfig::from_bounds(unit_bounds(), layout, k_records, -1.0F).has_value());
+        EXPECT_FALSE(SpatialHashConfig::from_bounds(spatial_field_wiring_unit_bounds(), layout, k_records, 0.0F).has_value());
+        EXPECT_FALSE(SpatialHashConfig::from_bounds(spatial_field_wiring_unit_bounds(), layout, k_records, -1.0F).has_value());
     }
 
     MAYAFLUX_TEST_WITH(TEST, SpatialHashFromBoundsContractTest, AStrideThatIsNotAWholeNumberOfWordsGivesNoConfig, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
@@ -170,21 +170,21 @@ namespace {
         auto layout = Kakshya::VertexLayout::for_points();
 
         layout.stride_bytes = 0;
-        EXPECT_FALSE(SpatialHashConfig::from_bounds(unit_bounds(), layout, k_records, k_cell_size).has_value());
+        EXPECT_FALSE(SpatialHashConfig::from_bounds(spatial_field_wiring_unit_bounds(), layout, k_records, k_spatial_field_wiring_cell_size).has_value());
 
         layout.stride_bytes = 66;
-        EXPECT_FALSE(SpatialHashConfig::from_bounds(unit_bounds(), layout, k_records, k_cell_size).has_value());
+        EXPECT_FALSE(SpatialHashConfig::from_bounds(spatial_field_wiring_unit_bounds(), layout, k_records, k_spatial_field_wiring_cell_size).has_value());
     }
 
     MAYAFLUX_TEST_WITH(TEST, SpatialHashFromBoundsContractTest, ALayoutWithNoWordAlignedPositionGivesNoConfig, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         auto misaligned = Kakshya::VertexLayout::for_points();
         misaligned.attributes.front().offset_in_vertex = 2;
-        EXPECT_FALSE(SpatialHashConfig::from_bounds(unit_bounds(), misaligned, k_records, k_cell_size).has_value());
+        EXPECT_FALSE(SpatialHashConfig::from_bounds(spatial_field_wiring_unit_bounds(), misaligned, k_records, k_spatial_field_wiring_cell_size).has_value());
 
         auto none = Kakshya::VertexLayout::for_points();
         none.attributes.clear();
-        EXPECT_FALSE(SpatialHashConfig::from_bounds(unit_bounds(), none, k_records, k_cell_size).has_value());
+        EXPECT_FALSE(SpatialHashConfig::from_bounds(spatial_field_wiring_unit_bounds(), none, k_records, k_spatial_field_wiring_cell_size).has_value());
     }
 
     MAYAFLUX_TEST_WITH(TEST, SpatialHashFromBoundsContractTest, ThePositionOffsetFollowsTheLayout, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
@@ -192,7 +192,7 @@ namespace {
         auto layout = Kakshya::VertexLayout::for_points();
         layout.attributes.front().offset_in_vertex = 8;
 
-        const auto config = SpatialHashConfig::from_bounds(unit_bounds(), layout, k_records, k_cell_size);
+        const auto config = SpatialHashConfig::from_bounds(spatial_field_wiring_unit_bounds(), layout, k_records, k_spatial_field_wiring_cell_size);
 
         ASSERT_TRUE(config.has_value());
         EXPECT_EQ(config->position_word_offset, 2U);
@@ -239,7 +239,7 @@ namespace {
         void make_probe(uint32_t records = k_records)
         {
             record_count = records;
-            probe = std::make_shared<WiringProbeBuffer>(static_cast<size_t>(records) * k_stride_words * 4);
+            probe = std::make_shared<WiringProbeBuffer>(static_cast<size_t>(records) * k_spatial_field_wiring_stride_words * 4);
             service->initialize_buffer(probe);
             ASSERT_TRUE(probe->is_initialized());
             probe->setup_processors(Buffers::ProcessingToken::GRAPHICS_BACKEND);
@@ -251,7 +251,7 @@ namespace {
         {
             auto op = std::make_shared<GpuFieldOperator>(Kakshya::VertexLayout::for_points(), config);
             if (bind_field) {
-                op->bind(FieldTarget::POSITION, fields::shift_x);
+                op->bind(FieldTarget::POSITION, fields::spatial_field_wiring_shift_x);
             }
             return op;
         }
@@ -286,18 +286,18 @@ namespace {
         void fill(const std::vector<glm::vec3>& positions)
         {
             positions_in_use = positions;
-            std::vector<float> words(positions.size() * k_stride_words, 0.0F);
+            std::vector<float> words(positions.size() * k_spatial_field_wiring_stride_words, 0.0F);
             for (size_t i = 0; i < positions.size(); ++i) {
-                words[i * k_stride_words] = positions[i].x;
-                words[i * k_stride_words + 1] = positions[i].y;
-                words[i * k_stride_words + 2] = positions[i].z;
+                words[i * k_spatial_field_wiring_stride_words] = positions[i].x;
+                words[i * k_spatial_field_wiring_stride_words + 1] = positions[i].y;
+                words[i * k_spatial_field_wiring_stride_words + 2] = positions[i].z;
             }
             Buffers::upload_to_gpu(words.data(), words.size() * sizeof(float), probe);
         }
 
         [[nodiscard]] std::vector<float> read_words()
         {
-            std::vector<float> words(static_cast<size_t>(record_count) * k_stride_words);
+            std::vector<float> words(static_cast<size_t>(record_count) * k_spatial_field_wiring_stride_words);
             Buffers::download_from_gpu(probe, words.data(), words.size() * sizeof(float));
             return words;
         }
@@ -334,7 +334,7 @@ namespace {
         {
             std::vector<uint32_t> counts(64, 0U);
             for (const auto& p : positions_in_use) {
-                ++counts[cell_of(p)];
+                ++counts[spatial_field_wiring_cell_of(p)];
             }
             return counts;
         }
@@ -436,7 +436,7 @@ namespace {
         EXPECT_EQ(std::ranges::count(names, "PopulationInit"), 0);
         EXPECT_EQ(std::ranges::count(names, "PopulationSpawn"), 0);
         EXPECT_FALSE(probe->has_state("mutation_alive"));
-        EXPECT_EQ(probe->get_size_bytes(), k_records * k_stride_words * 4);
+        EXPECT_EQ(probe->get_size_bytes(), k_records * k_spatial_field_wiring_stride_words * 4);
     }
 
     // Reserve capacity and cluster ids
@@ -448,7 +448,7 @@ namespace {
         wire(make_op(SpatialFieldConfig { .cell_size = 0.5F, .absorb_radius = 0.1F, .reserve_fraction = 0.5F }));
 
         constexpr uint32_t total = k_records + k_records / 2;
-        EXPECT_GE(probe->get_size_bytes(), total * k_stride_words * 4);
+        EXPECT_GE(probe->get_size_bytes(), total * k_spatial_field_wiring_stride_words * 4);
         EXPECT_EQ(probe->get_state_bytes("hash_cluster_id"), total * sizeof(uint32_t));
         EXPECT_EQ(probe->get_state_bytes("hash_particle_index"), total * sizeof(uint32_t));
         EXPECT_EQ(probe->get_state_bytes("mutation_alive"), total * sizeof(uint32_t));
@@ -513,7 +513,7 @@ namespace {
 
         const auto after = read_words();
         for (uint32_t i = 0; i < k_records; ++i) {
-            const size_t base = static_cast<size_t>(i) * k_stride_words;
+            const size_t base = static_cast<size_t>(i) * k_spatial_field_wiring_stride_words;
             EXPECT_NEAR(after[base], before[base] + 0.25F, 1e-5F) << "record " << i;
             EXPECT_EQ(after[base + 1], before[base + 1]) << "record " << i;
             EXPECT_EQ(after[base + 2], before[base + 2]) << "record " << i;
@@ -552,7 +552,7 @@ namespace {
                                 "ClaimInit", "Claim", "ClaimFlatten", "ClaimAccumulate", "ClaimSwallow",
                                 "VertexField" }));
         EXPECT_EQ(probe->get_state_bytes("mutation_alive"), k_records * sizeof(uint32_t));
-        EXPECT_EQ(probe->get_size_bytes(), k_records * k_stride_words * 4);
+        EXPECT_EQ(probe->get_size_bytes(), k_records * k_spatial_field_wiring_stride_words * 4);
     }
 
     TEST_F(SpatialFieldWiringProbeTest, AReserveIsRefusedWhenTheCallerKeepsLiveness)
@@ -564,7 +564,7 @@ namespace {
         const auto names = stages();
         EXPECT_EQ(std::ranges::count(names, "PopulationInit"), 0);
         EXPECT_EQ(std::ranges::count(names, "PopulationSpawn"), 0);
-        EXPECT_EQ(probe->get_size_bytes(), k_records * k_stride_words * 4);
+        EXPECT_EQ(probe->get_size_bytes(), k_records * k_spatial_field_wiring_stride_words * 4);
         EXPECT_EQ(probe->get_state_bytes("mutation_alive"), k_records * sizeof(uint32_t));
     }
 
@@ -582,7 +582,7 @@ namespace {
         const auto counts = probe_read<uint32_t>("hash_cell_count");
         std::vector<uint32_t> expected(64, 0U);
         for (size_t i = 0; i < 10; ++i) {
-            ++expected[cell_of(positions_in_use[i])];
+            ++expected[spatial_field_wiring_cell_of(positions_in_use[i])];
         }
         EXPECT_EQ(counts, expected);
     }
@@ -597,9 +597,9 @@ namespace {
         particles->create_operator<Nodes::Network::PhysicsOperator>();
         attach(particles, 1.0F);
 
-        const auto derived = SpatialHashConfig::from_network(buffer, k_cell_size);
+        const auto derived = SpatialHashConfig::from_network(buffer, k_spatial_field_wiring_cell_size);
         const auto explicit_config = SpatialHashConfig::from_bounds(
-            unit_bounds(), Kakshya::VertexLayout::for_points(), k_records, k_cell_size);
+            spatial_field_wiring_unit_bounds(), Kakshya::VertexLayout::for_points(), k_records, k_spatial_field_wiring_cell_size);
 
         ASSERT_TRUE(derived.has_value());
         ASSERT_TRUE(explicit_config.has_value());

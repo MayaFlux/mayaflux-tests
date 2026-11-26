@@ -15,7 +15,7 @@ namespace {
     using Nodes::GpuSync::GeometryWriterNode;
     using Nodes::GpuSync::TopologyGeneratorNode;
 
-    LineVertex make_vertex(const glm::vec3& position, float thickness = 2.0F, const glm::vec3& color = glm::vec3(1.0F))
+    LineVertex topology_generator_node_make_vertex(const glm::vec3& position, float thickness = 2.0F, const glm::vec3& color = glm::vec3(1.0F))
     {
         LineVertex v;
         v.position = position;
@@ -24,13 +24,13 @@ namespace {
         return v;
     }
 
-    std::vector<LineVertex> collinear_points(uint32_t count, float spacing = 1.0F)
+    std::vector<LineVertex> topology_generator_node_collinear_points(uint32_t count, float spacing = 1.0F)
     {
         std::vector<LineVertex> pts;
         pts.reserve(count);
         for (uint32_t i = 0; i < count; ++i) {
             const auto f = static_cast<float>(i);
-            pts.push_back(make_vertex({ f * spacing, 0.0F, 0.0F }, 1.0F + f, { 0.1F * (f + 1.0F), 0.0F, 0.0F }));
+            pts.push_back(topology_generator_node_make_vertex({ f * spacing, 0.0F, 0.0F }, 1.0F + f, { 0.1F * (f + 1.0F), 0.0F, 0.0F }));
         }
         return pts;
     }
@@ -40,7 +40,7 @@ namespace {
         std::vector<LineVertex> pts;
         for (int y = 0; y < 2; ++y) {
             for (int x = 0; x < 3; ++x) {
-                pts.push_back(make_vertex({ static_cast<float>(x), static_cast<float>(y), 0.0F }));
+                pts.push_back(topology_generator_node_make_vertex({ static_cast<float>(x), static_cast<float>(y), 0.0F }));
             }
         }
         return pts;
@@ -68,7 +68,7 @@ namespace {
         return out;
     }
 
-    ::testing::AssertionResult near_vec(const glm::vec3& a, const glm::vec3& b, float tol = 1e-4F)
+    ::testing::AssertionResult topology_generator_node_near_vec(const glm::vec3& a, const glm::vec3& b, float tol = 1e-4F)
     {
         if (glm::length(a - b) <= tol) {
             return ::testing::AssertionSuccess();
@@ -123,45 +123,45 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, PointsAreHeldNewestFirst)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
 
         ASSERT_EQ(node.get_point_count(), 3U);
-        EXPECT_TRUE(near_vec(node.get_point(0).position, { 2, 0, 0 }));
-        EXPECT_TRUE(near_vec(node.get_point(2).position, { 0, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(node.get_point(0).position, { 2, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(node.get_point(2).position, { 0, 0, 0 }));
         auto all = node.get_points();
         ASSERT_EQ(all.size(), 3U);
-        EXPECT_TRUE(near_vec(all[1].position, { 1, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(all[1].position, { 1, 0, 0 }));
     }
 
     TEST_F(TopologyGeneratorNodeTest, ExceedingMaxPointsDropsTheOldest)
     {
         LineTopology node(3);
-        add_in_order(node, collinear_points(5));
+        add_in_order(node, topology_generator_node_collinear_points(5));
 
         ASSERT_EQ(node.get_point_count(), 3U);
-        EXPECT_TRUE(near_vec(node.get_point(0).position, { 4, 0, 0 }));
-        EXPECT_TRUE(near_vec(node.get_point(2).position, { 2, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(node.get_point(0).position, { 4, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(node.get_point(2).position, { 2, 0, 0 }));
     }
 
     TEST_F(TopologyGeneratorNodeTest, AddPointsMatchesAddingOneByOne)
     {
         LineTopology one_by_one;
-        add_in_order(one_by_one, collinear_points(4));
+        add_in_order(one_by_one, topology_generator_node_collinear_points(4));
 
         LineTopology spanned;
-        const auto pts = collinear_points(4);
+        const auto pts = topology_generator_node_collinear_points(4);
         spanned.add_points(pts);
 
         ASSERT_EQ(spanned.get_point_count(), 4U);
         for (size_t i = 0; i < 4; ++i) {
-            EXPECT_TRUE(near_vec(spanned.get_point(i).position, one_by_one.get_point(i).position));
+            EXPECT_TRUE(topology_generator_node_near_vec(spanned.get_point(i).position, one_by_one.get_point(i).position));
         }
     }
 
     TEST_F(TopologyGeneratorNodeTest, AddingNoPointsChangesNothing)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(2));
+        add_in_order(node, topology_generator_node_collinear_points(2));
         node.compute_frame();
         node.clear_gpu_update_flag();
 
@@ -175,14 +175,14 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, SetPointsMatchesAddingInOrder)
     {
         LineTopology added;
-        add_in_order(added, collinear_points(4));
+        add_in_order(added, topology_generator_node_collinear_points(4));
 
         LineTopology set;
-        set.set_points(collinear_points(4));
+        set.set_points(topology_generator_node_collinear_points(4));
 
         ASSERT_EQ(set.get_point_count(), 4U);
         for (size_t i = 0; i < 4; ++i) {
-            EXPECT_TRUE(near_vec(set.get_point(i).position, added.get_point(i).position));
+            EXPECT_TRUE(topology_generator_node_near_vec(set.get_point(i).position, added.get_point(i).position));
         }
         EXPECT_EQ(set.get_connections(), added.get_connections());
     }
@@ -190,35 +190,35 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, SetPointsBeyondMaxKeepsTheNewest)
     {
         LineTopology node(3);
-        node.set_points(collinear_points(6));
+        node.set_points(topology_generator_node_collinear_points(6));
 
         ASSERT_EQ(node.get_point_count(), 3U);
-        EXPECT_TRUE(near_vec(node.get_point(0).position, { 5, 0, 0 }));
-        EXPECT_TRUE(near_vec(node.get_point(2).position, { 3, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(node.get_point(0).position, { 5, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(node.get_point(2).position, { 3, 0, 0 }));
     }
 
     TEST_F(TopologyGeneratorNodeTest, RemovePointDropsThatPointAndReconnects)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(4));
+        add_in_order(node, topology_generator_node_collinear_points(4));
 
         node.remove_point(1);
 
         ASSERT_EQ(node.get_point_count(), 3U);
-        EXPECT_TRUE(near_vec(node.get_point(0).position, { 3, 0, 0 }));
-        EXPECT_TRUE(near_vec(node.get_point(1).position, { 1, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(node.get_point(0).position, { 3, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(node.get_point(1).position, { 1, 0, 0 }));
         EXPECT_EQ(node.get_connection_count(), 2U);
     }
 
     TEST_F(TopologyGeneratorNodeTest, RemoveAndUpdateOutOfRangeChangeNothing)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(2));
+        add_in_order(node, topology_generator_node_collinear_points(2));
         node.compute_frame();
         node.clear_gpu_update_flag();
 
         node.remove_point(2);
-        node.update_point(9, make_vertex({ 9, 9, 9 }));
+        node.update_point(9, topology_generator_node_make_vertex({ 9, 9, 9 }));
         node.compute_frame();
 
         EXPECT_EQ(node.get_point_count(), 2U);
@@ -228,30 +228,30 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, UpdatePointMovesItsConnectedVertices)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.compute_frame();
 
-        node.update_point(1, make_vertex({ 1, 7, 0 }));
+        node.update_point(1, topology_generator_node_make_vertex({ 1, 7, 0 }));
         node.compute_frame();
 
         const auto up = uploaded_vertices(node);
         ASSERT_EQ(up.size(), 4U);
-        EXPECT_TRUE(near_vec(up[1].position, { 1, 7, 0 }));
-        EXPECT_TRUE(near_vec(up[2].position, { 1, 7, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[1].position, { 1, 7, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[2].position, { 1, 7, 0 }));
     }
 
     TEST_F(TopologyGeneratorNodeTest, GetPointOutOfRangeReturnsAnOriginVertex)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(2));
+        add_in_order(node, topology_generator_node_collinear_points(2));
 
-        EXPECT_TRUE(near_vec(node.get_point(5).position, { 0, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(node.get_point(5).position, { 0, 0, 0 }));
     }
 
     TEST_F(TopologyGeneratorNodeTest, ClearEmptiesPointsConnectionsAndVertices)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.compute_frame();
 
         node.clear();
@@ -266,7 +266,7 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, ClearResetsLayoutVertexCount)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.compute_frame();
 
         node.clear();
@@ -279,7 +279,7 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, SequentialConnectsConsecutiveStoredPoints)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(4));
+        add_in_order(node, topology_generator_node_collinear_points(4));
 
         const std::vector<std::pair<size_t, size_t>> expected { { 0, 1 }, { 1, 2 }, { 2, 3 } };
         EXPECT_EQ(node.get_connections(), expected);
@@ -290,7 +290,7 @@ namespace {
         LineTopology node;
         EXPECT_EQ(node.get_connection_count(), 0U);
 
-        node.add_point(make_vertex({ 1, 1, 1 }));
+        node.add_point(topology_generator_node_make_vertex({ 1, 1, 1 }));
         node.compute_frame();
 
         EXPECT_EQ(node.get_connection_count(), 0U);
@@ -300,47 +300,47 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, DirectEdgesUploadTwoVerticesPerConnectionAtTheirPoints)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.compute_frame();
 
         const auto up = uploaded_vertices(node);
         ASSERT_EQ(up.size(), 4U);
-        EXPECT_TRUE(near_vec(up[0].position, { 2, 0, 0 }));
-        EXPECT_TRUE(near_vec(up[1].position, { 1, 0, 0 }));
-        EXPECT_TRUE(near_vec(up[2].position, { 1, 0, 0 }));
-        EXPECT_TRUE(near_vec(up[3].position, { 0, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[0].position, { 2, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[1].position, { 1, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[2].position, { 1, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[3].position, { 0, 0, 0 }));
     }
 
     TEST_F(TopologyGeneratorNodeTest, DirectEdgesCarryTheEdgeVectorAsTangent)
     {
         LineTopology node;
-        node.add_point(make_vertex({ 0, 0, 0 }));
-        node.add_point(make_vertex({ 3, 4, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 0, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 3, 4, 0 }));
         node.compute_frame();
 
         const auto up = uploaded_vertices(node);
         ASSERT_EQ(up.size(), 2U);
-        EXPECT_TRUE(near_vec(up[0].tangent, { -3, -4, 0 }));
-        EXPECT_TRUE(near_vec(up[1].tangent, { -3, -4, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[0].tangent, { -3, -4, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[1].tangent, { -3, -4, 0 }));
     }
 
     TEST_F(TopologyGeneratorNodeTest, DirectEdgesKeepPerPointColourAndThickness)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(2));
+        add_in_order(node, topology_generator_node_collinear_points(2));
         node.compute_frame();
 
         const auto up = uploaded_vertices(node);
-        EXPECT_TRUE(near_vec(up[0].color, { 0.2F, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[0].color, { 0.2F, 0, 0 }));
         EXPECT_FLOAT_EQ(up[0].thickness, 2.0F);
-        EXPECT_TRUE(near_vec(up[1].color, { 0.1F, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[1].color, { 0.1F, 0, 0 }));
         EXPECT_FLOAT_EQ(up[1].thickness, 1.0F);
     }
 
     TEST_F(TopologyGeneratorNodeTest, DefaultSequentialModeDrawsASmoothPathThroughTheEndPoints)
     {
         TopologyGeneratorNode node;
-        add_in_order(node, collinear_points(5));
+        add_in_order(node, topology_generator_node_collinear_points(5));
         node.compute_frame();
 
         const auto up = uploaded_vertices(node);
@@ -360,8 +360,8 @@ namespace {
             << ", stored x " << node.get_point(0).position.x << " ... "
             << node.get_point(4).position.x);
 
-        EXPECT_TRUE(near_vec(up.front().position, node.get_point(0).position));
-        EXPECT_TRUE(near_vec(up.back().position, node.get_point(4).position));
+        EXPECT_TRUE(topology_generator_node_near_vec(up.front().position, node.get_point(0).position));
+        EXPECT_TRUE(topology_generator_node_near_vec(up.back().position, node.get_point(4).position));
         for (const auto& v : up) {
             ASSERT_TRUE(std::isfinite(v.position.x));
             EXPECT_NEAR(v.position.y, 0.0F, 1e-4F);
@@ -409,7 +409,7 @@ namespace {
             SCOPED_TRACE(n);
 
             TopologyGeneratorNode node;
-            add_in_order(node, collinear_points(n));
+            add_in_order(node, topology_generator_node_collinear_points(n));
 
             EXPECT_NO_THROW(node.compute_frame());
             EXPECT_EQ(uploaded_count(node), 2U * (n - 1));
@@ -419,11 +419,11 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, SmoothPathTakesOverOnceThereAreEnoughPoints)
     {
         TopologyGeneratorNode node;
-        add_in_order(node, collinear_points(4));
+        add_in_order(node, topology_generator_node_collinear_points(4));
         node.compute_frame();
         ASSERT_EQ(uploaded_count(node), 6U);
 
-        node.add_point(make_vertex({ 4, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 4, 0, 0 }));
         node.compute_frame();
 
         EXPECT_GT(uploaded_count(node), 8U);
@@ -433,20 +433,20 @@ namespace {
     {
         TopologyGeneratorNode node;
         node.set_samples_per_segment(5);
-        add_in_order(node, collinear_points(5));
+        add_in_order(node, topology_generator_node_collinear_points(5));
         node.compute_frame();
 
         const auto up = uploaded_vertices(node);
         ASSERT_EQ(up.size(), 32U);
         for (size_t i = 1; i + 1 < up.size(); i += 2) {
-            EXPECT_TRUE(near_vec(up[i].position, up[i + 1].position)) << "junction " << i;
+            EXPECT_TRUE(topology_generator_node_near_vec(up[i].position, up[i + 1].position)) << "junction " << i;
         }
     }
 
     TEST_F(TopologyGeneratorNodeTest, SamplesPerSegmentSetsThePathResolution)
     {
         TopologyGeneratorNode node;
-        add_in_order(node, collinear_points(5));
+        add_in_order(node, topology_generator_node_collinear_points(5));
         node.set_samples_per_segment(5);
         node.compute_frame();
 
@@ -456,7 +456,7 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, SamplesPerSegmentBelowTwoIsIgnored)
     {
         TopologyGeneratorNode node;
-        add_in_order(node, collinear_points(5));
+        add_in_order(node, topology_generator_node_collinear_points(5));
         node.set_samples_per_segment(5);
         node.set_samples_per_segment(1);
         node.compute_frame();
@@ -467,7 +467,7 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, LinearPathInterpolationDrawsTheConnectionsDirectly)
     {
         TopologyGeneratorNode node;
-        add_in_order(node, collinear_points(5));
+        add_in_order(node, topology_generator_node_collinear_points(5));
         node.compute_frame();
 
         node.set_path_interpolation_mode(InterpolationMode::LINEAR);
@@ -480,11 +480,11 @@ namespace {
     {
         TopologyGeneratorNode node;
         node.set_samples_per_segment(8);
-        node.add_point(make_vertex({ 0, 0, 0 }));
-        node.add_point(make_vertex({ 1, 1, 0 }));
-        node.add_point(make_vertex({ 2, 0, 0 }));
-        node.add_point(make_vertex({ 3, 1, 0 }));
-        node.add_point(make_vertex({ 4, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 0, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 1, 1, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 2, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 3, 1, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 4, 0, 0 }));
         node.compute_frame();
         const auto count = uploaded_count(node);
 
@@ -501,9 +501,9 @@ namespace {
     {
         TopologyGeneratorNode node(ProximityMode::RADIUS_THRESHOLD, true, 16);
         node.set_connection_radius(2.0F);
-        node.add_point(make_vertex({ 0, 0, 0 }));
-        node.add_point(make_vertex({ 1, 0, 0 }));
-        node.add_point(make_vertex({ 10, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 0, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 1, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 10, 0, 0 }));
 
         ASSERT_EQ(node.get_connection_count(), 1U);
         const auto [a, b] = node.get_connections().front();
@@ -516,9 +516,9 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, ChangingTheRadiusReconnects)
     {
         TopologyGeneratorNode node(ProximityMode::RADIUS_THRESHOLD, true, 16);
-        node.add_point(make_vertex({ 0, 0, 0 }));
-        node.add_point(make_vertex({ 1, 0, 0 }));
-        node.add_point(make_vertex({ 10, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 0, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 1, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 10, 0, 0 }));
 
         node.set_connection_radius(0.5F);
         EXPECT_EQ(node.get_connection_count(), 0U);
@@ -533,7 +533,7 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, RadiusIsIgnoredOutsideRadiusMode)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(4));
+        add_in_order(node, topology_generator_node_collinear_points(4));
         const auto before = node.get_connections();
 
         node.set_connection_radius(0.1F);
@@ -545,7 +545,7 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, MoreNeighboursNeverGiveFewerConnections)
     {
         TopologyGeneratorNode node(ProximityMode::K_NEAREST, true, 16);
-        add_in_order(node, collinear_points(6));
+        add_in_order(node, topology_generator_node_collinear_points(6));
 
         node.set_k_neighbors(1);
         const auto one = node.get_connection_count();
@@ -559,7 +559,7 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, MinimumSpanningTreeHasOneFewerEdgeThanPoints)
     {
         TopologyGeneratorNode node(ProximityMode::MINIMUM_SPANNING_TREE, true, 16);
-        add_in_order(node, collinear_points(5));
+        add_in_order(node, topology_generator_node_collinear_points(5));
 
         EXPECT_EQ(node.get_connection_count(), 4U);
     }
@@ -568,7 +568,7 @@ namespace {
     {
         TopologyGeneratorNode node(ProximityMode::RADIUS_THRESHOLD, true, 16);
         node.set_connection_radius(0.5F);
-        add_in_order(node, collinear_points(4));
+        add_in_order(node, topology_generator_node_collinear_points(4));
         ASSERT_EQ(node.get_connection_count(), 0U);
 
         node.set_connection_mode(ProximityMode::SEQUENTIAL);
@@ -587,7 +587,7 @@ namespace {
                 return std::vector<std::pair<size_t, size_t>> { { 0, 2 } };
             },
             true, 16);
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.compute_frame();
 
         EXPECT_EQ(rows, 3);
@@ -595,15 +595,15 @@ namespace {
         ASSERT_EQ(node.get_connection_count(), 1U);
         const auto up = uploaded_vertices(node);
         ASSERT_EQ(up.size(), 2U);
-        EXPECT_TRUE(near_vec(up[0].position, node.get_point(0).position));
-        EXPECT_TRUE(near_vec(up[1].position, node.get_point(2).position));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[0].position, node.get_point(0).position));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[1].position, node.get_point(2).position));
     }
 
     TEST_F(TopologyGeneratorNodeTest, ConnectionsStayEmptyUntilRegeneratedWhenAutoConnectIsOff)
     {
         TopologyGeneratorNode node(ProximityMode::SEQUENTIAL, false, 16);
         node.set_path_interpolation_mode(InterpolationMode::LINEAR);
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.compute_frame();
 
         EXPECT_EQ(node.get_connection_count(), 0U);
@@ -620,7 +620,7 @@ namespace {
     {
         TopologyGeneratorNode node(ProximityMode::SEQUENTIAL, false, 16);
         node.set_path_interpolation_mode(InterpolationMode::LINEAR);
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.regenerate_topology();
 
         node.remove_point(2);
@@ -628,14 +628,14 @@ namespace {
 
         const auto up = uploaded_vertices(node);
         ASSERT_EQ(up.size(), 2U);
-        EXPECT_TRUE(near_vec(up[0].position, node.get_point(0).position));
-        EXPECT_TRUE(near_vec(up[1].position, node.get_point(1).position));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[0].position, node.get_point(0).position));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[1].position, node.get_point(1).position));
     }
 
     TEST_F(TopologyGeneratorNodeTest, ComputeFrameUpdatesLayoutVertexCount)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.compute_frame();
 
         ASSERT_TRUE(node.get_vertex_layout().has_value());
@@ -645,10 +645,10 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, ComputeFrameRequestsGpuUpload)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.compute_frame();
         node.clear_gpu_update_flag();
-        node.add_point(make_vertex({ 3, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 3, 0, 0 }));
 
         node.compute_frame();
 
@@ -658,10 +658,10 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, ComputeFrameMarksVertexDataAsNeedingUpdate)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.compute_frame();
         node.clear_gpu_update_flag();
-        node.add_point(make_vertex({ 3, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 3, 0, 0 }));
 
         node.compute_frame();
 
@@ -671,10 +671,10 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, UploadBetweenAddAndFrameDoesNotLoseTheTopology)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(2));
+        add_in_order(node, topology_generator_node_collinear_points(2));
         node.compute_frame();
 
-        node.add_point(make_vertex({ 2, 0, 0 }));
+        node.add_point(topology_generator_node_make_vertex({ 2, 0, 0 }));
         node.clear_gpu_update_flag();
         node.compute_frame();
 
@@ -684,7 +684,7 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, UnchangedTopologyIsNotReuploaded)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.compute_frame();
         node.clear_gpu_update_flag();
 
@@ -712,7 +712,7 @@ namespace {
         LineTopology node;
         node.compute_frame();
 
-        const auto pts = collinear_points(4);
+        const auto pts = topology_generator_node_collinear_points(4);
         const std::array<uint32_t, 4> expected { 0, 2, 4, 6 };
         for (size_t i = 0; i < pts.size(); ++i) {
             node.add_point(pts[i]);
@@ -724,7 +724,7 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, ProcessSampleUploadsAFrameAndReturnsZero)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
 
         EXPECT_DOUBLE_EQ(node.process_sample(0.0), 0.0);
         EXPECT_EQ(uploaded_count(node), 4U);
@@ -733,7 +733,7 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, GeneratedVertexCountMatchesTheUploadAfterAFrame)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(4));
+        add_in_order(node, topology_generator_node_collinear_points(4));
         node.compute_frame();
 
         EXPECT_EQ(node.get_vertex_count(), uploaded_count(node));
@@ -742,7 +742,7 @@ namespace {
     TEST_F(TopologyGeneratorNodeTest, UniformColourOverridesEveryDirectVertex)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.compute_frame();
 
         node.set_line_color({ 0, 1, 0, 1 });
@@ -750,7 +750,7 @@ namespace {
 
         ASSERT_EQ(uploaded_count(node), 4U);
         for (const auto& v : uploaded_vertices(node)) {
-            EXPECT_TRUE(near_vec(v.color, { 0, 1, 0 }));
+            EXPECT_TRUE(topology_generator_node_near_vec(v.color, { 0, 1, 0 }));
         }
         EXPECT_TRUE(node.should_force_uniform_color());
         EXPECT_EQ(node.get_line_color(), glm::vec4(glm::vec3(0, 1, 0), 1.F));
@@ -760,7 +760,7 @@ namespace {
     {
         TopologyGeneratorNode node;
         node.set_samples_per_segment(5);
-        add_in_order(node, collinear_points(5));
+        add_in_order(node, topology_generator_node_collinear_points(5));
         node.compute_frame();
 
         node.set_line_color({ 0, 1, 0, 1 });
@@ -768,14 +768,14 @@ namespace {
 
         ASSERT_EQ(uploaded_count(node), 32U);
         for (const auto& v : uploaded_vertices(node)) {
-            EXPECT_TRUE(near_vec(v.color, { 0, 1, 0 }));
+            EXPECT_TRUE(topology_generator_node_near_vec(v.color, { 0, 1, 0 }));
         }
     }
 
     TEST_F(TopologyGeneratorNodeTest, DisablingUniformColourRestoresPerPointColour)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.set_line_color({ 0, 1, 0, 1 });
         node.compute_frame();
 
@@ -783,26 +783,26 @@ namespace {
         node.compute_frame();
 
         const auto up = uploaded_vertices(node);
-        EXPECT_TRUE(near_vec(up[0].color, { 0.3F, 0, 0 }));
-        EXPECT_TRUE(near_vec(up[3].color, { 0.1F, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[0].color, { 0.3F, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(up[3].color, { 0.1F, 0, 0 }));
         EXPECT_FALSE(node.should_force_uniform_color());
     }
 
     TEST_F(TopologyGeneratorNodeTest, SettingColourWithoutForcingOnlyStoresIt)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.set_line_color({ 0, 0, 1, 1 }, false);
         node.compute_frame();
 
         EXPECT_EQ(node.get_line_color(), glm::vec4(glm::vec3(0, 0, 1), 1.F));
-        EXPECT_TRUE(near_vec(uploaded_vertices(node)[0].color, { 0.3F, 0, 0 }));
+        EXPECT_TRUE(topology_generator_node_near_vec(uploaded_vertices(node)[0].color, { 0.3F, 0, 0 }));
     }
 
     TEST_F(TopologyGeneratorNodeTest, UniformThicknessOverridesEveryVertexAndCanBeLiftedAgain)
     {
         LineTopology node;
-        add_in_order(node, collinear_points(3));
+        add_in_order(node, topology_generator_node_collinear_points(3));
         node.compute_frame();
 
         node.set_line_thickness(6.0F);
@@ -851,8 +851,8 @@ namespace {
         const auto up = uploaded_vertices(node);
         ASSERT_EQ(up.size(), edges.size() * 2);
         for (size_t i = 0; i < edges.size(); ++i) {
-            EXPECT_TRUE(near_vec(up[2 * i].position, node.get_point(edges[i].first).position)) << "edge " << i;
-            EXPECT_TRUE(near_vec(up[2 * i + 1].position, node.get_point(edges[i].second).position)) << "edge " << i;
+            EXPECT_TRUE(topology_generator_node_near_vec(up[2 * i].position, node.get_point(edges[i].first).position)) << "edge " << i;
+            EXPECT_TRUE(topology_generator_node_near_vec(up[2 * i + 1].position, node.get_point(edges[i].second).position)) << "edge " << i;
         }
     }
 
@@ -876,7 +876,7 @@ namespace {
             TopologyGeneratorNode node(ProximityMode::SEQUENTIAL, true, 16);
             node.set_path_interpolation_mode(GetParam());
             node.set_samples_per_segment(6);
-            add_in_order(node, collinear_points(n));
+            add_in_order(node, topology_generator_node_collinear_points(n));
 
             ASSERT_NO_THROW(node.compute_frame());
             EXPECT_GT(uploaded_count(node), 0U);

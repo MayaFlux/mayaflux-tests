@@ -11,16 +11,16 @@ MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta:
 namespace MayaFlux::Test {
 namespace {
 
-    constexpr unsigned int SAMPLE_RATE = 48000;
-    constexpr unsigned int BUFFER_SIZE = 512;
-    constexpr unsigned int NUM_CHANNELS = 2;
+    constexpr unsigned int STAGECRAFT_SAMPLE_RATE = 48000;
+    constexpr unsigned int STAGECRAFT_BUFFER_SIZE = 512;
+    constexpr unsigned int STAGECRAFT_NUM_CHANNELS = 2;
 
     class ApiStagecraftTest : public ::testing::Test {
     protected:
         void SetUp() override
         {
             MayaFlux::End();
-            MayaFlux::Init(SAMPLE_RATE, BUFFER_SIZE, NUM_CHANNELS, 0);
+            MayaFlux::Init(STAGECRAFT_SAMPLE_RATE, STAGECRAFT_BUFFER_SIZE, STAGECRAFT_NUM_CHANNELS, 0);
         }
 
         void TearDown() override { MayaFlux::End(); }

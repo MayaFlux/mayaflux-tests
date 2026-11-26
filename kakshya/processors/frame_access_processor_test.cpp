@@ -17,7 +17,7 @@ namespace {
     using Kakshya::VideoStreamContainer;
     using namespace VideoSupport;
 
-    constexpr uint64_t k_frames = 3;
+    constexpr uint64_t k_frame_access_processor_frames = 3;
 
     std::vector<uint8_t> output_of(const VideoStreamContainer& video)
     {
@@ -32,7 +32,7 @@ namespace {
     protected:
         void SetUp() override
         {
-            video = make_flat_rgba8(k_frames);
+            video = make_flat_rgba8(k_frame_access_processor_frames);
             processor = std::make_shared<FrameAccessProcessor>();
             processor->set_global_fps(k_fps);
         }
@@ -97,7 +97,7 @@ namespace {
 
         attach();
 
-        EXPECT_EQ(processor->get_frames_per_batch(), k_frames);
+        EXPECT_EQ(processor->get_frames_per_batch(), k_frame_access_processor_frames);
     }
 
     TEST_F(FrameAccessProcessorTest, AZeroBatchBecomesOne)
@@ -114,7 +114,7 @@ namespace {
 
     TEST_F(FrameAccessProcessorTest, ProcessingAnotherContainerProducesNothing)
     {
-        auto other = make_flat_rgba8(k_frames);
+        auto other = make_flat_rgba8(k_frame_access_processor_frames);
         attach();
 
         processor->process(other);
@@ -168,7 +168,7 @@ namespace {
     {
         processor->set_auto_advance(false);
         attach();
-        processor->set_current_frame(k_frames);
+        processor->set_current_frame(k_frame_access_processor_frames);
 
         EXPECT_TRUE(run().empty());
     }
@@ -220,10 +220,10 @@ namespace {
         run();
         run();
         run();
-        EXPECT_EQ(processor->get_current_frame(), k_frames - 1);
+        EXPECT_EQ(processor->get_current_frame(), k_frame_access_processor_frames - 1);
 
-        EXPECT_EQ(run(), frame_bytes(k_frames - 1));
-        EXPECT_EQ(processor->get_current_frame(), k_frames - 1);
+        EXPECT_EQ(run(), frame_bytes(k_frame_access_processor_frames - 1));
+        EXPECT_EQ(processor->get_current_frame(), k_frame_access_processor_frames - 1);
     }
 
     TEST_F(FrameAccessProcessorTest, AutoAdvanceWithLoopingWrapsToTheStart)
@@ -255,7 +255,7 @@ namespace {
         processor->set_auto_advance(false);
         video->set_looping(true);
         attach();
-        processor->set_current_frame(k_frames);
+        processor->set_current_frame(k_frame_access_processor_frames);
 
         EXPECT_EQ(run(), frame_bytes(0));
         EXPECT_EQ(processor->get_current_frame(), 0U);
@@ -384,7 +384,7 @@ namespace {
     protected:
         void SetUp() override
         {
-            video = make_flat_rgba8(k_frames);
+            video = make_flat_rgba8(k_frame_access_processor_frames);
         }
 
         std::shared_ptr<VideoProbe> video;

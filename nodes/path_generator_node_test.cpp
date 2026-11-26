@@ -13,7 +13,7 @@ namespace {
     using Nodes::LineVertex;
     using Nodes::GpuSync::PathGeneratorNode;
 
-    LineVertex make_vertex(const glm::vec3& position, float thickness = 2.0F, const glm::vec3& color = glm::vec3(1.0F))
+    LineVertex path_generator_node_make_vertex(const glm::vec3& position, float thickness = 2.0F, const glm::vec3& color = glm::vec3(1.0F))
     {
         LineVertex v;
         v.position = position;
@@ -28,7 +28,7 @@ namespace {
         pts.reserve(count);
         for (uint32_t i = 0; i < count; ++i) {
             const auto f = static_cast<float>(i);
-            pts.push_back(make_vertex({ f, 0.0F, 0.0F }, 1.0F + f, { 0.1F * (f + 1.0F), 0.0F, 0.0F }));
+            pts.push_back(path_generator_node_make_vertex({ f, 0.0F, 0.0F }, 1.0F + f, { 0.1F * (f + 1.0F), 0.0F, 0.0F }));
         }
         return pts;
     }
@@ -39,7 +39,7 @@ namespace {
         pts.reserve(count);
         for (uint32_t i = 0; i < count; ++i) {
             const auto f = static_cast<float>(i);
-            pts.push_back(make_vertex({ f, (i % 2 == 0) ? 0.0F : 1.0F, 0.0F }));
+            pts.push_back(path_generator_node_make_vertex({ f, (i % 2 == 0) ? 0.0F : 1.0F, 0.0F }));
         }
         return pts;
     }
@@ -61,7 +61,7 @@ namespace {
         return out;
     }
 
-    ::testing::AssertionResult near_vec(const glm::vec3& a, const glm::vec3& b, float tol = 1e-4F)
+    ::testing::AssertionResult path_generator_node_near_vec(const glm::vec3& a, const glm::vec3& b, float tol = 1e-4F)
     {
         if (glm::length(a - b) <= tol) {
             return ::testing::AssertionSuccess();
@@ -106,7 +106,7 @@ namespace {
         {
             ASSERT_EQ(actual.size(), expected.size());
             for (size_t i = 0; i < actual.size(); ++i) {
-                EXPECT_TRUE(near_vec(actual[i].position, expected[i].position)) << "vertex " << i;
+                EXPECT_TRUE(path_generator_node_near_vec(actual[i].position, expected[i].position)) << "vertex " << i;
             }
         }
     };
@@ -153,9 +153,9 @@ namespace {
         add_in_order(node, collinear_points(3));
 
         ASSERT_EQ(node.get_control_point_count(), 3U);
-        EXPECT_TRUE(near_vec(node.get_control_point(0).position, { 2, 0, 0 }));
-        EXPECT_TRUE(near_vec(node.get_control_point(1).position, { 1, 0, 0 }));
-        EXPECT_TRUE(near_vec(node.get_control_point(2).position, { 0, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(node.get_control_point(0).position, { 2, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(node.get_control_point(1).position, { 1, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(node.get_control_point(2).position, { 0, 0, 0 }));
     }
 
     TEST_F(PathGeneratorNodeTest, GetControlPointsReturnsEveryPointInStoredOrder)
@@ -165,8 +165,8 @@ namespace {
 
         auto all = node.get_control_points();
         ASSERT_EQ(all.size(), 3U);
-        EXPECT_TRUE(near_vec(all[0].position, { 2, 0, 0 }));
-        EXPECT_TRUE(near_vec(all[2].position, { 0, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(all[0].position, { 2, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(all[2].position, { 0, 0, 0 }));
     }
 
     TEST_F(PathGeneratorNodeTest, ExceedingCapacityDropsTheOldestPoints)
@@ -175,8 +175,8 @@ namespace {
         add_in_order(node, collinear_points(5));
 
         ASSERT_EQ(node.get_control_point_count(), 3U);
-        EXPECT_TRUE(near_vec(node.get_control_point(0).position, { 4, 0, 0 }));
-        EXPECT_TRUE(near_vec(node.get_control_point(2).position, { 2, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(node.get_control_point(0).position, { 4, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(node.get_control_point(2).position, { 2, 0, 0 }));
     }
 
     TEST_F(PathGeneratorNodeTest, SetControlPointsMatchesAddingInOrder)
@@ -189,7 +189,7 @@ namespace {
 
         ASSERT_EQ(set.get_control_point_count(), 4U);
         for (size_t i = 0; i < 4; ++i) {
-            EXPECT_TRUE(near_vec(set.get_control_point(i).position, added.get_control_point(i).position));
+            EXPECT_TRUE(path_generator_node_near_vec(set.get_control_point(i).position, added.get_control_point(i).position));
         }
     }
 
@@ -199,8 +199,8 @@ namespace {
         node.set_control_points(collinear_points(6));
 
         ASSERT_EQ(node.get_control_point_count(), 3U);
-        EXPECT_TRUE(near_vec(node.get_control_point(0).position, { 5, 0, 0 }));
-        EXPECT_TRUE(near_vec(node.get_control_point(2).position, { 3, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(node.get_control_point(0).position, { 5, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(node.get_control_point(2).position, { 3, 0, 0 }));
     }
 
     TEST_F(PathGeneratorNodeTest, SetControlPointsReplacesWhatWasThere)
@@ -217,7 +217,7 @@ namespace {
         auto node = linear();
         add_in_order(node, collinear_points(2));
 
-        EXPECT_TRUE(near_vec(node.get_control_point(5).position, { 0, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(node.get_control_point(5).position, { 0, 0, 0 }));
     }
 
     TEST_F(PathGeneratorNodeTest, UpdateControlPointOutOfRangeChangesNothing)
@@ -227,7 +227,7 @@ namespace {
         node.compute_frame();
         node.clear_gpu_update_flag();
 
-        node.update_control_point(2, make_vertex({ 9, 9, 9 }));
+        node.update_control_point(2, path_generator_node_make_vertex({ 9, 9, 9 }));
 
         EXPECT_EQ(node.get_control_point_count(), 2U);
         EXPECT_FALSE(node.needs_gpu_update());
@@ -241,9 +241,9 @@ namespace {
 
         ASSERT_EQ(node.get_vertex_count(), 3U);
         const auto up = uploaded_vertices(node);
-        EXPECT_TRUE(near_vec(up[0].position, { 2, 0, 0 }));
-        EXPECT_TRUE(near_vec(up[1].position, { 1, 0, 0 }));
-        EXPECT_TRUE(near_vec(up[2].position, { 0, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(up[0].position, { 2, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(up[1].position, { 1, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(up[2].position, { 0, 0, 0 }));
     }
 
     TEST_F(PathGeneratorNodeTest, LinearKeepsPerPointColourAndThickness)
@@ -253,7 +253,7 @@ namespace {
         node.compute_frame();
 
         const auto up = uploaded_vertices(node);
-        EXPECT_TRUE(near_vec(up[0].color, { 0.3F, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(up[0].color, { 0.3F, 0, 0 }));
         EXPECT_FLOAT_EQ(up[0].thickness, 3.0F);
         EXPECT_FLOAT_EQ(up[2].thickness, 1.0F);
     }
@@ -273,7 +273,7 @@ namespace {
         auto node = linear();
         add_in_order(node, collinear_points(3));
         node.clear_gpu_update_flag();
-        node.add_control_point(make_vertex({ 3, 0, 0 }));
+        node.add_control_point(path_generator_node_make_vertex({ 3, 0, 0 }));
 
         node.compute_frame();
 
@@ -285,7 +285,7 @@ namespace {
         auto node = linear();
         add_in_order(node, collinear_points(3));
         node.clear_gpu_update_flag();
-        node.add_control_point(make_vertex({ 3, 0, 0 }));
+        node.add_control_point(path_generator_node_make_vertex({ 3, 0, 0 }));
 
         node.compute_frame();
 
@@ -370,7 +370,7 @@ namespace {
     TEST_F(PathGeneratorNodeTest, SingleControlPointDrawsNothing)
     {
         auto node = linear();
-        node.add_control_point(make_vertex({ 1, 1, 1 }));
+        node.add_control_point(path_generator_node_make_vertex({ 1, 1, 1 }));
         node.compute_frame();
 
         EXPECT_EQ(node.get_vertex_count(), 0U);
@@ -382,7 +382,7 @@ namespace {
         add_in_order(node, collinear_points(3));
         node.compute_frame();
 
-        node.set_control_points({ make_vertex({ 1, 1, 1 }) });
+        node.set_control_points({ path_generator_node_make_vertex({ 1, 1, 1 }) });
         node.compute_frame();
 
         EXPECT_EQ(node.get_vertex_layout()->vertex_count, 0U);
@@ -394,10 +394,10 @@ namespace {
         add_in_order(node, collinear_points(4));
         node.compute_frame();
 
-        node.update_control_point(1, make_vertex({ 7, 7, 0 }));
+        node.update_control_point(1, path_generator_node_make_vertex({ 7, 7, 0 }));
         node.compute_frame();
 
-        EXPECT_TRUE(near_vec(uploaded_vertices(node)[1].position, { 7, 7, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(uploaded_vertices(node)[1].position, { 7, 7, 0 }));
     }
 
     TEST_F(PathGeneratorNodeTest, UpdatingAnyLinearControlPointMatchesRebuildingFromScratch)
@@ -410,11 +410,11 @@ namespace {
             auto node = linear();
             add_in_order(node, pts);
             node.compute_frame();
-            node.update_control_point(stored, make_vertex({ 9, 9, 9 }));
+            node.update_control_point(stored, path_generator_node_make_vertex({ 9, 9, 9 }));
             node.compute_frame();
 
             auto modified = pts;
-            modified[pts.size() - 1 - stored] = make_vertex({ 9, 9, 9 });
+            modified[pts.size() - 1 - stored] = path_generator_node_make_vertex({ 9, 9, 9 });
             expect_same_geometry(uploaded_vertices(node), rebuilt(InterpolationMode::LINEAR, 4, modified));
         }
     }
@@ -429,11 +429,11 @@ namespace {
             auto node = catmull(4);
             add_in_order(node, pts);
             node.compute_frame();
-            node.update_control_point(stored, make_vertex({ 9, 9, 9 }));
+            node.update_control_point(stored, path_generator_node_make_vertex({ 9, 9, 9 }));
             node.compute_frame();
 
             auto modified = pts;
-            modified[pts.size() - 1 - stored] = make_vertex({ 9, 9, 9 });
+            modified[pts.size() - 1 - stored] = path_generator_node_make_vertex({ 9, 9, 9 });
             expect_same_geometry(uploaded_vertices(node), rebuilt(InterpolationMode::CATMULL_ROM, 4, modified));
         }
     }
@@ -447,7 +447,7 @@ namespace {
         node.compute_frame();
         const auto before = uploaded_vertices(node);
 
-        node.update_control_point(0, make_vertex({ 3, 8, 0 }));
+        node.update_control_point(0, path_generator_node_make_vertex({ 3, 8, 0 }));
         node.compute_frame();
         const auto after = uploaded_vertices(node);
 
@@ -488,7 +488,7 @@ namespace {
         const auto up = uploaded_vertices(node);
         ASSERT_EQ(up.size(), 8U);
         for (size_t i = 1; i + 1 < up.size(); i += 2) {
-            EXPECT_TRUE(near_vec(up[i].position, up[i + 1].position)) << "junction " << i;
+            EXPECT_TRUE(path_generator_node_near_vec(up[i].position, up[i + 1].position)) << "junction " << i;
         }
     }
 
@@ -500,8 +500,8 @@ namespace {
 
         const auto vertices = uploaded_vertices(node);
         ASSERT_EQ(vertices.size(), 8U);
-        EXPECT_TRUE(near_vec(vertices[3].position, { 1.0F, 0.0F, 0.0F }));
-        EXPECT_TRUE(near_vec(vertices[4].position, { 0.5F, 0.0F, 0.0F }));
+        EXPECT_TRUE(path_generator_node_near_vec(vertices[3].position, { 1.0F, 0.0F, 0.0F }));
+        EXPECT_TRUE(path_generator_node_near_vec(vertices[4].position, { 0.5F, 0.0F, 0.0F }));
     }
 
     TEST_F(PathGeneratorNodeTest, SamplesPerSegmentChangesTheVertexCount)
@@ -555,7 +555,7 @@ namespace {
         node.compute_frame();
 
         for (const auto& v : uploaded_vertices(node)) {
-            EXPECT_TRUE(near_vec(v.color, { 0, 1, 0 }));
+            EXPECT_TRUE(path_generator_node_near_vec(v.color, { 0, 1, 0 }));
         }
         EXPECT_TRUE(node.should_force_uniform_color());
         EXPECT_EQ(node.get_path_color(), glm::vec4(glm::vec3(0, 1, 0), 1.F));
@@ -569,7 +569,7 @@ namespace {
         node.compute_frame();
 
         for (const auto& v : uploaded_vertices(node)) {
-            EXPECT_TRUE(near_vec(v.color, { 0, 1, 0 }));
+            EXPECT_TRUE(path_generator_node_near_vec(v.color, { 0, 1, 0 }));
         }
     }
 
@@ -584,8 +584,8 @@ namespace {
         node.compute_frame();
 
         const auto up = uploaded_vertices(node);
-        EXPECT_TRUE(near_vec(up[0].color, { 0.3F, 0, 0 }));
-        EXPECT_TRUE(near_vec(up[2].color, { 0.1F, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(up[0].color, { 0.3F, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(up[2].color, { 0.1F, 0, 0 }));
         EXPECT_FALSE(node.should_force_uniform_color());
     }
 
@@ -598,7 +598,7 @@ namespace {
 
         EXPECT_EQ(node.get_path_color(), glm::vec4(glm::vec3(0, 0, 1), 1.F));
         EXPECT_FALSE(node.should_force_uniform_color());
-        EXPECT_TRUE(near_vec(uploaded_vertices(node)[0].color, { 0.3F, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(uploaded_vertices(node)[0].color, { 0.3F, 0, 0 }));
     }
 
     TEST_F(PathGeneratorNodeTest, UniformThicknessOverridesEveryLinearVertex)
@@ -642,7 +642,7 @@ namespace {
 
         ASSERT_GT(node.get_vertex_count(), 0U);
         for (const auto& v : uploaded_vertices(node)) {
-            EXPECT_TRUE(near_vec(v.color, { 0, 1, 0 }));
+            EXPECT_TRUE(path_generator_node_near_vec(v.color, { 0, 1, 0 }));
         }
     }
 
@@ -662,31 +662,31 @@ namespace {
     TEST_F(PathGeneratorNodeTest, DrawnStrokePassesThroughItsPointsInOrder)
     {
         auto node = linear();
-        node.draw_to(make_vertex({ 0, 0, 0 }));
-        node.draw_to(make_vertex({ 1, 1, 0 }));
-        node.draw_to(make_vertex({ 2, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 0, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 1, 1, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 2, 0, 0 }));
         node.compute_frame();
 
         const auto up = uploaded_vertices(node);
         ASSERT_FALSE(up.empty());
         EXPECT_TRUE(contains_in_order(up, { { 0, 0, 0 }, { 1, 1, 0 }, { 2, 0, 0 } }));
-        EXPECT_TRUE(near_vec(up.front().position, { 0, 0, 0 }));
-        EXPECT_TRUE(near_vec(up.back().position, { 2, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(up.front().position, { 0, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(up.back().position, { 2, 0, 0 }));
     }
 
     TEST_F(PathGeneratorNodeTest, DrawnStrokeGrowsOnEachFrame)
     {
         auto node = linear();
-        node.draw_to(make_vertex({ 0, 0, 0 }));
-        node.draw_to(make_vertex({ 1, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 0, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 1, 0, 0 }));
         node.compute_frame();
         const auto first = node.get_vertex_count();
 
-        node.draw_to(make_vertex({ 2, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 2, 0, 0 }));
         node.compute_frame();
 
         EXPECT_GT(node.get_vertex_count(), first);
-        EXPECT_TRUE(near_vec(uploaded_vertices(node).back().position, { 2, 0, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(uploaded_vertices(node).back().position, { 2, 0, 0 }));
     }
 
     TEST_F(PathGeneratorNodeTest, DrawToAfterAnUploadDoesNotLoseTheStroke)
@@ -695,33 +695,33 @@ namespace {
         add_in_order(node, collinear_points(2));
         node.compute_frame();
 
-        node.draw_to(make_vertex({ 5, 5, 0 }));
-        node.draw_to(make_vertex({ 6, 5, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 5, 5, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 6, 5, 0 }));
         node.clear_gpu_update_flag();
         node.compute_frame();
 
-        EXPECT_TRUE(near_vec(uploaded_vertices(node).back().position, { 6, 5, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(uploaded_vertices(node).back().position, { 6, 5, 0 }));
     }
 
     TEST_F(PathGeneratorNodeTest, UniformColourAppliesToEveryVertexOfADrawnStroke)
     {
         auto node = linear();
         node.set_path_color({ 0, 1, 0, 1 });
-        node.draw_to(make_vertex({ 0, 0, 0 }, 2.0F, { 1, 0, 0 }));
-        node.draw_to(make_vertex({ 1, 0, 0 }, 2.0F, { 1, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 0, 0, 0 }, 2.0F, { 1, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 1, 0, 0 }, 2.0F, { 1, 0, 0 }));
         node.compute_frame();
 
         for (const auto& v : uploaded_vertices(node)) {
-            EXPECT_TRUE(near_vec(v.color, { 0, 1, 0 }));
+            EXPECT_TRUE(path_generator_node_near_vec(v.color, { 0, 1, 0 }));
         }
     }
 
     TEST_F(PathGeneratorNodeTest, CompletingAShortStrokeKeepsItVisible)
     {
         auto node = linear();
-        node.draw_to(make_vertex({ 0, 0, 0 }));
-        node.draw_to(make_vertex({ 1, 0, 0 }));
-        node.draw_to(make_vertex({ 2, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 0, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 1, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 2, 0, 0 }));
         node.compute_frame();
         const auto before = uploaded_vertices(node);
 
@@ -734,14 +734,14 @@ namespace {
     TEST_F(PathGeneratorNodeTest, ANewStrokeAfterCompleteDoesNotEraseTheFinishedOne)
     {
         auto node = linear();
-        node.draw_to(make_vertex({ 0, 0, 0 }));
-        node.draw_to(make_vertex({ 1, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 0, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 1, 0, 0 }));
         node.complete();
         node.compute_frame();
         const auto finished = node.get_vertex_count();
 
-        node.draw_to(make_vertex({ 5, 5, 0 }));
-        node.draw_to(make_vertex({ 6, 5, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 5, 5, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 6, 5, 0 }));
         node.compute_frame();
 
         EXPECT_GT(node.get_vertex_count(), finished);
@@ -752,7 +752,7 @@ namespace {
     {
         auto node = catmull(4);
         for (int i = 0; i < 6; ++i) {
-            node.draw_to(make_vertex({ static_cast<float>(i), (i % 2 == 0) ? 0.0F : 1.0F, 0.0F }));
+            node.draw_to(path_generator_node_make_vertex({ static_cast<float>(i), (i % 2 == 0) ? 0.0F : 1.0F, 0.0F }));
         }
 
         node.complete();
@@ -760,16 +760,16 @@ namespace {
 
         const auto up = uploaded_vertices(node);
         ASSERT_FALSE(up.empty());
-        EXPECT_TRUE(near_vec(up.back().position, { 5, 1, 0 }));
+        EXPECT_TRUE(path_generator_node_near_vec(up.back().position, { 5, 1, 0 }));
     }
 
     TEST_F(PathGeneratorNodeTest, ClearPathAlsoDiscardsDrawnStrokes)
     {
         auto node = linear();
-        node.draw_to(make_vertex({ 0, 0, 0 }));
-        node.draw_to(make_vertex({ 1, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 0, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 1, 0, 0 }));
         node.complete();
-        node.draw_to(make_vertex({ 2, 0, 0 }));
+        node.draw_to(path_generator_node_make_vertex({ 2, 0, 0 }));
         node.compute_frame();
         ASSERT_GT(node.get_vertex_count(), 0U);
 
@@ -816,7 +816,7 @@ namespace {
         const auto up = uploaded_vertices(node);
         ASSERT_EQ(up.size(), 10U);
         for (size_t i = 0; i < up.size(); ++i) {
-            EXPECT_TRUE(near_vec(up[i].position, { static_cast<float>(i), 0, 0 })) << "vertex " << i;
+            EXPECT_TRUE(path_generator_node_near_vec(up[i].position, { static_cast<float>(i), 0, 0 })) << "vertex " << i;
         }
     }
 
@@ -824,7 +824,7 @@ namespace {
     {
         PathGeneratorNode node(
             [](std::span<const LineVertex>, double) { return glm::vec3(0.0F); }, 5, 8);
-        node.add_control_point(make_vertex({ 1, 1, 1 }));
+        node.add_control_point(path_generator_node_make_vertex({ 1, 1, 1 }));
         node.compute_frame();
 
         EXPECT_EQ(node.get_vertex_count(), 0U);

@@ -19,17 +19,17 @@ using Modulation = LogicProcessor::ModulationType;
 
 namespace {
 
-    constexpr unsigned int BUFFER_SIZE = 512;
+    constexpr unsigned int LOGIC_PROCESSOR_BUFFER_SIZE = 512;
 
-    std::shared_ptr<AudioBuffer> make_block(const std::vector<double>& values)
+    std::shared_ptr<AudioBuffer> logic_processor_make_block(const std::vector<double>& values)
     {
-        auto buffer = std::make_shared<AudioBuffer>(0, BUFFER_SIZE);
+        auto buffer = std::make_shared<AudioBuffer>(0, LOGIC_PROCESSOR_BUFFER_SIZE);
         buffer->resize(static_cast<uint32_t>(values.size()));
         buffer->get_data() = values;
         return buffer;
     }
 
-    std::vector<double> ramp(size_t count)
+    std::vector<double> logic_processor_ramp(size_t count)
     {
         std::vector<double> out(count);
         for (size_t i = 0; i < count; ++i) {
@@ -140,14 +140,14 @@ TEST_P(SourceTest, AppliesItsDecisionToEverySample)
     ASSERT_NE(processor->get_logic(), nullptr);
     EXPECT_EQ(processor->get_modulation_type(), Modulation::REPLACE);
 
-    std::vector<double> input = ramp(BUFFER_SIZE);
+    std::vector<double> input = logic_processor_ramp(LOGIC_PROCESSOR_BUFFER_SIZE);
     if (GetParam() == Source::InternalSequential) {
         for (size_t i = 0; i < input.size(); ++i) {
             input[i] = (i / 3) % 2 == 0 ? 0.2 : 0.8;
         }
     }
 
-    auto buffer = make_block(input);
+    auto buffer = logic_processor_make_block(input);
     processor->process(buffer);
 
     for (size_t i = 0; i < input.size(); ++i) {
@@ -212,8 +212,8 @@ protected:
 TEST_P(ModulationTest, CombinesLogicAndBufferPerSample)
 {
     const auto processor = make_processor();
-    const auto input = ramp(BUFFER_SIZE);
-    auto buffer = make_block(input);
+    const auto input = logic_processor_ramp(LOGIC_PROCESSOR_BUFFER_SIZE);
+    auto buffer = logic_processor_make_block(input);
 
     EXPECT_EQ(processor->get_modulation_type(), GetParam().type);
 
@@ -228,8 +228,8 @@ TEST_P(ModulationTest, CombinesLogicAndBufferPerSample)
 TEST_P(ModulationTest, GenerateThenApplyMatchesProcess)
 {
     const auto processor = make_processor();
-    const auto input = ramp(BUFFER_SIZE);
-    auto buffer = make_block(input);
+    const auto input = logic_processor_ramp(LOGIC_PROCESSOR_BUFFER_SIZE);
+    auto buffer = logic_processor_make_block(input);
 
     EXPECT_FALSE(processor->has_generated_data());
     ASSERT_TRUE(processor->generate(input.size(), input));
@@ -247,8 +247,8 @@ TEST_P(ModulationTest, GenerateThenApplyMatchesProcess)
 TEST_P(ModulationTest, ExplicitFunctionOverridesTheType)
 {
     auto processor = std::make_shared<LogicProcessor>(std::make_shared<Logic>(0.5));
-    const auto input = ramp(BUFFER_SIZE);
-    auto buffer = make_block(input);
+    const auto input = logic_processor_ramp(LOGIC_PROCESSOR_BUFFER_SIZE);
+    auto buffer = logic_processor_make_block(input);
 
     processor->generate(input.size(), input);
     ASSERT_TRUE(processor->apply(buffer, GetParam().reference));
@@ -275,9 +275,9 @@ TEST_P(ModulationTest, CloneAppliesTheSameModulation)
     processor->set_reset_between_buffers(false);
     copy->set_reset_between_buffers(false);
 
-    const auto input = ramp(BUFFER_SIZE);
-    auto first = make_block(input);
-    auto second = make_block(input);
+    const auto input = logic_processor_ramp(LOGIC_PROCESSOR_BUFFER_SIZE);
+    auto first = logic_processor_make_block(input);
+    auto second = logic_processor_make_block(input);
 
     processor->process(first);
     copy->process(second);
@@ -308,7 +308,7 @@ TEST_P(HoldTest, HoldsAcrossTheBuffer)
     auto processor = std::make_shared<LogicProcessor>(0.5);
     processor->set_modulation_type(param.type);
 
-    auto buffer = make_block(param.input);
+    auto buffer = logic_processor_make_block(param.input);
     processor->process(buffer);
 
     EXPECT_EQ(buffer->get_data(), param.expected);
@@ -383,7 +383,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST(LogicProcessorEdgeTest, EmptyBufferIsIgnored)
 {
     auto processor = std::make_shared<LogicProcessor>(std::make_shared<Logic>(0.5));
-    auto empty_buffer = make_block({});
+    auto empty_buffer = logic_processor_make_block({});
 
     EXPECT_NO_THROW(processor->process(empty_buffer));
 }
@@ -393,7 +393,7 @@ TEST(LogicProcessorEdgeTest, ApplyNeedsGeneratedData)
     auto processor = std::make_shared<LogicProcessor>(std::make_shared<Logic>(0.5));
 
     EXPECT_FALSE(processor->has_generated_data());
-    EXPECT_FALSE(processor->apply(make_block(ramp(8))));
+    EXPECT_FALSE(processor->apply(logic_processor_make_block(logic_processor_ramp(8))));
 }
 
 TEST(LogicProcessorEdgeTest, GenerateRejectsEmptyInput)
@@ -417,8 +417,8 @@ TEST_P(ResetBetweenBuffersTest, DecidesWhetherTheSecondBufferStartsFresh)
 
     EXPECT_EQ(processor->get_reset_between_buffers(), reset);
 
-    auto first = make_block({ 0.3, 0.7 });
-    auto second = make_block({ 0.3, 0.7 });
+    auto first = logic_processor_make_block({ 0.3, 0.7 });
+    auto second = logic_processor_make_block({ 0.3, 0.7 });
 
     processor->process(first);
     processor->process(second);
@@ -443,7 +443,7 @@ TEST_P(DividerAcrossBuffersTest, CountContinuesFromBufferToBuffer)
 
     size_t global = 0;
     for (int pass = 0; pass < 4; ++pass) {
-        auto buffer = make_block(std::vector<double>(7, 0.0));
+        auto buffer = logic_processor_make_block(std::vector<double>(7, 0.0));
         processor->process(buffer);
 
         for (const double sample : buffer->get_data()) {
@@ -470,7 +470,7 @@ TEST_P(FlaggedNodeTest, CoefficientsAreRestoredOnlyWhenTheNodeIsAlreadyProcessed
         Nodes::atomic_add_flag(node->m_state, Nodes::NodeState::PROCESSED);
     }
 
-    processor->process(make_block(std::vector<double>(4, 0.0)));
+    processor->process(logic_processor_make_block(std::vector<double>(4, 0.0)));
 
     EXPECT_DOUBLE_EQ(node->get_coefficients().front(), flagged ? 0.0 : 4.0);
 }
@@ -488,12 +488,12 @@ TEST(LogicProcessorCoefTest, RetunedBetweenBuffers)
     auto node = std::make_shared<Logic>(above_coef(), std::vector<double> { 0.5 });
     auto processor = std::make_shared<LogicProcessor>(node);
 
-    auto buffer = make_block({ 0.4, 0.6 });
+    auto buffer = logic_processor_make_block({ 0.4, 0.6 });
     processor->process(buffer);
     EXPECT_EQ(buffer->get_data(), (std::vector<double> { 0.0, 1.0 }));
 
     node->set_coefficients({ 0.7 });
-    buffer = make_block({ 0.4, 0.6 });
+    buffer = logic_processor_make_block({ 0.4, 0.6 });
     processor->process(buffer);
     EXPECT_EQ(buffer->get_data(), (std::vector<double> { 0.0, 0.0 }));
 }
@@ -507,17 +507,17 @@ TEST(LogicProcessorNodeTest, UpdateLogicNodeTakesEffectOnTheNextBuffer)
     auto processor = std::make_shared<LogicProcessor>(
         std::make_shared<Logic>([](double x) { return x > 0.3; }));
 
-    auto buffer = make_block({ 0.2, 0.4 });
+    auto buffer = logic_processor_make_block({ 0.2, 0.4 });
     processor->process(buffer);
     EXPECT_EQ(buffer->get_data(), (std::vector<double> { 0.0, 1.0 }));
 
     processor->update_logic_node(std::make_shared<Logic>([](double x) { return x > 0.5; }));
 
-    buffer = make_block({ 0.2, 0.4 });
+    buffer = logic_processor_make_block({ 0.2, 0.4 });
     processor->process(buffer);
     EXPECT_EQ(buffer->get_data(), (std::vector<double> { 0.0, 0.0 }));
 
-    buffer = make_block({ 0.2, 0.6 });
+    buffer = logic_processor_make_block({ 0.2, 0.6 });
     processor->process(buffer);
     EXPECT_EQ(buffer->get_data(), (std::vector<double> { 0.0, 1.0 }));
 }
@@ -533,7 +533,7 @@ TEST(LogicProcessorNodeTest, ForceUseInternalBuildsANodeOnTheNextBuffer)
     processor->force_use_internal([](double x) { return x > 0.5; });
     EXPECT_FALSE(processor->is_using_internal());
 
-    auto buffer = make_block({ 0.2, 0.4 });
+    auto buffer = logic_processor_make_block({ 0.2, 0.4 });
     processor->process(buffer);
 
     EXPECT_TRUE(processor->is_using_internal());
@@ -563,8 +563,8 @@ TEST(LogicProcessorCloneTest, PerChannelStateStaysSeparate)
         std::make_shared<Logic>(LogicOperator::XOR, 0.5));
     const auto copy = processor->clone();
 
-    auto first = make_block({ 0.3, 0.7 });
-    auto second = make_block({ 0.3, 0.7 });
+    auto first = logic_processor_make_block({ 0.3, 0.7 });
+    auto second = logic_processor_make_block({ 0.3, 0.7 });
 
     processor->process(first);
     copy->process(second);
@@ -578,14 +578,14 @@ TEST(LogicProcessorCloneTest, CoefficientNodeContinuesFromTheCurrentCount)
     auto node = make_divider(4.0);
     auto processor = std::make_shared<LogicProcessor>(node);
 
-    processor->process(make_block(std::vector<double>(6, 0.0)));
+    processor->process(logic_processor_make_block(std::vector<double>(6, 0.0)));
     EXPECT_DOUBLE_EQ(node->get_coefficients().front(), 2.0);
 
     const auto copy = processor->clone();
     EXPECT_DOUBLE_EQ(copy->get_logic()->get_coefficients().front(), 2.0);
 
-    auto from_clone = make_block(std::vector<double>(4, 0.0));
-    auto from_original = make_block(std::vector<double>(4, 0.0));
+    auto from_clone = logic_processor_make_block(std::vector<double>(4, 0.0));
+    auto from_original = logic_processor_make_block(std::vector<double>(4, 0.0));
     copy->process(from_clone);
     processor->process(from_original);
 
@@ -599,7 +599,7 @@ TEST(LogicProcessorCloneTest, CloneDoesNotFollowTheOriginalAfterwards)
     auto processor = std::make_shared<LogicProcessor>(node);
     const auto copy = processor->clone();
 
-    processor->process(make_block(std::vector<double>(5, 0.0)));
+    processor->process(logic_processor_make_block(std::vector<double>(5, 0.0)));
 
     EXPECT_DOUBLE_EQ(node->get_coefficients().front(), 5.0);
     EXPECT_DOUBLE_EQ(copy->get_logic()->get_coefficients().front(), 0.0);

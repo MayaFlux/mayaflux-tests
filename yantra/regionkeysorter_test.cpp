@@ -31,7 +31,7 @@ namespace {
         return region;
     }
 
-    Yantra::Datum<Kakshya::RegionGroup> make_group(const std::vector<Kakshya::Region>& regions)
+    Yantra::Datum<Kakshya::RegionGroup> regionkeysorter_make_group(const std::vector<Kakshya::Region>& regions)
     {
         Kakshya::RegionGroup group;
         group.name = "keys";
@@ -61,7 +61,7 @@ namespace {
     {
         auto sorter = std::make_shared<RegionKeySorter>(
             keyed({ { first, SortingDirection::ASCENDING, 1.0, false } }));
-        auto input = make_group({ make_region(3.0, 0.0), make_region(1.0, 0.0), make_region(2.0, 0.0) });
+        auto input = regionkeysorter_make_group({ make_region(3.0, 0.0), make_region(1.0, 0.0), make_region(2.0, 0.0) });
 
         auto result = sorter->apply_operation(input);
 
@@ -72,7 +72,7 @@ namespace {
     {
         auto sorter = std::make_shared<RegionKeySorter>(
             keyed({ { first, SortingDirection::DESCENDING, 1.0, false } }));
-        auto input = make_group({ make_region(1.0, 0.0), make_region(3.0, 0.0), make_region(2.0, 0.0) });
+        auto input = regionkeysorter_make_group({ make_region(1.0, 0.0), make_region(3.0, 0.0), make_region(2.0, 0.0) });
 
         auto result = sorter->apply_operation(input);
 
@@ -85,7 +85,7 @@ namespace {
             { first, SortingDirection::ASCENDING, 1.0, false },
             { second, SortingDirection::DESCENDING, 1.0, false },
         }));
-        auto input = make_group({ make_region(1.0, 1.0), make_region(1.0, 3.0), make_region(0.0, 5.0) });
+        auto input = regionkeysorter_make_group({ make_region(1.0, 1.0), make_region(1.0, 3.0), make_region(0.0, 5.0) });
 
         auto result = sorter->apply_operation(input);
 
@@ -96,7 +96,7 @@ namespace {
     TEST(RegionKeySorterTest, EmptyKeysLeaveTheGroupInItsOrder)
     {
         auto sorter = std::make_shared<RegionKeySorter>();
-        auto input = make_group({ make_region(3.0, 0.0), make_region(1.0, 0.0), make_region(2.0, 0.0) });
+        auto input = regionkeysorter_make_group({ make_region(3.0, 0.0), make_region(1.0, 0.0), make_region(2.0, 0.0) });
 
         auto result = sorter->apply_operation(input);
 
@@ -109,7 +109,7 @@ namespace {
             { first, SortingDirection::ASCENDING, 1.0, false },
             { second, SortingDirection::ASCENDING, 1.0, false },
         }));
-        auto input = make_group({ make_region(1.0, 1.0), make_region(2.0, std::nullopt) });
+        auto input = regionkeysorter_make_group({ make_region(1.0, 1.0), make_region(2.0, std::nullopt) });
 
         EXPECT_THROW(sorter->apply_operation(input), std::runtime_error);
     }

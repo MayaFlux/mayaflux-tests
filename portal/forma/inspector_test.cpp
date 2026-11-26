@@ -46,7 +46,7 @@ namespace {
             co_await Kriya::FrameDelay { .frames_to_wait = 1 };
     }
 
-    Vruta::Event idle_listener(std::shared_ptr<Vruta::BroadcastSource<int>> source)
+    Vruta::Event inspector_idle_listener(std::shared_ptr<Vruta::BroadcastSource<int>> source)
     {
         auto& promise = co_await Kriya::GetEventPromise {};
         while (!promise.should_terminate)
@@ -467,7 +467,7 @@ TEST_F(FormaInspectorTest, TasksAreFilteredByProcessingToken)
 TEST_F(FormaInspectorTest, AnEventShowsItsTokenAndActiveRows)
 {
     auto source = std::make_shared<Vruta::BroadcastSource<int>>();
-    auto event = std::make_shared<Vruta::Event>(idle_listener(source));
+    auto event = std::make_shared<Vruta::Event>(inspector_idle_listener(source));
 
     auto named = inspector.event(event, "listener", surface, cursor);
     auto unnamed = inspector.event(event, "", surface, cursor);
@@ -480,8 +480,8 @@ TEST_F(FormaInspectorTest, TheEventManagerResultListsEveryEventAndIsReused)
 {
     auto source = std::make_shared<Vruta::BroadcastSource<int>>();
     const size_t baseline = events->get_all_events().size();
-    events->add_event(std::make_shared<Vruta::Event>(idle_listener(source)), "first");
-    events->add_event(std::make_shared<Vruta::Event>(idle_listener(source)), "second");
+    events->add_event(std::make_shared<Vruta::Event>(inspector_idle_listener(source)), "first");
+    events->add_event(std::make_shared<Vruta::Event>(inspector_idle_listener(source)), "second");
 
     auto& first = keep(inspector.event_manager(surface, cursor));
     const size_t built = layer->size();

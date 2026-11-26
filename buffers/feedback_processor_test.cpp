@@ -17,11 +17,11 @@ using Buffers::FeedbackProcessor;
 
 namespace {
 
-    constexpr unsigned int BUFFER_SIZE = 512;
+    constexpr unsigned int FEEDBACK_PROCESSOR_BUFFER_SIZE = 512;
 
-    std::shared_ptr<AudioBuffer> make_block(size_t samples, double fill = 0.0)
+    std::shared_ptr<AudioBuffer> feedback_processor_make_block(size_t samples, double fill = 0.0)
     {
-        auto buffer = std::make_shared<AudioBuffer>(0, BUFFER_SIZE);
+        auto buffer = std::make_shared<AudioBuffer>(0, FEEDBACK_PROCESSOR_BUFFER_SIZE);
         buffer->resize(static_cast<uint32_t>(samples));
         std::ranges::fill(buffer->get_data(), fill);
         return buffer;
@@ -29,7 +29,7 @@ namespace {
 
     std::shared_ptr<AudioBuffer> make_impulse(size_t samples)
     {
-        auto buffer = make_block(samples);
+        auto buffer = feedback_processor_make_block(samples);
         buffer->get_data().front() = 1.0;
         return buffer;
     }
@@ -52,7 +52,7 @@ namespace {
 
 TEST(FeedbackProcessorTest, WorksOnAPlainAudioBufferLikeTheOldProcessor)
 {
-    auto buffer = make_block(16, 1.0);
+    auto buffer = feedback_processor_make_block(16, 1.0);
     auto processor = std::make_shared<FeedbackProcessor>(0.5F, 16);
 
     processor->process(buffer);
@@ -74,8 +74,8 @@ TEST(FeedbackProcessorTest, WorksOnAPlainAudioBufferLikeTheOldProcessor)
 
 TEST(FeedbackProcessorTest, OneProcessorKeepsSeparateHistoryPerBuffer)
 {
-    auto first = make_block(16, 2.0);
-    auto second = make_block(16, 1.0);
+    auto first = feedback_processor_make_block(16, 2.0);
+    auto second = feedback_processor_make_block(16, 1.0);
     auto processor = std::make_shared<FeedbackProcessor>(0.5F, 16);
 
     processor->process(first);
@@ -174,8 +174,8 @@ TEST(FeedbackProcessorTest, CoefficientArrayIsPerBufferState)
     } };
     auto processor = std::make_shared<FeedbackProcessor>(std::move(counter), std::vector<double> { 1.0 }, std::vector<double> { 0.0 });
 
-    auto first = make_block(8);
-    auto second = make_block(4);
+    auto first = feedback_processor_make_block(8);
+    auto second = feedback_processor_make_block(4);
     processor->process(first);
     processor->process(first);
     processor->process(second);
@@ -186,7 +186,7 @@ TEST(FeedbackProcessorTest, CoefficientArrayIsPerBufferState)
 
 TEST(FeedbackBufferRingTest,CloneGetsItsOwnRingAndProcessor)
 {
-    auto original = std::make_shared<FeedbackBuffer>(0, BUFFER_SIZE, 0.5F, 64);
+    auto original = std::make_shared<FeedbackBuffer>(0, FEEDBACK_PROCESSOR_BUFFER_SIZE, 0.5F, 64);
     original->resize(64);
     std::ranges::fill(original->get_data(), 1.0);
 
@@ -208,7 +208,7 @@ TEST(FeedbackBufferRingTest,CloneGetsItsOwnRingAndProcessor)
 
 TEST(FeedbackBufferRingTest,RingGrowsToFitALongerLag)
 {
-    auto buffer = std::make_shared<FeedbackBuffer>(0, BUFFER_SIZE, 0.5F, 64);
+    auto buffer = std::make_shared<FeedbackBuffer>(0, FEEDBACK_PROCESSOR_BUFFER_SIZE, 0.5F, 64);
     buffer->set_default_processor(std::make_shared<FeedbackProcessor>(recirculate(0.5), std::vector<double> { 700.0 }));
 
     buffer->process_default();
@@ -218,7 +218,7 @@ TEST(FeedbackBufferRingTest,RingGrowsToFitALongerLag)
 
 TEST(FeedbackBufferRingTest,FeedSamplesChangesTheDefaultLag)
 {
-    auto buffer = std::make_shared<FeedbackBuffer>(0, BUFFER_SIZE, 0.5F, 512);
+    auto buffer = std::make_shared<FeedbackBuffer>(0, FEEDBACK_PROCESSOR_BUFFER_SIZE, 0.5F, 512);
     buffer->resize(8);
     buffer->set_feed_samples(2);
     buffer->get_data().front() = 1.0;
@@ -239,7 +239,7 @@ TEST(FeedbackInterpolationTest, CubicFollowsASineCloserThanLinear)
     constexpr size_t samples = 128;
 
     const auto worst_error = [&](size_t order) {
-        auto buffer = make_block(samples);
+        auto buffer = feedback_processor_make_block(samples);
         for (size_t i = 0; i < samples; ++i) {
             buffer->get_data().at(i) = std::sin(2.0 * std::numbers::pi * frequency * static_cast<double>(i));
         }
@@ -295,13 +295,13 @@ class LagSourceTest : public ::testing::TestWithParam<bool> { };
 
 TEST_P(LagSourceTest, ReadsTheSourceOneBlockBehindWhicheverRunsFirst)
 {
-    auto source = std::make_shared<FeedbackBuffer>(0, BUFFER_SIZE, 0.5F, 8);
+    auto source = std::make_shared<FeedbackBuffer>(0, FEEDBACK_PROCESSOR_BUFFER_SIZE, 0.5F, 8);
     source->resize(8);
     source->set_default_processor(std::make_shared<FeedbackProcessor>(
         FeedbackProcessor::Combine { [](double x, std::span<const double>, std::span<double>) { return x; } },
         std::vector<double> { 1.0 }));
 
-    auto sink = make_block(8);
+    auto sink = feedback_processor_make_block(8);
     auto reader = std::make_shared<FeedbackProcessor>(
         FeedbackProcessor::Combine { [](double, std::span<const double> taps, std::span<double>) { return taps[0]; } },
         std::vector<double> { 8.0 });
@@ -335,7 +335,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST(FeedbackBufferRingTest, WriteCountStartsAtZeroForAClone)
 {
-    auto original = std::make_shared<FeedbackBuffer>(0, BUFFER_SIZE, 0.5F, 8);
+    auto original = std::make_shared<FeedbackBuffer>(0, FEEDBACK_PROCESSOR_BUFFER_SIZE, 0.5F, 8);
     original->resize(8);
     original->process_default();
     EXPECT_EQ(original->get_write_count(), 8U);

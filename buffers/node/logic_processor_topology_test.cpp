@@ -20,13 +20,13 @@ using Modulation = LogicProcessor::ModulationType;
 
 namespace {
 
-    constexpr unsigned int BUFFER_SIZE = 512;
+    constexpr unsigned int LOGIC_PROCESSOR_TOPOLOGY_BUFFER_SIZE = 512;
     constexpr double HIGH = 0.9;
     constexpr double LOW = 0.1;
 
-    std::shared_ptr<AudioBuffer> make_block(const std::vector<double>& values)
+    std::shared_ptr<AudioBuffer> logic_processor_topology_make_block(const std::vector<double>& values)
     {
-        auto buffer = std::make_shared<AudioBuffer>(0, BUFFER_SIZE);
+        auto buffer = std::make_shared<AudioBuffer>(0, LOGIC_PROCESSOR_TOPOLOGY_BUFFER_SIZE);
         buffer->resize(static_cast<uint32_t>(values.size()));
         buffer->get_data() = values;
         return buffer;
@@ -121,8 +121,8 @@ TEST_P(KeyedGateTest, TwoChannelsThroughAnyTwoInputGate)
         key_data[i] = (i & 1U) != 0U ? HIGH : LOW;
         own_data[i] = (i & 2U) != 0U ? HIGH : LOW;
     }
-    auto key = make_block(key_data);
-    auto own = make_block(own_data);
+    auto key = logic_processor_topology_make_block(key_data);
+    auto own = logic_processor_topology_make_block(own_data);
     processor->add_key(key);
 
     processor->process(own);
@@ -149,9 +149,9 @@ TEST(LogicProcessorKeyTest, TwoKeysAndTheBufferVoteAsAMajority)
         second[i] = (i & 2U) != 0U ? HIGH : LOW;
         own_data[i] = (i & 4U) != 0U ? HIGH : LOW;
     }
-    auto key_a = make_block(first);
-    auto key_b = make_block(second);
-    auto own = make_block(own_data);
+    auto key_a = logic_processor_topology_make_block(first);
+    auto key_b = logic_processor_topology_make_block(second);
+    auto own = logic_processor_topology_make_block(own_data);
     processor->add_key(key_a);
     processor->add_key(key_b);
 
@@ -169,8 +169,8 @@ TEST(LogicProcessorKeyTest, SidechainGatesTheBufferWithModulation)
 
     const std::vector<double> key_data { HIGH, LOW, HIGH, LOW, HIGH, HIGH };
     const std::vector<double> own_data { 0.8, 0.8, 0.2, 0.9, 0.7, 0.4 };
-    auto key = make_block(key_data);
-    auto own = make_block(own_data);
+    auto key = logic_processor_topology_make_block(key_data);
+    auto own = logic_processor_topology_make_block(own_data);
     processor->add_key(key);
 
     processor->process(own);
@@ -184,8 +184,8 @@ TEST(LogicProcessorKeyTest, SidechainGatesTheBufferWithModulation)
 TEST(LogicProcessorKeyTest, AKeyShorterThanTheBufferReadsAsSilence)
 {
     auto processor = std::make_shared<LogicProcessor>(truth_gate(2, 0b0110));
-    auto key = make_block({ HIGH, HIGH });
-    auto own = make_block({ HIGH, HIGH, HIGH, HIGH });
+    auto key = logic_processor_topology_make_block({ HIGH, HIGH });
+    auto own = logic_processor_topology_make_block({ HIGH, HIGH, HIGH, HIGH });
     processor->add_key(key);
 
     processor->process(own);
@@ -196,11 +196,11 @@ TEST(LogicProcessorKeyTest, AKeyShorterThanTheBufferReadsAsSilence)
 TEST(LogicProcessorKeyTest, ADeadKeyReadsAsSilence)
 {
     auto processor = std::make_shared<LogicProcessor>(truth_gate(2, 0b0110));
-    auto key = make_block({ HIGH, HIGH, HIGH });
+    auto key = logic_processor_topology_make_block({ HIGH, HIGH, HIGH });
     processor->add_key(key);
     key.reset();
 
-    auto own = make_block({ HIGH, LOW, HIGH });
+    auto own = logic_processor_topology_make_block({ HIGH, LOW, HIGH });
     processor->process(own);
 
     EXPECT_EQ(own->get_data(), (std::vector<double> { 1.0, 0.0, 1.0 }));
@@ -209,8 +209,8 @@ TEST(LogicProcessorKeyTest, ADeadKeyReadsAsSilence)
 TEST(LogicProcessorKeyTest, KeysAreIgnoredByANodeThatIsNotParallel)
 {
     auto processor = std::make_shared<LogicProcessor>(0.5);
-    auto key = make_block({ LOW, LOW, LOW });
-    auto own = make_block({ HIGH, LOW, HIGH });
+    auto key = logic_processor_topology_make_block({ LOW, LOW, LOW });
+    auto own = logic_processor_topology_make_block({ HIGH, LOW, HIGH });
     processor->add_key(key);
 
     processor->process(own);
@@ -221,11 +221,11 @@ TEST(LogicProcessorKeyTest, KeysAreIgnoredByANodeThatIsNotParallel)
 TEST(LogicProcessorKeyTest, ClearKeysRestoresTheDefaultReading)
 {
     auto processor = std::make_shared<LogicProcessor>(truth_gate(2, 0b1000));
-    auto key = make_block({ LOW, LOW });
+    auto key = logic_processor_topology_make_block({ LOW, LOW });
     processor->add_key(key);
     processor->clear_keys();
 
-    auto own = make_block({ HIGH, HIGH });
+    auto own = logic_processor_topology_make_block({ HIGH, HIGH });
     processor->process(own);
 
     EXPECT_EQ(own->get_data(), (std::vector<double> { 0.0, 0.0 }));
@@ -234,12 +234,12 @@ TEST(LogicProcessorKeyTest, ClearKeysRestoresTheDefaultReading)
 TEST(LogicProcessorKeyTest, CloneKeepsTheKeysAndGivesTheSameResult)
 {
     auto processor = std::make_shared<LogicProcessor>(truth_gate(2, 0b0110));
-    auto key = make_block({ HIGH, LOW, HIGH, LOW });
+    auto key = logic_processor_topology_make_block({ HIGH, LOW, HIGH, LOW });
     processor->add_key(key);
     const auto copy = processor->clone();
 
-    auto first = make_block({ HIGH, HIGH, LOW, LOW });
-    auto second = make_block({ HIGH, HIGH, LOW, LOW });
+    auto first = logic_processor_topology_make_block({ HIGH, HIGH, LOW, LOW });
+    auto second = logic_processor_topology_make_block({ HIGH, HIGH, LOW, LOW });
     processor->process(first);
     copy->process(second);
 
@@ -260,7 +260,7 @@ TEST_P(PlaneWidthTest, APassThroughNodeQuantisesToTheWord)
     processor->set_bit_planes(bits);
 
     const auto input = ramp(64, -1.0, 1.0);
-    auto buffer = make_block(input);
+    auto buffer = logic_processor_topology_make_block(input);
     processor->process(buffer);
 
     for (size_t i = 0; i < input.size(); ++i) {
@@ -275,7 +275,7 @@ TEST_P(PlaneWidthTest, ANotNodeComplementsEveryBitAndNegates)
     processor->set_bit_planes(bits);
 
     const auto input = ramp(64, -1.0, 1.0);
-    auto buffer = make_block(input);
+    auto buffer = logic_processor_topology_make_block(input);
     processor->process(buffer);
 
     for (size_t i = 0; i < input.size(); ++i) {
@@ -291,8 +291,8 @@ TEST_P(PlaneWidthTest, XorAgainstAnotherChannelIsBitwiseOnTheWords)
 
     const auto own_values = ramp(48, -0.9, 0.95);
     const auto key_values = ramp(48, 0.8, -0.7);
-    auto key = make_block(key_values);
-    auto buffer = make_block(own_values);
+    auto key = logic_processor_topology_make_block(key_values);
+    auto buffer = logic_processor_topology_make_block(own_values);
     processor->add_key(key);
 
     processor->process(buffer);
@@ -311,8 +311,8 @@ TEST_P(PlaneWidthTest, AndWithAMaskKeepsOnlyTheHighPlanes)
 
     const auto own_values = ramp(40, -1.0, 1.0);
     const std::vector<double> mask_values(40, 0.5);
-    auto key = make_block(mask_values);
-    auto buffer = make_block(own_values);
+    auto key = logic_processor_topology_make_block(mask_values);
+    auto buffer = logic_processor_topology_make_block(own_values);
     processor->add_key(key);
 
     processor->process(buffer);
@@ -336,7 +336,7 @@ TEST(LogicProcessorPlaneTest, EveryPlaneKeepsItsOwnStateAndTheTemplateIsUntouche
     processor->set_bit_planes(bits);
 
     const auto input = ramp(64, -1.0, 1.0);
-    auto buffer = make_block(input);
+    auto buffer = logic_processor_topology_make_block(input);
     processor->process(buffer);
 
     std::array<bool, bits> previous {};
@@ -363,11 +363,11 @@ TEST(LogicProcessorPlaneTest, ReplacingTheNodeRetakesTheClones)
     auto processor = std::make_shared<LogicProcessor>(0.5);
     processor->set_bit_planes(4);
 
-    auto first = make_block({ 0.7, -0.7 });
+    auto first = logic_processor_topology_make_block({ 0.7, -0.7 });
     processor->process(first);
 
     processor->update_logic_node(std::make_shared<Logic>(LogicOperator::NOT, 0.5));
-    auto second = make_block({ 0.7, -0.7 });
+    auto second = logic_processor_topology_make_block({ 0.7, -0.7 });
     processor->process(second);
 
     EXPECT_NEAR(second->get_data()[0], -first->get_data()[0], 1e-12);
@@ -380,7 +380,7 @@ TEST(LogicProcessorPlaneTest, ZeroBitsReturnsToTheDefaultReading)
     processor->set_bit_planes(8);
     processor->set_bit_planes(0);
 
-    auto buffer = make_block({ 0.7, -0.7, 0.2 });
+    auto buffer = logic_processor_topology_make_block({ 0.7, -0.7, 0.2 });
     processor->process(buffer);
 
     EXPECT_EQ(buffer->get_data(), (std::vector<double> { 1.0, 0.0, 0.0 }));
@@ -393,7 +393,7 @@ TEST(LogicProcessorPlaneTest, PlanesFeedTheModulation)
     processor->set_modulation_type(Modulation::ADD);
 
     const auto input = ramp(16, -1.0, 1.0);
-    auto buffer = make_block(input);
+    auto buffer = logic_processor_topology_make_block(input);
     processor->process(buffer);
 
     for (size_t i = 0; i < input.size(); ++i) {
@@ -409,8 +409,8 @@ TEST(LogicProcessorPlaneTest, CloneKeepsThePlaneWidth)
     const auto copy = processor->clone();
 
     const auto input = ramp(32, -1.0, 1.0);
-    auto first = make_block(input);
-    auto second = make_block(input);
+    auto first = logic_processor_topology_make_block(input);
+    auto second = logic_processor_topology_make_block(input);
     processor->process(first);
     copy->process(second);
 
@@ -431,7 +431,7 @@ TEST_P(AutomatonTest, MatchesTheReferenceAutomaton)
     processor->set_neighbourhood(1, generations, wrap);
 
     const auto seed = seed_cells(size);
-    auto buffer = make_block(as_audio(seed));
+    auto buffer = logic_processor_topology_make_block(as_audio(seed));
     processor->process(buffer);
 
     const auto expected = evolve(seed, 1, rule, generations, wrap);
@@ -463,14 +463,14 @@ TEST(LogicProcessorAutomatonTest, RuleNinetyFromOneCellDrawsTheSierpinskiRows)
     seed[7] = 0.5;
 
     processor->set_neighbourhood(1, 1, false);
-    auto first = make_block(seed);
+    auto first = logic_processor_topology_make_block(seed);
     processor->process(first);
     for (size_t i = 0; i < 15; ++i) {
         EXPECT_DOUBLE_EQ(first->get_data().at(i), (i == 6 || i == 8) ? 1.0 : 0.0) << "i=" << i;
     }
 
     processor->set_neighbourhood(1, 2, false);
-    auto second = make_block(seed);
+    auto second = logic_processor_topology_make_block(seed);
     processor->process(second);
     for (size_t i = 0; i < 15; ++i) {
         EXPECT_DOUBLE_EQ(second->get_data().at(i), (i == 5 || i == 9) ? 1.0 : 0.0) << "i=" << i;
@@ -487,7 +487,7 @@ TEST_P(WideAutomatonTest, RadiusTwoMajorityMatchesTheReference)
     processor->set_neighbourhood(2, generations, wrap);
 
     const auto seed = seed_cells(size);
-    auto buffer = make_block(as_audio(seed));
+    auto buffer = logic_processor_topology_make_block(as_audio(seed));
     processor->process(buffer);
 
     const auto expected = evolve(seed, 2, table, generations, wrap);
@@ -519,7 +519,7 @@ TEST_P(AutomatonMemoryTest, BlocksPerturbThePreviousResult)
             input[i] = ((i * 5 + block * 3 + 3) % 7) < 3 ? 1 : 0;
         }
 
-        auto buffer = make_block(as_audio(input));
+        auto buffer = logic_processor_topology_make_block(as_audio(input));
         processor->process(buffer);
 
         std::vector<int> seeded(12);
@@ -545,16 +545,16 @@ TEST(LogicProcessorAutomatonTest, AttachingForgetsTheMemory)
     processor->set_neighbourhood(1, 1, true, true);
 
     const auto input = as_audio(seed_cells(10));
-    auto first = make_block(input);
+    auto first = logic_processor_topology_make_block(input);
     processor->process(first);
     const auto first_result = first->get_data();
 
-    auto second = make_block(input);
+    auto second = logic_processor_topology_make_block(input);
     processor->process(second);
     EXPECT_NE(second->get_data(), first_result);
 
     processor->on_attach(second);
-    auto third = make_block(input);
+    auto third = logic_processor_topology_make_block(input);
     processor->process(third);
     EXPECT_EQ(third->get_data(), first_result);
 }
@@ -565,7 +565,7 @@ TEST(LogicProcessorAutomatonTest, ClearNeighbourhoodRestoresTheDefaultReading)
     processor->set_neighbourhood(0, 3, true);
     processor->clear_neighbourhood();
 
-    auto buffer = make_block({ HIGH, LOW, HIGH });
+    auto buffer = logic_processor_topology_make_block({ HIGH, LOW, HIGH });
     processor->process(buffer);
 
     EXPECT_EQ(buffer->get_data(), (std::vector<double> { 1.0, 0.0, 1.0 }));
@@ -576,7 +576,7 @@ TEST(LogicProcessorAutomatonTest, ANodeThatIsNotParallelIgnoresIt)
     auto processor = std::make_shared<LogicProcessor>(0.5);
     processor->set_neighbourhood(1, 4, true);
 
-    auto buffer = make_block({ HIGH, LOW, HIGH });
+    auto buffer = logic_processor_topology_make_block({ HIGH, LOW, HIGH });
     processor->process(buffer);
 
     EXPECT_EQ(buffer->get_data(), (std::vector<double> { 1.0, 0.0, 1.0 }));
@@ -588,11 +588,11 @@ TEST(LogicProcessorAutomatonTest, CloneKeepsTheSettingsButNotTheMemory)
     processor->set_neighbourhood(1, 2, true, true);
 
     const auto input = as_audio(seed_cells(10));
-    auto warmup = make_block(input);
+    auto warmup = logic_processor_topology_make_block(input);
     processor->process(warmup);
     const auto copy = processor->clone();
 
-    auto from_clone = make_block(input);
+    auto from_clone = logic_processor_topology_make_block(input);
     copy->process(from_clone);
 
     EXPECT_EQ(from_clone->get_data(), warmup->get_data());
@@ -603,7 +603,7 @@ TEST(LogicProcessorAutomatonTest, ZeroGenerationsAreTheSameAsOff)
     auto processor = std::make_shared<LogicProcessor>(truth_gate(1, 0b10));
     processor->set_neighbourhood(0, 0, true);
 
-    auto buffer = make_block({ HIGH, LOW, HIGH });
+    auto buffer = logic_processor_topology_make_block({ HIGH, LOW, HIGH });
     processor->process(buffer);
 
     EXPECT_EQ(buffer->get_data(), (std::vector<double> { 1.0, 0.0, 1.0 }));
@@ -617,7 +617,7 @@ TEST(LogicProcessorAutomatonTest, AutomatonOutputFeedsTheModulation)
     processor->set_threshold_remap_values(1.0, -1.0);
 
     const auto seed = seed_cells(12);
-    auto buffer = make_block(as_audio(seed));
+    auto buffer = logic_processor_topology_make_block(as_audio(seed));
     processor->process(buffer);
 
     const auto expected = evolve(seed, 1, 90, 1, true);

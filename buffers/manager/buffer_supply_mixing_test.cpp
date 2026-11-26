@@ -22,13 +22,13 @@ using Buffers::TokenUnitManager;
 
 namespace {
 
-    constexpr uint32_t UNIT_SIZE = 512;
+    constexpr uint32_t BUFFER_SUPPLY_MIXING_UNIT_SIZE = 512;
 
     class BufferSupplyMixingFixture : public ::testing::Test {
     protected:
         void SetUp() override
         {
-            units = std::make_unique<TokenUnitManager>(Buffers::AUDIO_BACKEND, Buffers::GRAPHICS_BACKEND, UNIT_SIZE);
+            units = std::make_unique<TokenUnitManager>(Buffers::AUDIO_BACKEND, Buffers::GRAPHICS_BACKEND, BUFFER_SUPPLY_MIXING_UNIT_SIZE);
             access = std::make_unique<BufferAccessControl>(*units);
             mixing = std::make_unique<BufferSupplyMixing>(*units, *access);
         }

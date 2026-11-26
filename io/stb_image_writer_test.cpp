@@ -13,12 +13,12 @@ MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta:
 namespace MayaFlux::Test {
 namespace {
 
-    std::string absolute_path(const std::string& filename)
+    std::string stb_image_writer_absolute_path(const std::string& filename)
     {
         return (std::filesystem::current_path() / filename).string();
     }
 
-    std::string read_bytes(const std::string& path)
+    std::string stb_image_writer_read_bytes(const std::string& path)
     {
         std::ifstream input(path, std::ios::binary);
         return { std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>() };
@@ -58,12 +58,12 @@ namespace {
     {
         ScopedWorkingDir files;
         const auto source = byte_image(GetParam());
-        const auto path = absolute_path("channels.png");
+        const auto path = stb_image_writer_absolute_path("channels.png");
         IO::STBImageWriter writer;
         ASSERT_TRUE(writer.write(path, source)) << writer.get_last_error();
 
         const auto file = IO::ImageReader::load(path, 0);
-        const auto bytes = read_bytes(path);
+        const auto bytes = stb_image_writer_read_bytes(path);
         ASSERT_FALSE(bytes.empty());
         const auto memory = IO::ImageReader::load_from_memory(bytes.data(), bytes.size());
         ASSERT_TRUE(file.has_value());
@@ -91,7 +91,7 @@ namespace {
         for (const int compression : { 0, 9, -1, 42 }) {
             IO::ImageWriteOptions options;
             options.compression = compression;
-            const auto path = absolute_path("compression_" + std::to_string(compression) + ".png");
+            const auto path = stb_image_writer_absolute_path("compression_" + std::to_string(compression) + ".png");
             ASSERT_TRUE(writer.write(path, source, options)) << writer.get_last_error();
             const auto loaded = IO::ImageReader::load(path);
             ASSERT_TRUE(loaded.has_value());
@@ -101,7 +101,7 @@ namespace {
 
         IO::ImageWriteOptions options;
         options.flip_vertically = true;
-        const auto flipped_path = absolute_path("flipped.png");
+        const auto flipped_path = stb_image_writer_absolute_path("flipped.png");
         ASSERT_TRUE(writer.write(flipped_path, source, options)) << writer.get_last_error();
         const auto flipped = IO::ImageReader::load(flipped_path);
         ASSERT_TRUE(flipped.has_value());
@@ -112,7 +112,7 @@ namespace {
         expected.insert(expected.end(), pixels.begin(), pixels.begin() + static_cast<std::ptrdiff_t>(row_size));
         EXPECT_EQ(*flipped->as_uint8(), expected);
 
-        const auto normal_path = absolute_path("normal.png");
+        const auto normal_path = stb_image_writer_absolute_path("normal.png");
         ASSERT_TRUE(writer.write(normal_path, source)) << writer.get_last_error();
         const auto normal = IO::ImageReader::load(normal_path);
         ASSERT_TRUE(normal.has_value());
@@ -128,10 +128,10 @@ namespace {
         IO::STBImageWriter writer;
         IO::ImageWriteOptions options;
         options.compression = 0;
-        const auto uncompressed = absolute_path("uncompressed.png");
+        const auto uncompressed = stb_image_writer_absolute_path("uncompressed.png");
         ASSERT_TRUE(writer.write(uncompressed, source, options)) << writer.get_last_error();
         options.compression = 9;
-        const auto compressed = absolute_path("compressed.png");
+        const auto compressed = stb_image_writer_absolute_path("compressed.png");
         ASSERT_TRUE(writer.write(compressed, source, options)) << writer.get_last_error();
         EXPECT_GT(std::filesystem::file_size(uncompressed), std::filesystem::file_size(compressed));
         for (const auto& path : { uncompressed, compressed }) {
@@ -147,12 +147,12 @@ namespace {
         ScopedWorkingDir files;
         IO::STBImageWriter writer;
         const auto reset = byte_image(4);
-        ASSERT_TRUE(writer.write(absolute_path("reset.png"), reset)) << writer.get_last_error();
+        ASSERT_TRUE(writer.write(stb_image_writer_absolute_path("reset.png"), reset)) << writer.get_last_error();
         for (const auto* extension : { "bmp", "tga" }) {
             for (const uint32_t channels : { 3U, 4U }) {
                 SCOPED_TRACE(std::string(extension) + " channels=" + std::to_string(channels));
                 const auto source = byte_image(channels);
-                const auto path = absolute_path("image_" + std::to_string(channels) + "." + extension);
+                const auto path = stb_image_writer_absolute_path("image_" + std::to_string(channels) + "." + extension);
                 ASSERT_TRUE(writer.write(path, source)) << writer.get_last_error();
                 const auto loaded = IO::ImageReader::load(path, 0);
                 ASSERT_TRUE(loaded.has_value());
@@ -176,7 +176,7 @@ namespace {
                 pixels[i] = channels == 1 ? 128 : std::array<uint8_t, 3> { 160, 90, 35 }[i % 3];
             }
             for (const auto* extension : { "jpg", "jpeg" }) {
-                const auto path = absolute_path("image_" + std::to_string(channels) + "." + extension);
+                const auto path = stb_image_writer_absolute_path("image_" + std::to_string(channels) + "." + extension);
                 IO::ImageWriteOptions options;
                 options.quality = 100;
                 ASSERT_TRUE(writer.write(path, source, options)) << writer.get_last_error();
@@ -204,12 +204,12 @@ namespace {
         for (const auto& [requested, clamped] : { std::pair { 0, 1 }, std::pair { 101, 100 } }) {
             IO::ImageWriteOptions options;
             options.quality = requested;
-            const auto requested_path = absolute_path("quality_requested.jpg");
+            const auto requested_path = stb_image_writer_absolute_path("quality_requested.jpg");
             ASSERT_TRUE(writer.write(requested_path, source, options)) << writer.get_last_error();
             options.quality = clamped;
-            const auto clamped_path = absolute_path("quality_clamped.jpg");
+            const auto clamped_path = stb_image_writer_absolute_path("quality_clamped.jpg");
             ASSERT_TRUE(writer.write(clamped_path, source, options)) << writer.get_last_error();
-            EXPECT_EQ(read_bytes(requested_path), read_bytes(clamped_path));
+            EXPECT_EQ(stb_image_writer_read_bytes(requested_path), stb_image_writer_read_bytes(clamped_path));
         }
     }
 
@@ -224,7 +224,7 @@ namespace {
         options.quality = 100;
         options.flip_vertically = true;
         IO::STBImageWriter writer;
-        const auto path = absolute_path("flipped.jpg");
+        const auto path = stb_image_writer_absolute_path("flipped.jpg");
         ASSERT_TRUE(writer.write(path, source, options)) << writer.get_last_error();
         const auto loaded = IO::ImageReader::load(path, 1);
         ASSERT_TRUE(loaded.has_value());
@@ -233,7 +233,7 @@ namespace {
         ASSERT_EQ(loaded->as_uint8()->size(), pixels.size());
         EXPECT_NEAR(loaded->as_uint8()->front(), 200, 3);
         EXPECT_NEAR(loaded->as_uint8()->back(), 32, 3);
-        ASSERT_TRUE(writer.write(absolute_path("reset.jpg"), source)) << writer.get_last_error();
+        ASSERT_TRUE(writer.write(stb_image_writer_absolute_path("reset.jpg"), source)) << writer.get_last_error();
     }
 
     TEST(STBImageWriterTest, HdrFloatPixelsDecodeThroughTheEightBitReader)
@@ -250,7 +250,7 @@ namespace {
             if (channels == 4) {
                 pixels[3] = 0.5F;
             }
-            const auto path = absolute_path("image_" + std::to_string(channels) + ".hdr");
+            const auto path = stb_image_writer_absolute_path("image_" + std::to_string(channels) + ".hdr");
             ASSERT_TRUE(writer.write(path, *source)) << writer.get_last_error();
             const auto loaded = IO::ImageReader::load(path, 0);
             ASSERT_TRUE(loaded.has_value());
@@ -273,38 +273,38 @@ namespace {
         ASSERT_TRUE(floats.has_value());
         ASSERT_TRUE(uint16.has_value());
         for (const auto* extension : { "png", "jpg", "bmp", "tga" }) {
-            EXPECT_FALSE(writer.write(absolute_path(std::string("invalid.") + extension), *floats));
+            EXPECT_FALSE(writer.write(stb_image_writer_absolute_path(std::string("invalid.") + extension), *floats));
             EXPECT_NE(writer.get_last_error().find("uint8"), std::string::npos);
-            EXPECT_FALSE(writer.write(absolute_path(std::string("invalid.") + extension), *uint16));
+            EXPECT_FALSE(writer.write(stb_image_writer_absolute_path(std::string("invalid.") + extension), *uint16));
         }
-        EXPECT_FALSE(writer.write(absolute_path("invalid.hdr"), bytes));
+        EXPECT_FALSE(writer.write(stb_image_writer_absolute_path("invalid.hdr"), bytes));
         EXPECT_NE(writer.get_last_error().find("float"), std::string::npos);
-        EXPECT_FALSE(writer.write(absolute_path("invalid.jpg"), bytes));
+        EXPECT_FALSE(writer.write(stb_image_writer_absolute_path("invalid.jpg"), bytes));
         EXPECT_NE(writer.get_last_error().find("channels"), std::string::npos);
-        EXPECT_FALSE(writer.write(absolute_path("invalid.jpg"), byte_image(2)));
+        EXPECT_FALSE(writer.write(stb_image_writer_absolute_path("invalid.jpg"), byte_image(2)));
         EXPECT_NE(writer.get_last_error().find("channels"), std::string::npos);
         auto gray_float = Kakshya::ImageData::allocate(1, 1, 1, Kakshya::ImageFormat::R32F);
         ASSERT_TRUE(gray_float.has_value());
-        EXPECT_FALSE(writer.write(absolute_path("invalid.hdr"), *gray_float));
+        EXPECT_FALSE(writer.write(stb_image_writer_absolute_path("invalid.hdr"), *gray_float));
         EXPECT_NE(writer.get_last_error().find("channels"), std::string::npos);
         auto gray_alpha_float = Kakshya::ImageData::allocate(1, 1, 2, Kakshya::ImageFormat::RG32F);
         ASSERT_TRUE(gray_alpha_float.has_value());
-        EXPECT_FALSE(writer.write(absolute_path("invalid.hdr"), *gray_alpha_float));
+        EXPECT_FALSE(writer.write(stb_image_writer_absolute_path("invalid.hdr"), *gray_alpha_float));
         EXPECT_NE(writer.get_last_error().find("channels"), std::string::npos);
 
         auto inconsistent = bytes;
         inconsistent.format = Kakshya::ImageFormat::RGBA32F;
-        EXPECT_FALSE(writer.write(absolute_path("invalid.png"), inconsistent));
+        EXPECT_FALSE(writer.write(stb_image_writer_absolute_path("invalid.png"), inconsistent));
         EXPECT_NE(writer.get_last_error().find("does not match"), std::string::npos);
         auto empty = bytes;
         empty.width = 0;
-        EXPECT_FALSE(writer.write(absolute_path("invalid.png"), empty));
+        EXPECT_FALSE(writer.write(stb_image_writer_absolute_path("invalid.png"), empty));
         EXPECT_NE(writer.get_last_error().find("zero"), std::string::npos);
-        EXPECT_FALSE(writer.write(absolute_path("invalid.xyz"), bytes));
+        EXPECT_FALSE(writer.write(stb_image_writer_absolute_path("invalid.xyz"), bytes));
         EXPECT_NE(writer.get_last_error().find("Unsupported"), std::string::npos);
-        EXPECT_FALSE(writer.write(absolute_path("missing/output.png"), bytes));
+        EXPECT_FALSE(writer.write(stb_image_writer_absolute_path("missing/output.png"), bytes));
         EXPECT_FALSE(writer.get_last_error().empty());
-        ASSERT_TRUE(writer.write(absolute_path("valid.png"), bytes)) << writer.get_last_error();
+        ASSERT_TRUE(writer.write(stb_image_writer_absolute_path("valid.png"), bytes)) << writer.get_last_error();
         EXPECT_TRUE(writer.get_last_error().empty());
     }
 
@@ -315,7 +315,7 @@ namespace {
         auto bytes = byte_image(3);
         bytes.as_uint8()->pop_back();
         for (const auto* extension : { "png", "jpg", "bmp", "tga" }) {
-            const auto path = absolute_path(std::string("short.") + extension);
+            const auto path = stb_image_writer_absolute_path(std::string("short.") + extension);
             EXPECT_FALSE(writer.write(path, bytes));
             EXPECT_NE(writer.get_last_error().find("too small"), std::string::npos);
             EXPECT_FALSE(std::filesystem::exists(path));
@@ -324,16 +324,16 @@ namespace {
         auto floats = Kakshya::ImageData::allocate(2, 2, 3, Kakshya::ImageFormat::RGBA32F);
         ASSERT_TRUE(floats.has_value());
         floats->as_float()->pop_back();
-        EXPECT_FALSE(writer.write(absolute_path("short.hdr"), *floats));
+        EXPECT_FALSE(writer.write(stb_image_writer_absolute_path("short.hdr"), *floats));
         EXPECT_NE(writer.get_last_error().find("too small"), std::string::npos);
 
         auto oversized = byte_image(4);
         oversized.width = std::numeric_limits<uint32_t>::max();
-        EXPECT_FALSE(writer.write(absolute_path("oversized.png"), oversized));
+        EXPECT_FALSE(writer.write(stb_image_writer_absolute_path("oversized.png"), oversized));
         EXPECT_NE(writer.get_last_error().find("limits"), std::string::npos);
         auto too_many_channels = byte_image(4);
         too_many_channels.channels = 5;
-        EXPECT_FALSE(writer.write(absolute_path("channels.png"), too_many_channels));
+        EXPECT_FALSE(writer.write(stb_image_writer_absolute_path("channels.png"), too_many_channels));
         EXPECT_NE(writer.get_last_error().find("limits"), std::string::npos);
     }
 
@@ -360,17 +360,17 @@ namespace {
         IO::STBImageWriter writer;
         for (const auto* extension : { "bmp", "tga", "hdr" }) {
             SCOPED_TRACE(extension);
-            ASSERT_TRUE(writer.write(absolute_path("preceding.png"), *bytes, flip))
+            ASSERT_TRUE(writer.write(stb_image_writer_absolute_path("preceding.png"), *bytes, flip))
                 << writer.get_last_error();
             const auto& source = std::string_view(extension) == "hdr" ? *floats : *bytes;
-            const auto normal_path = absolute_path(std::string("normal.") + extension);
+            const auto normal_path = stb_image_writer_absolute_path(std::string("normal.") + extension);
             ASSERT_TRUE(writer.write(normal_path, source)) << writer.get_last_error();
             const auto normal = IO::ImageReader::load(normal_path);
             ASSERT_TRUE(normal.has_value());
             ASSERT_NE(normal->as_uint8(), nullptr);
             EXPECT_EQ(*normal->as_uint8(), expected);
 
-            const auto flipped_path = absolute_path(std::string("flipped.") + extension);
+            const auto flipped_path = stb_image_writer_absolute_path(std::string("flipped.") + extension);
             ASSERT_TRUE(writer.write(flipped_path, source, flip)) << writer.get_last_error();
             const auto loaded = IO::ImageReader::load(flipped_path);
             ASSERT_TRUE(loaded.has_value());
@@ -399,7 +399,7 @@ namespace {
         ScopedWorkingDir files;
         auto source = byte_image(4);
         const auto expected = *source.as_uint8();
-        const auto path = absolute_path("async.png");
+        const auto path = stb_image_writer_absolute_path("async.png");
         Core::GlobalStreamInfo stream_info;
         IO::IOManager manager(stream_info, 60, nullptr, nullptr);
         ASSERT_TRUE(manager.save_image(source, path));
@@ -432,7 +432,7 @@ namespace {
             options.flip_vertically = (i % 2) != 0;
             options.compression = (i % 2) != 0 ? 9 : 0;
             const auto extension = (i / 2) % 2 == 0 ? ".png" : ".bmp";
-            paths.push_back(absolute_path("concurrent_" + std::to_string(i) + extension));
+            paths.push_back(stb_image_writer_absolute_path("concurrent_" + std::to_string(i) + extension));
             ASSERT_TRUE(manager.save_image(source, paths.back(), options));
         }
         manager.wait_for_pending_saves();

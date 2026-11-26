@@ -28,7 +28,7 @@ namespace {
 
         using namespace MayaFlux::ShaderCompat;
 
-        const auto shift_x = MF_FIELD(shift_x, [](vec3 p) -> vec3 {
+        const auto recorded_geometry_buffer_shift_x = MF_FIELD(recorded_geometry_buffer_shift_x, [](vec3 p) -> vec3 {
             return p * 0.0f + vec3(0.25f, 0.0f, 0.0f);
         });
 
@@ -342,7 +342,7 @@ namespace {
     TEST_F(RecordedGeometryDeviceTest, AHeldFrameIsRestoredBeforeEveryFieldPassSoItDoesNotAccumulate)
     {
         auto op = std::make_shared<GpuFieldOperator>(Kakshya::VertexLayout::for_points());
-        op->bind(FieldTarget::POSITION, fields::shift_x);
+        op->bind(FieldTarget::POSITION, fields::recorded_geometry_buffer_shift_x);
         make(k_capacity, PrimitiveTopology::POINT_LIST, op);
         const auto frame = scattered(k_capacity);
         recorded->write_frame(frame);
@@ -441,7 +441,7 @@ namespace {
         auto layout = Kakshya::VertexLayout::for_points();
         layout.stride_bytes = 64;
         auto op = std::make_shared<GpuFieldOperator>(layout, SpatialFieldConfig { .cell_size = k_cell_size, .density_color = true });
-        op->bind(FieldTarget::POSITION, fields::shift_x);
+        op->bind(FieldTarget::POSITION, fields::recorded_geometry_buffer_shift_x);
 
         make(k_capacity, PrimitiveTopology::POINT_LIST, op);
 
@@ -453,7 +453,7 @@ namespace {
     {
         auto op = std::make_shared<GpuFieldOperator>(
             Kakshya::VertexLayout::for_points(), SpatialFieldConfig { .density_color = true });
-        op->bind(FieldTarget::POSITION, fields::shift_x);
+        op->bind(FieldTarget::POSITION, fields::recorded_geometry_buffer_shift_x);
 
         make(k_capacity, PrimitiveTopology::POINT_LIST, op);
 

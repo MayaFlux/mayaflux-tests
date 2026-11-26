@@ -28,7 +28,7 @@ namespace {
         return *sampling;
     }
 
-    std::shared_ptr<Words> words(size_t count)
+    std::shared_ptr<Words> sequence_container_words(size_t count)
     {
         std::vector<std::string> frames;
         frames.reserve(count);
@@ -55,7 +55,7 @@ namespace {
 
     TEST(SequenceContainerTest, ReportsTheFrameAxisAndTheSourceTimes)
     {
-        const auto container = words(5);
+        const auto container = sequence_container_words(5);
         ASSERT_NE(container, nullptr);
 
         EXPECT_EQ(container->count(), 5U);
@@ -74,7 +74,7 @@ namespace {
 
     TEST(SequenceContainerTest, ReadingSharesTheSourcesFrameWithoutACopy)
     {
-        const auto container = words(3);
+        const auto container = sequence_container_words(3);
 
         EXPECT_EQ(container->read(1).get(), container->source()->read(1).get());
         EXPECT_EQ(container->read(3), nullptr);
@@ -82,7 +82,7 @@ namespace {
 
     TEST(SequenceContainerTest, ARegionIsAnInclusiveFrameRangeCopiedInOrder)
     {
-        const auto container = words(6);
+        const auto container = sequence_container_words(6);
 
         const auto span = container->get_region_data(Region({ 1 }, { 3 }));
         ASSERT_EQ(span.size(), 3U);
@@ -96,7 +96,7 @@ namespace {
 
     TEST(SequenceContainerTest, ARegionThatIsNotAFrameRangeIsRefused)
     {
-        const auto container = words(4);
+        const auto container = sequence_container_words(4);
 
         for (const auto& bad : {
                  Region({ 2 }, { 1 }),
@@ -114,7 +114,7 @@ namespace {
 
     TEST(SequenceContainerTest, CopiedFramesAreIndependentOfTheSource)
     {
-        const auto container = words(2);
+        const auto container = sequence_container_words(2);
 
         auto copied = container->get_region_data(Region({ 0 }, { 1 }));
         copied[0] = "changed";
@@ -124,7 +124,7 @@ namespace {
 
     TEST(SequenceContainerTest, WritesAreRefused)
     {
-        const auto container = words(3);
+        const auto container = sequence_container_words(3);
 
         container->set_region_data(Region({ 0 }, { 1 }), { "x", "y" });
 
@@ -134,7 +134,7 @@ namespace {
 
     TEST(SequenceContainerTest, GroupsCopyTheFramesOfEveryValidRegion)
     {
-        const auto container = words(6);
+        const auto container = sequence_container_words(6);
         RegionGroup group;
         group.name = "mixed";
         group.regions = { Region({ 0 }, { 1 }), Region({ 9 }, { 9 }), Region({ 4 }, { 4 }) };
@@ -149,7 +149,7 @@ namespace {
 
     TEST(SequenceContainerTest, SegmentsStartInsideTheirRegionAndSpanTheirSize)
     {
-        const auto container = words(10);
+        const auto container = sequence_container_words(10);
 
         const auto frames = container->get_segments_data({
             segment(2, 7, 1, 3),
@@ -169,7 +169,7 @@ namespace {
 
     TEST(SequenceContainerTest, CoordinatesAndIndicesAreTheFrameIndex)
     {
-        const auto container = words(4);
+        const auto container = sequence_container_words(4);
 
         EXPECT_EQ(container->coordinates_to_linear_index({ 3 }), 3U);
         EXPECT_EQ(container->coordinates_to_linear_index({ 4 }), 0U);
@@ -180,7 +180,7 @@ namespace {
 
     TEST(SequenceContainerTest, ClearEmptiesTheContainerAndLeavesHeldFramesAlone)
     {
-        const auto container = words(3);
+        const auto container = sequence_container_words(3);
         const auto held = container->read(1);
         container->add_region_group(RegionGroup {});
 
@@ -197,7 +197,7 @@ namespace {
 
     TEST(SequenceContainerTest, ALoneFrameIsAStaticContainer)
     {
-        const auto container = words(1);
+        const auto container = sequence_container_words(1);
 
         EXPECT_EQ(container->count(), 1U);
         EXPECT_EQ(container->locate(100.0)->lower, 0U);
@@ -206,7 +206,7 @@ namespace {
 
     TEST(SequenceContainerTest, ItIsUsableAsAFrameSource)
     {
-        const auto container = words(4);
+        const auto container = sequence_container_words(4);
         const FrameSource<std::string>& source = *container;
 
         const auto where = source.locate(0.75);

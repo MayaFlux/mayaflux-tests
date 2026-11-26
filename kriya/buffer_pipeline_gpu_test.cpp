@@ -26,7 +26,7 @@ namespace {
     using Kriya::BufferOperation;
     using Kriya::BufferPipeline;
 
-    constexpr uint32_t k_rate = 48000;
+    constexpr uint32_t k_buffer_pipeline_gpu_rate = 48000;
 
     std::vector<uint8_t> pattern(size_t bytes, uint8_t seed)
     {
@@ -46,7 +46,7 @@ namespace {
                 return;
             }
             block = Buffers::s_preferred_buffer_size;
-            scheduler = std::make_shared<Vruta::TaskScheduler>(k_rate);
+            scheduler = std::make_shared<Vruta::TaskScheduler>(k_buffer_pipeline_gpu_rate);
             manager = std::make_shared<Buffers::BufferManager>();
         }
 

@@ -24,7 +24,7 @@ namespace {
     using Core::InputValue;
 
     template <typename Predicate>
-    bool eventually(Predicate predicate, std::chrono::milliseconds timeout = 2s)
+    bool input_manager_eventually(Predicate predicate, std::chrono::milliseconds timeout = 2s)
     {
         const auto deadline = std::chrono::steady_clock::now() + timeout;
         while (std::chrono::steady_clock::now() < deadline) {
@@ -113,7 +113,7 @@ namespace {
             manager.start();
             ASSERT_TRUE(manager.is_running()) << round;
             manager.enqueue(InputValue::make_scalar(1.0, 1, InputType::HID));
-            ASSERT_TRUE(eventually([&] { return node->count() == round; })) << round;
+            ASSERT_TRUE(input_manager_eventually([&] { return node->count() == round; })) << round;
             manager.stop();
             EXPECT_FALSE(manager.is_running()) << round;
         }
@@ -156,7 +156,7 @@ namespace {
 
         manager.enqueue(param.value);
 
-        ASSERT_TRUE(eventually([&] { return sentinel->count() == 1; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return sentinel->count() == 1; }));
         EXPECT_EQ(target->count(), param.delivered ? 1U : 0U);
     }
 
@@ -195,7 +195,7 @@ namespace {
 
         manager.enqueue(InputValue::make_scalar(0.25, 1, InputType::HID));
 
-        ASSERT_TRUE(eventually([&] { return first->count() == 1 && second->count() == 1; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return first->count() == 1 && second->count() == 1; }));
         EXPECT_DOUBLE_EQ(first->values().front().as_scalar(), 0.25);
     }
 
@@ -285,7 +285,7 @@ namespace {
 
         manager.enqueue(InputValue::make_scalar(1.0, 1, InputType::HID));
 
-        ASSERT_TRUE(eventually([&] { return kept->count() == 1; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return kept->count() == 1; }));
         EXPECT_EQ(removed->count(), 0U);
     }
 
@@ -323,7 +323,7 @@ namespace {
         manager.enqueue(InputValue::make_scalar(1.0, 1, InputType::HID));
         manager.enqueue(InputValue::make_scalar(2.0, 1, InputType::HID));
 
-        ASSERT_TRUE(eventually([&] { return sentinel->count() == 2; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return sentinel->count() == 2; }));
         EXPECT_EQ(remover->count(), 1U);
         EXPECT_EQ(manager.get_registered_node_count(), 1U);
     }
@@ -357,7 +357,7 @@ namespace {
             }
         }
 
-        ASSERT_TRUE(eventually([&] { return sentinel->count() == total; }, 5s));
+        ASSERT_TRUE(input_manager_eventually([&] { return sentinel->count() == total; }, 5s));
         reading.store(false);
         reader.join();
 
@@ -408,7 +408,7 @@ namespace {
         manager.enqueue(InputValue::make_bytes({ 1 }, 6, InputType::HID));
         manager.enqueue(InputValue::make_bytes({ 2 }, 5, InputType::HID));
 
-        ASSERT_TRUE(eventually([&] { return sentinel->count() == 2; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return sentinel->count() == 2; }));
         ASSERT_EQ(node->count(), 1U);
         EXPECT_EQ(node->values().front().device_id, 5U);
         ASSERT_EQ(service.opened.size(), 1U);
@@ -481,14 +481,14 @@ namespace {
         manager.register_node(node, InputBinding::hid_by_vid_pid(0x1234, 0x5678));
 
         manager.enqueue(InputValue::make_bytes({ 1 }, 5, InputType::HID));
-        ASSERT_TRUE(eventually([&] { return node->count() == 1; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return node->count() == 1; }));
 
         manager.on_device_change(pad(5), false);
         manager.enqueue(InputValue::make_bytes({ 2 }, 5, InputType::HID));
         manager.on_device_change(pad(7), true);
         manager.enqueue(InputValue::make_bytes({ 3 }, 7, InputType::HID));
 
-        ASSERT_TRUE(eventually([&] { return node->count() == 2; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return node->count() == 2; }));
         EXPECT_EQ(node->values().back().device_id, 7U);
         ASSERT_EQ(service.opened.size(), 2U);
         EXPECT_EQ(service.opened.back().second, 7U);
@@ -508,7 +508,7 @@ namespace {
         manager.on_device_change(pad(5), false);
         manager.enqueue(InputValue::make_bytes({ 1 }, 5, InputType::HID));
 
-        ASSERT_TRUE(eventually([&] { return sentinel->count() == 1; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return sentinel->count() == 1; }));
         EXPECT_EQ(node->count(), 0U);
     }
 
@@ -525,7 +525,7 @@ namespace {
         manager.on_device_change(pad(5), true);
         manager.enqueue(InputValue::make_bytes({ 1 }, 5, InputType::HID));
 
-        ASSERT_TRUE(eventually([&] { return node->count() == 1; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return node->count() == 1; }));
     }
 
     TEST(InputManagerDeviceTest, ADeviceOfAnotherModelDoesNotRebindTheNode)
@@ -543,7 +543,7 @@ namespace {
         manager.on_device_change(pad(8, 0x9999), true);
         manager.enqueue(InputValue::make_bytes({ 1 }, 8, InputType::HID));
 
-        ASSERT_TRUE(eventually([&] { return sentinel->count() == 1; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return sentinel->count() == 1; }));
         EXPECT_EQ(node->count(), 0U);
         EXPECT_EQ(service.opened.size(), 1U);
     }
@@ -561,7 +561,7 @@ namespace {
         manager.on_device_change(pad(9), true);
         manager.enqueue(InputValue::make_bytes({ 1 }, 5, InputType::HID));
 
-        ASSERT_TRUE(eventually([&] { return node->count() == 1; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return node->count() == 1; }));
     }
 
     // ------------------------------------------------------------------
@@ -581,7 +581,7 @@ namespace {
             batch.push_back(InputValue::make_scalar(static_cast<double>(i), 1, InputType::HID));
         manager.enqueue_batch(batch);
 
-        ASSERT_TRUE(eventually([&] { return node->count() == 5; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return node->count() == 5; }));
         const auto values = node->values();
         for (size_t i = 0; i < values.size(); ++i)
             EXPECT_DOUBLE_EQ(values[i].as_scalar(), static_cast<double>(i + 1));
@@ -610,7 +610,7 @@ namespace {
 
         manager.start();
 
-        ASSERT_TRUE(eventually([&] { return node->count() == 3; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return node->count() == 3; }));
         EXPECT_EQ(manager.get_queue_depth(), 0U);
     }
 
@@ -624,7 +624,7 @@ namespace {
         for (int i = 0; i < 10; ++i)
             manager.enqueue(InputValue::make_scalar(1.0, 1, InputType::HID));
 
-        EXPECT_TRUE(eventually([&] { return manager.get_events_processed() == 10; }));
+        EXPECT_TRUE(input_manager_eventually([&] { return manager.get_events_processed() == 10; }));
     }
 
     TEST(InputManagerTest, StopDeliversEverythingEnqueuedBeforeIt)
@@ -660,7 +660,7 @@ namespace {
         EXPECT_LT(depth, static_cast<size_t>(enqueued));
 
         manager.start();
-        ASSERT_TRUE(eventually([&] { return node->count() == depth; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return node->count() == depth; }));
 
         const auto values = node->values();
         for (size_t i = 1; i < values.size(); ++i)
@@ -732,7 +732,7 @@ namespace {
 
         network.deliver(network.next_endpoint_id, osc_float_datagram());
 
-        ASSERT_TRUE(eventually([&] { return node->count() == 1; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return node->count() == 1; }));
         const auto value = node->values().front();
         ASSERT_EQ(value.type, InputValue::Type::OSC);
         EXPECT_EQ(value.source_type, InputType::OSC);
@@ -752,7 +752,7 @@ namespace {
         network.deliver(network.next_endpoint_id, { 'x', 'y', 'z', 'w', 0 });
         network.deliver(network.next_endpoint_id, osc_float_datagram());
 
-        ASSERT_TRUE(eventually([&] { return node->count() == 1; }));
+        ASSERT_TRUE(input_manager_eventually([&] { return node->count() == 1; }));
         EXPECT_EQ(node->values().front().as_osc().address, "/mf/test");
     }
 

@@ -89,7 +89,7 @@ void main()
         uint32_t layer;
     };
 
-    struct FloatPush {
+    struct GpuExecutionContextFloatPush {
         uint32_t count;
         float factor;
     };
@@ -124,7 +124,7 @@ void main()
 }
 )";
 
-    constexpr std::string_view k_float_scale_source = R"(#version 450
+    constexpr std::string_view k_gpu_execution_context_float_scale_source = R"(#version 450
 layout(local_size_x = 16) in;
 layout(set = 0, binding = 0, std430) readonly buffer In { float in_values[]; };
 layout(set = 0, binding = 1, std430) buffer Out { float out_values[]; };
@@ -503,8 +503,8 @@ void main()
     template <typename Fixture>
     class TextureExecutionContextGpuTest : public Fixture { };
 
-    using ImageHardwareOptions = ::testing::Types<GpuImageContextFixture<true>, GpuImageContextFixture<false>>;
-    TYPED_TEST_SUITE(TextureExecutionContextGpuTest, ImageHardwareOptions);
+    using GpuExecutionContextImageHardwareOptions = ::testing::Types<GpuImageContextFixture<true>, GpuImageContextFixture<false>>;
+    TYPED_TEST_SUITE(TextureExecutionContextGpuTest, GpuExecutionContextImageHardwareOptions);
 
     TYPED_TEST(TextureExecutionContextGpuTest, ImageModeScalesInputIntoTheOutputImage)
     {
@@ -1077,7 +1077,7 @@ void main()
 
     TYPED_TEST(ShaderExecutionContextGpuTest, DoubleInputComesBackAsDoubleThroughStructureInfo)
     {
-        const auto shader = load_compute(k_float_scale_source);
+        const auto shader = load_compute(k_gpu_execution_context_float_scale_source);
         ASSERT_NE(shader, Portal::Graphics::INVALID_SHADER);
 
         std::vector<double> values(k_count);
@@ -1088,12 +1088,12 @@ void main()
         input.data.emplace_back(values);
 
         auto executor = std::make_shared<ShaderExecutionContext<>>(
-            shader_config(shader, sizeof(FloatPush), { 16, 1, 1 }),
+            shader_config(shader, sizeof(GpuExecutionContextFloatPush), { 16, 1, 1 }),
             std::vector<GpuBufferBinding> {
                 binding_of(0, GpuBufferBinding::Direction::INPUT, GpuBufferBinding::ElementType::FLOAT32),
                 binding_of(1, GpuBufferBinding::Direction::OUTPUT, GpuBufferBinding::ElementType::FLOAT32) });
         executor->set_output_size(1, k_count * sizeof(float));
-        executor->push(FloatPush { .count = static_cast<uint32_t>(k_count), .factor = 2.0F });
+        executor->push(GpuExecutionContextFloatPush { .count = static_cast<uint32_t>(k_count), .factor = 2.0F });
 
         const auto result = executor->execute(input, ExecutionContext {});
 

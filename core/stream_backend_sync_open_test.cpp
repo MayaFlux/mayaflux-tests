@@ -68,13 +68,13 @@ namespace {
 
     using PairBackend = Core::StreamBackend<PairTransport>;
 
-    struct Received {
+    struct StreamBackendSyncOpenReceived {
         uint64_t id {};
         std::vector<uint8_t> bytes;
         std::string sender;
     };
 
-    struct StateEvent {
+    struct StreamBackendSyncOpenStateEvent {
         uint64_t id {};
         EndpointState previous {};
         EndpointState current {};
@@ -179,7 +179,7 @@ namespace {
 
         [[nodiscard]] bool saw(uint64_t id, EndpointState previous, EndpointState current) const
         {
-            return std::ranges::any_of(states, [&](const StateEvent& event) {
+            return std::ranges::any_of(states, [&](const StreamBackendSyncOpenStateEvent& event) {
                 return event.id == id && event.previous == previous && event.current == current;
             });
         }
@@ -205,8 +205,8 @@ namespace {
 
         asio::io_context context;
         PairBackend backend;
-        std::vector<Received> received;
-        std::vector<StateEvent> states;
+        std::vector<StreamBackendSyncOpenReceived> received;
+        std::vector<StreamBackendSyncOpenStateEvent> states;
     };
 
     // ------------------------------------------------------------------

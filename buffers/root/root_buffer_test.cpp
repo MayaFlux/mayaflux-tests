@@ -46,11 +46,11 @@ namespace {
         }
     };
 
-    constexpr size_t PENDING_CAPACITY = 64;
+    constexpr size_t ROOT_BUFFER_PENDING_CAPACITY = 64;
 
-    constexpr auto NATIVE_TOKEN = Buffers::AUDIO_BACKEND;
-    constexpr auto SAME_FAMILY_TOKEN = Buffers::WINDOW_EVENTS;
-    constexpr auto FOREIGN_TOKEN = Buffers::GRAPHICS_BACKEND;
+    constexpr auto ROOT_BUFFER_NATIVE_TOKEN = Buffers::AUDIO_BACKEND;
+    constexpr auto ROOT_BUFFER_SAME_FAMILY_TOKEN = Buffers::WINDOW_EVENTS;
+    constexpr auto ROOT_BUFFER_FOREIGN_TOKEN = Buffers::GRAPHICS_BACKEND;
 
     std::shared_ptr<AudioBuffer> make_child()
     {
@@ -124,7 +124,7 @@ TEST_F(RootBufferTest, DirectAddKeepsAChildsOwnChain)
 
 TEST_F(RootBufferTest, DirectAddOfAnUnacceptableChildThrowsAndAddsNothing)
 {
-    auto foreign = make_child(FOREIGN_TOKEN);
+    auto foreign = make_child(ROOT_BUFFER_FOREIGN_TOKEN);
 
     EXPECT_THROW(root->add_child_buffer(foreign), std::runtime_error);
     EXPECT_EQ(root->get_num_children(), 0U);
@@ -132,8 +132,8 @@ TEST_F(RootBufferTest, DirectAddOfAnUnacceptableChildThrowsAndAddsNothing)
 
 TEST_F(RootBufferTest, TryAddReturnsFalseWithAReasonForAnUnacceptableChild)
 {
-    auto foreign = make_child(FOREIGN_TOKEN);
-    auto native = make_child(NATIVE_TOKEN);
+    auto foreign = make_child(ROOT_BUFFER_FOREIGN_TOKEN);
+    auto native = make_child(ROOT_BUFFER_NATIVE_TOKEN);
     std::string reason;
 
     EXPECT_FALSE(root->try_add_child_buffer(foreign, &reason));
@@ -218,53 +218,53 @@ TEST_F(RootBufferTest, AChildWithoutADefaultProcessorIsAlwaysAcceptable)
 
 TEST_F(RootBufferTest, StrictRequiresTheExactToken)
 {
-    root->configure(TokenEnforcementStrategy::STRICT, NATIVE_TOKEN);
+    root->configure(TokenEnforcementStrategy::STRICT, ROOT_BUFFER_NATIVE_TOKEN);
     std::string reason;
 
-    EXPECT_TRUE(root->is_buffer_acceptable(make_child(NATIVE_TOKEN)));
-    EXPECT_FALSE(root->is_buffer_acceptable(make_child(SAME_FAMILY_TOKEN), &reason));
+    EXPECT_TRUE(root->is_buffer_acceptable(make_child(ROOT_BUFFER_NATIVE_TOKEN)));
+    EXPECT_FALSE(root->is_buffer_acceptable(make_child(ROOT_BUFFER_SAME_FAMILY_TOKEN), &reason));
     EXPECT_NE(reason.find("STRICT"), std::string::npos);
-    EXPECT_FALSE(root->is_buffer_acceptable(make_child(FOREIGN_TOKEN)));
+    EXPECT_FALSE(root->is_buffer_acceptable(make_child(ROOT_BUFFER_FOREIGN_TOKEN)));
 }
 
 TEST_F(RootBufferTest, FilteredAcceptsCompatibleTokensOnly)
 {
-    root->configure(TokenEnforcementStrategy::FILTERED, NATIVE_TOKEN);
+    root->configure(TokenEnforcementStrategy::FILTERED, ROOT_BUFFER_NATIVE_TOKEN);
     std::string reason;
 
-    EXPECT_TRUE(root->is_buffer_acceptable(make_child(NATIVE_TOKEN)));
-    EXPECT_TRUE(root->is_buffer_acceptable(make_child(SAME_FAMILY_TOKEN)));
-    EXPECT_FALSE(root->is_buffer_acceptable(make_child(FOREIGN_TOKEN), &reason));
+    EXPECT_TRUE(root->is_buffer_acceptable(make_child(ROOT_BUFFER_NATIVE_TOKEN)));
+    EXPECT_TRUE(root->is_buffer_acceptable(make_child(ROOT_BUFFER_SAME_FAMILY_TOKEN)));
+    EXPECT_FALSE(root->is_buffer_acceptable(make_child(ROOT_BUFFER_FOREIGN_TOKEN), &reason));
     EXPECT_NE(reason.find("FILTERED"), std::string::npos);
 }
 
 TEST_F(RootBufferTest, OverrideSkipAcceptsEverythingAndExplainsTheIncompatibleOne)
 {
-    root->configure(TokenEnforcementStrategy::OVERRIDE_SKIP, NATIVE_TOKEN);
+    root->configure(TokenEnforcementStrategy::OVERRIDE_SKIP, ROOT_BUFFER_NATIVE_TOKEN);
     std::string compatible_reason;
     std::string foreign_reason;
 
-    EXPECT_TRUE(root->is_buffer_acceptable(make_child(NATIVE_TOKEN), &compatible_reason));
+    EXPECT_TRUE(root->is_buffer_acceptable(make_child(ROOT_BUFFER_NATIVE_TOKEN), &compatible_reason));
     EXPECT_TRUE(compatible_reason.empty());
-    EXPECT_TRUE(root->is_buffer_acceptable(make_child(FOREIGN_TOKEN), &foreign_reason));
+    EXPECT_TRUE(root->is_buffer_acceptable(make_child(ROOT_BUFFER_FOREIGN_TOKEN), &foreign_reason));
     EXPECT_NE(foreign_reason.find("OVERRIDE_SKIP"), std::string::npos);
 }
 
 TEST_F(RootBufferTest, OverrideRejectAcceptsEverythingAndExplainsTheIncompatibleOne)
 {
-    root->configure(TokenEnforcementStrategy::OVERRIDE_REJECT, NATIVE_TOKEN);
+    root->configure(TokenEnforcementStrategy::OVERRIDE_REJECT, ROOT_BUFFER_NATIVE_TOKEN);
     std::string reason;
 
-    EXPECT_TRUE(root->is_buffer_acceptable(make_child(FOREIGN_TOKEN), &reason));
+    EXPECT_TRUE(root->is_buffer_acceptable(make_child(ROOT_BUFFER_FOREIGN_TOKEN), &reason));
     EXPECT_NE(reason.find("OVERRIDE_REJECT"), std::string::npos);
 }
 
 TEST_F(RootBufferTest, IgnoreAcceptsEverythingWithoutAReason)
 {
-    root->configure(TokenEnforcementStrategy::IGNORE, NATIVE_TOKEN);
+    root->configure(TokenEnforcementStrategy::IGNORE, ROOT_BUFFER_NATIVE_TOKEN);
     std::string reason;
 
-    EXPECT_TRUE(root->is_buffer_acceptable(make_child(FOREIGN_TOKEN), &reason));
+    EXPECT_TRUE(root->is_buffer_acceptable(make_child(ROOT_BUFFER_FOREIGN_TOKEN), &reason));
     EXPECT_TRUE(reason.empty());
 }
 
@@ -305,8 +305,8 @@ TEST_F(RootBufferTest, RemoveWhileProcessingIsDeferredUntilTheNextProcessDefault
 
 TEST_F(RootBufferTest, TryAddWhileProcessingQueuesAnAcceptableChildAndRefusesAnUnacceptableOne)
 {
-    auto native = make_child(NATIVE_TOKEN);
-    auto foreign = make_child(FOREIGN_TOKEN);
+    auto native = make_child(ROOT_BUFFER_NATIVE_TOKEN);
+    auto foreign = make_child(ROOT_BUFFER_FOREIGN_TOKEN);
 
     make_busy();
     EXPECT_TRUE(root->try_add_child_buffer(native));
@@ -405,7 +405,7 @@ TEST_F(RootBufferTest, ChildMarkedForRemovalLeavesOnTheCycleAfterTheChannelProce
 TEST_F(RootBufferTest, PendingQueueTakesItsCapacityAndSilentlyDropsTheRest)
 {
     std::vector<std::shared_ptr<AudioBuffer>> children;
-    for (size_t i = 0; i < PENDING_CAPACITY + 1; ++i) {
+    for (size_t i = 0; i < ROOT_BUFFER_PENDING_CAPACITY + 1; ++i) {
         children.push_back(make_child());
     }
 
@@ -416,8 +416,8 @@ TEST_F(RootBufferTest, PendingQueueTakesItsCapacityAndSilentlyDropsTheRest)
     make_idle();
     root->process_default();
 
-    ASSERT_EQ(root->get_num_children(), PENDING_CAPACITY);
-    for (size_t i = 0; i < PENDING_CAPACITY; ++i) {
+    ASSERT_EQ(root->get_num_children(), ROOT_BUFFER_PENDING_CAPACITY);
+    for (size_t i = 0; i < ROOT_BUFFER_PENDING_CAPACITY; ++i) {
         EXPECT_EQ(root->get_child_buffers()[i], children[i]) << "child " << i;
     }
     EXPECT_FALSE(root->has_pending_operations());
@@ -427,7 +427,7 @@ TEST_F(RootBufferTest, PendingQueueIsReusableAfterItDrains)
 {
     for (int round = 0; round < 3; ++round) {
         std::vector<std::shared_ptr<AudioBuffer>> batch;
-        for (size_t i = 0; i < PENDING_CAPACITY; ++i) {
+        for (size_t i = 0; i < ROOT_BUFFER_PENDING_CAPACITY; ++i) {
             batch.push_back(make_child());
         }
 

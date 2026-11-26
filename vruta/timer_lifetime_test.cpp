@@ -12,7 +12,7 @@ using SchedToken = Vruta::ProcessingToken;
 
 namespace {
 
-    constexpr unsigned int SAMPLE_RATE = 48000;
+    constexpr unsigned int TIMER_LIFETIME_SAMPLE_RATE = 48000;
 
 } // namespace
 
@@ -20,7 +20,7 @@ class TimerLifetimeTest : public ::testing::Test {
 protected:
     void SetUp() override
     {
-        scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
+        scheduler = std::make_shared<Vruta::TaskScheduler>(TIMER_LIFETIME_SAMPLE_RATE);
     }
 
     void TearDown() override

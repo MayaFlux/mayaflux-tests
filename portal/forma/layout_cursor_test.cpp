@@ -13,7 +13,7 @@ using Kinesis::AABB2D;
 
 namespace {
 
-    void expect_near(const AABB2D& a, const AABB2D& b)
+    void layout_cursor_expect_near(const AABB2D& a, const AABB2D& b)
     {
         EXPECT_NEAR(a.min.x, b.min.x, 1e-6F);
         EXPECT_NEAR(a.min.y, b.min.y, 1e-6F);
@@ -39,8 +39,8 @@ TEST(FormaLayoutCursorTest, AdvanceReturnsTheBandJustPlacedAndMovesDown)
     const AABB2D first = cursor.advance(0.2F);
     const AABB2D second = cursor.advance(0.3F);
 
-    expect_near(first, AABB2D { .min = { -1.F, 0.8F }, .max = { 1.F, 1.F } });
-    expect_near(second, AABB2D { .min = { -1.F, 0.5F }, .max = { 1.F, 0.8F } });
+    layout_cursor_expect_near(first, AABB2D { .min = { -1.F, 0.8F }, .max = { 1.F, 1.F } });
+    layout_cursor_expect_near(second, AABB2D { .min = { -1.F, 0.5F }, .max = { 1.F, 0.8F } });
     EXPECT_NEAR(cursor.y(), 0.5F, 1e-6F);
 }
 
@@ -50,7 +50,7 @@ TEST(FormaLayoutCursorTest, ColumnExtentsScopeTheReturnedBounds)
 
     const AABB2D band = cursor.advance(0.1F);
 
-    expect_near(band, AABB2D { .min = { -0.25F, 0.4F }, .max = { 0.75F, 0.5F } });
+    layout_cursor_expect_near(band, AABB2D { .min = { -0.25F, 0.4F }, .max = { 0.75F, 0.5F } });
     EXPECT_FLOAT_EQ(cursor.x_min(), -0.25F);
     EXPECT_FLOAT_EQ(cursor.x_max(), 0.75F);
 }
@@ -134,7 +134,7 @@ TEST(FormaLayoutCursorTest, BoundScrollOffsetTranslatesReturnedBoundsOnly)
 
     const AABB2D band = cursor.advance(0.2F);
 
-    expect_near(band, AABB2D { .min = { -1.F, 1.1F }, .max = { 1.F, 1.3F } });
+    layout_cursor_expect_near(band, AABB2D { .min = { -1.F, 1.1F }, .max = { 1.F, 1.3F } });
     EXPECT_NEAR(cursor.y(), 0.8F, 1e-6F);
 }
 
@@ -172,7 +172,7 @@ TEST(FormaLayoutCursorTest, BoundsAlreadyHandedOutAreSnapshots)
 
     offset->write({ 0.F, 1.F });
 
-    expect_near(band, AABB2D { .min = { -1.F, 0.9F }, .max = { 1.F, 1.F } });
+    layout_cursor_expect_near(band, AABB2D { .min = { -1.F, 0.9F }, .max = { 1.F, 1.F } });
 }
 
 }

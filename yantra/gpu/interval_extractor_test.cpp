@@ -48,7 +48,7 @@ namespace {
         return cases;
     }
 
-    Eigen::MatrixXd matrix_of(const std::vector<std::vector<double>>& channels)
+    Eigen::MatrixXd interval_extractor_matrix_of(const std::vector<std::vector<double>>& channels)
     {
         Eigen::MatrixXd out(static_cast<Eigen::Index>(channels.front().size()), static_cast<Eigen::Index>(channels.size()));
         for (size_t c = 0; c < channels.size(); ++c) {
@@ -60,7 +60,7 @@ namespace {
         return out;
     }
 
-    std::vector<Kakshya::DataVariant> input_of(const std::vector<std::vector<double>>& channels)
+    std::vector<Kakshya::DataVariant> interval_extractor_input_of(const std::vector<std::vector<double>>& channels)
     {
         std::vector<Kakshya::DataVariant> out;
         out.reserve(channels.size());
@@ -83,7 +83,7 @@ namespace {
 
     Intervals extract(MatrixIntervalExtractor& extractor, const std::vector<double>& scores)
     {
-        return extractor.extract_intervals(matrix_of({ scores })).channels[0].intervals;
+        return extractor.extract_intervals(interval_extractor_matrix_of({ scores })).channels[0].intervals;
     }
 
     Intervals whole(IntervalExtractorConfig config, const std::vector<double>& scores)
@@ -98,7 +98,7 @@ namespace {
         config.scan.gate_channel = 0;
         config.flush = true;
         MatrixIntervalExtractor extractor(config);
-        return extractor.extract_intervals(matrix_of({ gate, scores })).channels[1].intervals;
+        return extractor.extract_intervals(interval_extractor_matrix_of({ gate, scores })).channels[1].intervals;
     }
 
     Kinesis::Discrete::IntervalScanConfig scan_config_of(const IntervalExtractorConfig& config)
@@ -292,7 +292,7 @@ namespace {
         const auto alone_second = whole(config, second);
 
         MatrixIntervalExtractor extractor(config);
-        const auto both = extractor.extract_intervals(matrix_of({ first, second }));
+        const auto both = extractor.extract_intervals(interval_extractor_matrix_of({ first, second }));
 
         ASSERT_EQ(both.channels.size(), 2U);
         EXPECT_EQ(both.channels[0].intervals, alone_first);
@@ -308,7 +308,7 @@ namespace {
         MatrixIntervalExtractor extractor(config);
 
         const auto result = extractor.apply_operation(
-            Yantra::Datum<Eigen::MatrixXd> { matrix_of({ { 0, 0, 1, 1, 1, 0, 0, 0, 0, 0 } }) });
+            Yantra::Datum<Eigen::MatrixXd> { interval_extractor_matrix_of({ { 0, 0, 1, 1, 1, 0, 0, 0, 0, 0 } }) });
 
         ASSERT_EQ(result.data.size(), 1U);
         EXPECT_EQ(result.data[0], (std::vector<double> { 15.0, 55.0 }));
@@ -322,7 +322,7 @@ namespace {
         config.flush = true;
         StandardIntervalExtractor extractor(config);
 
-        const auto got = extractor.extract_intervals(input_of({ scores })).channels[0].intervals;
+        const auto got = extractor.extract_intervals(interval_extractor_input_of({ scores })).channels[0].intervals;
 
         EXPECT_EQ(got, whole(config, scores));
     }
@@ -413,7 +413,7 @@ namespace {
         with_gate.scan.gate_channel = 0;
         with_gate.flush = true;
         MatrixIntervalExtractor extractor(with_gate);
-        const auto both = extractor.extract_intervals(matrix_of({ voice, vowel }));
+        const auto both = extractor.extract_intervals(interval_extractor_matrix_of({ voice, vowel }));
 
         ASSERT_EQ(both.channels.size(), 2U);
         EXPECT_EQ(both.channels[0].intervals, whole(config, voice));
@@ -445,7 +445,7 @@ namespace {
             }
             const std::vector<double> gate_part(gate.begin() + static_cast<std::ptrdiff_t>(at), gate.begin() + static_cast<std::ptrdiff_t>(at + count));
             const std::vector<double> score_part(scores.begin() + static_cast<std::ptrdiff_t>(at), scores.begin() + static_cast<std::ptrdiff_t>(at + count));
-            const auto got = extractor.extract_intervals(matrix_of({ gate_part, score_part })).channels[1].intervals;
+            const auto got = extractor.extract_intervals(interval_extractor_matrix_of({ gate_part, score_part })).channels[1].intervals;
             joined.insert(joined.end(), got.begin(), got.end());
         }
 
@@ -490,22 +490,22 @@ namespace {
         config.length = 200;
         MatrixIntervalExtractor extractor(config);
 
-        const auto first = extractor.extract_intervals(matrix_of({ { 0, 0, 1, 1, 1 } })).channels[0];
+        const auto first = extractor.extract_intervals(interval_extractor_matrix_of({ { 0, 0, 1, 1, 1 } })).channels[0];
         EXPECT_TRUE(first.intervals.empty());
         EXPECT_EQ(first.open_start, std::optional<size_t> { 20 });
         EXPECT_FALSE(first.pending.has_value());
 
-        const auto second = extractor.extract_intervals(matrix_of({ { 1, 1 } })).channels[0];
+        const auto second = extractor.extract_intervals(interval_extractor_matrix_of({ { 1, 1 } })).channels[0];
         EXPECT_EQ(second.open_start, std::optional<size_t> { 20 });
 
-        const auto third = extractor.extract_intervals(matrix_of({ { 0, 0, 0 } })).channels[0];
+        const auto third = extractor.extract_intervals(interval_extractor_matrix_of({ { 0, 0, 0 } })).channels[0];
         EXPECT_TRUE(third.intervals.empty());
         EXPECT_FALSE(third.open_start.has_value());
         EXPECT_EQ(third.pending, (std::optional<std::pair<size_t, size_t>> { { 15, 70 } }));
 
         config.flush = true;
         extractor.set_config(config);
-        const auto last = extractor.extract_intervals(matrix_of({ { 0 } })).channels[0];
+        const auto last = extractor.extract_intervals(interval_extractor_matrix_of({ { 0 } })).channels[0];
         EXPECT_EQ(last.intervals, (Intervals { { 15, 75 } }));
         EXPECT_FALSE(last.open_start.has_value());
         EXPECT_FALSE(last.pending.has_value());
@@ -520,7 +520,7 @@ namespace {
         MatrixIntervalExtractor extractor(config);
 
         const auto result = extractor.extract_intervals(
-            matrix_of({ { 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 } })).channels[0];
+            interval_extractor_matrix_of({ { 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 } })).channels[0];
 
         EXPECT_EQ(result.intervals, (Intervals { { 0, 80 }, { 70, 160 } }));
         EXPECT_FALSE(result.pending.has_value());
@@ -542,7 +542,7 @@ namespace {
             const std::vector<double> gate_part(gate.begin() + static_cast<std::ptrdiff_t>(at), gate.begin() + static_cast<std::ptrdiff_t>(at + count));
             const std::vector<double> score_part(scores.begin() + static_cast<std::ptrdiff_t>(at), scores.begin() + static_cast<std::ptrdiff_t>(at + count));
 
-            const auto device = extractor.extract_intervals(matrix_of({ gate_part, score_part })).channels[1];
+            const auto device = extractor.extract_intervals(interval_extractor_matrix_of({ gate_part, score_part })).channels[1];
             const auto host = scanner.push(score_part, gate_part);
 
             EXPECT_EQ(device.intervals, host) << at;
@@ -624,10 +624,10 @@ namespace {
         config.length = 10000;
 
         MatrixIntervalExtractor synchronous(config);
-        const auto expected = synchronous.extract_intervals(matrix_of({ gate, scores }));
+        const auto expected = synchronous.extract_intervals(interval_extractor_matrix_of({ gate, scores }));
 
         MatrixIntervalExtractor deferred(config);
-        ASSERT_TRUE(deferred.submit(matrix_of({ gate, scores })));
+        ASSERT_TRUE(deferred.submit(interval_extractor_matrix_of({ gate, scores })));
         EXPECT_TRUE(deferred.pending());
         for (size_t spins = 0; !deferred.ready() && spins < 10000000; ++spins) { }
         const auto got = deferred.collect();
@@ -652,14 +652,14 @@ namespace {
         EXPECT_FALSE(extractor.pending());
         EXPECT_FALSE(extractor.collect().has_value());
 
-        ASSERT_TRUE(extractor.submit(matrix_of({ { 0, 0, 1, 1, 1 } })));
-        EXPECT_FALSE(extractor.submit(matrix_of({ { 0, 0, 1, 1, 1 } })));
-        EXPECT_THROW(std::ignore = extractor.extract_intervals(matrix_of({ { 0, 0, 1, 1, 1 } })), std::runtime_error);
+        ASSERT_TRUE(extractor.submit(interval_extractor_matrix_of({ { 0, 0, 1, 1, 1 } })));
+        EXPECT_FALSE(extractor.submit(interval_extractor_matrix_of({ { 0, 0, 1, 1, 1 } })));
+        EXPECT_THROW(std::ignore = extractor.extract_intervals(interval_extractor_matrix_of({ { 0, 0, 1, 1, 1 } })), std::runtime_error);
 
         for (size_t spins = 0; !extractor.ready() && spins < 10000000; ++spins) { }
         EXPECT_TRUE(extractor.collect().has_value());
         EXPECT_FALSE(extractor.collect().has_value());
-        EXPECT_NO_THROW(std::ignore = extractor.extract_intervals(matrix_of({ { 0, 0 } })));
+        EXPECT_NO_THROW(std::ignore = extractor.extract_intervals(interval_extractor_matrix_of({ { 0, 0 } })));
     }
 
     TYPED_TEST(IntervalExtractorGpuTest, TheStreamContinuesAcrossSubmissions)
@@ -668,7 +668,7 @@ namespace {
         config.length = 100;
         MatrixIntervalExtractor extractor(config);
 
-        ASSERT_TRUE(extractor.submit(matrix_of({ { 0, 0, 1, 1, 1 } })));
+        ASSERT_TRUE(extractor.submit(interval_extractor_matrix_of({ { 0, 0, 1, 1, 1 } })));
         for (size_t spins = 0; !extractor.ready() && spins < 10000000; ++spins) { }
         const auto first = extractor.collect();
         ASSERT_TRUE(first.has_value());
@@ -677,7 +677,7 @@ namespace {
 
         config.flush = true;
         extractor.set_config(config);
-        ASSERT_TRUE(extractor.submit(matrix_of({ { 0, 0, 0, 0, 0 } })));
+        ASSERT_TRUE(extractor.submit(interval_extractor_matrix_of({ { 0, 0, 0, 0, 0 } })));
         for (size_t spins = 0; !extractor.ready() && spins < 10000000; ++spins) { }
         const auto second = extractor.collect();
 
@@ -690,7 +690,7 @@ namespace {
         auto config = small_config();
         config.length = 100;
         MatrixIntervalExtractor extractor(config);
-        ASSERT_TRUE(extractor.submit(matrix_of({ { 0, 0, 1, 1, 1 } })));
+        ASSERT_TRUE(extractor.submit(interval_extractor_matrix_of({ { 0, 0, 1, 1, 1 } })));
 
         extractor.reset();
 
@@ -709,7 +709,7 @@ namespace {
         EXPECT_TRUE(extractor.buffers().empty());
 
         const auto result = extractor.extract_intervals(
-            matrix_of({ { 0, 0, 1, 1, 1, 0, 0, 0, 0, 0 }, { 0, 0, 0, 0, 1, 1, 1, 1, 0, 0 } }));
+            interval_extractor_matrix_of({ { 0, 0, 1, 1, 1, 0, 0, 0, 0, 0 }, { 0, 0, 0, 0, 1, 1, 1, 1, 0, 0 } }));
         const auto views = extractor.buffers();
 
         ASSERT_EQ(views.size(), 2U);
@@ -743,7 +743,7 @@ namespace {
         config.flush = true;
         MatrixIntervalExtractor extractor(config);
 
-        EXPECT_THROW(std::ignore = extractor.extract_intervals(matrix_of({ { 0, 1 }, { 0, 1 } })), std::runtime_error);
+        EXPECT_THROW(std::ignore = extractor.extract_intervals(interval_extractor_matrix_of({ { 0, 1 }, { 0, 1 } })), std::runtime_error);
     }
 
     MAYAFLUX_TEST_WITH(TEST, IntervalExtractorTest, RegionsSpanTheIntervalsInclusivelyAndSkipEmptyOnes, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))

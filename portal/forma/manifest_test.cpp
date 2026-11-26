@@ -1279,7 +1279,7 @@ namespace {
         return input;
     }
 
-    void expect_bounds(const Forma::Element& element, glm::vec2 min, glm::vec2 max)
+    void manifest_expect_bounds(const Forma::Element& element, glm::vec2 min, glm::vec2 max)
     {
         ASSERT_TRUE(element.bounds_hint);
         EXPECT_NEAR(element.bounds_hint->min.x, min.x, 1e-5F);
@@ -1323,7 +1323,7 @@ TEST(FormaManifestGeometryTest, TriangleVerticesHitInsideTheTrianglesOnly)
     Forma::Element element;
     form->geometry(std::monostate {}, bytes, element);
 
-    expect_bounds(element, { -0.5F, -0.25F }, { 0.5F, 0.25F });
+    manifest_expect_bounds(element, { -0.5F, -0.25F }, { 0.5F, 0.25F });
     ASSERT_TRUE(element.contains);
     EXPECT_TRUE(element.contains({ 0.F, 0.F }));
     EXPECT_FALSE(element.contains({ 0.45F, 0.2F }));
@@ -1346,7 +1346,7 @@ TEST(FormaManifestGeometryTest, LineVerticesGetTheBoundingBoxAsTheirOnlyHitRegio
     Forma::Element element;
     form->geometry(std::monostate {}, bytes, element);
 
-    expect_bounds(element, { 0.F, 0.F }, { 2.F, 2.F });
+    manifest_expect_bounds(element, { 0.F, 0.F }, { 2.F, 2.F });
     EXPECT_FALSE(element.contains);
 }
 
@@ -1407,7 +1407,7 @@ TEST(FormaManifestGeometryTest, AFilledPolygonIsATriangleListWithTheCapacityOfIt
     Forma::Element element;
     const auto bytes = draw(*form, false, element);
     EXPECT_EQ(read_vertices<Kakshya::MeshVertex>(bytes).size(), 6U);
-    expect_bounds(element, { -0.5F, -0.25F }, { 0.5F, 0.25F });
+    manifest_expect_bounds(element, { -0.5F, -0.25F }, { 0.5F, 0.25F });
 }
 
 TEST(FormaManifestGeometryTest, TheActiveColorReplacesEveryVertexColorWhileTheStateIsTrue)
@@ -1478,7 +1478,7 @@ TEST(FormaManifestGeometryTest, AThicknessDrawsTheRingsAsALineLoopWithTheBoxAsTh
     ASSERT_EQ(lines.size(), 8U);
     for (const auto& line : lines)
         EXPECT_FLOAT_EQ(line.thickness, 2.F);
-    expect_bounds(element, { -0.5F, -0.25F }, { 0.5F, 0.25F });
+    manifest_expect_bounds(element, { -0.5F, -0.25F }, { 0.5F, 0.25F });
     EXPECT_FALSE(element.contains);
 }
 
@@ -1594,7 +1594,7 @@ TEST(FormaManifestGeometryTest, APolygonResolvesANamedContainmentAgainstItsPlace
 
     Forma::Element element;
     (void)draw(*form, false, element);
-    expect_bounds(element, { -0.5F, -0.25F }, { 0.5F, 0.25F });
+    manifest_expect_bounds(element, { -0.5F, -0.25F }, { 0.5F, 0.25F });
     EXPECT_FALSE(element.contains);
 }
 
@@ -1736,7 +1736,7 @@ TEST(FormaManifestDragGeometryTest, TheScaleHitRegionStaysThePlacementRectAtZero
     Forma::Element element;
     form->geometry(0.F, bytes, element);
 
-    expect_bounds(element, { -0.5F, -0.25F }, { 0.5F, 0.25F });
+    manifest_expect_bounds(element, { -0.5F, -0.25F }, { 0.5F, 0.25F });
     EXPECT_FALSE(static_cast<bool>(element.contains));
     EXPECT_TRUE(element.hits({ 0.4F, 0.1F }));
 }
@@ -1781,7 +1781,7 @@ TEST(FormaManifestDragGeometryTest, AHandlePathHitRegionIsThePlacementRect)
     Forma::Element element;
     form->geometry(curve_input().points, bytes, element);
 
-    expect_bounds(element, { -0.5F, -0.5F }, { 0.5F, 0.5F });
+    manifest_expect_bounds(element, { -0.5F, -0.5F }, { 0.5F, 0.5F });
     EXPECT_FALSE(static_cast<bool>(element.contains));
 }
 
@@ -2925,7 +2925,7 @@ TEST(FormaManifestGeometryTest, AVertexFormDrawsTheVerticesAsWrittenWithNothingM
     ASSERT_EQ(vertices.size(), 3U);
     EXPECT_EQ(vertices[2].position, glm::vec3(0.5F, 1.F, 0.25F));
     EXPECT_EQ(vertices[1].color, glm::vec4(0.F, 1.F, 0.F, 1.F));
-    expect_bounds(element, { 0.F, 0.F }, { 1.F, 1.F });
+    manifest_expect_bounds(element, { 0.F, 0.F }, { 1.F, 1.F });
     EXPECT_TRUE(element.hits({ 0.5F, 0.4F }));
     EXPECT_FALSE(element.hits({ 0.05F, 0.9F }));
 }

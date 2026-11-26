@@ -12,7 +12,7 @@ using SchedToken = Vruta::ProcessingToken;
 
 namespace {
 
-    constexpr unsigned int SAMPLE_RATE = 48000;
+    constexpr unsigned int DURATION_CONVERSION_SAMPLE_RATE = 48000;
     constexpr unsigned int FRAME_RATE = 60;
 
 } // namespace
@@ -27,7 +27,7 @@ class ConversionLimitTest : public ::testing::TestWithParam<ConversionLimitCase>
 protected:
     void SetUp() override
     {
-        scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE, FRAME_RATE);
+        scheduler = std::make_shared<Vruta::TaskScheduler>(DURATION_CONVERSION_SAMPLE_RATE, FRAME_RATE);
     }
 
     void TearDown() override
@@ -42,16 +42,16 @@ TEST_P(ConversionLimitTest, FreeFunctionsReturnTheDefinedValue)
 {
     const auto& param = GetParam();
 
-    EXPECT_EQ(Vruta::seconds_to_units(param.seconds, SAMPLE_RATE), param.expected);
-    EXPECT_EQ(Vruta::seconds_to_samples(param.seconds, SAMPLE_RATE), param.expected);
+    EXPECT_EQ(Vruta::seconds_to_units(param.seconds, DURATION_CONVERSION_SAMPLE_RATE), param.expected);
+    EXPECT_EQ(Vruta::seconds_to_samples(param.seconds, DURATION_CONVERSION_SAMPLE_RATE), param.expected);
 }
 
 TEST_P(ConversionLimitTest, SchedulerMatchesTheFreeFunctions)
 {
     const auto& param = GetParam();
 
-    EXPECT_EQ(scheduler->seconds_to_samples(param.seconds), Vruta::seconds_to_samples(param.seconds, SAMPLE_RATE));
-    EXPECT_EQ(scheduler->seconds_to_units(param.seconds, SchedToken::SAMPLE_ACCURATE), Vruta::seconds_to_units(param.seconds, SAMPLE_RATE));
+    EXPECT_EQ(scheduler->seconds_to_samples(param.seconds), Vruta::seconds_to_samples(param.seconds, DURATION_CONVERSION_SAMPLE_RATE));
+    EXPECT_EQ(scheduler->seconds_to_units(param.seconds, SchedToken::SAMPLE_ACCURATE), Vruta::seconds_to_units(param.seconds, DURATION_CONVERSION_SAMPLE_RATE));
     EXPECT_EQ(scheduler->seconds_to_units(param.seconds, SchedToken::FRAME_ACCURATE), Vruta::seconds_to_frames(param.seconds, FRAME_RATE));
 }
 

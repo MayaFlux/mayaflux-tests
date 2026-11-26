@@ -19,7 +19,7 @@ namespace {
         return node.m_state.load();
     }
 
-    bool has(const Node& node, NodeState state)
+    bool root_node_has(const Node& node, NodeState state)
     {
         return (flags(node) & state) != 0;
     }
@@ -51,12 +51,12 @@ namespace {
         root.register_node(node);
 
         EXPECT_EQ(root.get_node_size(), 0U);
-        EXPECT_FALSE(has(*node, NodeState::ACTIVE));
+        EXPECT_FALSE(root_node_has(*node, NodeState::ACTIVE));
 
         root.process_sample();
 
         EXPECT_EQ(root.get_node_size(), 1U);
-        EXPECT_TRUE(has(*node, NodeState::ACTIVE));
+        EXPECT_TRUE(root_node_has(*node, NodeState::ACTIVE));
     }
 
     TEST_F(RootNodeQueueTest, RegisteringTheSameNodeTwiceCommitsOnce)
@@ -86,14 +86,14 @@ namespace {
         root.unregister_node(node);
 
         EXPECT_EQ(root.get_node_size(), 1U);
-        EXPECT_TRUE(has(*node, NodeState::PENDING_REMOVAL));
+        EXPECT_TRUE(root_node_has(*node, NodeState::PENDING_REMOVAL));
 
         root.process_sample();
 
         EXPECT_EQ(root.get_node_size(), 0U);
-        EXPECT_FALSE(has(*node, NodeState::PENDING_REMOVAL));
-        EXPECT_FALSE(has(*node, NodeState::ACTIVE));
-        EXPECT_FALSE(has(*node, NodeState::ACTIVE));
+        EXPECT_FALSE(root_node_has(*node, NodeState::PENDING_REMOVAL));
+        EXPECT_FALSE(root_node_has(*node, NodeState::ACTIVE));
+        EXPECT_FALSE(root_node_has(*node, NodeState::ACTIVE));
     }
 
     TEST_F(RootNodeQueueTest, RemovingAnUnregisteredNodeLeavesItInactive)
@@ -102,8 +102,8 @@ namespace {
         root.process_sample();
 
         EXPECT_EQ(root.get_node_size(), 0U);
-        EXPECT_FALSE(has(*node, NodeState::PENDING_REMOVAL));
-        EXPECT_FALSE(has(*node, NodeState::ACTIVE));
+        EXPECT_FALSE(root_node_has(*node, NodeState::PENDING_REMOVAL));
+        EXPECT_FALSE(root_node_has(*node, NodeState::ACTIVE));
     }
 
     TEST_F(RootNodeQueueTest, RegisterThenUnregisterInOneCycleLeavesNothing)
@@ -113,7 +113,7 @@ namespace {
         root.process_sample();
 
         EXPECT_EQ(root.get_node_size(), 0U);
-        EXPECT_FALSE(has(*node, NodeState::ACTIVE));
+        EXPECT_FALSE(root_node_has(*node, NodeState::ACTIVE));
     }
 
     TEST_F(RootNodeQueueTest, UnregisterThenRegisterInOneCycleLeavesNodeRegistered)
@@ -137,8 +137,8 @@ namespace {
         root.process_sample();
 
         EXPECT_EQ(root.get_node_size(), 1U);
-        EXPECT_TRUE(has(*other, NodeState::ACTIVE));
-        EXPECT_FALSE(has(*node, NodeState::ACTIVE));
+        EXPECT_TRUE(root_node_has(*other, NodeState::ACTIVE));
+        EXPECT_FALSE(root_node_has(*node, NodeState::ACTIVE));
     }
 
     TEST_F(RootNodeQueueTest, QueuedNodeIsHeldAliveUntilCommitted)
@@ -228,8 +228,8 @@ namespace {
         root.terminate_all_nodes();
 
         EXPECT_EQ(root.get_node_size(), 0U);
-        EXPECT_FALSE(has(*node, NodeState::ACTIVE));
-        EXPECT_FALSE(has(*node, NodeState::ACTIVE));
+        EXPECT_FALSE(root_node_has(*node, NodeState::ACTIVE));
+        EXPECT_FALSE(root_node_has(*node, NodeState::ACTIVE));
     }
 
     TEST_F(RootNodeQueueTest, ProcessingStopsAfterTerminate)
@@ -349,7 +349,7 @@ namespace {
 
         root.process_sample();
 
-        EXPECT_FALSE(has(*entry, NodeState::PROCESSED));
+        EXPECT_FALSE(root_node_has(*entry, NodeState::PROCESSED));
     }
 
     TEST_F(RootNodeProcessTest, NodeWithoutChannelUsageStaysProcessedAfterTheCycle)
@@ -359,7 +359,7 @@ namespace {
 
         root.process_sample();
 
-        EXPECT_TRUE(has(*entry, NodeState::PROCESSED));
+        EXPECT_TRUE(root_node_has(*entry, NodeState::PROCESSED));
     }
 
     TEST_F(RootNodeProcessTest, AlreadyProcessedNodeIsNotProcessedAgain)
@@ -448,7 +448,7 @@ namespace {
         second.process_sample();
 
         EXPECT_EQ(ticks, 1);
-        EXPECT_FALSE(has(*entry, NodeState::PROCESSED));
+        EXPECT_FALSE(root_node_has(*entry, NodeState::PROCESSED));
 
         root.process_sample();
         second.process_sample();
@@ -467,11 +467,11 @@ namespace {
 
         root.process_sample();
 
-        EXPECT_TRUE(has(*entry, NodeState::PROCESSED));
+        EXPECT_TRUE(root_node_has(*entry, NodeState::PROCESSED));
 
         second.process_sample();
 
-        EXPECT_FALSE(has(*entry, NodeState::PROCESSED));
+        EXPECT_FALSE(root_node_has(*entry, NodeState::PROCESSED));
     }
 
     TEST_F(RootNodeProcessTest, RemovalClearsTheProcessedFlag)
@@ -479,12 +479,12 @@ namespace {
         auto entry = std::make_shared<Constant>(1.0);
         root.register_node(entry);
         root.process_sample();
-        ASSERT_TRUE(has(*entry, NodeState::PROCESSED));
+        ASSERT_TRUE(root_node_has(*entry, NodeState::PROCESSED));
 
         root.unregister_node(entry);
         root.process_sample();
 
-        EXPECT_FALSE(has(*entry, NodeState::PROCESSED));
+        EXPECT_FALSE(root_node_has(*entry, NodeState::PROCESSED));
     }
 
     TEST_F(RootNodeProcessTest, TerminateAllNodesSkipsFurtherCycles)
@@ -526,7 +526,7 @@ namespace {
 
         EXPECT_EQ(root.get_node_size(), GetParam());
         for (const auto& entry : nodes) {
-            EXPECT_TRUE(has(*entry, NodeState::ACTIVE));
+            EXPECT_TRUE(root_node_has(*entry, NodeState::ACTIVE));
         }
     }
 
@@ -548,7 +548,7 @@ namespace {
 
         EXPECT_EQ(root.get_node_size(), 0U);
         for (const auto& entry : nodes) {
-            EXPECT_FALSE(has(*entry, NodeState::ACTIVE));
+            EXPECT_FALSE(root_node_has(*entry, NodeState::ACTIVE));
         }
     }
 
@@ -688,12 +688,12 @@ namespace {
             ConcurrentCase { "EightProducers", 8, 200 }),
         [](const ::testing::TestParamInfo<ConcurrentCase>& info) { return std::string(info.param.name); });
 
-    struct TokenCase {
+    struct RootNodeTokenCase {
         const char* name;
         Nodes::ProcessingToken token;
     };
 
-    class RootNodeTokenTest : public ::testing::TestWithParam<TokenCase> {
+    class RootNodeTokenTest : public ::testing::TestWithParam<RootNodeTokenCase> {
     protected:
         std::shared_ptr<Constant> make_member(RootNode& root, double value, int* ticks = nullptr)
         {
@@ -758,11 +758,11 @@ namespace {
         Tokens,
         RootNodeTokenTest,
         ::testing::Values(
-            TokenCase { "Audio", Nodes::ProcessingToken::AUDIO_RATE },
-            TokenCase { "Visual", Nodes::ProcessingToken::VISUAL_RATE },
-            TokenCase { "Event", Nodes::ProcessingToken::EVENT_RATE },
-            TokenCase { "Custom", Nodes::ProcessingToken::CUSTOM_RATE }),
-        [](const ::testing::TestParamInfo<TokenCase>& info) { return std::string(info.param.name); });
+            RootNodeTokenCase { "Audio", Nodes::ProcessingToken::AUDIO_RATE },
+            RootNodeTokenCase { "Visual", Nodes::ProcessingToken::VISUAL_RATE },
+            RootNodeTokenCase { "Event", Nodes::ProcessingToken::EVENT_RATE },
+            RootNodeTokenCase { "Custom", Nodes::ProcessingToken::CUSTOM_RATE }),
+        [](const ::testing::TestParamInfo<RootNodeTokenCase>& info) { return std::string(info.param.name); });
 
 }
 }

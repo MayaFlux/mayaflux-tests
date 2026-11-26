@@ -14,8 +14,8 @@ using SchedToken = Vruta::ProcessingToken;
 
 namespace {
 
-    constexpr unsigned int SAMPLE_RATE = 48000;
-    constexpr unsigned int FRAME_RATE = 60;
+    constexpr unsigned int TOKEN_TRAITS_SAMPLE_RATE = 48000;
+    constexpr unsigned int TOKEN_TRAITS_FRAME_RATE = 60;
 
     using SampleTraits = Kriya::RoutineTraits<SchedToken::SAMPLE_ACCURATE>;
     using FrameTraits = Kriya::RoutineTraits<SchedToken::FRAME_ACCURATE>;
@@ -55,7 +55,7 @@ class TokenTraitsTest : public ::testing::Test {
 protected:
     void SetUp() override
     {
-        scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE, FRAME_RATE);
+        scheduler = std::make_shared<Vruta::TaskScheduler>(TOKEN_TRAITS_SAMPLE_RATE, TOKEN_TRAITS_FRAME_RATE);
     }
 
     void TearDown() override
@@ -98,12 +98,12 @@ INSTANTIATE_TEST_SUITE_P(
     Tokens,
     TokenClockTest,
     ::testing::Values(
-        ClockCase { "Sample", SchedToken::SAMPLE_ACCURATE, false, SAMPLE_RATE },
-        ClockCase { "Frame", SchedToken::FRAME_ACCURATE, true, FRAME_RATE },
-        ClockCase { "MultiRate", SchedToken::MULTI_RATE, false, SAMPLE_RATE },
+        ClockCase { "Sample", SchedToken::SAMPLE_ACCURATE, false, TOKEN_TRAITS_SAMPLE_RATE },
+        ClockCase { "Frame", SchedToken::FRAME_ACCURATE, true, TOKEN_TRAITS_FRAME_RATE },
+        ClockCase { "MultiRate", SchedToken::MULTI_RATE, false, TOKEN_TRAITS_SAMPLE_RATE },
         ClockCase { "OnDemand", SchedToken::ON_DEMAND, false, 1 },
         ClockCase { "Custom", SchedToken::CUSTOM, false, 1000 },
-        ClockCase { "EventDriven", SchedToken::EVENT_DRIVEN, false, SAMPLE_RATE }),
+        ClockCase { "EventDriven", SchedToken::EVENT_DRIVEN, false, TOKEN_TRAITS_SAMPLE_RATE }),
     [](const ::testing::TestParamInfo<ClockCase>& info) { return std::string(info.param.name); });
 
 TEST_F(TokenTraitsTest, ConditionalTokenGetsNoClock)
@@ -146,9 +146,9 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_F(TokenTraitsTest, RoutineTraitsUnitsFollowTheTokenClock)
 {
     EXPECT_EQ(SampleTraits::units(0.5), Vruta::seconds_to_samples(0.5));
-    EXPECT_EQ(SampleTraits::units(0.5), SAMPLE_RATE / 2);
+    EXPECT_EQ(SampleTraits::units(0.5), TOKEN_TRAITS_SAMPLE_RATE / 2);
     EXPECT_EQ(FrameTraits::units(1.0), Vruta::seconds_to_frames(1.0));
-    EXPECT_EQ(FrameTraits::units(1.0), FRAME_RATE);
+    EXPECT_EQ(FrameTraits::units(1.0), TOKEN_TRAITS_FRAME_RATE);
     EXPECT_EQ(CrossTraits::units(0.5), Vruta::seconds_to_samples(0.5));
 }
 

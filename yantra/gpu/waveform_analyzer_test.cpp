@@ -20,9 +20,9 @@ namespace {
 
     namespace D = Kinesis::Discrete;
 
-    constexpr double k_rate = 16000.0;
+    constexpr double k_waveform_analyzer_rate = 16000.0;
 
-    WaveformAnalyzerConfig make_config(WaveformMethod method = WaveformMethod::LEVEL, uint32_t window = 512, uint32_t hop = 256)
+    WaveformAnalyzerConfig waveform_analyzer_make_config(WaveformMethod method = WaveformMethod::LEVEL, uint32_t window = 512, uint32_t hop = 256)
     {
         WaveformAnalyzerConfig config;
         config.method = method;
@@ -31,7 +31,7 @@ namespace {
         return config;
     }
 
-    std::vector<Kakshya::DataVariant> input_of(const std::vector<std::vector<double>>& channels)
+    std::vector<Kakshya::DataVariant> waveform_analyzer_input_of(const std::vector<std::vector<double>>& channels)
     {
         std::vector<Kakshya::DataVariant> out;
         out.reserve(channels.size());
@@ -89,7 +89,7 @@ namespace {
         return signal;
     }
 
-    void expect_close(double got, double want)
+    void waveform_analyzer_expect_close(double got, double want)
     {
         EXPECT_NEAR(got, want, 1.0e-11 * (1.0 + std::abs(want)));
     }
@@ -103,26 +103,26 @@ namespace {
     TYPED_TEST(WaveformAnalyzerGpuTest, LevelMatchesTheKinesisRms)
     {
         const auto signal = noise(5000, 1.0, 3);
-        StandardWaveformAnalyzer analyzer(make_config(WaveformMethod::LEVEL));
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config(WaveformMethod::LEVEL));
 
-        const auto analysis = analyzer.analyze_waveform(input_of({ signal }));
+        const auto analysis = analyzer.analyze_waveform(waveform_analyzer_input_of({ signal }));
 
         const size_t windows = D::num_windows(signal.size(), 512, 256);
         const auto want = D::rms(signal, windows, 256, 512);
         ASSERT_EQ(analysis.channels.size(), 1U);
         ASSERT_EQ(analysis.channels[0].values.size(), windows);
         for (size_t w = 0; w < windows; ++w) {
-            expect_close(analysis.channels[0].values[w], want[w]);
-            expect_close(analysis.channels[0].level[w], want[w]);
+            waveform_analyzer_expect_close(analysis.channels[0].values[w], want[w]);
+            waveform_analyzer_expect_close(analysis.channels[0].level[w], want[w]);
         }
     }
 
     TYPED_TEST(WaveformAnalyzerGpuTest, CrossingRateMatchesTheKinesisRateExactly)
     {
         const auto signal = noise(5000, 1.0, 5);
-        StandardWaveformAnalyzer analyzer(make_config(WaveformMethod::CROSSING_RATE));
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config(WaveformMethod::CROSSING_RATE));
 
-        const auto analysis = analyzer.analyze_waveform(input_of({ signal }));
+        const auto analysis = analyzer.analyze_waveform(waveform_analyzer_input_of({ signal }));
 
         const size_t windows = D::num_windows(signal.size(), 512, 256);
         const auto want = D::zero_crossing_rate(signal, windows, 256, 512);
@@ -135,9 +135,9 @@ namespace {
     TYPED_TEST(WaveformAnalyzerGpuTest, PeriodAndPeriodicityMatchKinesisPeriodicity)
     {
         const auto signal = voice_like();
-        StandardWaveformAnalyzer analyzer(make_config(WaveformMethod::PERIOD));
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config(WaveformMethod::PERIOD));
 
-        const auto analysis = analyzer.analyze_waveform(input_of({ signal }));
+        const auto analysis = analyzer.analyze_waveform(waveform_analyzer_input_of({ signal }));
 
         const size_t windows = D::num_windows(signal.size(), 512, 256);
         const auto [strengths, lags] = D::periodicity(signal, windows, 256, 512, 40, 228);
@@ -147,16 +147,16 @@ namespace {
             EXPECT_EQ(channel.period[w], static_cast<double>(lags[w]));
             EXPECT_EQ(channel.values[w], channel.period[w]);
             EXPECT_NEAR(channel.periodicity[w], strengths[w], 1.0e-9);
-            EXPECT_NEAR(channel.frequency[w], lags[w] > 0 ? k_rate / static_cast<double>(lags[w]) : 0.0, 1.0e-9);
+            EXPECT_NEAR(channel.frequency[w], lags[w] > 0 ? k_waveform_analyzer_rate / static_cast<double>(lags[w]) : 0.0, 1.0e-9);
         }
     }
 
     TYPED_TEST(WaveformAnalyzerGpuTest, AHopThatDoesNotDivide512MatchesKinesisPeriodicity)
     {
         const auto signal = voice_like();
-        StandardWaveformAnalyzer analyzer(make_config(WaveformMethod::PERIOD, 512, 100));
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config(WaveformMethod::PERIOD, 512, 100));
 
-        const auto analysis = analyzer.analyze_waveform(input_of({ signal }));
+        const auto analysis = analyzer.analyze_waveform(waveform_analyzer_input_of({ signal }));
 
         const size_t windows = D::num_windows(signal.size(), 512, 100);
         const auto [strengths, lags] = D::periodicity(signal, windows, 100, 512, 40, 228);
@@ -172,13 +172,13 @@ namespace {
     TYPED_TEST(WaveformAnalyzerGpuTest, KeepingProfilesDoesNotChangeThePeriodOrTheStrength)
     {
         const auto signal = voice_like();
-        auto kept = make_config(WaveformMethod::PERIODICITY);
+        auto kept = waveform_analyzer_make_config(WaveformMethod::PERIODICITY);
         kept.keep_profiles = true;
-        StandardWaveformAnalyzer without(make_config(WaveformMethod::PERIODICITY));
+        StandardWaveformAnalyzer without(waveform_analyzer_make_config(WaveformMethod::PERIODICITY));
         StandardWaveformAnalyzer with(kept);
 
-        const auto a = without.analyze_waveform(input_of({ signal })).channels[0];
-        const auto b = with.analyze_waveform(input_of({ signal })).channels[0];
+        const auto a = without.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
+        const auto b = with.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
 
         ASSERT_EQ(a.period.size(), b.period.size());
         EXPECT_EQ(a.period, b.period);
@@ -188,7 +188,7 @@ namespace {
 
     TYPED_TEST(WaveformAnalyzerGpuTest, UnbiasedStrengthDoesNotFallWithThePeriod)
     {
-        auto biased_config = make_config(WaveformMethod::PERIODICITY);
+        auto biased_config = waveform_analyzer_make_config(WaveformMethod::PERIODICITY);
         auto unbiased_config = biased_config;
         unbiased_config.unbiased_periodicity = true;
         StandardWaveformAnalyzer biased(biased_config);
@@ -198,8 +198,8 @@ namespace {
         int slot = 0;
         for (const double period : { 80.0, 160.0 }) {
             const auto signal = pure_tone(4096, period);
-            const auto plain = biased.analyze_waveform(input_of({ signal })).channels[0];
-            const auto corrected = unbiased.analyze_waveform(input_of({ signal })).channels[0];
+            const auto plain = biased.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
+            const auto corrected = unbiased.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
 
             ASSERT_EQ(plain.periodicity.size(), corrected.periodicity.size());
             for (size_t w = 0; w < plain.periodicity.size(); ++w) {
@@ -216,13 +216,13 @@ namespace {
     TYPED_TEST(WaveformAnalyzerGpuTest, UnbiasedStrengthIsTheChosenLagsStrengthOverItsShareOfPairs)
     {
         const auto signal = voice_like();
-        auto unbiased_config = make_config(WaveformMethod::PERIODICITY);
+        auto unbiased_config = waveform_analyzer_make_config(WaveformMethod::PERIODICITY);
         unbiased_config.unbiased_periodicity = true;
-        StandardWaveformAnalyzer biased(make_config(WaveformMethod::PERIODICITY));
+        StandardWaveformAnalyzer biased(waveform_analyzer_make_config(WaveformMethod::PERIODICITY));
         StandardWaveformAnalyzer unbiased(unbiased_config);
 
-        const auto plain = biased.analyze_waveform(input_of({ signal })).channels[0];
-        const auto corrected = unbiased.analyze_waveform(input_of({ signal })).channels[0];
+        const auto plain = biased.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
+        const auto corrected = unbiased.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
 
         ASSERT_EQ(plain.period.size(), corrected.period.size());
         EXPECT_EQ(plain.period, corrected.period);
@@ -235,9 +235,9 @@ namespace {
 
     TYPED_TEST(WaveformAnalyzerGpuTest, KnownSegmentsReportTheirFundamentalSilenceAndNoise)
     {
-        StandardWaveformAnalyzer analyzer(make_config(WaveformMethod::PERIOD));
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config(WaveformMethod::PERIOD));
 
-        const auto analysis = analyzer.analyze_waveform(input_of({ voice_like() }));
+        const auto analysis = analyzer.analyze_waveform(waveform_analyzer_input_of({ voice_like() }));
 
         const auto& channel = analysis.channels[0];
         ASSERT_EQ(channel.period.size(), 111U);
@@ -264,13 +264,13 @@ namespace {
     TYPED_TEST(WaveformAnalyzerGpuTest, TheMethodSelectsTheOutputDataAndEveryDescriptorIsAlwaysPresent)
     {
         const auto signal = voice_like();
-        const std::vector<Kakshya::DataVariant> input = input_of({ signal });
+        const std::vector<Kakshya::DataVariant> input = waveform_analyzer_input_of({ signal });
 
         for (const auto method : { WaveformMethod::LEVEL, WaveformMethod::CROSSING_RATE, WaveformMethod::PERIODICITY,
                  WaveformMethod::PERIOD, WaveformMethod::FREQUENCY, WaveformMethod::PEAK, WaveformMethod::DC_OFFSET,
                  WaveformMethod::CREST_FACTOR, WaveformMethod::HARMONICITY, WaveformMethod::LEVEL_CHANGE,
                  WaveformMethod::PERIOD_CHANGE }) {
-            StandardWaveformAnalyzer analyzer(make_config(method));
+            StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config(method));
             const auto channel = analyzer.analyze_waveform(input).channels[0];
 
             const std::vector<double>* expected = nullptr;
@@ -318,9 +318,9 @@ namespace {
 
     TYPED_TEST(WaveformAnalyzerGpuTest, ASilentChannelHasNothingToReport)
     {
-        StandardWaveformAnalyzer analyzer(make_config(WaveformMethod::PERIODICITY));
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config(WaveformMethod::PERIODICITY));
 
-        const auto channel = analyzer.analyze_waveform(input_of({ std::vector<double>(2048, 0.0) })).channels[0];
+        const auto channel = analyzer.analyze_waveform(waveform_analyzer_input_of({ std::vector<double>(2048, 0.0) })).channels[0];
 
         ASSERT_FALSE(channel.level.empty());
         for (size_t w = 0; w < channel.level.size(); ++w) {
@@ -333,9 +333,9 @@ namespace {
 
     TYPED_TEST(WaveformAnalyzerGpuTest, AChannelShorterThanOneWindowGivesNoWindows)
     {
-        StandardWaveformAnalyzer analyzer(make_config());
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config());
 
-        const auto analysis = analyzer.analyze_waveform(input_of({ noise(300, 1.0, 11) }));
+        const auto analysis = analyzer.analyze_waveform(waveform_analyzer_input_of({ noise(300, 1.0, 11) }));
 
         ASSERT_EQ(analysis.channels.size(), 1U);
         EXPECT_TRUE(analysis.channels[0].values.empty());
@@ -344,10 +344,10 @@ namespace {
 
     TYPED_TEST(WaveformAnalyzerGpuTest, EveryChannelIsAnalysedOnItsOwn)
     {
-        StandardWaveformAnalyzer analyzer(make_config(WaveformMethod::PERIOD));
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config(WaveformMethod::PERIOD));
 
         const auto analysis = analyzer.analyze_waveform(
-            input_of({ harmonic_stack(4096, 90.0, 0.5), harmonic_stack(4096, 140.0, 0.5) }));
+            waveform_analyzer_input_of({ harmonic_stack(4096, 90.0, 0.5), harmonic_stack(4096, 140.0, 0.5) }));
 
         ASSERT_EQ(analysis.channels.size(), 2U);
         for (const double period : analysis.channels[0].values) {
@@ -360,9 +360,9 @@ namespace {
 
     TYPED_TEST(WaveformAnalyzerGpuTest, WindowPositionsFollowTheHop)
     {
-        StandardWaveformAnalyzer analyzer(make_config(WaveformMethod::LEVEL, 512, 128));
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config(WaveformMethod::LEVEL, 512, 128));
 
-        const auto analysis = analyzer.analyze_waveform(input_of({ noise(1500, 1.0, 13) }));
+        const auto analysis = analyzer.analyze_waveform(waveform_analyzer_input_of({ noise(1500, 1.0, 13) }));
 
         const auto& positions = analysis.channels[0].window_positions;
         ASSERT_EQ(positions.size(), 8U);
@@ -381,9 +381,9 @@ namespace {
         for (size_t i = 0; i < signal.size(); ++i) {
             signal[i] += grit[i];
         }
-        StandardWaveformAnalyzer analyzer(make_config(WaveformMethod::PERIOD, 512, hop));
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config(WaveformMethod::PERIOD, 512, hop));
 
-        const auto channel = analyzer.analyze_waveform(input_of({ signal })).channels[0];
+        const auto channel = analyzer.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
 
         const auto [strengths, lags] = D::periodicity(signal, windows, hop, 512, 40, 228);
         ASSERT_EQ(channel.period.size(), windows);
@@ -398,9 +398,9 @@ namespace {
         for (auto& value : signal) {
             value += 0.2;
         }
-        StandardWaveformAnalyzer analyzer(make_config());
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config());
 
-        const auto channel = analyzer.analyze_waveform(input_of({ signal })).channels[0];
+        const auto channel = analyzer.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
 
         const size_t windows = D::num_windows(signal.size(), 512, 256);
         const auto peak = D::peak(signal, windows, 256, 512);
@@ -409,16 +409,16 @@ namespace {
         ASSERT_EQ(channel.peak.size(), windows);
         for (size_t w = 0; w < windows; ++w) {
             EXPECT_EQ(channel.peak[w], peak[w]);
-            expect_close(channel.dc_offset[w], mean[w]);
-            expect_close(channel.crest_factor[w], peak[w] / rms[w]);
+            waveform_analyzer_expect_close(channel.dc_offset[w], mean[w]);
+            waveform_analyzer_expect_close(channel.crest_factor[w], peak[w] / rms[w]);
         }
     }
 
     TYPED_TEST(WaveformAnalyzerGpuTest, HarmonicityAndChangesFollowTheirDefinitions)
     {
-        StandardWaveformAnalyzer analyzer(make_config());
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config());
 
-        const auto channel = analyzer.analyze_waveform(input_of({ voice_like() })).channels[0];
+        const auto channel = analyzer.analyze_waveform(waveform_analyzer_input_of({ voice_like() })).channels[0];
 
         ASSERT_EQ(channel.harmonicity.size(), 111U);
         EXPECT_EQ(channel.level_change[0], 0.0);
@@ -441,9 +441,9 @@ namespace {
 
     TYPED_TEST(WaveformAnalyzerGpuTest, ProfilesAreOnlyKeptOnRequest)
     {
-        StandardWaveformAnalyzer analyzer(make_config());
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config());
 
-        const auto channel = analyzer.analyze_waveform(input_of({ voice_like() })).channels[0];
+        const auto channel = analyzer.analyze_waveform(waveform_analyzer_input_of({ voice_like() })).channels[0];
 
         EXPECT_TRUE(channel.autocorrelation.values.empty());
         EXPECT_TRUE(channel.mean_difference.values.empty());
@@ -454,11 +454,11 @@ namespace {
     {
         auto signal = voice_like();
         signal.resize(4096);
-        auto config = make_config();
+        auto config = waveform_analyzer_make_config();
         config.keep_profiles = true;
         StandardWaveformAnalyzer analyzer(config);
 
-        const auto channel = analyzer.analyze_waveform(input_of({ signal })).channels[0];
+        const auto channel = analyzer.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
 
         const size_t windows = D::num_windows(signal.size(), 512, 256);
         const auto& acf = channel.autocorrelation;
@@ -504,12 +504,12 @@ namespace {
     {
         auto signal = voice_like();
         signal.resize(4096);
-        auto config = make_config(WaveformMethod::PERIOD);
+        auto config = waveform_analyzer_make_config(WaveformMethod::PERIOD);
         config.keep_profiles = true;
         config.unbiased_periodicity = false;
         StandardWaveformAnalyzer analyzer(config);
 
-        const auto channel = analyzer.analyze_waveform(input_of({ signal })).channels[0];
+        const auto channel = analyzer.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
 
         const auto& acf = channel.autocorrelation;
         const uint32_t first = channel.mean_difference.first_lag;
@@ -536,15 +536,15 @@ namespace {
         auto signal = voice_like();
         signal.resize(4096);
         for (const bool unbiased : { false, true }) {
-            auto exact_config = make_config(WaveformMethod::LEVEL);
+            auto exact_config = waveform_analyzer_make_config(WaveformMethod::LEVEL);
             exact_config.unbiased_periodicity = unbiased;
             auto native_config = exact_config;
             native_config.native_float = true;
             StandardWaveformAnalyzer exact(exact_config);
             StandardWaveformAnalyzer native(native_config);
 
-            const auto want = exact.analyze_waveform(input_of({ signal })).channels[0];
-            const auto got = native.analyze_waveform(input_of({ signal })).channels[0];
+            const auto want = exact.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
+            const auto got = native.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
 
             ASSERT_EQ(got.level.size(), want.level.size());
             ASSERT_GT(want.level.size(), 0U);
@@ -569,12 +569,12 @@ namespace {
     {
         auto signal = voice_like();
         signal.resize(3000);
-        auto config = make_config(WaveformMethod::PERIOD);
+        auto config = waveform_analyzer_make_config(WaveformMethod::PERIOD);
         config.native_float = true;
         StandardWaveformAnalyzer analyzer(config);
 
-        const auto first = analyzer.analyze_waveform(input_of({ signal })).channels[0];
-        const auto second = analyzer.analyze_waveform(input_of({ signal })).channels[0];
+        const auto first = analyzer.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
+        const auto second = analyzer.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
 
         EXPECT_EQ(first.period, second.period);
         EXPECT_EQ(first.periodicity, second.periodicity);
@@ -589,11 +589,11 @@ namespace {
     {
         auto signal = voice_like();
         signal.resize(4096);
-        auto config = make_config();
+        auto config = waveform_analyzer_make_config();
         config.keep_profiles = true;
         StandardWaveformAnalyzer analyzer(config);
 
-        const auto channel = analyzer.analyze_waveform(input_of({ signal })).channels[0];
+        const auto channel = analyzer.analyze_waveform(waveform_analyzer_input_of({ signal })).channels[0];
 
         const auto tensor = channel.autocorrelation.to_tensor("autocorrelation");
         ASSERT_NE(tensor, nullptr);
@@ -608,8 +608,8 @@ namespace {
 
     TYPED_TEST(WaveformAnalyzerGpuTest, AnalysingTwiceGivesTheSameResult)
     {
-        const std::vector<Kakshya::DataVariant> input = input_of({ voice_like() });
-        StandardWaveformAnalyzer analyzer(make_config(WaveformMethod::PERIODICITY));
+        const std::vector<Kakshya::DataVariant> input = waveform_analyzer_input_of({ voice_like() });
+        StandardWaveformAnalyzer analyzer(waveform_analyzer_make_config(WaveformMethod::PERIODICITY));
 
         const auto first = analyzer.analyze_waveform(input).channels[0];
         const auto second = analyzer.analyze_waveform(input).channels[0];
@@ -626,35 +626,35 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST, WaveformAnalyzerConfigTest, AWindowShorterThanTwiceTheLongestPeriodIsRejected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        EXPECT_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 256, 128)), std::invalid_argument);
+        EXPECT_THROW(StandardWaveformAnalyzer(waveform_analyzer_make_config(WaveformMethod::LEVEL, 256, 128)), std::invalid_argument);
     }
 
     MAYAFLUX_TEST_WITH(TEST, WaveformAnalyzerConfigTest, AnyHopAboveZeroIsAccepted, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        EXPECT_NO_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 512, 100)));
-        EXPECT_NO_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 512, 441)));
-        EXPECT_THROW(StandardWaveformAnalyzer(make_config(WaveformMethod::LEVEL, 512, 0)), std::invalid_argument);
+        EXPECT_NO_THROW(StandardWaveformAnalyzer(waveform_analyzer_make_config(WaveformMethod::LEVEL, 512, 100)));
+        EXPECT_NO_THROW(StandardWaveformAnalyzer(waveform_analyzer_make_config(WaveformMethod::LEVEL, 512, 441)));
+        EXPECT_THROW(StandardWaveformAnalyzer(waveform_analyzer_make_config(WaveformMethod::LEVEL, 512, 0)), std::invalid_argument);
     }
 
     MAYAFLUX_TEST_WITH(TEST, WaveformAnalyzerConfigTest, FrequenciesMustAscendBelowNyquist, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        auto config = make_config();
+        auto config = waveform_analyzer_make_config();
         config.low_frequency = 400.0;
         config.high_frequency = 70.0;
         EXPECT_THROW(StandardWaveformAnalyzer { config }, std::invalid_argument);
 
-        config = make_config();
+        config = waveform_analyzer_make_config();
         config.high_frequency = 8000.0;
         EXPECT_THROW(StandardWaveformAnalyzer { config }, std::invalid_argument);
 
-        config = make_config();
+        config = waveform_analyzer_make_config();
         config.sample_rate = 0.0;
         EXPECT_THROW(StandardWaveformAnalyzer { config }, std::invalid_argument);
     }
 
     MAYAFLUX_TEST_WITH(TEST, WaveformAnalyzerConfigTest, ARangeSpanningFewerThanTwoLagsIsRejected, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
-        auto config = make_config();
+        auto config = waveform_analyzer_make_config();
         config.low_frequency = 399.0;
         config.high_frequency = 400.0;
         EXPECT_THROW(StandardWaveformAnalyzer { config }, std::invalid_argument);

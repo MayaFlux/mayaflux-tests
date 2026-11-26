@@ -20,7 +20,7 @@ namespace {
 
     constexpr uint64_t k_mantissa_mask = (1ULL << 52) - 1ULL;
 
-    uint64_t bits_of(double value) { return std::bit_cast<uint64_t>(value); }
+    uint64_t word_pair_map_bits_of(double value) { return std::bit_cast<uint64_t>(value); }
 
     double make(uint64_t sign, uint64_t field, uint64_t mantissa)
     {
@@ -30,7 +30,7 @@ namespace {
     std::string hex(double value)
     {
         char text[24];
-        std::snprintf(text, sizeof(text), "%016llx", static_cast<unsigned long long>(bits_of(value)));
+        std::snprintf(text, sizeof(text), "%016llx", static_cast<unsigned long long>(word_pair_map_bits_of(value)));
         return text;
     }
 
@@ -49,18 +49,18 @@ namespace {
         }
     }
 
-    bool same(double got, double want)
+    bool word_pair_map_same(double got, double want)
     {
-        return (std::isnan(got) && std::isnan(want)) || bits_of(got) == bits_of(want);
+        return (std::isnan(got) && std::isnan(want)) || word_pair_map_bits_of(got) == word_pair_map_bits_of(want);
     }
 
-    struct Pass {
+    struct WordPairMapPass {
         std::unique_ptr<WordPairExecutionContext> context;
         Yantra::GpuComputeConfig config;
         WordPairOp op;
     };
 
-    Pass make_pass(WordPairOp op)
+    WordPairMapPass word_pair_map_make_pass(WordPairOp op)
     {
         const auto spec = word_pair_map_spec(op);
         auto config = Yantra::config_from_spec(spec);
@@ -68,7 +68,7 @@ namespace {
         return { std::move(context), std::move(config), op };
     }
 
-    std::vector<double> run(Pass& pass, std::span<const double> a, std::span<const double> b)
+    std::vector<double> run(WordPairMapPass& pass, std::span<const double> a, std::span<const double> b)
     {
         const bool unary = pass.op == WordPairOp::Sqrt;
         const size_t count = unary ? a.size() : std::min(a.size(), b.size());
@@ -85,7 +85,7 @@ namespace {
         const size_t count = unary ? left.size() : std::min(left.size(), right.size());
         ASSERT_GT(count, 0U);
 
-        auto pass = make_pass(op);
+        auto pass = word_pair_map_make_pass(op);
         const auto got = run(pass, left, right);
         ASSERT_EQ(got.size(), count);
 
@@ -94,7 +94,7 @@ namespace {
         for (size_t i = 0; i < count; ++i) {
             const double b = unary ? 0.0 : right[i];
             const double want = oracle(op, left[i], b);
-            if (!same(got[i], want)) {
+            if (!word_pair_map_same(got[i], want)) {
                 if (wrong < 8) {
                     report += "  a " + hex(left[i]) + "  b " + hex(b) + "  got " + hex(got[i]) + "  want " + hex(want) + "\n";
                 }
@@ -382,7 +382,7 @@ namespace {
         expect_exact(WordPairOp::Div, products, divisors);
         expect_exact(WordPairOp::Sqrt, squares);
 
-        auto pass = make_pass(WordPairOp::Sqrt);
+        auto pass = word_pair_map_make_pass(WordPairOp::Sqrt);
         const auto roots = run(pass, squares, {});
         ASSERT_EQ(roots.size(), squares.size());
         for (size_t i = 0; i < squares.size(); ++i) {
@@ -400,7 +400,7 @@ namespace {
             const uint64_t draw = engine();
             const double value = make(0, 1023 - 60 + (draw % 121), draw >> 8);
             const int64_t step = static_cast<int64_t>((draw >> 3) % 9) - 4;
-            const uint64_t neighbour = static_cast<uint64_t>(static_cast<int64_t>(bits_of(value)) + step);
+            const uint64_t neighbour = static_cast<uint64_t>(static_cast<int64_t>(word_pair_map_bits_of(value)) + step);
             a.push_back(value);
             b.push_back(-std::bit_cast<double>(neighbour));
         }
@@ -409,7 +409,7 @@ namespace {
 
     TYPED_TEST(WordPairMapGpuTest, ACountSmallerThanOneWorkgroupLeavesTheGuardedThreadsIdle)
     {
-        auto pass = make_pass(WordPairOp::Div);
+        auto pass = word_pair_map_make_pass(WordPairOp::Div);
         const std::vector<double> a { 1.0, 2.0, 3.0 };
         const std::vector<double> b { 4.0, 5.0, 6.0 };
         pass.context->record_stages({ word_pair_map_stage(*pass.context, pass.config, WordPairOp::Div, a, b) });
@@ -428,7 +428,7 @@ namespace {
     void expect_float_conversion(const std::vector<double>& values)
     {
         ASSERT_GT(values.size(), 0U);
-        auto pass = make_pass(WordPairOp::ToFloat32);
+        auto pass = word_pair_map_make_pass(WordPairOp::ToFloat32);
         pass.context->record_stages({ word_pair_map_stage(*pass.context, pass.config, WordPairOp::ToFloat32, values, std::span<const double> {}) });
         const auto got = Yantra::read_float_results(*pass.context, values.size());
 
@@ -525,7 +525,7 @@ namespace {
 
     TYPED_TEST(WordPairMapGpuTest, AFloatResultCanBeSharedWithAnotherContext)
     {
-        auto pass = make_pass(WordPairOp::ToFloat32);
+        auto pass = word_pair_map_make_pass(WordPairOp::ToFloat32);
         const auto values = random_moderate(5000, 84);
         pass.context->ensure_shared_buffer(0, 1, values.size(), Yantra::GpuBufferBinding::ElementType::FLOAT32);
 

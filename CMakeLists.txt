@@ -27,6 +27,11 @@ else()
 endif()
 
 list(REMOVE_ITEM MAYAFLUX_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/test_main.cpp")
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_main.cpp"
+    "${CMAKE_SOURCE_DIR}/src/MayaFlux/IO/Image/TinyExrImpl.cpp"
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON
+)
 foreach(test_source IN LISTS MAYAFLUX_TEST_SOURCES)
     file(RELATIVE_PATH test_relative "${CMAKE_CURRENT_SOURCE_DIR}" "${test_source}")
     if(NOT test_relative MATCHES "^([^/]+)/.+\\.cpp$")
@@ -38,6 +43,33 @@ foreach(test_source IN LISTS MAYAFLUX_TEST_SOURCES)
 endforeach()
 list(REMOVE_DUPLICATES MAYAFLUX_TEST_GROUPS)
 list(SORT MAYAFLUX_TEST_GROUPS)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(MAYAFLUX_TEST_COMPILE_OPTIONS_DEFAULT "-O0;-g1")
+else()
+    set(MAYAFLUX_TEST_COMPILE_OPTIONS_DEFAULT "")
+endif()
+set(MAYAFLUX_TEST_COMPILE_OPTIONS "${MAYAFLUX_TEST_COMPILE_OPTIONS_DEFAULT}" CACHE STRING
+    "Compile options for the test targets, applied after the build type flags")
+
+option(MAYAFLUX_TEST_UNITY "Compile each test target as unity batches" OFF)
+
+set(MAYAFLUX_TEST_PCH_GROUPS_full api buffers kriya models nexus portal vulkan yantra)
+set(MAYAFLUX_TEST_PCH_GROUPS_math io kakshya kinesis nodes)
+
+set(MAYAFLUX_TEST_PCH_HEADERS_base
+    "${CMAKE_SOURCE_DIR}/cmake/pch.h"
+    <gtest/gtest.h>
+)
+set(MAYAFLUX_TEST_PCH_HEADERS_math
+    ${MAYAFLUX_TEST_PCH_HEADERS_base}
+    <glm/glm.hpp>
+)
+set(MAYAFLUX_TEST_PCH_HEADERS_full
+    ${MAYAFLUX_TEST_PCH_HEADERS_math}
+    <vulkan/vulkan.hpp>
+    <Eigen/Dense>
+)
 
 foreach(test_group IN LISTS MAYAFLUX_TEST_GROUPS)
     set(test_target "MayaFluxTests_${test_group}")
@@ -62,7 +94,28 @@ foreach(test_group IN LISTS MAYAFLUX_TEST_GROUPS)
     set_target_properties(${test_target} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
-    target_precompile_headers(${test_target} PUBLIC "${CMAKE_SOURCE_DIR}/cmake/pch.h")
+    target_compile_options(${test_target} PRIVATE ${MAYAFLUX_TEST_COMPILE_OPTIONS})
+
+    if(MAYAFLUX_TEST_UNITY)
+        set_target_properties(${test_target} PROPERTIES
+            UNITY_BUILD ON
+            UNITY_BUILD_BATCH_SIZE 8
+        )
+    endif()
+
+    if(test_group IN_LIST MAYAFLUX_TEST_PCH_GROUPS_full)
+        set(test_pch_tier full)
+    elseif(test_group IN_LIST MAYAFLUX_TEST_PCH_GROUPS_math)
+        set(test_pch_tier math)
+    else()
+        set(test_pch_tier base)
+    endif()
+    if(DEFINED test_pch_owner_${test_pch_tier})
+        target_precompile_headers(${test_target} REUSE_FROM ${test_pch_owner_${test_pch_tier}})
+    else()
+        set(test_pch_owner_${test_pch_tier} ${test_target})
+        target_precompile_headers(${test_target} PRIVATE ${MAYAFLUX_TEST_PCH_HEADERS_${test_pch_tier}})
+    endif()
 
     if(MSVC)
         set_property(TARGET ${test_target} PROPERTY

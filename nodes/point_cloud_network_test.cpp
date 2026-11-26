@@ -26,7 +26,7 @@ namespace {
     using Nodes::Network::PointCloudNetwork;
     using Nodes::Network::TopologyOperator;
 
-    constexpr float k_eps = 1e-5F;
+    constexpr float k_point_cloud_network_eps = 1e-5F;
 
     class FlexiblePathOperator : public PathOperator {
     public:
@@ -77,7 +77,7 @@ namespace {
         return bytes.size() / sizeof(LineVertex);
     }
 
-    std::vector<uint8_t> copy_of(std::span<const uint8_t> bytes)
+    std::vector<uint8_t> point_cloud_network_copy_of(std::span<const uint8_t> bytes)
     {
         return { bytes.begin(), bytes.end() };
     }
@@ -97,7 +97,7 @@ namespace {
 
     bool near_color(const glm::vec3& a, const glm::vec3& b)
     {
-        return std::abs(a.x - b.x) < k_eps && std::abs(a.y - b.y) < k_eps && std::abs(a.z - b.z) < k_eps;
+        return std::abs(a.x - b.x) < k_point_cloud_network_eps && std::abs(a.y - b.y) < k_point_cloud_network_eps && std::abs(a.z - b.z) < k_point_cloud_network_eps;
     }
 
     std::vector<size_t> connections_per_topology(const TopologyOperator& op)
@@ -198,12 +198,12 @@ namespace {
     {
         PathOperator op;
         op.initialize_paths({ points(6), points(8) }, InterpolationMode::CATMULL_ROM);
-        const auto before = copy_of(op.get_vertex_data());
+        const auto before = point_cloud_network_copy_of(op.get_vertex_data());
 
         op.set_parameter("tension", 0.0);
         op.process(0.0F);
 
-        EXPECT_NE(copy_of(op.get_vertex_data()), before);
+        EXPECT_NE(point_cloud_network_copy_of(op.get_vertex_data()), before);
     }
 
     TEST(PathOperatorTest, ThicknessParameterReachesEveryVertexOfEveryPath)
@@ -261,19 +261,19 @@ namespace {
         by_setter.process(0.0F);
         by_parameter.process(0.0F);
 
-        EXPECT_EQ(copy_of(by_setter.get_vertex_data()), copy_of(by_parameter.get_vertex_data()));
+        EXPECT_EQ(point_cloud_network_copy_of(by_setter.get_vertex_data()), point_cloud_network_copy_of(by_parameter.get_vertex_data()));
     }
 
     TEST(PathOperatorTest, UnknownParameterChangesNothing)
     {
         PathOperator op;
         op.initialize(points(6));
-        const auto before = copy_of(op.get_vertex_data());
+        const auto before = point_cloud_network_copy_of(op.get_vertex_data());
 
         op.set_parameter("no_such_parameter", 3.0);
         op.process(0.0F);
 
-        EXPECT_EQ(copy_of(op.get_vertex_data()), before);
+        EXPECT_EQ(point_cloud_network_copy_of(op.get_vertex_data()), before);
     }
 
     TEST(PathOperatorTest, QueryStateReportsCountsAndNothingElse)
@@ -479,12 +479,12 @@ namespace {
     {
         TopologyOperator op;
         op.initialize(points(8));
-        const auto before = copy_of(op.get_vertex_data());
+        const auto before = point_cloud_network_copy_of(op.get_vertex_data());
 
         op.set_parameter("no_such_parameter", 3.0);
         op.process(0.0F);
 
-        EXPECT_EQ(copy_of(op.get_vertex_data()), before);
+        EXPECT_EQ(point_cloud_network_copy_of(op.get_vertex_data()), before);
     }
 
     TEST(TopologyOperatorTest, QueryStateReportsTotals)
@@ -877,7 +877,7 @@ namespace {
         net.create_operator<PathOperator>();
         auto* path = dynamic_cast<PathOperator*>(net.get_operator());
         const auto dense = path->get_vertex_count();
-        const auto shape = copy_of(path->get_vertex_data());
+        const auto shape = point_cloud_network_copy_of(path->get_vertex_data());
 
         net.set({ .samples_per_segment = 4.0 });
         net.process_batch(1);
@@ -885,7 +885,7 @@ namespace {
 
         net.set({ .samples_per_segment = 32.0, .tension = 0.0 });
         net.process_batch(1);
-        EXPECT_NE(copy_of(path->get_vertex_data()), shape);
+        EXPECT_NE(point_cloud_network_copy_of(path->get_vertex_data()), shape);
     }
 
     TEST(PointCloudNetworkForwardingTest, ControlsForAnotherOperatorAreHarmless)
@@ -1094,7 +1094,7 @@ namespace {
         InitializedCloud net(12);
         net.process_batch(1);
         auto* topo = dynamic_cast<TopologyOperator*>(net.get_operator());
-        const auto bytes_before = copy_of(topo->get_vertex_data());
+        const auto bytes_before = point_cloud_network_copy_of(topo->get_vertex_data());
         const auto points_before = net.get_vertices();
         auto source = std::make_shared<InitializedCloud>(12);
 
@@ -1102,7 +1102,7 @@ namespace {
         net.map_parameter("size", source);
         net.process_batch(1);
 
-        EXPECT_EQ(copy_of(topo->get_vertex_data()), bytes_before);
+        EXPECT_EQ(point_cloud_network_copy_of(topo->get_vertex_data()), bytes_before);
         const auto points_after = net.get_vertices();
         for (size_t i = 0; i < points_before.size(); ++i) {
             EXPECT_TRUE(near_color(points_after[i].color, points_before[i].color)) << "point " << i;
@@ -1116,13 +1116,13 @@ namespace {
         net.create_operator<PathOperator>();
         net.process_batch(1);
         auto* path = dynamic_cast<PathOperator*>(net.get_operator());
-        const auto bytes_before = copy_of(path->get_vertex_data());
+        const auto bytes_before = point_cloud_network_copy_of(path->get_vertex_data());
         auto source = std::make_shared<InitializedCloud>(path->get_point_count());
 
         net.map_parameter("color", source);
         net.process_batch(1);
 
-        EXPECT_EQ(copy_of(path->get_vertex_data()), bytes_before);
+        EXPECT_EQ(point_cloud_network_copy_of(path->get_vertex_data()), bytes_before);
     }
 
 } // namespace

@@ -250,7 +250,7 @@ namespace {
         EXPECT_EQ(read_file(out_path("a.txt")), "alpha");
     }
 
-    Kakshya::CompositeLayout people_layout()
+    Kakshya::CompositeLayout staged_file_set_people_layout()
     {
         Kakshya::CompositeLayout layout;
         layout.add_field<std::string>("name");
@@ -258,9 +258,9 @@ namespace {
         return layout;
     }
 
-    Kakshya::CompositeArray people_array()
+    Kakshya::CompositeArray staged_file_set_people_array()
     {
-        Kakshya::CompositeArray array(people_layout());
+        Kakshya::CompositeArray array(staged_file_set_people_layout());
         Kakshya::CompositeInsertion insertion(array);
 
         const auto ada = insertion.append();
@@ -276,7 +276,7 @@ namespace {
 
     TEST_F(StagedFileSetFixture, DelimitedRoundTripReadsTheCommittedFiles)
     {
-        const auto people = people_array();
+        const auto people = staged_file_set_people_array();
 
         StagedFileSet set(out_dir());
         std::string error;
@@ -290,7 +290,7 @@ namespace {
         ASSERT_EQ(manifest, "rows=2\n");
 
         IO::DelimitedTextReader reader;
-        ASSERT_TRUE(reader.set_layout(people_layout()));
+        ASSERT_TRUE(reader.set_layout(staged_file_set_people_layout()));
         ASSERT_TRUE(reader.open(out_path("people.csv").string()));
 
         const auto rows = reader.read_composite();

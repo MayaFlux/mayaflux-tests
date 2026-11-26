@@ -29,7 +29,7 @@ namespace {
     using Yantra::StandardPhonemeExtractor;
 
     const fs::path k_vad_weights = "data/tensors/silero/silero_vad_16k.safetensors";
-    const fs::path k_hubert_weights = "data/tensors/hubert_phoneme/hubert_base_phoneme_en.safetensors";
+    const fs::path k_phoneme_extractor_hubert_weights = "data/tensors/hubert_phoneme/hubert_base_phoneme_en.safetensors";
     const fs::path k_speech = "tests/models/hubert_phoneme/hubert_speech_audio.f32";
     constexpr size_t k_silence = 16000;
 
@@ -90,7 +90,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, SpeechIsFoundAndTheSilenceBetweenIsLeftOut, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
-        const auto hubert = read_weights(k_hubert_weights);
+        const auto hubert = read_weights(k_phoneme_extractor_hubert_weights);
         const auto speech = read_floats(k_speech);
         if (!vad || !hubert || speech.empty()) {
             GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";
@@ -115,7 +115,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, EachSpeechIntervalOpensWithTheSameWords, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
-        const auto hubert = read_weights(k_hubert_weights);
+        const auto hubert = read_weights(k_phoneme_extractor_hubert_weights);
         const auto speech = read_floats(k_speech);
         if (!vad || !hubert || speech.empty()) {
             GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";
@@ -137,7 +137,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, RangesAreContiguousWithinASpeechInterval, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
-        const auto hubert = read_weights(k_hubert_weights);
+        const auto hubert = read_weights(k_phoneme_extractor_hubert_weights);
         const auto speech = read_floats(k_speech);
         if (!vad || !hubert || speech.empty()) {
             GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";
@@ -158,7 +158,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, VowelSelectionKeepsOnlyVowelRecords, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
-        const auto hubert = read_weights(k_hubert_weights);
+        const auto hubert = read_weights(k_phoneme_extractor_hubert_weights);
         const auto speech = read_floats(k_speech);
         if (!vad || !hubert || speech.empty()) {
             GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";
@@ -187,7 +187,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, AudioOutputHoldsTheSelectedRanges, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
-        const auto hubert = read_weights(k_hubert_weights);
+        const auto hubert = read_weights(k_phoneme_extractor_hubert_weights);
         const auto speech = read_floats(k_speech);
         if (!vad || !hubert || speech.empty()) {
             GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";
@@ -211,7 +211,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, RegionOutputHasOneRegionPerPhoneme, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
-        const auto hubert = read_weights(k_hubert_weights);
+        const auto hubert = read_weights(k_phoneme_extractor_hubert_weights);
         const auto speech = read_floats(k_speech);
         if (!vad || !hubert || speech.empty()) {
             GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";
@@ -229,7 +229,7 @@ namespace {
     TYPED_TEST(PhonemeExtractorGpuTest, RefusesAnotherRateAndMissingWeights)
     {
         const auto vad = read_weights(k_vad_weights);
-        const auto hubert = read_weights(k_hubert_weights);
+        const auto hubert = read_weights(k_phoneme_extractor_hubert_weights);
         if (!vad || !hubert) {
             GTEST_SKIP() << "the Silero or HuBERT weights are not present";
         }
@@ -243,7 +243,7 @@ namespace {
     TYPED_TEST(PhonemeExtractorGpuTest, SilenceGivesAnEmptyButValidResult)
     {
         const auto vad = read_weights(k_vad_weights);
-        const auto hubert = read_weights(k_hubert_weights);
+        const auto hubert = read_weights(k_phoneme_extractor_hubert_weights);
         if (!vad || !hubert) {
             GTEST_SKIP() << "the Silero or HuBERT weights are not present";
         }
@@ -263,7 +263,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, MergeAdjacentJoinsTouchingRanges, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
-        const auto hubert = read_weights(k_hubert_weights);
+        const auto hubert = read_weights(k_phoneme_extractor_hubert_weights);
         const auto speech = read_floats(k_speech);
         if (!vad || !hubert || speech.empty()) {
             GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";
@@ -295,7 +295,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, SpeechIntervalsAreTheSegmentersAndStayWithinTheirBounds, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
-        const auto hubert = read_weights(k_hubert_weights);
+        const auto hubert = read_weights(k_phoneme_extractor_hubert_weights);
         const auto speech = read_floats(k_speech);
         if (!vad || !hubert || speech.empty()) {
             GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";
@@ -327,7 +327,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, VoicingGateTrimsVowelAudioToVoicedStretches, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
-        const auto hubert = read_weights(k_hubert_weights);
+        const auto hubert = read_weights(k_phoneme_extractor_hubert_weights);
         const auto speech = read_floats(k_speech);
         if (!vad || !hubert || speech.empty()) {
             GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";
@@ -362,7 +362,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TYPED_TEST, PhonemeExtractorGpuTest, VoicingGateLeavesOtherSelectionsAndRefusesBadSettings, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hubert_weights, ::MayaFlux::Test::Meta::Capability::repo_assets, ::MayaFlux::Test::Meta::Capability::silero_weights, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         const auto vad = read_weights(k_vad_weights);
-        const auto hubert = read_weights(k_hubert_weights);
+        const auto hubert = read_weights(k_phoneme_extractor_hubert_weights);
         const auto speech = read_floats(k_speech);
         if (!vad || !hubert || speech.empty()) {
             GTEST_SKIP() << "the Silero or HuBERT weights or the speech fixture are not present";

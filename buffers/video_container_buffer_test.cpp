@@ -24,7 +24,7 @@ namespace {
     using Kakshya::VideoStreamContainer;
     using namespace VideoSupport;
 
-    constexpr uint64_t k_frames = 3;
+    constexpr uint64_t k_video_container_buffer_frames = 3;
 
     class CallbackGuard {
     public:
@@ -53,7 +53,7 @@ namespace {
     protected:
         void SetUp() override
         {
-            stream = make_flat_rgba8(k_frames);
+            stream = make_flat_rgba8(k_video_container_buffer_frames);
             stream->create_default_processor();
             frame_processor()->set_global_fps(k_fps);
             buffer = std::make_shared<TextureBuffer>(k_width, k_height, ImageFormat::RGBA8);
@@ -188,7 +188,7 @@ namespace {
     {
         const auto r = reader();
         r->on_attach(buffer);
-        stream->set_read_position({ k_frames });
+        stream->set_read_position({ k_video_container_buffer_frames });
 
         r->processing_function(buffer);
 
@@ -354,7 +354,7 @@ namespace {
 
     TEST(VideoContainerBufferTest, TakesItsGeometryAndFormatFromTheContainer)
     {
-        const auto stream = make_flat_rgba8(k_frames);
+        const auto stream = make_flat_rgba8(k_video_container_buffer_frames);
         const CallbackGuard guard { stream };
 
         const VideoContainerBuffer buffer(stream);
@@ -384,7 +384,7 @@ namespace {
 
     TEST(VideoContainerBufferTest, StartsWithAReaderOnItsContainer)
     {
-        const auto stream = make_flat_rgba8(k_frames);
+        const auto stream = make_flat_rgba8(k_video_container_buffer_frames);
         const CallbackGuard guard { stream };
 
         const VideoContainerBuffer buffer(stream);
@@ -395,7 +395,7 @@ namespace {
 
     TEST(VideoContainerBufferTest, SettingTheContainerRepointsTheBufferAndItsReader)
     {
-        const auto stream = make_flat_rgba8(k_frames);
+        const auto stream = make_flat_rgba8(k_video_container_buffer_frames);
         const auto other = make_flat_rgba8(2);
         const CallbackGuard first_guard { stream };
         const CallbackGuard second_guard { other };

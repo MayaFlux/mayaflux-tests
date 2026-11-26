@@ -39,9 +39,9 @@ namespace Acoustics = Kinesis::Acoustics;
 
 namespace {
 
-    constexpr float k_eps = 1e-4F;
+    constexpr float k_operator_controls_eps = 1e-4F;
 
-    std::shared_ptr<Polynomial> constant_source(double value)
+    std::shared_ptr<Polynomial> operator_controls_constant_source(double value)
     {
         auto source = std::make_shared<Polynomial>([value](double) { return value; });
         source->process_sample(0.0);
@@ -77,9 +77,9 @@ namespace {
         return source;
     }
 
-    ::testing::AssertionResult near_vec(const glm::vec3& a, const glm::vec3& b)
+    ::testing::AssertionResult operator_controls_near_vec(const glm::vec3& a, const glm::vec3& b)
     {
-        if (std::abs(a.x - b.x) < k_eps && std::abs(a.y - b.y) < k_eps && std::abs(a.z - b.z) < k_eps) {
+        if (std::abs(a.x - b.x) < k_operator_controls_eps && std::abs(a.y - b.y) < k_operator_controls_eps && std::abs(a.z - b.z) < k_operator_controls_eps) {
             return ::testing::AssertionSuccess();
         }
         return ::testing::AssertionFailure() << "(" << a.x << ", " << a.y << ", " << a.z << ") != ("
@@ -101,7 +101,7 @@ namespace {
         [[nodiscard]] glm::vec3 position(size_t i) const { return op.extract_vertices()[i].position; }
     };
 
-    std::vector<double> render(ModalNetwork& network, unsigned int samples)
+    std::vector<double> operator_controls_render(ModalNetwork& network, unsigned int samples)
     {
         network.process_batch(samples);
         return network.get_audio_buffer().value_or(std::vector<double> {});
@@ -115,11 +115,11 @@ TEST_F(PhysicsControlsTest, ANumberGravityIsAppliedOnce)
 
     op.set({ .gravity = glm::vec3(0.0F, -10.0F, 0.0F) });
     op.process(0.1F);
-    EXPECT_TRUE(near_vec(velocity(0), { 0.0F, -1.0F, 0.0F }));
+    EXPECT_TRUE(operator_controls_near_vec(velocity(0), { 0.0F, -1.0F, 0.0F }));
 
     op.set_gravity(glm::vec3(0.0F));
     op.process(0.1F);
-    EXPECT_TRUE(near_vec(velocity(0), { 0.0F, -1.0F, 0.0F }));
+    EXPECT_TRUE(operator_controls_near_vec(velocity(0), { 0.0F, -1.0F, 0.0F }));
 }
 
 TEST_F(PhysicsControlsTest, ANumberDragScalesTheVelocityEachStep)
@@ -130,8 +130,8 @@ TEST_F(PhysicsControlsTest, ANumberDragScalesTheVelocityEachStep)
     op.set({ .drag = 0.5 });
     op.process(0.1F);
 
-    EXPECT_TRUE(near_vec(velocity(0), { 0.5F, 0.0F, 0.0F }));
-    EXPECT_NEAR(position(0).x, 0.05F, k_eps);
+    EXPECT_TRUE(operator_controls_near_vec(velocity(0), { 0.5F, 0.0F, 0.0F }));
+    EXPECT_NEAR(position(0).x, 0.05F, k_operator_controls_eps);
 }
 
 TEST_F(PhysicsControlsTest, AMemberLeftOutLeavesTheOthersAlone)
@@ -142,7 +142,7 @@ TEST_F(PhysicsControlsTest, AMemberLeftOutLeavesTheOthersAlone)
     op.set({ .drag = 0.0 });
     op.process(0.1F);
 
-    EXPECT_TRUE(near_vec(velocity(0), { 0.0F, -1.0F, 0.0F }));
+    EXPECT_TRUE(operator_controls_near_vec(velocity(0), { 0.0F, -1.0F, 0.0F }));
 }
 
 TEST_F(PhysicsControlsTest, TheSameNameThroughTheStringPathGivesTheSameResult)
@@ -161,8 +161,8 @@ TEST_F(PhysicsControlsTest, TheSameNameThroughTheStringPathGivesTheSameResult)
     op.process(0.1F);
 
     for (size_t i = 0; i < 2; ++i) {
-        EXPECT_TRUE(near_vec(by_string.extract_vertex_velocities()[i], velocity(i)));
-        EXPECT_TRUE(near_vec(by_string.extract_vertices()[i].position, position(i)));
+        EXPECT_TRUE(operator_controls_near_vec(by_string.extract_vertex_velocities()[i], velocity(i)));
+        EXPECT_TRUE(operator_controls_near_vec(by_string.extract_vertices()[i].position, position(i)));
     }
 }
 
@@ -173,9 +173,9 @@ TEST_F(PhysicsControlsTest, AGravityVectorIsHeldAsOneGlmVector)
     op.set({ .gravity = glm::vec3(1.0F, -4.0F, 2.0F) });
     op.process(0.1F);
 
-    EXPECT_TRUE(near_vec(velocity(0), { 0.1F, -0.4F, 0.2F }));
+    EXPECT_TRUE(operator_controls_near_vec(velocity(0), { 0.1F, -0.4F, 0.2F }));
     ASSERT_TRUE(op.get().gravity.has_value());
-    EXPECT_TRUE(near_vec(op.get().gravity.value<glm::vec3>(), { 1.0F, -4.0F, 2.0F }));
+    EXPECT_TRUE(operator_controls_near_vec(op.get().gravity.value<glm::vec3>(), { 1.0F, -4.0F, 2.0F }));
 }
 
 TEST_F(PhysicsControlsTest, AVectorIsAppliedOnceAndALaterEditStays)
@@ -187,7 +187,7 @@ TEST_F(PhysicsControlsTest, AVectorIsAppliedOnceAndALaterEditStays)
     op.set_parameter("gravity_y", 0.0);
     op.process(0.1F);
 
-    EXPECT_TRUE(near_vec(velocity(0), { 0.0F, -1.0F, 0.0F }));
+    EXPECT_TRUE(operator_controls_near_vec(velocity(0), { 0.0F, -1.0F, 0.0F }));
 }
 
 TEST_F(PhysicsControlsTest, AnUnsetVectorLeavesGravityAlone)
@@ -198,7 +198,7 @@ TEST_F(PhysicsControlsTest, AnUnsetVectorLeavesGravityAlone)
     op.set({ .drag = 0.0 });
     op.process(0.1F);
 
-    EXPECT_TRUE(near_vec(velocity(0), { 0.0F, -1.0F, 0.0F }));
+    EXPECT_TRUE(operator_controls_near_vec(velocity(0), { 0.0F, -1.0F, 0.0F }));
 }
 
 TEST_F(PhysicsControlsTest, ASecondVectorReplacesTheFirst)
@@ -209,7 +209,7 @@ TEST_F(PhysicsControlsTest, ASecondVectorReplacesTheFirst)
     op.set({ .gravity = glm::vec3(0.0F, 10.0F, 0.0F) });
     op.process(0.1F);
 
-    EXPECT_TRUE(near_vec(velocity(0), { 0.0F, 1.0F, 0.0F }));
+    EXPECT_TRUE(operator_controls_near_vec(velocity(0), { 0.0F, 1.0F, 0.0F }));
 }
 
 TEST_F(PhysicsControlsTest, AForceVectorPushesEveryParticleOnce)
@@ -221,7 +221,7 @@ TEST_F(PhysicsControlsTest, AForceVectorPushesEveryParticleOnce)
     op.process(0.1F);
 
     for (size_t i = 0; i < 3; ++i) {
-        EXPECT_NEAR(velocity(i).y, 2.0F, k_eps) << "particle " << i;
+        EXPECT_NEAR(velocity(i).y, 2.0F, k_operator_controls_eps) << "particle " << i;
     }
 }
 
@@ -262,12 +262,12 @@ TEST_F(PhysicsControlsTest, ANumberForceIsAnImpulseOnEveryParticleOnce)
     op.set({ .force = glm::vec3(10.0F, 0.0F, 0.0F) });
     op.process(0.1F);
     for (size_t i = 0; i < 3; ++i) {
-        EXPECT_NEAR(velocity(i).x, 1.0F, k_eps) << "particle " << i;
+        EXPECT_NEAR(velocity(i).x, 1.0F, k_operator_controls_eps) << "particle " << i;
     }
 
     op.process(0.1F);
     for (size_t i = 0; i < 3; ++i) {
-        EXPECT_NEAR(velocity(i).x, 1.0F, k_eps) << "particle " << i;
+        EXPECT_NEAR(velocity(i).x, 1.0F, k_operator_controls_eps) << "particle " << i;
     }
 }
 
@@ -280,10 +280,10 @@ TEST_F(PhysicsControlsTest, ANetworkMassSetsEachParticlesMassWithAFloor)
     op.apply_global_impulse({ 1.0F, 0.0F, 0.0F });
 
     const auto v = op.extract_vertex_velocities();
-    EXPECT_NEAR(v[0].x, 10.0F, k_eps);
-    EXPECT_NEAR(v[1].x, 1.0F, k_eps);
-    EXPECT_NEAR(v[2].x, 0.5F, k_eps);
-    EXPECT_NEAR(v[3].x, 1.0F / 3.0F, k_eps);
+    EXPECT_NEAR(v[0].x, 10.0F, k_operator_controls_eps);
+    EXPECT_NEAR(v[1].x, 1.0F, k_operator_controls_eps);
+    EXPECT_NEAR(v[2].x, 0.5F, k_operator_controls_eps);
+    EXPECT_NEAR(v[3].x, 1.0F / 3.0F, k_operator_controls_eps);
 }
 
 TEST_F(PhysicsControlsTest, ANumberMassSetsEveryParticle)
@@ -294,8 +294,8 @@ TEST_F(PhysicsControlsTest, ANumberMassSetsEveryParticle)
     op.process(0.0F);
     op.apply_global_impulse({ 1.0F, 0.0F, 0.0F });
 
-    EXPECT_NEAR(velocity(0).x, 0.25F, k_eps);
-    EXPECT_NEAR(velocity(1).x, 0.25F, k_eps);
+    EXPECT_NEAR(velocity(0).x, 0.25F, k_operator_controls_eps);
+    EXPECT_NEAR(velocity(1).x, 0.25F, k_operator_controls_eps);
 }
 
 TEST_F(PhysicsControlsTest, ASourceOfTheWrongSizeIsIgnored)
@@ -306,7 +306,7 @@ TEST_F(PhysicsControlsTest, ASourceOfTheWrongSizeIsIgnored)
     op.process(0.0F);
     op.apply_global_impulse({ 1.0F, 0.0F, 0.0F });
 
-    EXPECT_NEAR(velocity(0).x, 1.0F, k_eps);
+    EXPECT_NEAR(velocity(0).x, 1.0F, k_operator_controls_eps);
 }
 
 TEST_F(PhysicsControlsTest, GetReportsWhatTheOperatorHolds)
@@ -318,7 +318,7 @@ TEST_F(PhysicsControlsTest, GetReportsWhatTheOperatorHolds)
 
     EXPECT_NEAR(controls.drag.value(), 0.3, 1e-6);
     ASSERT_TRUE(controls.gravity.has_value());
-    EXPECT_TRUE(near_vec(controls.gravity.value<glm::vec3>(), { 1.0F, 2.0F, 3.0F }));
+    EXPECT_TRUE(operator_controls_near_vec(controls.gravity.value<glm::vec3>(), { 1.0F, 2.0F, 3.0F }));
     EXPECT_FALSE(controls.force.has_value());
 }
 
@@ -330,7 +330,7 @@ TEST_F(PhysicsControlsTest, ADragOutsideTheUnitIntervalIsClampedLikeTheString)
     op.set({ .drag = 5.0 });
     op.process(0.1F);
 
-    EXPECT_NEAR(velocity(0).x, 0.0F, k_eps);
+    EXPECT_NEAR(velocity(0).x, 0.0F, k_operator_controls_eps);
 }
 
 TEST(PathControlsTest, ANumberThicknessReachesEveryPath)
@@ -349,7 +349,7 @@ TEST(PathControlsTest, ANodeThicknessIsAppliedEveryBlock)
     PathOperator op;
     op.initialize(line_points(4));
 
-    op.set({ .thickness = constant_source(6.0) });
+    op.set({ .thickness = operator_controls_constant_source(6.0) });
     op.process(0.0F);
     op.set_parameter("thickness", 2.0);
     op.process(0.0F);
@@ -421,7 +421,7 @@ TEST(TopologyControlsTest, ARadiusThroughTheStringPathAndTheControlAgree)
     by_control.initialize(line_points(6));
 
     by_string.set_parameter("connection_radius", 1.2);
-    by_control.set({ .connection_radius = constant_source(1.2) });
+    by_control.set({ .connection_radius = operator_controls_constant_source(1.2) });
 
     by_string.process(0.0F);
     by_control.process(0.0F);
@@ -454,7 +454,7 @@ TEST(FieldControlsTest, ANodeModeFollowsTheNode)
 {
     FieldOperator op;
 
-    op.set({ .mode = constant_source(1.0) });
+    op.set({ .mode = operator_controls_constant_source(1.0) });
     op.process(0.0F);
 
     EXPECT_DOUBLE_EQ(op.get().mode.value(), 1.0);
@@ -487,8 +487,8 @@ TEST(ModalDampingControlsTest, ANumberFieldSetsThatFieldOnEveryMode)
     damping->set({ .quiet_seconds = 1.0, .loud_seconds = 0.25, .reference_rms = 0.05, .smoothing_seconds = 0.0 });
     network->excite_mode(0);
     network->excite_mode(1);
-    render(*network, 256);
-    render(*network, 256);
+    operator_controls_render(*network, 256);
+    operator_controls_render(*network, 256);
 
     EXPECT_EQ(network->get_mode_decay_time(0), 0.25);
     EXPECT_EQ(network->get_mode_decay_time(1), 0.25);
@@ -502,7 +502,7 @@ TEST(ModalDampingControlsTest, AFieldLeavesTheOtherFieldsOfEachModeAlone)
     damping->set_mode(1, { .quiet_seconds = 3.0, .loud_seconds = 0.3 });
 
     damping->set({ .reference_rms = 0.1 });
-    render(*network, 256);
+    operator_controls_render(*network, 256);
 
     EXPECT_EQ(network->get_mode_decay_time(0), 1.0);
     EXPECT_EQ(network->get_mode_decay_time(1), 3.0);
@@ -514,7 +514,7 @@ TEST(ModalDampingControlsTest, AnInvalidValueIsRefusedAndTheResponseKept)
     auto damping = network->add<ModalDampingOperator>();
 
     damping->set({ .quiet_seconds = 0.0, .reference_rms = -1.0 });
-    render(*network, 64);
+    operator_controls_render(*network, 64);
 
     EXPECT_DOUBLE_EQ(damping->get().quiet_seconds.value(), 1.0);
     EXPECT_DOUBLE_EQ(damping->get().reference_rms.value(), 0.1);
@@ -524,15 +524,15 @@ TEST(ModalDampingControlsTest, ANodeFieldIsAppliedEveryBlock)
 {
     auto network = std::make_shared<ModalNetwork>(1, 440.0);
     auto damping = network->add<ModalDampingOperator>();
-    damping->set({ .quiet_seconds = 1.0, .loud_seconds = constant_source(0.2), .reference_rms = 0.05, .smoothing_seconds = 0.0 });
+    damping->set({ .quiet_seconds = 1.0, .loud_seconds = operator_controls_constant_source(0.2), .reference_rms = 0.05, .smoothing_seconds = 0.0 });
 
     network->excite_mode(0);
-    render(*network, 256);
-    render(*network, 256);
+    operator_controls_render(*network, 256);
+    operator_controls_render(*network, 256);
     ASSERT_EQ(network->get_mode_decay_time(0), 0.2);
 
     damping->set_mode(0, { .loud_seconds = 0.9 });
-    render(*network, 256);
+    operator_controls_render(*network, 256);
 
     EXPECT_DOUBLE_EQ(damping->get().loud_seconds.value(), 0.2);
     EXPECT_EQ(network->get_mode_decay_time(0), 0.2);
@@ -559,7 +559,7 @@ TEST(ModalDampingControlsTest, SetModeChangesOnlyTheFieldsGiven)
     damping->set({ .quiet_seconds = 2.0, .smoothing_seconds = 0.0 });
 
     damping->set_mode(1, { .quiet_seconds = 5.0 });
-    render(*network, 256);
+    operator_controls_render(*network, 256);
 
     EXPECT_EQ(network->get_mode_decay_time(0), 2.0);
     EXPECT_EQ(network->get_mode_decay_time(1), 5.0);
@@ -572,7 +572,7 @@ TEST(ModalDampingControlsTest, SetModeAppliesAPendingSetFirstSoCallsTakeEffectIn
 
     damping->set({ .quiet_seconds = 9.0, .smoothing_seconds = 0.0 });
     damping->set_mode(1, { .quiet_seconds = 4.0 });
-    render(*network, 256);
+    operator_controls_render(*network, 256);
 
     EXPECT_EQ(network->get_mode_decay_time(0), 9.0);
     EXPECT_EQ(network->get_mode_decay_time(1), 4.0);
@@ -585,7 +585,7 @@ TEST(ModalDampingControlsTest, AModeIndexPastTheLastIsIgnored)
 
     damping->set_mode(2, { .quiet_seconds = 7.0 });
     damping->set_mode(99, { .quiet_seconds = 7.0 });
-    render(*network, 64);
+    operator_controls_render(*network, 64);
 
     EXPECT_EQ(damping->query_state("mode_count"), 2.0);
     EXPECT_DOUBLE_EQ(damping->get().quiet_seconds.value(), 1.0);
@@ -599,8 +599,8 @@ TEST(ModalDampingControlsTest, SetModeRefusesAnInvalidValueAndKeepsTheRest)
 
     damping->set_mode(0, { .quiet_seconds = 0.0, .loud_seconds = 0.4 });
     network->excite_mode(0);
-    render(*network, 256);
-    render(*network, 256);
+    operator_controls_render(*network, 256);
+    operator_controls_render(*network, 256);
 
     EXPECT_EQ(network->get_mode_decay_time(0), 0.4);
 }
@@ -611,8 +611,8 @@ TEST(ModalDampingControlsTest, ASourceOnASingleModeIsIgnored)
     auto damping = network->add<ModalDampingOperator>();
     damping->set({ .smoothing_seconds = 0.0 });
 
-    damping->set_mode(0, { .quiet_seconds = constant_source(6.0) });
-    render(*network, 64);
+    damping->set_mode(0, { .quiet_seconds = operator_controls_constant_source(6.0) });
+    operator_controls_render(*network, 64);
 
     EXPECT_EQ(network->get_mode_decay_time(0), 1.0);
 }
@@ -691,7 +691,7 @@ TEST(PhysicsControlsAppliedTest, ANodeSourceStaysSourcedInGet)
     PhysicsOperator op;
     op.initialize(particles(1));
 
-    op.set({ .drag = constant_source(0.3) });
+    op.set({ .drag = operator_controls_constant_source(0.3) });
     op.process(0.0F);
 
     EXPECT_TRUE(op.get().drag.sourced());
@@ -743,7 +743,7 @@ TEST(PhysicsControlsAppliedTest, ANetworkStringMappingAndATypedControlCanCoexist
     auto* physics = net.as_operator<PhysicsOperator>();
     ASSERT_NE(physics, nullptr);
 
-    net.map_parameter("drag", constant_source(0.5));
+    net.map_parameter("drag", operator_controls_constant_source(0.5));
     physics->set({ .point_size = 6.0 });
     net.process_batch(1);
 
@@ -805,7 +805,7 @@ TEST(TopologyControlsTest, ANumberIsAppliedOnceAndTheNodeEveryBlock)
     every.initialize(line_points(8));
 
     once.set({ .k_neighbors = 3.0 });
-    every.set({ .k_neighbors = constant_source(3.0) });
+    every.set({ .k_neighbors = operator_controls_constant_source(3.0) });
     once.process(0.0F);
     every.process(0.0F);
     once.set_parameter("k_neighbors", 1.0);
@@ -824,12 +824,12 @@ TEST_F(PhysicsControlsTest, ANetworkColorColorsEachParticle)
     op.process(0.0F);
 
     const auto v = op.extract_vertices();
-    EXPECT_NEAR(v[0].color.r, 0.0F, k_eps);
-    EXPECT_NEAR(v[0].color.b, 1.0F, k_eps);
-    EXPECT_NEAR(v[1].color.r, 1.0F, k_eps);
-    EXPECT_NEAR(v[1].color.b, 0.0F, k_eps);
-    EXPECT_NEAR(v[2].color.r, 1.0F, k_eps);
-    EXPECT_NEAR(v[0].color.g, 0.5F, k_eps);
+    EXPECT_NEAR(v[0].color.r, 0.0F, k_operator_controls_eps);
+    EXPECT_NEAR(v[0].color.b, 1.0F, k_operator_controls_eps);
+    EXPECT_NEAR(v[1].color.r, 1.0F, k_operator_controls_eps);
+    EXPECT_NEAR(v[1].color.b, 0.0F, k_operator_controls_eps);
+    EXPECT_NEAR(v[2].color.r, 1.0F, k_operator_controls_eps);
+    EXPECT_NEAR(v[0].color.g, 0.5F, k_operator_controls_eps);
 }
 
 TEST_F(PhysicsControlsTest, ANetworkSizeScalesAndClampsParticleSize)
@@ -853,8 +853,8 @@ TEST_F(PhysicsControlsTest, ANumberColorColorsEveryParticleTheSame)
     op.process(0.0F);
 
     for (const auto& vertex : op.extract_vertices()) {
-        EXPECT_NEAR(vertex.color.r, 1.0F, k_eps);
-        EXPECT_NEAR(vertex.color.b, 0.0F, k_eps);
+        EXPECT_NEAR(vertex.color.r, 1.0F, k_operator_controls_eps);
+        EXPECT_NEAR(vertex.color.b, 0.0F, k_operator_controls_eps);
     }
 }
 
@@ -866,9 +866,9 @@ TEST_F(PhysicsControlsTest, AColorOrSizeSourceOfTheWrongSizeIsIgnored)
     op.process(0.0F);
 
     const auto v = op.extract_vertices();
-    EXPECT_NEAR(v[0].color.r, 1.0F, k_eps);
-    EXPECT_NEAR(v[0].color.g, 1.0F, k_eps);
-    EXPECT_NEAR(v[0].color.b, 1.0F, k_eps);
+    EXPECT_NEAR(v[0].color.r, 1.0F, k_operator_controls_eps);
+    EXPECT_NEAR(v[0].color.g, 1.0F, k_operator_controls_eps);
+    EXPECT_NEAR(v[0].color.b, 1.0F, k_operator_controls_eps);
 }
 
 TEST_F(PhysicsControlsTest, TheStringColorAndTheControlColorAgree)
@@ -882,8 +882,8 @@ TEST_F(PhysicsControlsTest, TheStringColorAndTheControlColorAgree)
     op.process(0.0F);
 
     for (size_t i = 0; i < 3; ++i) {
-        EXPECT_NEAR(by_string.extract_vertices()[i].color.r, op.extract_vertices()[i].color.r, k_eps);
-        EXPECT_NEAR(by_string.extract_vertices()[i].color.b, op.extract_vertices()[i].color.b, k_eps);
+        EXPECT_NEAR(by_string.extract_vertices()[i].color.r, op.extract_vertices()[i].color.r, k_operator_controls_eps);
+        EXPECT_NEAR(by_string.extract_vertices()[i].color.b, op.extract_vertices()[i].color.b, k_operator_controls_eps);
     }
 }
 
@@ -967,7 +967,7 @@ TEST(ReedControlsTest, ANodeIsAppliedEveryBlock)
 {
     ReedOperator reed;
 
-    reed.set({ .pressure = constant_source(1500.0) });
+    reed.set({ .pressure = operator_controls_constant_source(1500.0) });
     reed.process(1.0F);
     reed.set_parameter("pressure", 400.0);
     reed.process(1.0F);
@@ -1068,7 +1068,7 @@ TEST(JunctionControlsTest, ANodeDrivingPressureIsAppliedEveryBlock)
     JunctionOperator junction(
         [](double d) -> Acoustics::FlowSample { return { 1.0e-6 * d, 1.0e-6 }; }, 1.0, 100.0);
 
-    junction.set({ .driving_pressure = constant_source(800.0) });
+    junction.set({ .driving_pressure = operator_controls_constant_source(800.0) });
     junction.process(1.0F);
     junction.set_parameter("driving_pressure", 50.0);
     junction.process(1.0F);
@@ -1117,9 +1117,9 @@ namespace {
 
         WalkRig()
         {
-            network.add_slots({ { .name = "a", .node = constant_source(0.0) },
-                { .name = "b", .node = constant_source(0.0) },
-                { .name = "c", .node = constant_source(0.0) } });
+            network.add_slots({ { .name = "a", .node = operator_controls_constant_source(0.0) },
+                { .name = "b", .node = operator_controls_constant_source(0.0) },
+                { .name = "c", .node = operator_controls_constant_source(0.0) } });
             walk = network.add<WalkOperator>(std::make_shared<Kinesis::Stochastic::Weights>(3, 3));
         }
     };
@@ -1151,7 +1151,7 @@ TEST(WalkControlsTest, ANodeCurrentFollowsTheNode)
 {
     WalkRig rig;
 
-    rig.walk->set({ .current = constant_source(1.0) });
+    rig.walk->set({ .current = operator_controls_constant_source(1.0) });
     rig.walk->process(1.0F);
 
     EXPECT_EQ(rig.walk->current(), 1U);
@@ -1181,7 +1181,7 @@ TEST(ModalDampingControlsTest, AStringNameIsTheFieldName)
     auto damping = network->add<ModalDampingOperator>();
 
     damping->set_parameter("loud_seconds", 0.3);
-    render(*network, 64);
+    operator_controls_render(*network, 64);
 
     EXPECT_DOUBLE_EQ(damping->get().loud_seconds.value(), 0.3);
     EXPECT_EQ(damping->query_state("loud_seconds"), 0.3);
@@ -1194,12 +1194,12 @@ TEST(ModalDampingControlsTest, AStringAndATypedSetMeetInTheSameControlSoTheLater
 
     damping->set({ .loud_seconds = 0.3 });
     damping->set_parameter("loud_seconds", 0.6);
-    render(*network, 64);
+    operator_controls_render(*network, 64);
     EXPECT_DOUBLE_EQ(damping->get().loud_seconds.value(), 0.6);
 
     damping->set_parameter("loud_seconds", 0.1);
     damping->set({ .loud_seconds = 0.5 });
-    render(*network, 64);
+    operator_controls_render(*network, 64);
     EXPECT_DOUBLE_EQ(damping->get().loud_seconds.value(), 0.5);
 }
 
@@ -1210,7 +1210,7 @@ TEST(ModalDampingControlsTest, AnUnknownStringNameIsIgnored)
 
     damping->set_parameter("loud", 1.0);
     damping->set_parameter("quiet_decay", 5.0);
-    render(*network, 64);
+    operator_controls_render(*network, 64);
 
     EXPECT_DOUBLE_EQ(damping->get().quiet_seconds.value(), 1.0);
     EXPECT_DOUBLE_EQ(damping->get().loud_seconds.value(), 0.2);
@@ -1225,7 +1225,7 @@ TEST(ModalDampingControlsTest, AStringValueThatWouldBeInvalidIsRefused)
 
     damping->set_parameter("reference_rms", 0.0);
     damping->set_parameter("quiet_seconds", -2.0);
-    render(*network, 64);
+    operator_controls_render(*network, 64);
 
     EXPECT_DOUBLE_EQ(damping->get().reference_rms.value(), 0.1);
     EXPECT_DOUBLE_EQ(damping->get().quiet_seconds.value(), 1.0);
@@ -1239,7 +1239,7 @@ TEST(ModalDampingControlsTest, QueryStateReportsWhatTheOperatorHoldsNotWhatIsPen
     damping->set({ .quiet_seconds = 2.0 });
     EXPECT_EQ(damping->query_state("quiet_seconds"), 1.0);
 
-    render(*network, 64);
+    operator_controls_render(*network, 64);
     EXPECT_EQ(damping->query_state("quiet_seconds"), 2.0);
     EXPECT_EQ(damping->query_state("mode_count"), 1.0);
 }
@@ -1250,7 +1250,7 @@ TEST(ModalDampingControlsTest, ASetValueReadsBackThroughGet)
     auto damping = network->add<ModalDampingOperator>();
 
     damping->set({ .smoothing_seconds = 0.4 });
-    render(*network, 64);
+    operator_controls_render(*network, 64);
 
     EXPECT_DOUBLE_EQ(damping->get().smoothing_seconds.value(), 0.4);
 }
@@ -1264,7 +1264,7 @@ TEST_F(PhysicsControlsTest, BoundsAreSetAsOneStructAndHeldByTheMode)
         .bounds_mode = BoundsMode::CLAMP });
     op.process(0.1F);
 
-    EXPECT_NEAR(position(2).x, 1.0F, k_eps);
+    EXPECT_NEAR(position(2).x, 1.0F, k_operator_controls_eps);
     const auto held = op.get().bounds.value<Kinesis::SamplerBounds>();
     EXPECT_EQ(held.min, glm::vec3(-1.0F));
     EXPECT_EQ(held.max, glm::vec3(1.0F));
@@ -1280,7 +1280,7 @@ TEST_F(PhysicsControlsTest, AnAttractionPointTurnsAttractionOnUntilItIsCleared)
     op.process(0.1F);
 
     EXPECT_TRUE(op.has_attraction_point());
-    EXPECT_TRUE(near_vec(op.get().attraction_point.value<glm::vec3>(), { 5.0F, 0.0F, 0.0F }));
+    EXPECT_TRUE(operator_controls_near_vec(op.get().attraction_point.value<glm::vec3>(), { 5.0F, 0.0F, 0.0F }));
 
     op.clear_attraction_point();
     EXPECT_FALSE(op.has_attraction_point());
@@ -1312,7 +1312,7 @@ TEST_F(PhysicsControlsTest, AForcedInternalDtReplacesTheIncomingOne)
     op.set({ .internal_dt = 0.5, .force_internal_dt = true });
     op.process(0.0F);
 
-    EXPECT_NEAR(position(0).x, 0.5F, k_eps);
+    EXPECT_NEAR(position(0).x, 0.5F, k_operator_controls_eps);
     EXPECT_TRUE(op.get().force_internal_dt.value<bool>());
 }
 
@@ -1411,9 +1411,9 @@ TEST(PhysicsControlsParityTest, TheDeprecatedBoundsSettersAndTheControlsMovePart
     const auto actual = by_control.extract_vertices();
     ASSERT_EQ(actual.size(), expected.size());
     for (size_t i = 0; i < actual.size(); ++i) {
-        EXPECT_TRUE(near_vec(actual[i].position, expected[i].position)) << "particle " << i;
+        EXPECT_TRUE(operator_controls_near_vec(actual[i].position, expected[i].position)) << "particle " << i;
     }
-    EXPECT_NEAR(actual[3].position.x, 1.5F, k_eps);
+    EXPECT_NEAR(actual[3].position.x, 1.5F, k_operator_controls_eps);
 }
 
 TEST(PhysicsControlsParityTest, TheDeprecatedAttractionSetterAndTheControlMoveParticlesAlike)
@@ -1436,7 +1436,7 @@ TEST(PhysicsControlsParityTest, TheDeprecatedAttractionSetterAndTheControlMovePa
     const auto expected = by_setter.extract_vertices();
     const auto actual = by_control.extract_vertices();
     for (size_t i = 0; i < actual.size(); ++i) {
-        EXPECT_TRUE(near_vec(actual[i].position, expected[i].position)) << "particle " << i;
+        EXPECT_TRUE(operator_controls_near_vec(actual[i].position, expected[i].position)) << "particle " << i;
     }
     EXPECT_GT(actual[0].position.x, 0.0F);
 }
@@ -1452,7 +1452,7 @@ TEST(PhysicsControlsParityTest, AnAttractionPointKeepsItsOwnValueWhenOnlyBoundsC
     op.process(0.1F);
 
     EXPECT_TRUE(op.has_attraction_point());
-    EXPECT_TRUE(near_vec(op.get().attraction_point.value<glm::vec3>(), { 3.0F, 0.0F, 0.0F }));
+    EXPECT_TRUE(operator_controls_near_vec(op.get().attraction_point.value<glm::vec3>(), { 3.0F, 0.0F, 0.0F }));
 }
 
 TEST(PhysicsControlsParityTest, TheDeprecatedBondSettersAndTheControlsHoldTheSameValues)
@@ -1540,11 +1540,11 @@ TEST(PointCloudControlsTest, ANodeSourceIsForwardedEveryBlock)
     auto* topology = dynamic_cast<TopologyOperator*>(net->get_operator());
     ASSERT_NE(topology, nullptr);
 
-    net->set({ .k_neighbors = constant_source(1.0) });
+    net->set({ .k_neighbors = operator_controls_constant_source(1.0) });
     net->process_batch(1);
     const auto sparse = topology->get_topology(0)->get_connection_count();
 
-    net->set({ .k_neighbors = constant_source(6.0) });
+    net->set({ .k_neighbors = operator_controls_constant_source(6.0) });
     net->process_batch(1);
     const auto dense = topology->get_topology(0)->get_connection_count();
 
@@ -1705,14 +1705,14 @@ TEST(OperatorOrderingTest, AGravityComponentWrittenByStringKeepsTheRestOfAPendin
     later.set({ .gravity = glm::vec3(1.0F, 2.0F, 3.0F) });
     later.set_parameter("gravity_y", 9.0);
     later.process(0.1F);
-    EXPECT_TRUE(near_vec(later.get().gravity.value<glm::vec3>(), { 1.0F, 9.0F, 3.0F }));
+    EXPECT_TRUE(operator_controls_near_vec(later.get().gravity.value<glm::vec3>(), { 1.0F, 9.0F, 3.0F }));
 
     PhysicsOperator earlier;
     earlier.initialize(particles(1));
     earlier.set_parameter("gravity_y", 9.0);
     earlier.set({ .gravity = glm::vec3(1.0F, 2.0F, 3.0F) });
     earlier.process(0.1F);
-    EXPECT_TRUE(near_vec(earlier.get().gravity.value<glm::vec3>(), { 1.0F, 2.0F, 3.0F }));
+    EXPECT_TRUE(operator_controls_near_vec(earlier.get().gravity.value<glm::vec3>(), { 1.0F, 2.0F, 3.0F }));
 }
 
 TEST(OperatorOrderingTest, APhysicsNameInAnyCaseSettlesTheSameControl)

@@ -17,8 +17,8 @@ namespace {
 
     namespace fs = std::filesystem;
 
-    constexpr uint32_t image_width = 3;
-    constexpr uint32_t image_height = 2;
+    constexpr uint32_t exr_writer_image_width = 3;
+    constexpr uint32_t exr_writer_image_height = 2;
 
     struct HeaderSnapshot {
         int compression {};
@@ -26,14 +26,14 @@ namespace {
         std::vector<std::string> channel_names;
     };
 
-    IO::ImageData float_image(uint32_t channels)
+    IO::ImageData exr_writer_float_image(uint32_t channels)
     {
         const auto format = channels == 1
             ? Kakshya::ImageFormat::R32F
             : channels == 2 ? Kakshya::ImageFormat::RG32F
                             : Kakshya::ImageFormat::RGBA32F;
         auto image = Kakshya::ImageData::allocate(
-            image_width, image_height, channels, format);
+            exr_writer_image_width, exr_writer_image_height, channels, format);
         auto& pixels = *image->as_float();
         for (size_t i = 0; i < pixels.size(); ++i) {
             pixels[i] = static_cast<float>(static_cast<int>(i) - 5) * 0.375F;
@@ -41,7 +41,7 @@ namespace {
         return std::move(*image);
     }
 
-    std::vector<float> decoded_pixels(const IO::ImageData& source)
+    std::vector<float> exr_writer_decoded_pixels(const IO::ImageData& source)
     {
         const auto& pixels = *source.as_float();
         if (source.channels != 3) {
@@ -58,12 +58,12 @@ namespace {
         return decoded;
     }
 
-    std::string absolute_path(const std::string& filename)
+    std::string exr_writer_absolute_path(const std::string& filename)
     {
         return (fs::current_path() / filename).string();
     }
 
-    std::string read_bytes(const std::string& path)
+    std::string exr_writer_read_bytes(const std::string& path)
     {
         std::ifstream input(path, std::ios::binary);
         return { std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>() };
@@ -71,7 +71,7 @@ namespace {
 
     std::optional<HeaderSnapshot> parse_header(const std::string& path)
     {
-        const auto bytes = read_bytes(path);
+        const auto bytes = exr_writer_read_bytes(path);
         if (bytes.empty()) {
             return std::nullopt;
         }
@@ -135,8 +135,8 @@ namespace {
     TEST_P(EXRWriterChannelTest, WritesFloatChannelsWithDefaultNamesAndReaderRoundTrips)
     {
         ScopedWorkingDir files;
-        const auto source = float_image(GetParam().channels);
-        const auto path = absolute_path("default_channels.exr");
+        const auto source = exr_writer_float_image(GetParam().channels);
+        const auto path = exr_writer_absolute_path("default_channels.exr");
         IO::EXRWriter writer;
         ASSERT_TRUE(writer.write(path, source)) << writer.get_last_error();
         EXPECT_TRUE(writer.get_last_error().empty());
@@ -157,7 +157,7 @@ namespace {
         ASSERT_TRUE(loaded.has_value());
         ASSERT_NE(loaded->as_float(), nullptr);
         EXPECT_EQ(loaded->channels, GetParam().channels == 3 ? 4U : GetParam().channels);
-        EXPECT_EQ(*loaded->as_float(), decoded_pixels(source));
+        EXPECT_EQ(*loaded->as_float(), exr_writer_decoded_pixels(source));
     }
 
     INSTANTIATE_TEST_SUITE_P(
@@ -168,12 +168,12 @@ namespace {
     TEST(EXRWriterTest, HonorsCustomChannelNamesAndFallsBackForMismatchedNames)
     {
         ScopedWorkingDir files;
-        const auto source = float_image(4);
+        const auto source = exr_writer_float_image(4);
         IO::EXRWriter writer;
 
         IO::ImageWriteOptions custom_options;
         custom_options.channel_names = { "position.x", "position.y", "position.z", "entity_id" };
-        const auto custom_path = absolute_path("custom_names.exr");
+        const auto custom_path = exr_writer_absolute_path("custom_names.exr");
         ASSERT_TRUE(writer.write(custom_path, source, custom_options)) << writer.get_last_error();
         const auto custom_header = parse_header(custom_path);
         ASSERT_TRUE(custom_header.has_value());
@@ -181,7 +181,7 @@ namespace {
 
         IO::ImageWriteOptions mismatched_options;
         mismatched_options.channel_names = { "only_one" };
-        const auto fallback_path = absolute_path("fallback_names.exr");
+        const auto fallback_path = exr_writer_absolute_path("fallback_names.exr");
         ASSERT_TRUE(writer.write(fallback_path, source, mismatched_options)) << writer.get_last_error();
         const auto fallback_header = parse_header(fallback_path);
         ASSERT_TRUE(fallback_header.has_value());
@@ -191,7 +191,7 @@ namespace {
     TEST(EXRWriterTest, SupportsDocumentedCompressionModesAndFallsBackForUnknownModes)
     {
         ScopedWorkingDir files;
-        const auto source = float_image(1);
+        const auto source = exr_writer_float_image(1);
         IO::EXRWriter writer;
         const std::array<int, 5> modes {
             TINYEXR_COMPRESSIONTYPE_NONE,
@@ -204,7 +204,7 @@ namespace {
         for (size_t i = 0; i < modes.size(); ++i) {
             IO::ImageWriteOptions options;
             options.compression = modes[i];
-            const auto path = absolute_path("compression_" + std::to_string(i) + ".exr");
+            const auto path = exr_writer_absolute_path("compression_" + std::to_string(i) + ".exr");
             ASSERT_TRUE(writer.write(path, source, options)) << writer.get_last_error();
             const auto header = parse_header(path);
             ASSERT_TRUE(header.has_value());
@@ -213,7 +213,7 @@ namespace {
 
         IO::ImageWriteOptions invalid;
         invalid.compression = 9999;
-        const auto path = absolute_path("compression_fallback.exr");
+        const auto path = exr_writer_absolute_path("compression_fallback.exr");
         ASSERT_TRUE(writer.write(path, source, invalid)) << writer.get_last_error();
         const auto header = parse_header(path);
         ASSERT_TRUE(header.has_value());
@@ -223,10 +223,10 @@ namespace {
     TEST(EXRWriterTest, FlipVerticallyReversesRowsAndRoundTrips)
     {
         ScopedWorkingDir files;
-        const auto source = float_image(4);
+        const auto source = exr_writer_float_image(4);
         IO::ImageWriteOptions options;
         options.flip_vertically = true;
-        const auto path = absolute_path("flipped.exr");
+        const auto path = exr_writer_absolute_path("flipped.exr");
         IO::EXRWriter writer;
         ASSERT_TRUE(writer.write(path, source, options)) << writer.get_last_error();
 
@@ -264,7 +264,7 @@ namespace {
             }
         }
 
-        const auto path = absolute_path("gradient.exr");
+        const auto path = exr_writer_absolute_path("gradient.exr");
         IO::EXRWriter writer;
         ASSERT_TRUE(writer.write(path, *source)) << writer.get_last_error();
         const auto loaded = IO::ImageReader::load(path);
@@ -280,7 +280,7 @@ namespace {
     {
         ScopedWorkingDir files;
         IO::EXRWriter writer;
-        const auto path = absolute_path("invalid.exr");
+        const auto path = exr_writer_absolute_path("invalid.exr");
 
         auto uint8 = Kakshya::ImageData::allocate(
             1, 1, 4, Kakshya::ImageFormat::RGBA8);
@@ -294,7 +294,7 @@ namespace {
         EXPECT_FALSE(writer.write(path, *uint16));
         EXPECT_NE(writer.get_last_error().find("float"), std::string::npos);
 
-        auto inconsistent = float_image(4);
+        auto inconsistent = exr_writer_float_image(4);
         inconsistent.format = Kakshya::ImageFormat::RGBA8;
         EXPECT_FALSE(writer.write(path, inconsistent));
         EXPECT_NE(writer.get_last_error().find("does not match"), std::string::npos);
@@ -319,14 +319,14 @@ namespace {
     TEST(EXRWriterTest, ReportsFilesystemFailuresAndClearsErrorsAfterSuccess)
     {
         ScopedWorkingDir files;
-        const auto source = float_image(1);
+        const auto source = exr_writer_float_image(1);
         IO::EXRWriter writer;
 
-        const auto invalid_path = absolute_path("missing_directory/output.exr");
+        const auto invalid_path = exr_writer_absolute_path("missing_directory/output.exr");
         EXPECT_FALSE(writer.write(invalid_path, source));
         EXPECT_FALSE(writer.get_last_error().empty());
 
-        const auto valid_path = absolute_path("output.exr");
+        const auto valid_path = exr_writer_absolute_path("output.exr");
         ASSERT_TRUE(writer.write(valid_path, source)) << writer.get_last_error();
         EXPECT_TRUE(writer.get_last_error().empty());
     }
@@ -334,9 +334,9 @@ namespace {
     TEST(EXRWriterTest, AsynchronousCpuSaveFlushesBeforeReading)
     {
         ScopedWorkingDir files;
-        auto source = float_image(4);
+        auto source = exr_writer_float_image(4);
         const auto expected = *source.as_float();
-        const auto path = absolute_path("async.exr");
+        const auto path = exr_writer_absolute_path("async.exr");
         Core::GlobalStreamInfo stream_info;
         IO::IOManager manager(stream_info, 60, nullptr, nullptr);
         ASSERT_TRUE(manager.save_image(source, path));

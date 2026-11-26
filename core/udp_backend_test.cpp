@@ -18,9 +18,9 @@ namespace {
     using Core::UDPBackend;
     using Core::UDPBackendInfo;
 
-    constexpr const char* k_loopback = "127.0.0.1";
+    constexpr const char* k_udp_backend_loopback = "127.0.0.1";
 
-    uint16_t free_port()
+    uint16_t udp_backend_free_port()
     {
         asio::io_context context;
         asio::ip::udp::socket socket(context, asio::ip::udp::endpoint(asio::ip::udp::v4(), 0));
@@ -37,7 +37,7 @@ namespace {
         return !socket.bind(asio::ip::udp::endpoint(asio::ip::udp::v4(), port), ec);
     }
 
-    struct Received {
+    struct UdpBackendReceived {
         uint64_t id {};
         std::vector<uint8_t> bytes;
         std::string sender;
@@ -102,7 +102,7 @@ namespace {
 
         asio::io_context context;
         UDPBackend backend;
-        std::vector<Received> received;
+        std::vector<UdpBackendReceived> received;
     };
 
     EndpointInfo endpoint(uint64_t id, EndpointRole role, uint16_t local_port = 0,
@@ -162,7 +162,7 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t port = free_port();
+        const uint16_t port = udp_backend_free_port();
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::RECEIVE, port)), 1U);
 
         rig.backend.shutdown();
@@ -180,7 +180,7 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t port = free_port();
+        const uint16_t port = udp_backend_free_port();
 
         const uint64_t id = rig.backend.open_endpoint(endpoint(7, EndpointRole::RECEIVE, port));
 
@@ -201,7 +201,7 @@ namespace {
 
         EXPECT_EQ(rig.backend.get_endpoint_state(99), EndpointState::CLOSED);
         EXPECT_FALSE(rig.backend.send(99, data.data(), data.size()));
-        EXPECT_FALSE(rig.backend.send_to(99, data.data(), data.size(), k_loopback, 9));
+        EXPECT_FALSE(rig.backend.send_to(99, data.data(), data.size(), k_udp_backend_loopback, 9));
         EXPECT_NO_THROW(rig.backend.close_endpoint(99));
     }
 
@@ -209,7 +209,7 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t port = free_port();
+        const uint16_t port = udp_backend_free_port();
 
         const uint64_t id = rig.backend.open_endpoint(
             endpoint(1, EndpointRole::BIDIRECTIONAL, port, "not-an-address", 9000));
@@ -223,7 +223,7 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t port = free_port();
+        const uint16_t port = udp_backend_free_port();
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::RECEIVE, port)), 1U);
         EXPECT_FALSE(port_is_bindable(port));
 
@@ -238,7 +238,7 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t port = free_port();
+        const uint16_t port = udp_backend_free_port();
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::RECEIVE, port)), 1U);
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(2, EndpointRole::RECEIVE, port)), 2U);
 
@@ -257,7 +257,7 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::BIDIRECTIONAL, free_port())), 1U);
+        ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::BIDIRECTIONAL, udp_backend_free_port())), 1U);
         const std::vector<uint8_t> data = payload({ 1 });
 
         EXPECT_FALSE(rig.backend.send(1, data.data(), data.size()));
@@ -277,9 +277,9 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t port = free_port();
+        const uint16_t port = udp_backend_free_port();
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::RECEIVE, port)), 1U);
-        ASSERT_EQ(rig.backend.open_endpoint(endpoint(2, EndpointRole::SEND, 0, k_loopback, port)), 2U);
+        ASSERT_EQ(rig.backend.open_endpoint(endpoint(2, EndpointRole::SEND, 0, k_udp_backend_loopback, port)), 2U);
         const std::vector<uint8_t> data = payload({ 0xDE, 0xAD, 0xBE, 0xEF });
 
         ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
@@ -293,12 +293,12 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t port = free_port();
+        const uint16_t port = udp_backend_free_port();
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::RECEIVE, port)), 1U);
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(2, EndpointRole::SEND)), 2U);
         const std::vector<uint8_t> data = payload({ 9, 8, 7 });
 
-        ASSERT_TRUE(rig.backend.send_to(2, data.data(), data.size(), k_loopback, port));
+        ASSERT_TRUE(rig.backend.send_to(2, data.data(), data.size(), k_udp_backend_loopback, port));
 
         ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(1) == 1; }));
         EXPECT_EQ(rig.received.front().bytes, data);
@@ -308,9 +308,9 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t port = free_port();
+        const uint16_t port = udp_backend_free_port();
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::RECEIVE, port)), 1U);
-        ASSERT_EQ(rig.backend.open_endpoint(endpoint(2, EndpointRole::SEND, 0, k_loopback, port)), 2U);
+        ASSERT_EQ(rig.backend.open_endpoint(endpoint(2, EndpointRole::SEND, 0, k_udp_backend_loopback, port)), 2U);
         std::vector<uint8_t> data(1400);
         for (size_t i = 0; i < data.size(); ++i)
             data[i] = static_cast<uint8_t>(i % 251);
@@ -325,13 +325,13 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t port = free_port();
+        const uint16_t port = udp_backend_free_port();
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::RECEIVE, port)), 1U);
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(2, EndpointRole::BIDIRECTIONAL, port)), 2U);
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(3, EndpointRole::SEND)), 3U);
         const std::vector<uint8_t> data = payload({ 5 });
 
-        ASSERT_TRUE(rig.backend.send_to(3, data.data(), data.size(), k_loopback, port));
+        ASSERT_TRUE(rig.backend.send_to(3, data.data(), data.size(), k_udp_backend_loopback, port));
 
         ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(1) == 1 && rig.count_for(2) == 1; }));
         EXPECT_EQ(rig.received.size(), 2U);
@@ -341,15 +341,15 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t send_only_port = free_port();
-        const uint16_t sentinel_port = free_port();
+        const uint16_t send_only_port = udp_backend_free_port();
+        const uint16_t sentinel_port = udp_backend_free_port();
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::SEND, send_only_port)), 1U);
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(2, EndpointRole::RECEIVE, sentinel_port)), 2U);
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(3, EndpointRole::SEND)), 3U);
         const std::vector<uint8_t> data = payload({ 1 });
 
-        ASSERT_TRUE(rig.backend.send_to(3, data.data(), data.size(), k_loopback, send_only_port));
-        ASSERT_TRUE(rig.backend.send_to(3, data.data(), data.size(), k_loopback, sentinel_port));
+        ASSERT_TRUE(rig.backend.send_to(3, data.data(), data.size(), k_udp_backend_loopback, send_only_port));
+        ASSERT_TRUE(rig.backend.send_to(3, data.data(), data.size(), k_udp_backend_loopback, sentinel_port));
 
         ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(2) == 1; }));
         EXPECT_EQ(rig.count_for(1), 0U);
@@ -359,14 +359,14 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t port = free_port();
+        const uint16_t port = udp_backend_free_port();
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::RECEIVE, port)), 1U);
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(2, EndpointRole::RECEIVE, port)), 2U);
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(3, EndpointRole::SEND)), 3U);
         rig.backend.close_endpoint(1);
         const std::vector<uint8_t> data = payload({ 4 });
 
-        ASSERT_TRUE(rig.backend.send_to(3, data.data(), data.size(), k_loopback, port));
+        ASSERT_TRUE(rig.backend.send_to(3, data.data(), data.size(), k_udp_backend_loopback, port));
 
         ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(2) == 1; }));
         EXPECT_EQ(rig.count_for(1), 0U);
@@ -376,13 +376,13 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t port = free_port();
+        const uint16_t port = udp_backend_free_port();
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::RECEIVE, port)), 1U);
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(2, EndpointRole::SEND)), 2U);
         const std::vector<uint8_t> data = payload({ 6 });
 
-        ASSERT_TRUE(rig.backend.send_to(2, data.data(), 0, k_loopback, port));
-        ASSERT_TRUE(rig.backend.send_to(2, data.data(), data.size(), k_loopback, port));
+        ASSERT_TRUE(rig.backend.send_to(2, data.data(), 0, k_udp_backend_loopback, port));
+        ASSERT_TRUE(rig.backend.send_to(2, data.data(), data.size(), k_udp_backend_loopback, port));
 
         ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(1) >= 1; }));
         ASSERT_EQ(rig.received.size(), 1U);
@@ -393,9 +393,9 @@ namespace {
     {
         UdpRig rig;
         ASSERT_TRUE(rig.up());
-        const uint16_t port = free_port();
+        const uint16_t port = udp_backend_free_port();
         ASSERT_EQ(rig.backend.open_endpoint(endpoint(1, EndpointRole::RECEIVE, port)), 1U);
-        ASSERT_EQ(rig.backend.open_endpoint(endpoint(2, EndpointRole::SEND, 0, k_loopback, port)), 2U);
+        ASSERT_EQ(rig.backend.open_endpoint(endpoint(2, EndpointRole::SEND, 0, k_udp_backend_loopback, port)), 2U);
 
         for (uint8_t i = 0; i < 20; ++i) {
             const uint8_t byte = i;

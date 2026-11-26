@@ -18,14 +18,14 @@ MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta:
 namespace MayaFlux::Test {
 namespace {
 
-    constexpr uint32_t image_width = 4;
-    constexpr uint32_t image_height = 3;
+    constexpr uint32_t image_reader_image_width = 4;
+    constexpr uint32_t image_reader_image_height = 3;
 
     std::string make_image()
     {
         std::string bytes = "P6\n4 3\n255\n";
-        for (uint32_t y = 0; y < image_height; ++y) {
-            for (uint32_t x = 0; x < image_width; ++x) {
+        for (uint32_t y = 0; y < image_reader_image_height; ++y) {
+            for (uint32_t x = 0; x < image_reader_image_width; ++x) {
                 bytes.push_back(static_cast<char>(20 + x * 17 + y * 3));
                 bytes.push_back(static_cast<char>(60 + x * 5 + y * 19));
                 bytes.push_back(static_cast<char>(100 + x * 11 + y * 7));
@@ -89,8 +89,8 @@ namespace {
 
         const auto image = IO::ImageReader::load(std::string("image.pnm"));
         ASSERT_TRUE(image.has_value());
-        EXPECT_EQ(image->width, image_width);
-        EXPECT_EQ(image->height, image_height);
+        EXPECT_EQ(image->width, image_reader_image_width);
+        EXPECT_EQ(image->height, image_reader_image_height);
         EXPECT_EQ(image->channels, 4U);
         ASSERT_NE(image->as_uint8(), nullptr);
         EXPECT_EQ(*image->as_uint8(), expected_rgba(Kakshya::Region::image_rect(0, 0, 3, 2)));
@@ -109,8 +109,8 @@ namespace {
 
         const auto memory = IO::ImageReader::load_from_memory(bytes.data(), bytes.size());
         ASSERT_TRUE(memory.has_value());
-        EXPECT_EQ(memory->width, image_width);
-        EXPECT_EQ(memory->height, image_height);
+        EXPECT_EQ(memory->width, image_reader_image_width);
+        EXPECT_EQ(memory->height, image_reader_image_height);
         EXPECT_EQ(memory->format, Kakshya::ImageFormat::RGBA8);
         ASSERT_NE(memory->as_uint8(), nullptr);
         EXPECT_EQ(*memory->as_uint8(), expected_rgba(Kakshya::Region::image_rect(0, 0, 3, 2)));
@@ -123,7 +123,7 @@ namespace {
         EXPECT_FALSE(reader.open("missing.png"));
         ASSERT_TRUE(reader.open("image.pnm"));
         EXPECT_TRUE(reader.is_open());
-        EXPECT_EQ(reader.get_dimension_sizes(), (std::vector<uint64_t> { image_width, image_height }));
+        EXPECT_EQ(reader.get_dimension_sizes(), (std::vector<uint64_t> { image_reader_image_width, image_reader_image_height }));
         const auto values = reader.read_all();
         ASSERT_EQ(values.size(), 1U);
         const auto* pixels = std::get_if<std::vector<uint8_t>>(&values.front());
@@ -213,8 +213,8 @@ namespace {
                  { { 0, 0 }, { 1 } },
                  { { 2, 0 }, { 1, 1 } },
                  { { 0, 2 }, { 1, 1 } },
-                 { { 0, 0 }, { image_width + 1, 1 } },
-                 { { 0, 0 }, { 1, image_height + 1 } },
+                 { { 0, 0 }, { image_reader_image_width + 1, 1 } },
+                 { { 0, 0 }, { 1, image_reader_image_height + 1 } },
                  { { 0, 0 }, { uint64_t { 1 } << 32, 1 } },
                  { { (uint64_t { 1 } << 32) + 1, 0 }, { 2, 1 } },
              }) {
@@ -224,8 +224,8 @@ namespace {
             EXPECT_FALSE(reader.get_last_error().empty());
         }
 
-        region.start_coordinates = { image_width - 1, image_height - 1 };
-        region.end_coordinates = { image_width, image_height };
+        region.start_coordinates = { image_reader_image_width - 1, image_reader_image_height - 1 };
+        region.end_coordinates = { image_reader_image_width, image_reader_image_height };
         const auto values = reader.read_region(region);
         ASSERT_EQ(values.size(), 1U);
         const auto* pixels = std::get_if<std::vector<uint8_t>>(&values.front());
@@ -274,8 +274,8 @@ namespace {
         const auto crop = cropped_reader.create_texture_buffer();
         ASSERT_NE(whole, nullptr);
         ASSERT_NE(crop, nullptr);
-        EXPECT_EQ(whole->get_width(), image_width);
-        EXPECT_EQ(whole->get_height(), image_height);
+        EXPECT_EQ(whole->get_width(), image_reader_image_width);
+        EXPECT_EQ(whole->get_height(), image_reader_image_height);
         EXPECT_EQ(crop->get_width(), 2U);
         EXPECT_EQ(crop->get_height(), 2U);
         EXPECT_EQ(crop->get_pixel_data(), expected_rgba(Kakshya::Region::image_rect(1, 1, 2, 2)));
@@ -370,8 +370,8 @@ namespace {
         const auto crop_pixels = loom.download_image(crop);
         ASSERT_TRUE(whole_pixels.has_value());
         ASSERT_TRUE(crop_pixels.has_value());
-        EXPECT_EQ(whole_pixels->width, image_width);
-        EXPECT_EQ(whole_pixels->height, image_height);
+        EXPECT_EQ(whole_pixels->width, image_reader_image_width);
+        EXPECT_EQ(whole_pixels->height, image_reader_image_height);
         EXPECT_EQ(crop_pixels->width, 2U);
         EXPECT_EQ(crop_pixels->height, 2U);
         ASSERT_NE(crop_pixels->as_uint8(), nullptr);
@@ -464,9 +464,9 @@ namespace {
         const auto image = IO::ImageReader::load_texture("image.pnm");
         ASSERT_NE(image, nullptr);
         auto texture = std::make_shared<Buffers::TextureBuffer>(
-            image_width, image_height, Kakshya::ImageFormat::RGBA8);
+            image_reader_image_width, image_reader_image_height, Kakshya::ImageFormat::RGBA8);
         auto text = std::make_shared<Buffers::TextBuffer>(
-            image_width, image_height, Kakshya::ImageFormat::RGBA8);
+            image_reader_image_width, image_reader_image_height, Kakshya::ImageFormat::RGBA8);
         texture->set_gpu_texture(image);
         text->set_gpu_texture(image);
 

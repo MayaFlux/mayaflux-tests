@@ -13,14 +13,14 @@ namespace {
     using D::SortingAlgorithm;
     using D::SortingDirection;
 
-    std::vector<double> unsorted()
+    std::vector<double> discrete_sort_unsorted()
     {
         return { 3.0, -1.0, 4.0, 1.0, -5.0, 9.0, 2.0, 6.0, -5.0, 3.0 };
     }
 
     std::vector<double> sorted_in(SortingDirection direction)
     {
-        auto values = unsorted();
+        auto values = discrete_sort_unsorted();
         std::ranges::sort(values, D::double_comparator(direction));
         return values;
     }
@@ -105,7 +105,7 @@ namespace {
     TEST_P(KinesisSortFullTest, SortSpanOrdersEveryElement)
     {
         const auto [direction, algorithm] = GetParam();
-        auto values = unsorted();
+        auto values = discrete_sort_unsorted();
 
         D::sort_span(values, direction, algorithm);
 
@@ -127,7 +127,7 @@ namespace {
     TEST_P(KinesisSortPartialTest, FirstHalfIsTheLeadingHalfInOrder)
     {
         const auto direction = GetParam();
-        auto values = unsorted();
+        auto values = discrete_sort_unsorted();
 
         D::sort_span(values, direction, SortingAlgorithm::PARTIAL);
 
@@ -139,13 +139,13 @@ namespace {
     TEST_P(KinesisSortPartialTest, NoElementIsLostOrInvented)
     {
         const auto direction = GetParam();
-        auto values = unsorted();
+        auto values = discrete_sort_unsorted();
 
         D::sort_span(values, direction, SortingAlgorithm::PARTIAL);
 
         auto actual = values;
         std::ranges::sort(actual);
-        auto expected = unsorted();
+        auto expected = discrete_sort_unsorted();
         std::ranges::sort(expected);
         EXPECT_EQ(actual, expected);
     }
@@ -165,7 +165,7 @@ namespace {
     TEST_P(KinesisSortNthTest, MidpointHoldsItsFinalValue)
     {
         const auto direction = GetParam();
-        auto values = unsorted();
+        auto values = discrete_sort_unsorted();
 
         D::sort_span(values, direction, SortingAlgorithm::NTH_ELEMENT);
 
@@ -177,7 +177,7 @@ namespace {
     TEST_P(KinesisSortNthTest, ElementsOnEachSideArePartitionedAroundTheMidpoint)
     {
         const auto direction = GetParam();
-        auto values = unsorted();
+        auto values = discrete_sort_unsorted();
 
         D::sort_span(values, direction, SortingAlgorithm::NTH_ELEMENT);
 
@@ -206,19 +206,19 @@ namespace {
     TEST_P(KinesisSortIntoTest, OutputIsSortedAndTheSourceIsUntouched)
     {
         const auto direction = GetParam();
-        const auto source = unsorted();
+        const auto source = discrete_sort_unsorted();
         std::vector<double> storage;
 
         const auto out = D::sort_span_into(source, storage, direction);
 
         EXPECT_EQ(std::vector<double>(out.begin(), out.end()), sorted_in(direction));
-        EXPECT_EQ(source, unsorted());
+        EXPECT_EQ(source, discrete_sort_unsorted());
     }
 
     TEST_P(KinesisSortIntoTest, ReturnedSpanViewsTheOutputStorage)
     {
         const auto direction = GetParam();
-        const auto source = unsorted();
+        const auto source = discrete_sort_unsorted();
         std::vector<double> storage;
 
         const auto out = D::sort_span_into(source, storage, direction);
@@ -242,7 +242,7 @@ namespace {
     TEST_P(KinesisSortChannelsTest, EachChannelIsSortedIndependently)
     {
         const auto direction = GetParam();
-        auto first = unsorted();
+        auto first = discrete_sort_unsorted();
         auto second = other_channel();
         std::vector<std::span<double>> channels { first, second };
 
@@ -257,7 +257,7 @@ namespace {
     TEST_P(KinesisSortChannelsTest, IntoLeavesEverySourceUntouched)
     {
         const auto direction = GetParam();
-        const auto first = unsorted();
+        const auto first = discrete_sort_unsorted();
         const auto second = other_channel();
         const std::vector<std::span<const double>> sources { first, second };
         std::vector<std::vector<double>> storage;
@@ -267,14 +267,14 @@ namespace {
         ASSERT_EQ(out.size(), 2U);
         ASSERT_EQ(storage.size(), 2U);
         EXPECT_EQ(std::vector<double>(out[0].begin(), out[0].end()), sorted_in(direction));
-        EXPECT_EQ(first, unsorted());
+        EXPECT_EQ(first, discrete_sort_unsorted());
         EXPECT_EQ(second, other_channel());
     }
 
     TEST_P(KinesisSortChannelsTest, IntoReturnedSpansViewTheirOwnStorage)
     {
         const auto direction = GetParam();
-        const auto first = unsorted();
+        const auto first = discrete_sort_unsorted();
         const auto second = other_channel();
         const std::vector<std::span<const double>> sources { first, second };
         std::vector<std::vector<double>> storage;
@@ -301,7 +301,7 @@ namespace {
     TEST_P(KinesisSortIndicesTest, IndicesReorderTheDataIntoSortedOrder)
     {
         const auto direction = GetParam();
-        auto values = unsorted();
+        auto values = discrete_sort_unsorted();
 
         const auto indices = D::span_sort_indices(values, direction);
 
@@ -316,7 +316,7 @@ namespace {
     TEST_P(KinesisSortIndicesTest, IndicesArePermutationOfTheWholeRange)
     {
         const auto direction = GetParam();
-        auto values = unsorted();
+        auto values = discrete_sort_unsorted();
 
         auto indices = D::span_sort_indices(values, direction);
         std::ranges::sort(indices);
@@ -329,17 +329,17 @@ namespace {
     TEST_P(KinesisSortIndicesTest, SourceIsNotModified)
     {
         const auto direction = GetParam();
-        auto values = unsorted();
+        auto values = discrete_sort_unsorted();
 
         EXPECT_FALSE(D::span_sort_indices(values, direction).empty());
 
-        EXPECT_EQ(values, unsorted());
+        EXPECT_EQ(values, discrete_sort_unsorted());
     }
 
     TEST_P(KinesisSortIndicesTest, ChannelIndicesMatchTheIndicesOfEachChannel)
     {
         const auto direction = GetParam();
-        auto first = unsorted();
+        auto first = discrete_sort_unsorted();
         auto second = other_channel();
         std::vector<std::span<double>> channels { first, second };
 

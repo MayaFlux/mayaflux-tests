@@ -17,7 +17,7 @@ namespace {
     using Core::Stage;
     using Core::VKShaderModule;
 
-    constexpr const char* k_compute_source = R"(#version 450
+    constexpr const char* k_vk_shader_module_compute_source = R"(#version 450
 layout(local_size_x = 8, local_size_y = 4, local_size_z = 2) in;
 layout(set = 0, binding = 0) buffer InBuf { float values[]; } in_buf;
 layout(set = 0, binding = 1) buffer OutBuf { float values[]; } out_buf;
@@ -52,14 +52,14 @@ void main()
 }
 )";
 
-    constexpr const char* k_specialized_source = R"(#version 450
+    constexpr const char* k_vk_shader_module_specialized_source = R"(#version 450
 layout(local_size_x = 1) in;
 layout(constant_id = 3) const uint k_factor = 2;
 layout(set = 0, binding = 0) buffer Out { uint v[]; } out_buf;
 void main() { out_buf.v[0] = k_factor; }
 )";
 
-    constexpr const char* k_vertex_source = R"(#version 450
+    constexpr const char* k_vk_shader_module_vertex_source = R"(#version 450
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec2 uv;
 void main() { gl_Position = vec4(position, 1.0) + vec4(uv, 0.0, 0.0); }
@@ -165,7 +165,7 @@ MAYAFLUX_TEST_WITH(TEST, VKShaderModuleUninitializedTest, StageCreateInfoOfInval
 
 TEST_F(VKShaderModuleTest, CompilesComputeGlslIntoValidModule)
 {
-    ASSERT_TRUE(compile(k_compute_source));
+    ASSERT_TRUE(compile(k_vk_shader_module_compute_source));
 
     EXPECT_TRUE(module.is_valid());
     EXPECT_EQ(module.get_stage(), vk::ShaderStageFlagBits::eCompute);
@@ -181,7 +181,7 @@ TEST_F(VKShaderModuleTest, InvalidGlslFailsAndLeavesModuleInvalid)
 
 TEST_F(VKShaderModuleTest, UnsupportedStageForGlslFails)
 {
-    EXPECT_FALSE(compile(k_compute_source, vk::ShaderStageFlagBits::eRaygenKHR));
+    EXPECT_FALSE(compile(k_vk_shader_module_compute_source, vk::ShaderStageFlagBits::eRaygenKHR));
     EXPECT_FALSE(module.is_valid());
 }
 
@@ -283,14 +283,14 @@ TEST_F(VKShaderModuleTest, SpirvAssemblyThatFailsValidationIsRejected)
 
 TEST_F(VKShaderModuleTest, SpirvIsDiscardedUnlessPreservationIsRequested)
 {
-    ASSERT_TRUE(compile(k_compute_source));
+    ASSERT_TRUE(compile(k_vk_shader_module_compute_source));
     EXPECT_TRUE(module.get_spirv().empty());
 }
 
 TEST_F(VKShaderModuleTest, PreservedSpirvKeepsTheMagicNumber)
 {
     module.set_preserve_spirv(true);
-    ASSERT_TRUE(compile(k_compute_source));
+    ASSERT_TRUE(compile(k_vk_shader_module_compute_source));
 
     ASSERT_FALSE(module.get_spirv().empty());
     EXPECT_EQ(module.get_spirv().front(), 0x07230203U);
@@ -298,7 +298,7 @@ TEST_F(VKShaderModuleTest, PreservedSpirvKeepsTheMagicNumber)
 
 TEST_F(VKShaderModuleTest, CleanupInvalidatesModuleAndClearsReflection)
 {
-    ASSERT_TRUE(compile(k_compute_source));
+    ASSERT_TRUE(compile(k_vk_shader_module_compute_source));
     module.cleanup(device());
 
     EXPECT_FALSE(module.is_valid());
@@ -308,7 +308,7 @@ TEST_F(VKShaderModuleTest, CleanupInvalidatesModuleAndClearsReflection)
 
 TEST_F(VKShaderModuleTest, ReflectsStorageBufferBindingsWithSetAndBinding)
 {
-    ASSERT_TRUE(compile(k_compute_source));
+    ASSERT_TRUE(compile(k_vk_shader_module_compute_source));
     const auto& reflection = module.get_reflection();
 
     ASSERT_EQ(reflection.bindings.size(), 2U);
@@ -324,7 +324,7 @@ TEST_F(VKShaderModuleTest, ReflectsStorageBufferBindingsWithSetAndBinding)
 
 TEST_F(VKShaderModuleTest, ReflectsWorkgroupSize)
 {
-    ASSERT_TRUE(compile(k_compute_source));
+    ASSERT_TRUE(compile(k_vk_shader_module_compute_source));
 
     const auto size = module.get_workgroup_size();
     ASSERT_TRUE(size.has_value());
@@ -335,7 +335,7 @@ TEST_F(VKShaderModuleTest, ReflectsWorkgroupSize)
 
 TEST_F(VKShaderModuleTest, ReflectsPushConstantBlockSize)
 {
-    ASSERT_TRUE(compile(k_compute_source));
+    ASSERT_TRUE(compile(k_vk_shader_module_compute_source));
     const auto& reflection = module.get_reflection();
 
     ASSERT_EQ(reflection.push_constants.size(), 1U);
@@ -366,7 +366,7 @@ TEST_F(VKShaderModuleTest, ReflectsEveryDescriptorTypeAndArrayCount)
 
 TEST_F(VKShaderModuleTest, ReflectionDisabledLeavesNoBindings)
 {
-    ASSERT_TRUE(module.create_from_glsl(device(), k_compute_source, vk::ShaderStageFlagBits::eCompute,
+    ASSERT_TRUE(module.create_from_glsl(device(), k_vk_shader_module_compute_source, vk::ShaderStageFlagBits::eCompute,
         "main", false));
     EXPECT_TRUE(module.get_reflection().bindings.empty());
     EXPECT_FALSE(module.get_workgroup_size().has_value());
@@ -374,7 +374,7 @@ TEST_F(VKShaderModuleTest, ReflectionDisabledLeavesNoBindings)
 
 TEST_F(VKShaderModuleTest, ReflectsSpecializationConstantIds)
 {
-    ASSERT_TRUE(compile(k_specialized_source));
+    ASSERT_TRUE(compile(k_vk_shader_module_specialized_source));
     const auto& reflection = module.get_reflection();
 
     ASSERT_EQ(reflection.specialization_constants.size(), 1U);
@@ -384,7 +384,7 @@ TEST_F(VKShaderModuleTest, ReflectsSpecializationConstantIds)
 
 TEST_F(VKShaderModuleTest, StageCreateInfoCarriesStageModuleAndEntryPoint)
 {
-    ASSERT_TRUE(compile(k_compute_source));
+    ASSERT_TRUE(compile(k_vk_shader_module_compute_source));
     const auto info = module.get_stage_create_info();
 
     EXPECT_EQ(info.stage, vk::ShaderStageFlagBits::eCompute);
@@ -395,7 +395,7 @@ TEST_F(VKShaderModuleTest, StageCreateInfoCarriesStageModuleAndEntryPoint)
 
 TEST_F(VKShaderModuleTest, SpecializationConstantsReachTheStageCreateInfo)
 {
-    ASSERT_TRUE(compile(k_specialized_source));
+    ASSERT_TRUE(compile(k_vk_shader_module_specialized_source));
     module.set_specialization_constants({ { 3U, 42U } });
 
     const auto info = module.get_stage_create_info();
@@ -410,7 +410,7 @@ TEST_F(VKShaderModuleTest, SpecializationConstantsReachTheStageCreateInfo)
 
 TEST_F(VKShaderModuleTest, ReflectsVertexInputLocationsAndFormats)
 {
-    ASSERT_TRUE(compile(k_vertex_source, vk::ShaderStageFlagBits::eVertex));
+    ASSERT_TRUE(compile(k_vk_shader_module_vertex_source, vk::ShaderStageFlagBits::eVertex));
     EXPECT_EQ(module.get_stage_type(), Stage::VERTEX);
 
     const auto& attributes = module.get_reflection().vertex_attributes;
@@ -435,8 +435,8 @@ TEST_P(VKShaderModuleStageTest, StageTypeFollowsCompiledStage)
 
 INSTANTIATE_TEST_SUITE_P(Stages, VKShaderModuleStageTest,
     ::testing::Values(
-        StageCase { vk::ShaderStageFlagBits::eCompute, k_compute_source, Stage::COMPUTE },
-        StageCase { vk::ShaderStageFlagBits::eVertex, k_vertex_source, Stage::VERTEX },
+        StageCase { vk::ShaderStageFlagBits::eCompute, k_vk_shader_module_compute_source, Stage::COMPUTE },
+        StageCase { vk::ShaderStageFlagBits::eVertex, k_vk_shader_module_vertex_source, Stage::VERTEX },
         StageCase { vk::ShaderStageFlagBits::eFragment, k_fragment_source, Stage::FRAGMENT }));
 
 }

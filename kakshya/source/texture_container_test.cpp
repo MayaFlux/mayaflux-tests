@@ -25,7 +25,7 @@ namespace {
     using Kakshya::TextureContainer;
     using Portal::Graphics::TextureLoom;
 
-    TextureLoom& loom()
+    TextureLoom& texture_container_loom()
     {
         return TextureLoom::instance();
     }
@@ -50,20 +50,20 @@ namespace {
         {
             if (!s_backend)
                 GTEST_SKIP() << "No usable Vulkan device: " << vulkan_unavailable_reason();
-            loom().shutdown();
-            ASSERT_TRUE(loom().initialize(s_backend));
+            texture_container_loom().shutdown();
+            ASSERT_TRUE(texture_container_loom().initialize(s_backend));
         }
 
         void TearDown() override
         {
-            loom().shutdown();
+            texture_container_loom().shutdown();
         }
 
         static std::vector<uint8_t> read_image(
             const std::shared_ptr<Core::VKImage>& image, size_t byte_count)
         {
             std::vector<uint8_t> bytes(byte_count);
-            loom().download_data(image, bytes.data(), bytes.size());
+            texture_container_loom().download_data(image, bytes.data(), bytes.size());
             return bytes;
         }
 
@@ -75,7 +75,7 @@ namespace {
         return Region(std::move(start), std::move(end));
     }
 
-    std::vector<uint8_t> ramp(size_t n, uint8_t seed = 0)
+    std::vector<uint8_t> texture_container_ramp(size_t n, uint8_t seed = 0)
     {
         std::vector<uint8_t> out(n);
         for (size_t i = 0; i < n; ++i) {
@@ -94,14 +94,14 @@ namespace {
         F32
     };
 
-    struct FormatCase {
+    struct TextureContainerFormatCase {
         std::string_view name;
         ImageFormat format;
         uint32_t channels;
         Storage storage;
     };
 
-    class TextureContainerFormatTest : public ::testing::TestWithParam<FormatCase> { };
+    class TextureContainerFormatTest : public ::testing::TestWithParam<TextureContainerFormatCase> { };
 
     TEST_P(TextureContainerFormatTest, StorageMatchesTheFormat)
     {
@@ -133,14 +133,14 @@ namespace {
     INSTANTIATE_TEST_SUITE_P(
         Formats, TextureContainerFormatTest,
         ::testing::Values(
-            FormatCase { "R8", ImageFormat::R8, 1, Storage::U8 },
-            FormatCase { "RG8", ImageFormat::RG8, 2, Storage::U8 },
-            FormatCase { "RGBA8", ImageFormat::RGBA8, 4, Storage::U8 },
-            FormatCase { "R16", ImageFormat::R16, 1, Storage::U16 },
-            FormatCase { "RGBA16", ImageFormat::RGBA16, 4, Storage::U16 },
-            FormatCase { "R32F", ImageFormat::R32F, 1, Storage::F32 },
-            FormatCase { "RGBA32F", ImageFormat::RGBA32F, 4, Storage::F32 }),
-        [](const ::testing::TestParamInfo<FormatCase>& info) {
+            TextureContainerFormatCase { "R8", ImageFormat::R8, 1, Storage::U8 },
+            TextureContainerFormatCase { "RG8", ImageFormat::RG8, 2, Storage::U8 },
+            TextureContainerFormatCase { "RGBA8", ImageFormat::RGBA8, 4, Storage::U8 },
+            TextureContainerFormatCase { "R16", ImageFormat::R16, 1, Storage::U16 },
+            TextureContainerFormatCase { "RGBA16", ImageFormat::RGBA16, 4, Storage::U16 },
+            TextureContainerFormatCase { "R32F", ImageFormat::R32F, 1, Storage::F32 },
+            TextureContainerFormatCase { "RGBA32F", ImageFormat::RGBA32F, 4, Storage::F32 }),
+        [](const ::testing::TestParamInfo<TextureContainerFormatCase>& info) {
             return std::string(info.param.name);
         });
 
@@ -198,8 +198,8 @@ namespace {
 
     TEST_F(TextureContainerPixelTest, SetPixelsWritesOnlyTheAddressedLayer)
     {
-        const auto first = ramp(16, 1);
-        const auto second = ramp(16, 100);
+        const auto first = texture_container_ramp(16, 1);
+        const auto second = texture_container_ramp(16, 100);
 
         tc.set_pixels(std::span<const uint8_t>(first), 0);
         tc.set_pixels(std::span<const uint8_t>(second), 1);
@@ -210,10 +210,10 @@ namespace {
 
     TEST_F(TextureContainerPixelTest, SetPixelsRejectsWrongSizeWrongTypeAndBadLayer)
     {
-        const auto good = ramp(16, 7);
+        const auto good = texture_container_ramp(16, 7);
         tc.set_pixels(std::span<const uint8_t>(good), 0);
 
-        const auto short_data = ramp(8, 99);
+        const auto short_data = texture_container_ramp(8, 99);
         const std::vector<uint16_t> wide(16, 1);
         const std::vector<float> floats(16, 1.F);
         tc.set_pixels(std::span<const uint8_t>(short_data), 0);
@@ -280,8 +280,8 @@ namespace {
 
     TEST_F(TextureContainerPixelTest, ClearZeroesEveryLayerAndReturnsToIdle)
     {
-        tc.set_pixels(std::span<const uint8_t>(ramp(16, 3)), 0);
-        tc.set_pixels(std::span<const uint8_t>(ramp(16, 9)), 1);
+        tc.set_pixels(std::span<const uint8_t>(texture_container_ramp(16, 3)), 0);
+        tc.set_pixels(std::span<const uint8_t>(texture_container_ramp(16, 9)), 1);
         tc.update_processing_state(ProcessingState::READY);
 
         tc.clear();
@@ -295,8 +295,8 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, ToImageRefreshesLayerAndFromImageReadsItBack, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer source(2, 2, ImageFormat::RGBA8, 2U);
-        const auto first = ramp(16, 3);
-        const auto updated = ramp(16, 91);
+        const auto first = texture_container_ramp(16, 3);
+        const auto updated = texture_container_ramp(16, 91);
         source.set_pixels(std::span<const uint8_t>(first), 1);
 
         const auto image = source.to_image(1);
@@ -316,9 +316,9 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, ToImageArrayAndFromImageArrayPreserveLayerOrder, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer source(2, 2, ImageFormat::RGBA8, 3U);
-        const auto first = ramp(16, 5);
-        const auto second = ramp(16, 55);
-        const auto third = ramp(16, 105);
+        const auto first = texture_container_ramp(16, 5);
+        const auto second = texture_container_ramp(16, 55);
+        const auto third = texture_container_ramp(16, 105);
         source.set_pixels(std::span<const uint8_t>(first), 0);
         source.set_pixels(std::span<const uint8_t>(second), 1);
         source.set_pixels(std::span<const uint8_t>(third), 2);
@@ -343,11 +343,11 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, UploadImageWritesTheSelectedLayerToAnExistingImage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer source(2, 2, ImageFormat::RGBA8, 2U);
-        const auto first = ramp(16, 15);
-        const auto second = ramp(16, 75);
+        const auto first = texture_container_ramp(16, 15);
+        const auto second = texture_container_ramp(16, 75);
         source.set_pixels(std::span<const uint8_t>(first), 0);
         source.set_pixels(std::span<const uint8_t>(second), 1);
-        const auto image = loom().create_2d_uninitialized(2, 2, ImageFormat::RGBA8);
+        const auto image = texture_container_loom().create_2d_uninitialized(2, 2, ImageFormat::RGBA8);
         ASSERT_NE(image, nullptr);
 
         EXPECT_TRUE(source.upload_image(image, 1));
@@ -359,11 +359,11 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, UploadImageArrayWritesAllLayersToAnExistingImage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer source(2, 2, ImageFormat::RGBA8, 2U);
-        const auto first = ramp(16, 25);
-        const auto second = ramp(16, 125);
+        const auto first = texture_container_ramp(16, 25);
+        const auto second = texture_container_ramp(16, 125);
         source.set_pixels(std::span<const uint8_t>(first), 0);
         source.set_pixels(std::span<const uint8_t>(second), 1);
-        const auto image = loom().create_2d_array(2, 2, 2, ImageFormat::RGBA8);
+        const auto image = texture_container_loom().create_2d_array(2, 2, 2, ImageFormat::RGBA8);
         ASSERT_NE(image, nullptr);
 
         EXPECT_TRUE(source.upload_image_array(image));
@@ -437,8 +437,8 @@ namespace {
     TEST(TextureContainerFrameTest, FramesAreLayersAndPadWithZeros)
     {
         TextureContainer tc(2, 2, ImageFormat::RGBA8, 2U);
-        const auto first = ramp(16, 1);
-        const auto second = ramp(16, 50);
+        const auto first = texture_container_ramp(16, 1);
+        const auto second = texture_container_ramp(16, 50);
         tc.set_pixels(std::span<const uint8_t>(first), 0);
         tc.set_pixels(std::span<const uint8_t>(second), 1);
 
@@ -466,7 +466,7 @@ namespace {
     TEST(TextureContainerRegionTest, GetRegionDataReturnsTheInclusiveBox)
     {
         TextureContainer tc(3, 3, ImageFormat::RGBA8);
-        const auto pixels = ramp(36, 2);
+        const auto pixels = texture_container_ramp(36, 2);
         tc.set_pixels(std::span<const uint8_t>(pixels), 0);
 
         const auto data = tc.get_region_data(box({ 1, 1, 0 }, { 1, 2, 3 }));
@@ -485,7 +485,7 @@ namespace {
         TextureContainer tc(2, 2, ImageFormat::RGBA8, 3U);
         std::vector<std::vector<uint8_t>> layers;
         for (uint32_t layer = 0; layer < 3; ++layer) {
-            layers.push_back(ramp(16, static_cast<uint8_t>(30 * (layer + 1))));
+            layers.push_back(texture_container_ramp(16, static_cast<uint8_t>(30 * (layer + 1))));
             tc.set_pixels(std::span<const uint8_t>(layers.back()), layer);
         }
 
@@ -681,8 +681,8 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, ImageConstructorReadsTheImagePixels, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        const auto pixels = ramp(16, 21);
-        const auto image = loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
+        const auto pixels = texture_container_ramp(16, 21);
+        const auto image = texture_container_loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
         ASSERT_NE(image, nullptr);
 
         TextureContainer tc(image, ImageFormat::RGBA8);
@@ -694,11 +694,11 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, FromImageOutOfRangeLayerLeavesTheContainerUnchanged, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer tc(2, 2, ImageFormat::RGBA8, 2U);
-        const auto kept = ramp(16, 4);
+        const auto kept = texture_container_ramp(16, 4);
         tc.set_pixels(std::span<const uint8_t>(kept), 0);
 
-        const auto other = ramp(16, 77);
-        const auto image = loom().create_2d(2, 2, ImageFormat::RGBA8, other.data());
+        const auto other = texture_container_ramp(16, 77);
+        const auto image = texture_container_loom().create_2d(2, 2, ImageFormat::RGBA8, other.data());
         ASSERT_NE(image, nullptr);
 
         tc.from_image(image, 5);
@@ -709,12 +709,12 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, FromImageArrayWithTooFewLayersLeavesEveryLayerUnchanged, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
         TextureContainer tc(2, 2, ImageFormat::RGBA8, 3U);
-        const auto first = ramp(16, 5);
-        const auto second = ramp(16, 55);
+        const auto first = texture_container_ramp(16, 5);
+        const auto second = texture_container_ramp(16, 55);
         tc.set_pixels(std::span<const uint8_t>(first), 0);
         tc.set_pixels(std::span<const uint8_t>(second), 1);
 
-        const auto image = loom().create_2d_array(2, 2, 2, ImageFormat::RGBA8);
+        const auto image = texture_container_loom().create_2d_array(2, 2, 2, ImageFormat::RGBA8);
         ASSERT_NE(image, nullptr);
 
         tc.from_image_array(image);
@@ -725,8 +725,8 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, GpuHeldLayerIsDownloadedOnTheFirstCpuRead, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        const auto pixels = ramp(16, 31);
-        const auto source = loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
+        const auto pixels = texture_container_ramp(16, 31);
+        const auto source = texture_container_loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
         ASSERT_NE(source, nullptr);
 
         Kakshya::TextureCollection collection(Kakshya::TextureCollectionSpec { .width = 2, .height = 2, .format = ImageFormat::RGBA8 });
@@ -737,14 +737,14 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, CpuWriteReplacesAGpuHeldLayer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        const auto before = ramp(16, 41);
-        const auto source = loom().create_2d(2, 2, ImageFormat::RGBA8, before.data());
+        const auto before = texture_container_ramp(16, 41);
+        const auto source = texture_container_loom().create_2d(2, 2, ImageFormat::RGBA8, before.data());
         ASSERT_NE(source, nullptr);
 
         Kakshya::TextureCollection collection(Kakshya::TextureCollectionSpec { .width = 2, .height = 2, .format = ImageFormat::RGBA8 });
         ASSERT_TRUE(collection.append(source));
 
-        const auto after = ramp(16, 141);
+        const auto after = texture_container_ramp(16, 141);
         collection.set_pixels(std::span<const uint8_t>(after), 0);
 
         EXPECT_TRUE(std::ranges::equal(collection.as_uint8(0), after));
@@ -755,8 +755,8 @@ namespace {
 
     MAYAFLUX_TEST_WITH(TEST_F, TextureContainerGpuTest, ClearZeroesALayerHeldOnlyOnTheGpu, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
     {
-        const auto pixels = ramp(16, 51);
-        const auto source = loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
+        const auto pixels = texture_container_ramp(16, 51);
+        const auto source = texture_container_loom().create_2d(2, 2, ImageFormat::RGBA8, pixels.data());
         ASSERT_NE(source, nullptr);
 
         Kakshya::TextureCollection collection(Kakshya::TextureCollectionSpec { .width = 2, .height = 2, .format = ImageFormat::RGBA8 });

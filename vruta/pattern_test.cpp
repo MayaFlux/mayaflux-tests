@@ -16,10 +16,10 @@ using SchedToken = Vruta::ProcessingToken;
 
 namespace {
 
-    constexpr unsigned int SAMPLE_RATE = 48000;
+    constexpr unsigned int PATTERN_SAMPLE_RATE = 48000;
 
     template <typename T>
-    class Log {
+    class PatternLog {
     public:
         void add(T value)
         {
@@ -120,7 +120,7 @@ class PatternFixture : public Base {
 protected:
     void SetUp() override
     {
-        scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
+        scheduler = std::make_shared<Vruta::TaskScheduler>(PATTERN_SAMPLE_RATE);
     }
 
     void TearDown() override
@@ -212,7 +212,7 @@ class DurationListTest : public PatternParamTest<DurationCase> { };
 TEST_P(DurationListTest, StepsFollowTheListAndCycle)
 {
     const auto& param = GetParam();
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -250,7 +250,7 @@ class DurationDomainTest : public PatternParamTest<DomainCase> { };
 TEST_P(DurationDomainTest, StepsFollowTheDomainUnits)
 {
     const auto& param = GetParam();
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -281,7 +281,7 @@ class DurationClampTest : public PatternParamTest<ClampCase> { };
 
 TEST_P(DurationClampTest, DurationsAreAtLeastOneUnit)
 {
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -315,7 +315,7 @@ class DurationLimitTest : public PatternParamTest<LimitCase> { };
 TEST_P(DurationLimitTest, ADurationBeyondTheLimitHoldsTheNextStep)
 {
     const auto& param = GetParam();
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -341,8 +341,8 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(PatternTest, BracedDurationsBindDirectly)
 {
-    auto one = std::make_shared<Log<uint64_t>>();
-    auto two = std::make_shared<Log<uint64_t>>();
+    auto one = std::make_shared<PatternLog<uint64_t>>();
+    auto two = std::make_shared<PatternLog<uint64_t>>();
 
     auto single = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -375,8 +375,8 @@ TEST_F(PatternTest, EmptyDurationListReturnsNull)
 
 TEST_F(PatternTest, DurationFunctionIsAskedOncePerPassAndEndsOnAnEmptyArray)
 {
-    auto seen = std::make_shared<Log<uint64_t>>();
-    auto passes = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
+    auto passes = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -403,7 +403,7 @@ TEST_F(PatternTest, DurationFunctionIsAskedOncePerPassAndEndsOnAnEmptyArray)
 
 TEST_F(PatternTest, DurationFunctionThatThrowsEndsThePattern)
 {
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -425,7 +425,7 @@ TEST_F(PatternTest, DurationFunctionThatThrowsEndsThePattern)
 
 TEST_F(PatternTest, DurationFunctionAcceptsAnyRangeOfNumbers)
 {
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -457,7 +457,7 @@ class PatternLevelTest : public PatternParamTest<MaskParam> { };
 TEST_P(PatternLevelTest, RunsOneStepPerSatisfiedCheck)
 {
     const auto& [token, mask] = GetParam();
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -474,7 +474,7 @@ TEST_P(PatternLevelTest, RunsOneStepPerSatisfiedCheck)
 TEST_P(PatternLevelTest, IndexAdvancesOnlyWhenTheConditionHolds)
 {
     const auto& [token, mask] = GetParam();
-    auto asked = std::make_shared<Log<uint64_t>>();
+    auto asked = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -519,7 +519,7 @@ class PatternEdgeTest : public PatternParamTest<MaskParam> { };
 TEST_P(PatternEdgeTest, AMemoryConditionRunsOncePerRise)
 {
     const auto& [token, mask] = GetParam();
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -552,7 +552,7 @@ TEST_P(PatternLogicTest, ALogicNodeOutputDrivesTheSteps)
 {
     const std::string& levels = GetParam();
     auto gate = std::make_shared<Nodes::Generator::Logic>(0.5);
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -583,7 +583,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_F(PatternTest, ConditionFollowsExternalState)
 {
     auto open = std::make_shared<bool>(false);
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -611,8 +611,8 @@ TEST_F(PatternTest, ConditionFollowsExternalState)
 TEST_F(PatternTest, PatternsSharingACondition)
 {
     auto open = std::make_shared<bool>(true);
-    auto first = std::make_shared<Log<uint64_t>>();
-    auto second = std::make_shared<Log<uint64_t>>();
+    auto first = std::make_shared<PatternLog<uint64_t>>();
+    auto second = std::make_shared<PatternLog<uint64_t>>();
 
     auto a = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -634,7 +634,7 @@ TEST_F(PatternTest, PatternsSharingACondition)
 
 TEST_F(PatternTest, CancelStopsAConditionPattern)
 {
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -658,7 +658,7 @@ TEST_F(PatternTest, CancelStopsAConditionPattern)
 
 TEST_F(PatternTest, PatternCarriesAPairValue)
 {
-    auto seen = std::make_shared<Log<std::pair<int, double>>>();
+    auto seen = std::make_shared<PatternLog<std::pair<int, double>>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return std::make_pair(static_cast<int>(index), index * 0.5); },
@@ -676,7 +676,7 @@ TEST_F(PatternTest, PatternCarriesAPairValue)
 
 TEST_F(PatternTest, PatternCarriesAString)
 {
-    auto seen = std::make_shared<Log<std::string>>();
+    auto seen = std::make_shared<PatternLog<std::string>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return "step" + std::to_string(index); },
@@ -691,7 +691,7 @@ TEST_F(PatternTest, PatternCarriesAString)
 
 TEST_F(PatternTest, PatternCarriesAMoveOnlyValue)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return std::make_unique<int>(static_cast<int>(index) * 3); },
@@ -706,7 +706,7 @@ TEST_F(PatternTest, PatternCarriesAMoveOnlyValue)
 
 TEST_F(PatternTest, PatternAcceptsAnotherIndexType)
 {
-    auto seen = std::make_shared<Log<int32_t>>();
+    auto seen = std::make_shared<PatternLog<int32_t>>();
 
     auto routine = Kriya::pattern<int32_t>(
         [](int32_t index) { return index; },
@@ -721,7 +721,7 @@ TEST_F(PatternTest, PatternAcceptsAnotherIndexType)
 
 TEST_F(PatternTest, ErasedFormMatchesTheTemplate)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     std::function<std::any(uint64_t)> generator = [](uint64_t index) -> std::any { return static_cast<int>(index * 10); };
     std::function<void(std::any)> callback = [seen](std::any value) { seen->add(std::any_cast<int>(value)); };
@@ -798,7 +798,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(PatternTest, CrossPatternRunsConsecutiveSteps)
 {
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -819,7 +819,7 @@ TEST_F(PatternTest, CrossPatternRunsConsecutiveSteps)
 
 TEST_F(PatternTest, FreePatternRunsOnTheConditionThread)
 {
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -863,7 +863,7 @@ class PatternFailureTest : public PatternParamTest<FailureCase> { };
 TEST_P(PatternFailureTest, AThrowEndsThePatternWithoutTerminating)
 {
     const auto& param = GetParam();
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [stage = param.stage](uint64_t index) {
@@ -975,7 +975,7 @@ class PatternTimedFailureTest : public PatternParamTest<TimedFailureParam> { };
 TEST_P(PatternTimedFailureTest, AThrowEndsTheTimedPatternWithoutTerminating)
 {
     const auto& [token, param] = GetParam();
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [stage = param.stage](uint64_t index) {
@@ -1044,7 +1044,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(PatternTest, CrossTimedPatternFollowsTheList)
 {
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -1063,7 +1063,7 @@ TEST_F(PatternTest, CrossTimedPatternFollowsTheList)
 
 TEST_F(PatternTest, FreeTimedPatternRunsOnTheConditionThread)
 {
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -1091,7 +1091,7 @@ class PatternFreeTimedFailureTest : public PatternParamTest<FailureCase> { };
 TEST_P(PatternFreeTimedFailureTest, AThrowEndsTheTimedPatternWithoutTerminating)
 {
     const auto& param = GetParam();
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [stage = param.stage](uint64_t index) {
@@ -1190,7 +1190,7 @@ class PatternRangeTest : public PatternParamTest<RangeCase> { };
 TEST_P(PatternRangeTest, PlaysOnceFollowingTheDurationsThenEnds)
 {
     const auto& param = GetParam();
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto routine = Kriya::pattern(
         param.values,
@@ -1222,7 +1222,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(PatternTest, ARangeEndsOnlyAfterTheLastGap)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto routine = Kriya::pattern(
         std::vector<int> { 60, 62, 64, 67 },
@@ -1243,7 +1243,7 @@ TEST_F(PatternTest, ARangeEndsOnlyAfterTheLastGap)
 
 TEST_F(PatternTest, ARecurringRangeStartsAgain)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto routine = Kriya::pattern(
         Kriya::recurring(std::vector<int> { 1, 2, 3 }),
@@ -1262,7 +1262,7 @@ TEST_F(PatternTest, ARecurringRangeStartsAgain)
 
 TEST_F(PatternTest, ARecurringRangeDriftsAgainstTheDurations)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto routine = Kriya::pattern(
         Kriya::recurring(std::vector<int> { 1, 2, 3, 4, 5 }),
@@ -1280,7 +1280,7 @@ TEST_F(PatternTest, ARecurringRangeDriftsAgainstTheDurations)
 
 TEST_F(PatternTest, AnEmptyRangeEndsAtOnce)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto routine = Kriya::pattern(
         std::vector<int> {},
@@ -1297,7 +1297,7 @@ TEST_F(PatternTest, AnEmptyRangeEndsAtOnce)
 
 TEST_F(PatternTest, AnEmptyRecurringRangeEndsAtOnce)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto routine = Kriya::pattern(
         Kriya::recurring(std::vector<int> {}),
@@ -1314,7 +1314,7 @@ TEST_F(PatternTest, AnEmptyRecurringRangeEndsAtOnce)
 
 TEST_F(PatternTest, ACallbackThatThrowsEndsARangePattern)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto routine = Kriya::pattern(
         std::vector<int> { 1, 2, 3 },
@@ -1336,7 +1336,7 @@ TEST_F(PatternTest, ACallbackThatThrowsEndsARangePattern)
 
 TEST_F(PatternTest, ARangeThatThrowsWhileReadingEndsThePattern)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto phrase = std::views::iota(0, 4) | std::views::transform([](int value) {
         if (value == 2) {
@@ -1360,7 +1360,7 @@ TEST_F(PatternTest, ARangeThatThrowsWhileReadingEndsThePattern)
 
 TEST_F(PatternTest, ARangeOfMoveOnlyElements)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     std::vector<std::unique_ptr<int>> phrase;
     phrase.push_back(std::make_unique<int>(3));
@@ -1381,7 +1381,7 @@ TEST_F(PatternTest, ARangeOfMoveOnlyElements)
 
 TEST_F(PatternTest, ARangeFollowsADurationFunction)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto routine = Kriya::pattern(
         std::vector<int> { 1, 2, 3 },
@@ -1401,7 +1401,7 @@ class PatternRangeTokenTest : public PatternParamTest<SchedToken> { };
 TEST_P(PatternRangeTokenTest, ARangePlaysOnceOnEveryToken)
 {
     const SchedToken token = GetParam();
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto routine = Kriya::pattern(
         std::views::iota(0, 4),
@@ -1430,7 +1430,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(PatternTest, AFreeRangePatternEndsOnTheConditionThread)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto routine = Kriya::pattern(
         std::views::iota(0, 3),
@@ -1467,7 +1467,7 @@ TEST_F(PatternTest, ATimeMapIsADurationSourceAndNeverACondition)
 
 TEST_F(PatternTest, AConditionThatReturnsADoubleStillDrivesTheSteps)
 {
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -1491,7 +1491,7 @@ class PatternTimeMapTest : public PatternParamTest<MapCase> { };
 TEST_P(PatternTimeMapTest, StepsFollowTheMapAtTheElapsedSeconds)
 {
     const auto& param = GetParam();
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     std::vector<double> times { 0.0 };
     double elapsed = 0.0;
@@ -1537,7 +1537,7 @@ class PatternTimeMapClampTest : public PatternParamTest<ClampCase> { };
 TEST_P(PatternTimeMapClampTest, GapsAreAtLeastOneUnit)
 {
     const double value = GetParam().value;
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -1572,7 +1572,7 @@ TEST_F(PatternTest, AnUnsetTimeMapReturnsNull)
 
 TEST_F(PatternTest, ATimeMapThatThrowsEndsThePattern)
 {
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     auto routine = Kriya::pattern(
         [](uint64_t index) { return index; },
@@ -1594,7 +1594,7 @@ TEST_F(PatternTest, ATimeMapThatThrowsEndsThePattern)
 
 TEST_F(PatternTest, ARangeFollowsATimeMap)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
 
     auto routine = Kriya::pattern(
         std::vector<int> { 1, 2, 3 },
@@ -1615,7 +1615,7 @@ TEST_F(PatternTest, ARangeFollowsATimeMap)
 
 TEST_F(PatternTest, AnEuclideanRhythmSpacesTheSteps)
 {
-    auto seen = std::make_shared<Log<uint64_t>>();
+    auto seen = std::make_shared<PatternLog<uint64_t>>();
 
     const auto gaps = Kinesis::Discrete::onset_gaps(Kinesis::Discrete::maximally_even_sequence(3, 8), 0.125);
     ASSERT_EQ(gaps, (std::vector<double> { 0.375, 0.375, 0.25 }));
@@ -1690,7 +1690,7 @@ TEST_F(PatternTest, CancellingARecurringPatternFiresOnCompleteOnce)
 
 TEST_F(PatternTest, ACompletionCanStartTheNextPhrase)
 {
-    auto seen = std::make_shared<Log<int>>();
+    auto seen = std::make_shared<PatternLog<int>>();
     auto* sched = scheduler.get();
 
     auto second = Kriya::pattern(

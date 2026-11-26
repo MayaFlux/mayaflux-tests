@@ -29,7 +29,7 @@ namespace {
     using Core::InputValue;
 
     template <typename Predicate>
-    bool eventually(Predicate predicate, std::chrono::milliseconds timeout = 2s)
+    bool input_subsystem_eventually(Predicate predicate, std::chrono::milliseconds timeout = 2s)
     {
         const auto deadline = std::chrono::steady_clock::now() + timeout;
         while (std::chrono::steady_clock::now() < deadline) {
@@ -145,9 +145,9 @@ namespace {
     /**
      * @brief Owns an InputSubsystem together with the managers behind its processing handle.
      */
-    class SubsystemRig {
+    class InputSubsystemSubsystemRig {
     public:
-        explicit SubsystemRig(Core::GlobalInputConfig input_config = {})
+        explicit InputSubsystemSubsystemRig(Core::GlobalInputConfig input_config = {})
             : config(std::move(input_config))
             , manager(std::make_shared<InputManager>())
             , scheduler(std::make_shared<Vruta::TaskScheduler>(48000))
@@ -156,12 +156,12 @@ namespace {
         {
         }
 
-        SubsystemRig(const SubsystemRig&) = delete;
-        SubsystemRig& operator=(const SubsystemRig&) = delete;
-        SubsystemRig(SubsystemRig&&) = delete;
-        SubsystemRig& operator=(SubsystemRig&&) = delete;
+        InputSubsystemSubsystemRig(const InputSubsystemSubsystemRig&) = delete;
+        InputSubsystemSubsystemRig& operator=(const InputSubsystemSubsystemRig&) = delete;
+        InputSubsystemSubsystemRig(InputSubsystemSubsystemRig&&) = delete;
+        InputSubsystemSubsystemRig& operator=(InputSubsystemSubsystemRig&&) = delete;
 
-        ~SubsystemRig() { subsystem.shutdown(); }
+        ~InputSubsystemSubsystemRig() { subsystem.shutdown(); }
 
         void initialize() { subsystem.initialize(handle); }
 
@@ -201,7 +201,7 @@ namespace {
 
     TEST(InputSubsystemTest, NewSubsystemIsIdleAndReportsItsTokens)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
 
         EXPECT_FALSE(rig.subsystem.is_ready());
         EXPECT_FALSE(rig.subsystem.is_running());
@@ -214,7 +214,7 @@ namespace {
 
     TEST(InputSubsystemTest, StartBeforeInitializeIsRejected)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
 
         rig.subsystem.start();
 
@@ -225,7 +225,7 @@ namespace {
     TEST(InputSubsystemTest, InitializeWithNoBackendsEnabledBecomesReadyAndRegistersTheService)
     {
         ASSERT_FALSE(input_service_registered());
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
 
         rig.initialize();
 
@@ -242,7 +242,7 @@ namespace {
         Core::GlobalInputConfig config;
         config.hid.enabled = true;
         config.hid.filters.push_back(Core::HIDDeviceFilter::device(0xFFFF, 0xFFFF));
-        SubsystemRig rig(config);
+        InputSubsystemSubsystemRig rig(config);
 
         rig.initialize();
 
@@ -258,7 +258,7 @@ namespace {
         Core::GlobalInputConfig config;
         config.osc.enabled = true;
         config.osc.receive_port = 9321;
-        SubsystemRig rig(config);
+        InputSubsystemSubsystemRig rig(config);
 
         rig.initialize();
 
@@ -272,7 +272,7 @@ namespace {
 
     TEST(InputSubsystemTest, AddBackendRejectsNull)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
 
         EXPECT_FALSE(rig.subsystem.add_backend(nullptr));
@@ -281,7 +281,7 @@ namespace {
 
     TEST(InputSubsystemTest, AddBackendInitializesAndRegistersTheBackend)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<BackendCounters>();
 
@@ -296,7 +296,7 @@ namespace {
 
     TEST(InputSubsystemTest, AddBackendRejectsADuplicateTypeWithoutInitializingIt)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto first_counters = std::make_shared<BackendCounters>();
         auto second_counters = std::make_shared<BackendCounters>();
@@ -312,7 +312,7 @@ namespace {
 
     TEST(InputSubsystemTest, AddBackendRejectsABackendThatFailsToInitialize)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<BackendCounters>();
 
@@ -330,7 +330,7 @@ namespace {
 
     TEST(InputSubsystemTest, StartStartsTheManagerAndEveryBackend)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto hid = std::make_shared<BackendCounters>();
         auto midi = std::make_shared<BackendCounters>();
@@ -347,7 +347,7 @@ namespace {
 
     TEST(InputSubsystemTest, StartIsIdempotent)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<BackendCounters>();
         rig.add_fake(InputType::HID, counters);
@@ -360,7 +360,7 @@ namespace {
 
     TEST(InputSubsystemTest, PauseStopsBackendsAndResumeStartsThemAgain)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<BackendCounters>();
         rig.add_fake(InputType::HID, counters);
@@ -377,7 +377,7 @@ namespace {
 
     TEST(InputSubsystemTest, PauseAndResumeAreNoOpsInTheWrongState)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<BackendCounters>();
         rig.add_fake(InputType::HID, counters);
@@ -392,7 +392,7 @@ namespace {
 
     TEST(InputSubsystemTest, StopStopsBackendsAndTheManager)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<BackendCounters>();
         rig.add_fake(InputType::HID, counters);
@@ -410,7 +410,7 @@ namespace {
 
     TEST(InputSubsystemTest, ShutdownReleasesBackendsNodesAndTheService)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<BackendCounters>();
         rig.add_fake(InputType::HID, counters);
@@ -432,7 +432,7 @@ namespace {
 
     TEST(InputSubsystemTest, ShutdownIsIdempotent)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto counters = std::make_shared<BackendCounters>();
         rig.add_fake(InputType::HID, counters);
@@ -447,7 +447,7 @@ namespace {
     {
         auto counters = std::make_shared<BackendCounters>();
         {
-            SubsystemRig rig;
+            InputSubsystemSubsystemRig rig;
             rig.initialize();
             rig.add_fake(InputType::HID, counters);
             rig.subsystem.start();
@@ -460,7 +460,7 @@ namespace {
 
     TEST(InputSubsystemTest, ReinitializeAfterShutdownIsPossible)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         rig.subsystem.shutdown();
         ASSERT_FALSE(rig.subsystem.is_ready());
@@ -477,7 +477,7 @@ namespace {
 
     TEST(InputSubsystemTest, DeviceQueriesAggregateAndFilterByBackend)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         rig.add_fake(InputType::HID, std::make_shared<BackendCounters>(), pad_devices());
         rig.add_fake(InputType::MIDI, std::make_shared<BackendCounters>(), midi_devices());
@@ -490,7 +490,7 @@ namespace {
 
     TEST(InputSubsystemTest, GetDeviceInfoFindsDevicesPerBackend)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         rig.add_fake(InputType::HID, std::make_shared<BackendCounters>(), pad_devices());
 
@@ -504,7 +504,7 @@ namespace {
 
     TEST(InputSubsystemTest, FindHidDeviceMatchesVendorAndProduct)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         rig.add_fake(InputType::HID, std::make_shared<BackendCounters>(), pad_devices());
 
@@ -517,7 +517,7 @@ namespace {
 
     TEST(InputSubsystemTest, OpenAndCloseRouteToTheOwningBackend)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto hid = std::make_shared<BackendCounters>();
         auto midi = std::make_shared<BackendCounters>();
@@ -536,7 +536,7 @@ namespace {
 
     TEST(InputSubsystemTest, OpenOnAnUnknownBackendFailsAndCloseIsIgnored)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
 
         EXPECT_FALSE(rig.subsystem.open_device(InputType::OSC, 1));
@@ -545,7 +545,7 @@ namespace {
 
     TEST(InputSubsystemTest, RegisteredServiceRoutesToTheSubsystem)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto hid = std::make_shared<BackendCounters>();
         rig.add_fake(InputType::HID, hid, pad_devices());
@@ -561,7 +561,7 @@ namespace {
 
     TEST(InputSubsystemTest, ServiceWritesAndFeatureReportsReachTheBackend)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto hid = std::make_shared<BackendCounters>();
         rig.add_fake(InputType::HID, hid, pad_devices());
@@ -582,7 +582,7 @@ namespace {
 
     TEST(InputSubsystemTest, WritingThroughAMissingBackendFails)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         const std::array<uint8_t, 2> bytes { 0x01, 0x02 };
 
@@ -596,7 +596,7 @@ namespace {
 
     TEST(InputSubsystemTest, BackendInputReachesNodesRegisteredWithTheManager)
     {
-        SubsystemRig rig;
+        InputSubsystemSubsystemRig rig;
         rig.initialize();
         auto* backend = rig.add_fake(InputType::HID, std::make_shared<BackendCounters>(), pad_devices());
         ASSERT_NE(backend, nullptr);
@@ -606,8 +606,8 @@ namespace {
 
         backend->emit(InputValue::make_bytes({ 1, 2, 3 }, 1, InputType::HID));
 
-        ASSERT_TRUE(eventually([&] { return node->count() == 1; }));
-        EXPECT_TRUE(eventually([&] { return rig.manager->get_events_processed() == 1; }));
+        ASSERT_TRUE(input_subsystem_eventually([&] { return node->count() == 1; }));
+        EXPECT_TRUE(input_subsystem_eventually([&] { return rig.manager->get_events_processed() == 1; }));
     }
 
 } // namespace

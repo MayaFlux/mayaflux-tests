@@ -50,7 +50,7 @@ namespace {
         double m_level;
     };
 
-    std::shared_ptr<Constant> constant(double value, int* ticks = nullptr)
+    std::shared_ptr<Constant> node_graph_manager_constant(double value, int* ticks = nullptr)
     {
         auto node = std::make_shared<Constant>(value);
         if (ticks != nullptr) {
@@ -102,7 +102,7 @@ namespace {
 
     TEST_P(NodeGraphManagerTokenTest, AddingToARootCreatesItAndRecordsTheChannel)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
 
         manager.add_to_root(node, GetParam().token, 2);
 
@@ -114,7 +114,7 @@ namespace {
     TEST_P(NodeGraphManagerTokenTest, AddingTakesTheManagersRates)
     {
         NodeGraphManager custom(44100, 256, 90);
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
 
         custom.add_to_root(node, GetParam().token, 0);
 
@@ -124,7 +124,7 @@ namespace {
 
     TEST_P(NodeGraphManagerTokenTest, OnlyTheVisualTokenMakesNodesGpuCompatible)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
 
         manager.add_to_root(node, GetParam().token, 0);
 
@@ -133,7 +133,7 @@ namespace {
 
     TEST_P(NodeGraphManagerTokenTest, NodesAreListedOnceTheRootHasProcessed)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
         manager.add_to_root(node, GetParam().token, 0);
         EXPECT_FALSE(listed(manager, GetParam().token, 0, node));
         EXPECT_EQ(manager.get_node_count(GetParam().token), 0U);
@@ -146,7 +146,7 @@ namespace {
 
     TEST_P(NodeGraphManagerTokenTest, RemovingClearsTheChannelAndTheListing)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
         manager.add_to_root(node, GetParam().token, 0);
         commit(manager, GetParam().token);
 
@@ -161,7 +161,7 @@ namespace {
     TEST_P(NodeGraphManagerTokenTest, ProcessTokenRunsRootsOnlyForAudioAndVisual)
     {
         int ticks = 0;
-        manager.add_to_root(constant(1.0, &ticks), GetParam().token, 0);
+        manager.add_to_root(node_graph_manager_constant(1.0, &ticks), GetParam().token, 0);
 
         manager.process_token(GetParam().token, 3);
 
@@ -171,8 +171,8 @@ namespace {
     TEST_P(NodeGraphManagerTokenTest, ACustomTokenProcessorReplacesTheDefaultProcessing)
     {
         int ticks = 0;
-        manager.add_to_root(constant(1.0, &ticks), GetParam().token, 0);
-        manager.add_to_root(constant(1.0), GetParam().token, 1);
+        manager.add_to_root(node_graph_manager_constant(1.0, &ticks), GetParam().token, 0);
+        manager.add_to_root(node_graph_manager_constant(1.0), GetParam().token, 1);
         auto network = std::make_shared<RecordingNetwork>();
         manager.add_network(network, GetParam().token);
         size_t seen = 0;
@@ -285,7 +285,7 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, ANodeOnTwoChannelsIsOneRegistrationWithBothBits)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
 
         manager.add_to_root(node, ProcessingToken::AUDIO_RATE, 0);
         manager.add_to_root(node, ProcessingToken::AUDIO_RATE, 1);
@@ -300,7 +300,7 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, ANodeStaysRegisteredWhileAnyChannelStillUsesIt)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
         manager.add_to_root(node, ProcessingToken::AUDIO_RATE, 0);
         manager.add_to_root(node, ProcessingToken::AUDIO_RATE, 1);
 
@@ -312,10 +312,10 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, NodeCountSumsEveryChannelOfTheToken)
     {
-        manager.add_to_root(constant(1.0), ProcessingToken::AUDIO_RATE, 0);
-        manager.add_to_root(constant(1.0), ProcessingToken::AUDIO_RATE, 1);
-        manager.add_to_root(constant(1.0), ProcessingToken::AUDIO_RATE, 1);
-        manager.add_to_root(constant(1.0), ProcessingToken::VISUAL_RATE, 0);
+        manager.add_to_root(node_graph_manager_constant(1.0), ProcessingToken::AUDIO_RATE, 0);
+        manager.add_to_root(node_graph_manager_constant(1.0), ProcessingToken::AUDIO_RATE, 1);
+        manager.add_to_root(node_graph_manager_constant(1.0), ProcessingToken::AUDIO_RATE, 1);
+        manager.add_to_root(node_graph_manager_constant(1.0), ProcessingToken::VISUAL_RATE, 0);
         commit(manager, ProcessingToken::AUDIO_RATE, 0);
         commit(manager, ProcessingToken::AUDIO_RATE, 1);
         commit(manager, ProcessingToken::VISUAL_RATE, 0);
@@ -327,7 +327,7 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, AnUnregisteredNodeIsNotRegistered)
     {
-        EXPECT_FALSE(manager.is_node_registered(constant(1.0)));
+        EXPECT_FALSE(manager.is_node_registered(node_graph_manager_constant(1.0)));
         EXPECT_FALSE(manager.is_node_registered(nullptr));
     }
 
@@ -391,8 +391,8 @@ namespace {
     {
         int audio = 0;
         int visual = 0;
-        manager.add_to_root(constant(1.0, &audio), ProcessingToken::AUDIO_RATE, 0);
-        manager.add_to_root(constant(1.0, &visual), ProcessingToken::VISUAL_RATE, 0);
+        manager.add_to_root(node_graph_manager_constant(1.0, &audio), ProcessingToken::AUDIO_RATE, 0);
+        manager.add_to_root(node_graph_manager_constant(1.0, &visual), ProcessingToken::VISUAL_RATE, 0);
 
         manager.process_all_tokens(2);
 
@@ -414,7 +414,7 @@ namespace {
         void SetUp() override
         {
             for (int i = 0; i < GetParam().nodes; ++i) {
-                manager.add_to_root(constant(GetParam().value), ProcessingToken::AUDIO_RATE, 0);
+                manager.add_to_root(node_graph_manager_constant(GetParam().value), ProcessingToken::AUDIO_RATE, 0);
             }
         }
     };
@@ -449,7 +449,7 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, ACustomChannelProcessorOutputIsReturnedUntouched)
     {
-        manager.add_to_root(constant(3.0), ProcessingToken::AUDIO_RATE, 0);
+        manager.add_to_root(node_graph_manager_constant(3.0), ProcessingToken::AUDIO_RATE, 0);
         RootNode* seen = nullptr;
         unsigned int asked = 0;
         manager.register_token_channel_processor(ProcessingToken::AUDIO_RATE,
@@ -468,7 +468,7 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, ACustomSampleProcessorReplacesProcessSample)
     {
-        manager.add_to_root(constant(3.0), ProcessingToken::AUDIO_RATE, 0);
+        manager.add_to_root(node_graph_manager_constant(3.0), ProcessingToken::AUDIO_RATE, 0);
         uint32_t channel_seen = 99;
         manager.register_token_sample_processor(ProcessingToken::AUDIO_RATE,
             [&](RootNode*, uint32_t channel) {
@@ -482,7 +482,7 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, ProcessSampleIsSilentOnceTerminated)
     {
-        manager.add_to_root(constant(0.5), ProcessingToken::AUDIO_RATE, 0);
+        manager.add_to_root(node_graph_manager_constant(0.5), ProcessingToken::AUDIO_RATE, 0);
         manager.terminate_active_processing();
 
         EXPECT_DOUBLE_EQ(manager.process_sample(ProcessingToken::AUDIO_RATE, 0), 0.0);
@@ -490,8 +490,8 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, ChannelDataCoversEveryChannelOfTheToken)
     {
-        manager.add_to_root(constant(0.25), ProcessingToken::AUDIO_RATE, 0);
-        manager.add_to_root(constant(0.5), ProcessingToken::AUDIO_RATE, 1);
+        manager.add_to_root(node_graph_manager_constant(0.25), ProcessingToken::AUDIO_RATE, 0);
+        manager.add_to_root(node_graph_manager_constant(0.5), ProcessingToken::AUDIO_RATE, 1);
 
         const auto data = manager.process_token_with_channel_data(ProcessingToken::AUDIO_RATE, 3);
 
@@ -727,7 +727,7 @@ namespace {
     TEST_F(NodeGraphManagerTest, NetworksRunBeforeTheRootsOfTheSameCall)
     {
         std::vector<std::string> order;
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
         node->on_tick([&](Nodes::NodeContext&) { order.emplace_back("node"); });
         manager.add_to_root(node, ProcessingToken::VISUAL_RATE, 0);
         auto network = std::make_shared<RecordingNetwork>();
@@ -742,7 +742,7 @@ namespace {
     TEST_F(NodeGraphManagerTest, AReentrantProcessTokenIsRefused)
     {
         int ticks = 0;
-        manager.add_to_root(constant(1.0, &ticks), ProcessingToken::VISUAL_RATE, 0);
+        manager.add_to_root(node_graph_manager_constant(1.0, &ticks), ProcessingToken::VISUAL_RATE, 0);
         auto network = std::make_shared<RecordingNetwork>();
         network->on_batch = [this] { manager.process_token(ProcessingToken::VISUAL_RATE, 1); };
         manager.add_network(network, ProcessingToken::VISUAL_RATE);
@@ -894,7 +894,7 @@ namespace {
 
     TEST_P(NodeGraphManagerFadeTest, FadeCyclesRoundUpToWholeBlocksWithAMinimumOfOne)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
         manager.add_to_root(node, ProcessingToken::AUDIO_RATE, 0);
 
         manager.route_node_to_channels(node, { 1 }, GetParam().fade_cycles, ProcessingToken::AUDIO_RATE);
@@ -926,7 +926,7 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, RoutingANodeStartsAFadeAndAddsOnlyTheMissingChannels)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
         manager.add_to_root(node, ProcessingToken::AUDIO_RATE, 0);
 
         manager.route_node_to_channels(node, { 0, 1 }, 1024, ProcessingToken::AUDIO_RATE);
@@ -957,7 +957,7 @@ namespace {
 
     TEST_P(NodeGraphManagerRoutingStepTest, EachCycleAdvancesTheFadeTowardTheTargetChannels)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
         manager.add_to_root(node, ProcessingToken::AUDIO_RATE, 0);
         RoutingState state {};
         state.from_channels = GetParam().from;
@@ -992,7 +992,7 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, NodesWithoutARoutingPhaseAreNotUpdated)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
         manager.add_to_root(node, ProcessingToken::AUDIO_RATE, 0);
 
         manager.update_routing_states_for_cycle(ProcessingToken::AUDIO_RATE);
@@ -1002,7 +1002,7 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, CompletedRoutingRemovesTheNodeFromTheChannelsItLeft)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
         manager.add_to_root(node, ProcessingToken::AUDIO_RATE, 0);
         commit(manager, ProcessingToken::AUDIO_RATE, 0);
         manager.route_node_to_channels(node, { 1 }, 512, ProcessingToken::AUDIO_RATE);
@@ -1021,7 +1021,7 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, CleanupLeavesAnUnfinishedFadeAlone)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
         manager.add_to_root(node, ProcessingToken::AUDIO_RATE, 0);
         manager.route_node_to_channels(node, { 1 }, 2048, ProcessingToken::AUDIO_RATE);
         manager.update_routing_states_for_cycle(ProcessingToken::AUDIO_RATE);
@@ -1034,7 +1034,7 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, ANodeThatKeepsEveryChannelIsNotRemovedFromAny)
     {
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
         manager.add_to_root(node, ProcessingToken::AUDIO_RATE, 0);
         manager.route_node_to_channels(node, { 0, 1 }, 512, ProcessingToken::AUDIO_RATE);
         manager.update_routing_states_for_cycle(ProcessingToken::AUDIO_RATE);
@@ -1132,8 +1132,8 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, TerminationEmptiesTheRootsAndUnregistersNetworks)
     {
-        manager.add_to_root(constant(1.0), ProcessingToken::AUDIO_RATE, 0);
-        manager.add_to_root(constant(1.0), ProcessingToken::VISUAL_RATE, 0);
+        manager.add_to_root(node_graph_manager_constant(1.0), ProcessingToken::AUDIO_RATE, 0);
+        manager.add_to_root(node_graph_manager_constant(1.0), ProcessingToken::VISUAL_RATE, 0);
         commit(manager, ProcessingToken::AUDIO_RATE);
         commit(manager, ProcessingToken::VISUAL_RATE);
         auto audio = std::make_shared<RecordingNetwork>(OutputMode::AUDIO_SINK);
@@ -1151,7 +1151,7 @@ namespace {
 
     TEST_F(NodeGraphManagerTest, TerminatingTwiceIsHarmless)
     {
-        manager.add_to_root(constant(1.0), ProcessingToken::AUDIO_RATE, 0);
+        manager.add_to_root(node_graph_manager_constant(1.0), ProcessingToken::AUDIO_RATE, 0);
 
         manager.terminate_active_processing();
 
@@ -1161,7 +1161,7 @@ namespace {
     TEST_F(NodeGraphManagerTest, ADestroyedManagerWithLiveNodesAndNetworksIsSafe)
     {
         auto network = std::make_shared<RecordingNetwork>();
-        auto node = constant(1.0);
+        auto node = node_graph_manager_constant(1.0);
         {
             NodeGraphManager scoped;
             scoped.add_to_root(node, ProcessingToken::AUDIO_RATE, 0);

@@ -14,7 +14,7 @@ using SchedToken = Vruta::ProcessingToken;
 
 namespace {
 
-    constexpr unsigned int SAMPLE_RATE = 48000;
+    constexpr unsigned int CHAIN_WORKER_SAMPLE_RATE = 48000;
 
     template <typename Predicate>
     bool eventually(Predicate&& predicate, std::chrono::milliseconds limit = 2000ms)
@@ -35,7 +35,7 @@ class WorkerChainTest : public ::testing::Test {
 protected:
     void SetUp() override
     {
-        scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
+        scheduler = std::make_shared<Vruta::TaskScheduler>(CHAIN_WORKER_SAMPLE_RATE);
     }
 
     void TearDown() override

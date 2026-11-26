@@ -22,7 +22,7 @@ namespace {
     using Kakshya::RegionGroup;
     using Kakshya::RegionSegment;
 
-    CompositeLayout scored_layout()
+    CompositeLayout composite_container_scored_layout()
     {
         CompositeLayout layout;
         layout.add_field<std::string>("name");
@@ -82,7 +82,7 @@ namespace {
 
     CompositeContainer populated_container(size_t batch_size = 2)
     {
-        CompositeContainer container(scored_layout(), batch_size);
+        CompositeContainer container(composite_container_scored_layout(), batch_size);
         append_scored_rows(container, 6);
         return container;
     }
@@ -97,7 +97,7 @@ namespace {
 
     TEST_F(CompositeContainerTest, BatchSizeZeroIsNormalizedToOne)
     {
-        CompositeContainer container(scored_layout(), 0);
+        CompositeContainer container(composite_container_scored_layout(), 0);
         EXPECT_EQ(container.batch_size(), 1U);
 
         container.set_batch_size(0);
@@ -109,7 +109,7 @@ namespace {
 
     TEST_F(CompositeContainerTest, NewContainerIsEmptyAndAtTheEnd)
     {
-        CompositeContainer container(scored_layout(), 2);
+        CompositeContainer container(composite_container_scored_layout(), 2);
 
         EXPECT_EQ(container.get_total_elements(), 0U);
         EXPECT_FALSE(container.has_data());
@@ -121,7 +121,7 @@ namespace {
 
     TEST_F(CompositeContainerTest, TakesOwnershipOfAnExistingArray)
     {
-        CompositeContainer container(named_rows(scored_layout(), { "a", "b", "c" }), 2);
+        CompositeContainer container(named_rows(composite_container_scored_layout(), { "a", "b", "c" }), 2);
 
         EXPECT_EQ(container.get_total_elements(), 3U);
         EXPECT_EQ(container.get_data().size(), 3U);
@@ -147,7 +147,7 @@ namespace {
 
     TEST_F(CompositeContainerTest, StructureCanBeReplaced)
     {
-        CompositeContainer container(scored_layout(), 2);
+        CompositeContainer container(composite_container_scored_layout(), 2);
 
         container.set_structure(ContainerDataStructure(DataModality::AUDIO_1D));
 
@@ -229,7 +229,7 @@ namespace {
 
     TEST_F(CompositeContainerTest, MaterializeFailsOnAnEmptyContainer)
     {
-        CompositeContainer container(scored_layout(), 2);
+        CompositeContainer container(composite_container_scored_layout(), 2);
 
         EXPECT_FALSE(container.materialize_next());
         EXPECT_EQ(container.get_materialized_data().size(), 0U);
@@ -462,7 +462,7 @@ namespace {
 
     TEST_F(CompositeContainerTest, RegionGroupsAreStoredByNameReplacedAndRemoved)
     {
-        CompositeContainer container(scored_layout(), 2);
+        CompositeContainer container(composite_container_scored_layout(), 2);
 
         container.add_region_group(RegionGroup("a", { span(0, 0) }));
         EXPECT_EQ(container.get_region_group("a").regions.size(), 1U);

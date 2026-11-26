@@ -1,3 +1,5 @@
+#pragma once
+
 #include "MayaFlux/Kakshya/NDData/DataAccess.hpp"
 
 #include "MayaFlux/Kakshya/SignalSourceContainer.hpp"

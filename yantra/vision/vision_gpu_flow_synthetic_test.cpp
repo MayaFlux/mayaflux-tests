@@ -15,7 +15,7 @@ using Yantra::VisionGpuExecutor;
 
 namespace {
 
-const std::vector<TrackResult>* tracks_of(const VisionResult& result)
+const std::vector<TrackResult>* vision_gpu_flow_synthetic_tracks_of(const VisionResult& result)
 {
     return std::get_if<std::vector<TrackResult>>(&result.structured);
 }
@@ -82,12 +82,12 @@ TEST_P(VisionGpuSparseFlowTest, TracksRecoverTheKnownShiftOnTheSecondFrame)
     VisionGpuExecutor exec;
     size_t polls = 0;
     const auto first = run_to_ready(exec, sequence, frame0, c.size, polls);
-    ASSERT_NE(tracks_of(first), nullptr);
-    EXPECT_TRUE(tracks_of(first)->empty());
+    ASSERT_NE(vision_gpu_flow_synthetic_tracks_of(first), nullptr);
+    EXPECT_TRUE(vision_gpu_flow_synthetic_tracks_of(first)->empty());
 
     const auto second = run_to_ready(exec, sequence, frame1, c.size, polls);
     ASSERT_TRUE(second.is_ready());
-    const auto* tracks = tracks_of(second);
+    const auto* tracks = vision_gpu_flow_synthetic_tracks_of(second);
     ASSERT_NE(tracks, nullptr);
 
     const auto stats = measure_tracks(*tracks, c.size, c.dx, c.dy, c.tolerance);
@@ -146,7 +146,7 @@ TEST_P(VisionGpuPersistenceTest, TracksPersistAcrossFramesWithUniqueIdsAndTheCap
         const auto frame = flow_frame(c.size, c.dx * static_cast<float>(k), c.dy * static_cast<float>(k), false);
         ASSERT_NE(frame, nullptr);
         const auto result = exec.run(sequence, frame, c.size, c.size);
-        const auto* tracks = tracks_of(result);
+        const auto* tracks = vision_gpu_flow_synthetic_tracks_of(result);
         if (c.host_tracks) {
             if (tracks) {
                 last = *tracks;
@@ -215,12 +215,12 @@ TEST_F(VisionGpuFlowSequenceTest, SparseAndDenseTrackTheSameShiftFromOneChainedS
 
     VisionGpuExecutor exec;
     const auto first = exec.run(sequence, frame0, size, size);
-    ASSERT_NE(tracks_of(first), nullptr);
-    EXPECT_TRUE(tracks_of(first)->empty());
+    ASSERT_NE(vision_gpu_flow_synthetic_tracks_of(first), nullptr);
+    EXPECT_TRUE(vision_gpu_flow_synthetic_tracks_of(first)->empty());
     EXPECT_EQ(first.flow, nullptr);
 
     const auto check = [&](const VisionResult& result) {
-        const auto* tracks = tracks_of(result);
+        const auto* tracks = vision_gpu_flow_synthetic_tracks_of(result);
         ASSERT_NE(tracks, nullptr);
         ASSERT_NE(result.flow, nullptr);
         const auto sparse = measure_tracks(*tracks, size, dx, dy, tolerance);
@@ -261,17 +261,17 @@ TEST_F(VisionGpuFlowSequenceTest, ChangingFrameSizeReseedsBothSolversAndRestores
         ASSERT_NE(frame1, nullptr);
 
         const auto first = exec.run(sequence, frame0, size, size);
-        ASSERT_NE(tracks_of(first), nullptr);
-        EXPECT_TRUE(tracks_of(first)->empty());
+        ASSERT_NE(vision_gpu_flow_synthetic_tracks_of(first), nullptr);
+        EXPECT_TRUE(vision_gpu_flow_synthetic_tracks_of(first)->empty());
         EXPECT_EQ(first.flow, nullptr);
 
         const auto second = exec.run(sequence, frame1, size, size);
-        ASSERT_NE(tracks_of(second), nullptr);
+        ASSERT_NE(vision_gpu_flow_synthetic_tracks_of(second), nullptr);
         ASSERT_NE(second.flow, nullptr);
         EXPECT_EQ(second.flow->get_width(), size);
         EXPECT_EQ(second.flow->get_height(), size);
 
-        const auto sparse = measure_tracks(*tracks_of(second), size, dx, dy, tolerance);
+        const auto sparse = measure_tracks(*vision_gpu_flow_synthetic_tracks_of(second), size, dx, dy, tolerance);
         const auto dense = measure_dense(flow_download(second.flow), size, dx, dy, tolerance, flow_dense_margin(5, 4));
         EXPECT_TRUE(sparse_pass(sparse));
         EXPECT_TRUE(dense_pass(dense));
@@ -309,8 +309,8 @@ TEST_F(VisionGpuFlowSequenceTest, ResetWhileSuspendedThenAFreshPairRecoversTheSh
 
     VisionGpuExecutor exec;
     const auto first = exec.run(sequence, frame0, size, size);
-    ASSERT_NE(tracks_of(first), nullptr);
-    EXPECT_TRUE(tracks_of(first)->empty());
+    ASSERT_NE(vision_gpu_flow_synthetic_tracks_of(first), nullptr);
+    EXPECT_TRUE(vision_gpu_flow_synthetic_tracks_of(first)->empty());
     EXPECT_EQ(first.flow, nullptr);
 
     const auto pending = exec.run(sequence, frame1, size, size);
@@ -318,17 +318,17 @@ TEST_F(VisionGpuFlowSequenceTest, ResetWhileSuspendedThenAFreshPairRecoversTheSh
 
     exec.reset();
     const auto reseed = exec.run(sequence, frame2, size, size);
-    ASSERT_NE(tracks_of(reseed), nullptr);
-    EXPECT_TRUE(tracks_of(reseed)->empty());
+    ASSERT_NE(vision_gpu_flow_synthetic_tracks_of(reseed), nullptr);
+    EXPECT_TRUE(vision_gpu_flow_synthetic_tracks_of(reseed)->empty());
     EXPECT_EQ(reseed.flow, nullptr);
 
     size_t polls = 0;
     const auto recovered = run_to_ready(exec, sequence, frame3, size, polls);
     ASSERT_TRUE(recovered.is_ready());
-    ASSERT_NE(tracks_of(recovered), nullptr);
+    ASSERT_NE(vision_gpu_flow_synthetic_tracks_of(recovered), nullptr);
     ASSERT_NE(recovered.flow, nullptr);
 
-    const auto sparse = measure_tracks(*tracks_of(recovered), size, dx, dy, tolerance);
+    const auto sparse = measure_tracks(*vision_gpu_flow_synthetic_tracks_of(recovered), size, dx, dy, tolerance);
     const auto dense = measure_dense(flow_download(recovered.flow), size, dx, dy, tolerance, flow_dense_margin(5, 4));
     EXPECT_TRUE(sparse_pass(sparse));
     EXPECT_TRUE(dense_pass(dense));
@@ -401,17 +401,17 @@ TEST_F(VisionGpuShearFlowTest, SpatiallyVaryingHorizontalMotionIsRecoveredInBoth
 
     VisionGpuExecutor exec;
     const auto first = exec.run(sequence, frame0, size, size);
-    ASSERT_NE(tracks_of(first), nullptr);
-    EXPECT_TRUE(tracks_of(first)->empty());
+    ASSERT_NE(vision_gpu_flow_synthetic_tracks_of(first), nullptr);
+    EXPECT_TRUE(vision_gpu_flow_synthetic_tracks_of(first)->empty());
     EXPECT_EQ(first.flow, nullptr);
 
     const auto second = exec.run(sequence, frame1, size, size);
-    ASSERT_NE(tracks_of(second), nullptr);
+    ASSERT_NE(vision_gpu_flow_synthetic_tracks_of(second), nullptr);
     ASSERT_NE(second.flow, nullptr);
 
     size_t sparse_tracked = 0;
     size_t sparse_within = 0;
-    for (const auto& track : *tracks_of(second)) {
+    for (const auto& track : *vision_gpu_flow_synthetic_tracks_of(second)) {
         const glm::vec2 source = track.previous * static_cast<float>(size);
         const glm::vec2 expected(shear * (source.y - center), 0.0F);
         const glm::vec2 target = source + expected;
@@ -483,19 +483,19 @@ TEST_P(VisionGpuOcclusionFlowTest, SparseRejectsTheOccluderAndDenseRecoversTheEx
 
     VisionGpuExecutor exec;
     const auto first = exec.run(sequence, frame0, size, size);
-    ASSERT_NE(tracks_of(first), nullptr);
-    EXPECT_TRUE(tracks_of(first)->empty());
+    ASSERT_NE(vision_gpu_flow_synthetic_tracks_of(first), nullptr);
+    EXPECT_TRUE(vision_gpu_flow_synthetic_tracks_of(first)->empty());
     EXPECT_EQ(first.flow, nullptr);
 
     const auto second = exec.run(sequence, frame1, size, size);
-    ASSERT_NE(tracks_of(second), nullptr);
+    ASSERT_NE(vision_gpu_flow_synthetic_tracks_of(second), nullptr);
     ASSERT_NE(second.flow, nullptr);
 
     size_t occluded = 0;
     size_t rejected = 0;
     size_t exterior_tracked = 0;
     size_t exterior_within = 0;
-    for (const auto& track : *tracks_of(second)) {
+    for (const auto& track : *vision_gpu_flow_synthetic_tracks_of(second)) {
         const glm::vec2 source = track.previous * static_cast<float>(size);
         const glm::vec2 target = source + glm::vec2(dx, dy);
         if (source.x < 8.0F || source.y < 8.0F

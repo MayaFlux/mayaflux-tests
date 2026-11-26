@@ -17,7 +17,7 @@ namespace {
     using Portal::Text::AtlasImage;
     using Portal::Text::GlyphAtlas;
 
-    constexpr uint32_t k_pixel_size = 24;
+    constexpr uint32_t k_atlas_image_pixel_size = 24;
     constexpr std::string_view k_long_text = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
     class AtlasImageTest : public VulkanDeviceTest {
@@ -60,7 +60,7 @@ namespace {
 
     TEST_F(AtlasImageTest, TheFirstSyncCreatesAnImageTheSizeOfTheAtlas)
     {
-        GlyphAtlas atlas(face, k_pixel_size, 128);
+        GlyphAtlas atlas(face, k_atlas_image_pixel_size, 128);
         AtlasImage image;
 
         const auto synced = image.sync(atlas);
@@ -74,7 +74,7 @@ namespace {
 
     TEST_F(AtlasImageTest, ASyncWithNothingNewKeepsTheImageAndTheGeneration)
     {
-        GlyphAtlas atlas(face, k_pixel_size, 128);
+        GlyphAtlas atlas(face, k_atlas_image_pixel_size, 128);
         AtlasImage image;
         const auto first = image.sync(atlas);
 
@@ -86,7 +86,7 @@ namespace {
 
     TEST_F(AtlasImageTest, NewGlyphsAreUploadedIntoTheSameImageAndClearTheDirtyFlag)
     {
-        GlyphAtlas atlas(face, k_pixel_size, 128);
+        GlyphAtlas atlas(face, k_atlas_image_pixel_size, 128);
         AtlasImage image;
         const auto first = image.sync(atlas);
 
@@ -101,7 +101,7 @@ namespace {
 
     TEST_F(AtlasImageTest, AGrownAtlasReplacesTheImageAndRaisesTheGeneration)
     {
-        GlyphAtlas atlas(face, k_pixel_size, 32);
+        GlyphAtlas atlas(face, k_atlas_image_pixel_size, 32);
         AtlasImage image;
         const auto first = image.sync(atlas);
         ASSERT_NE(first, nullptr);
@@ -119,8 +119,8 @@ namespace {
     TEST_F(AtlasImageTest, AReplacedImageIsReleasedUnlessSomeoneHoldsIt)
     {
         auto& loom = Portal::Graphics::get_texture_manager();
-        GlyphAtlas first_atlas(face, k_pixel_size, 128);
-        GlyphAtlas second_atlas(face, k_pixel_size, 128);
+        GlyphAtlas first_atlas(face, k_atlas_image_pixel_size, 128);
+        GlyphAtlas second_atlas(face, k_atlas_image_pixel_size, 128);
         AtlasImage image;
         const auto held = image.sync(first_atlas);
         loom.retain_image(held);
@@ -137,7 +137,7 @@ namespace {
 
     TEST_F(AtlasImageTest, DestroyingTheAtlasImageReleasesItsImage)
     {
-        GlyphAtlas atlas(face, k_pixel_size, 128);
+        GlyphAtlas atlas(face, k_atlas_image_pixel_size, 128);
         std::shared_ptr<Core::VKImage> synced;
         {
             AtlasImage image;
@@ -151,8 +151,8 @@ namespace {
 
     TEST_F(AtlasImageTest, ADifferentAtlasReplacesTheImage)
     {
-        GlyphAtlas first_atlas(face, k_pixel_size, 128);
-        GlyphAtlas second_atlas(face, k_pixel_size, 128);
+        GlyphAtlas first_atlas(face, k_atlas_image_pixel_size, 128);
+        GlyphAtlas second_atlas(face, k_atlas_image_pixel_size, 128);
         AtlasImage image;
         const auto first = image.sync(first_atlas);
 

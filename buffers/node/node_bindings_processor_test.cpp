@@ -20,7 +20,7 @@ namespace {
     using Buffers::NodeBindingsProcessor;
     using Buffers::ShaderConfig;
     using Buffers::VKBuffer;
-    using BindingMode = NodeBindingsProcessor::ProcessingMode;
+    using NodeBindingsProcessorBindingMode = NodeBindingsProcessor::ProcessingMode;
 
     constexpr const char* k_push_constant_shader = R"(#version 460
 layout(local_size_x = 1) in;
@@ -242,14 +242,14 @@ void main() {
         for (int i = 0; i < 10; ++i)
             node->process_sample();
         const double last = node->get_last_output();
-        processor->bind_node("gain", node, 8, sizeof(float), BindingMode::EXTERNAL);
+        processor->bind_node("gain", node, 8, sizeof(float), NodeBindingsProcessorBindingMode::EXTERNAL);
 
         tick();
         tick();
         EXPECT_EQ(staged_value<float>(8), static_cast<float>(last));
         EXPECT_DOUBLE_EQ(node->get_last_output(), last);
 
-        processor->set_processing_mode("gain", BindingMode::INTERNAL);
+        processor->set_processing_mode("gain", NodeBindingsProcessorBindingMode::INTERNAL);
         tick();
         EXPECT_NE(node->get_last_output(), last);
         EXPECT_EQ(staged_value<float>(8), static_cast<float>(node->get_last_output()));
@@ -261,28 +261,28 @@ void main() {
         processor->bind_node("first", node, 8);
         processor->bind_node("second", node, 12);
 
-        EXPECT_EQ(processor->get_processing_mode("first"), BindingMode::INTERNAL);
-        EXPECT_EQ(processor->get_processing_mode("second"), BindingMode::INTERNAL);
+        EXPECT_EQ(processor->get_processing_mode("first"), NodeBindingsProcessorBindingMode::INTERNAL);
+        EXPECT_EQ(processor->get_processing_mode("second"), NodeBindingsProcessorBindingMode::INTERNAL);
 
-        processor->set_processing_mode("first", BindingMode::EXTERNAL);
-        EXPECT_EQ(processor->get_processing_mode("first"), BindingMode::EXTERNAL);
-        EXPECT_EQ(processor->get_processing_mode("second"), BindingMode::INTERNAL);
+        processor->set_processing_mode("first", NodeBindingsProcessorBindingMode::EXTERNAL);
+        EXPECT_EQ(processor->get_processing_mode("first"), NodeBindingsProcessorBindingMode::EXTERNAL);
+        EXPECT_EQ(processor->get_processing_mode("second"), NodeBindingsProcessorBindingMode::INTERNAL);
 
-        processor->set_processing_mode(BindingMode::EXTERNAL);
-        EXPECT_EQ(processor->get_processing_mode("first"), BindingMode::EXTERNAL);
-        EXPECT_EQ(processor->get_processing_mode("second"), BindingMode::EXTERNAL);
+        processor->set_processing_mode(NodeBindingsProcessorBindingMode::EXTERNAL);
+        EXPECT_EQ(processor->get_processing_mode("first"), NodeBindingsProcessorBindingMode::EXTERNAL);
+        EXPECT_EQ(processor->get_processing_mode("second"), NodeBindingsProcessorBindingMode::EXTERNAL);
 
-        EXPECT_EQ(processor->get_processing_mode("missing"), BindingMode::INTERNAL);
-        EXPECT_NO_THROW(processor->set_processing_mode("missing", BindingMode::EXTERNAL));
+        EXPECT_EQ(processor->get_processing_mode("missing"), NodeBindingsProcessorBindingMode::INTERNAL);
+        EXPECT_NO_THROW(processor->set_processing_mode("missing", NodeBindingsProcessorBindingMode::EXTERNAL));
         EXPECT_FALSE(processor->has_binding("missing"));
     }
 
     TEST_F(NodeBindingsProcessorDeviceTest, ABindingModeIsKeptWhenTheBindingIsGiven)
     {
         auto node = std::make_shared<Nodes::Constant>(1.0);
-        processor->bind_node("gain", node, 8, sizeof(float), BindingMode::EXTERNAL);
+        processor->bind_node("gain", node, 8, sizeof(float), NodeBindingsProcessorBindingMode::EXTERNAL);
 
-        EXPECT_EQ(processor->get_processing_mode("gain"), BindingMode::EXTERNAL);
+        EXPECT_EQ(processor->get_processing_mode("gain"), NodeBindingsProcessorBindingMode::EXTERNAL);
     }
 
     // ------------------------------------------------------------------

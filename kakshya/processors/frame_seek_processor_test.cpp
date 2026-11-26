@@ -18,7 +18,7 @@ namespace {
     using namespace VideoSupport;
 
     constexpr double k_stream_rate = 10.0;
-    constexpr uint64_t k_frames = 4;
+    constexpr uint64_t k_frame_seek_processor_frames = 4;
 
     std::shared_ptr<const Kinesis::TimeMap> map_of(Kinesis::TimeMap map)
     {
@@ -40,7 +40,7 @@ namespace {
         void SetUp() override
         {
             stream = std::make_shared<DynamicVideoStream>(rgba8_spec(0, k_stream_rate));
-            append_ramp(*stream, k_frames);
+            append_ramp(*stream, k_frame_seek_processor_frames);
         }
 
         void start()
@@ -112,7 +112,7 @@ namespace {
         start();
 
         seek->set_time_map(hold_at(100.0));
-        EXPECT_EQ(run(), frame_bytes(k_frames - 1));
+        EXPECT_EQ(run(), frame_bytes(k_frame_seek_processor_frames - 1));
 
         seek->set_time_map(hold_at(-5.0));
         EXPECT_EQ(run(), frame_bytes(0));
@@ -265,13 +265,13 @@ namespace {
 
     TEST_F(FrameSeekProcessorTest, AMappedFrameThatWasOverwrittenRepeatsThePreviousOutput)
     {
-        stream = std::make_shared<DynamicVideoStream>(rgba8_spec(k_frames, k_stream_rate));
-        append_ramp(*stream, k_frames);
+        stream = std::make_shared<DynamicVideoStream>(rgba8_spec(k_frame_seek_processor_frames, k_stream_rate));
+        append_ramp(*stream, k_frame_seek_processor_frames);
         start();
         seek->set_time_map(hold_at(1.5));
         ASSERT_EQ(run(), frame_bytes(1));
 
-        append_ramp(*stream, 6, k_frames);
+        append_ramp(*stream, 6, k_frame_seek_processor_frames);
 
         EXPECT_FALSE(stream->is_frame_available(1));
         EXPECT_EQ(run(), frame_bytes(1));
@@ -279,7 +279,7 @@ namespace {
 
     TEST_F(FrameSeekProcessorTest, AMappedFrameThatIsGoneBeforeAnyOutputIsBlack)
     {
-        stream = std::make_shared<DynamicVideoStream>(rgba8_spec(k_frames, k_stream_rate));
+        stream = std::make_shared<DynamicVideoStream>(rgba8_spec(k_frame_seek_processor_frames, k_stream_rate));
         append_ramp(*stream, 10);
         start();
         seek->set_time_map(hold_at(1.5));

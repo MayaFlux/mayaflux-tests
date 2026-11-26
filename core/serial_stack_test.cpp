@@ -33,7 +33,7 @@ namespace {
     using Numbers = std::vector<double>;
 
     template <typename Predicate>
-    bool eventually(Predicate predicate, std::chrono::milliseconds timeout = 5s)
+    bool serial_stack_eventually(Predicate predicate, std::chrono::milliseconds timeout = 5s)
     {
         const auto deadline = std::chrono::steady_clock::now() + timeout;
         while (std::chrono::steady_clock::now() < deadline) {
@@ -44,7 +44,7 @@ namespace {
         return predicate();
     }
 
-    struct Inbox {
+    struct SerialStackInbox {
         void push(const InputValue& value)
         {
             std::scoped_lock lock(mutex);
@@ -191,7 +191,7 @@ namespace {
         std::shared_ptr<Vruta::TaskScheduler> scheduler;
         Core::NetworkSubsystem subsystem;
         Core::SubsystemProcessingHandle handle;
-        Inbox inbox;
+        SerialStackInbox inbox;
         std::vector<uint32_t> ids;
         mutable std::mutex events_mutex;
         std::vector<std::pair<uint32_t, bool>> events;
@@ -234,13 +234,13 @@ namespace {
         port.attach(board);
         StackRig rig;
         ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::lines()));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
 
         board.start_telemetry(2ms, [](uint64_t i) { return std::to_string(i) + "," + std::to_string(i * 2) + "\n"; });
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 150; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 150; }));
         board.stop_telemetry();
         size_t settled = 0;
-        ASSERT_TRUE(eventually([&] {
+        ASSERT_TRUE(serial_stack_eventually([&] {
             const size_t now = rig.inbox.size();
             const bool quiet = now == settled;
             settled = now;
@@ -270,7 +270,7 @@ namespace {
         port.attach(board);
         StackRig rig;
         ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::lines()));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
         constexpr size_t k_lines = 20000;
         std::string burst;
         for (size_t i = 0; i < k_lines; ++i) {
@@ -279,7 +279,7 @@ namespace {
 
         board.write(burst);
 
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= k_lines; }, 15s));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= k_lines; }, 15s));
         const auto vectors = rig.inbox.vectors();
         ASSERT_EQ(vectors.size(), k_lines);
         for (size_t i = 0; i < k_lines; ++i) {
@@ -295,7 +295,7 @@ namespace {
         port.attach(board);
         StackRig rig;
         ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::lines()));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
 
         board.write("1 2\n");
         board.write(Bytes { 0xFF, 0x00, 0xFE, '\n' });
@@ -305,7 +305,7 @@ namespace {
         board.write("\r\n");
         board.write("3\n");
 
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 3; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 3; }));
         EXPECT_EQ(rig.inbox.vectors(), (std::vector<Numbers> { { 1, 2 }, { 7, 8 }, { 3 } }));
         const auto stats = rig.device()->stats();
         EXPECT_EQ(stats.dropped, 1U);
@@ -321,12 +321,12 @@ namespace {
         port.attach(board);
         StackRig rig;
         ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::lines().max_message(1024)));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
 
         board.write(std::string(size_t { 1 } << 20, 'x'));
         board.write("\n9\n");
 
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 1; }, 10s));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 1; }, 10s));
         EXPECT_EQ(rig.inbox.vectors().back(), (Numbers { 9 }));
         EXPECT_GE(rig.device()->stats().dropped, 1U);
     }
@@ -339,7 +339,7 @@ namespace {
         port.attach(board);
         StackRig rig;
         ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::lines()));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
         Bytes payload(100000);
         std::mt19937_64 rng(5);
         for (auto& byte : payload) {
@@ -348,7 +348,7 @@ namespace {
 
         ASSERT_EQ(rig.backend->write(rig.ids[0], payload), static_cast<int>(payload.size()));
 
-        ASSERT_TRUE(eventually([&] { return board.received().size() >= payload.size(); }, 10s));
+        ASSERT_TRUE(serial_stack_eventually([&] { return board.received().size() >= payload.size(); }, 10s));
         EXPECT_EQ(board.received(), payload);
     }
 
@@ -369,9 +369,9 @@ namespace {
         port.attach(board);
         StackRig rig;
         ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::lines()));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
         board.start_telemetry(2ms, [](uint64_t i) { return std::to_string(i) + "\n"; });
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 20; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 20; }));
 
         std::promise<std::pair<SerialReply, std::string>> answer;
         auto future = answer.get_future();
@@ -388,7 +388,7 @@ namespace {
         const auto result = future.get();
         EXPECT_EQ(result.first, SerialReply::REPLIED);
         EXPECT_EQ(result.second, "ok v1");
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() > before + 5; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() > before + 5; }));
         board.stop_telemetry();
         EXPECT_EQ(rig.device()->stats().unparsed, 0U);
     }
@@ -401,7 +401,7 @@ namespace {
         port.attach(board);
         StackRig rig;
         ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::lines()));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
 
         std::promise<SerialReply> answer;
         auto future = answer.get_future();
@@ -422,7 +422,7 @@ namespace {
         port.attach(board);
         StackRig rig;
         ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::cobs()));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
         Bytes everything(256);
         std::iota(everything.begin(), everything.end(), uint8_t { 0 });
         Bytes wire;
@@ -433,7 +433,7 @@ namespace {
 
         board.write(wire);
 
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 2; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 2; }));
         const auto values = rig.inbox.all();
         ASSERT_EQ(values.size(), 2U);
         EXPECT_EQ(values[0].as_bytes(), everything);
@@ -449,11 +449,11 @@ namespace {
         port.attach(board);
         StackRig rig;
         ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::midi()));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
 
         board.write(Bytes { 0x90, 60, 100, 0xF8, 64, 90, 0xC1, 7, 0x80, 60, 0 });
 
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 5; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 5; }));
         const auto values = rig.inbox.all();
         ASSERT_EQ(values.size(), 5U);
         for (const auto& value : values) {
@@ -475,15 +475,15 @@ namespace {
         port.attach(board);
         StackRig rig;
         ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::idle_gap(20ms)));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
 
         board.write("ab");
         board.write("cd");
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 1; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 1; }));
         std::this_thread::sleep_for(100ms);
         board.write("ef");
 
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 2; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 2; }));
         EXPECT_EQ(rig.inbox.texts(), (std::vector<std::string> { "abcd", "ef" }));
     }
 
@@ -502,13 +502,13 @@ namespace {
 
         EXPECT_TRUE(rig.in_state(EndpointState::OPENING));
         board.write("boot 9\n");
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
         std::this_thread::sleep_for(60ms);
         EXPECT_EQ(rig.inbox.size(), 0U);
 
         board.write("5\n");
 
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 1; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 1; }));
         EXPECT_EQ(rig.inbox.vectors(), (std::vector<Numbers> { { 5 } }));
     }
 
@@ -520,17 +520,17 @@ namespace {
         port.attach(board);
         StackRig rig;
         ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::lines()));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
         board.write("1\n");
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 1; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 1; }));
 
         rig.backend->close_device(rig.ids[0]);
         EXPECT_FALSE(rig.backend->is_device_open(rig.ids[0]));
         ASSERT_TRUE(rig.backend->open_device(rig.ids[0]));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
         board.write("2\n");
 
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 2; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 2; }));
         EXPECT_EQ(rig.inbox.vectors(), (std::vector<Numbers> { { 1 }, { 2 } }));
     }
 
@@ -547,12 +547,12 @@ namespace {
         StackRig rig;
         ASSERT_TRUE(rig.open_ports({ { port_a.path(), SerialSpec::lines() },
             { port_b.path(), SerialSpec::delimited(">").bytes() } }));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN, 0) && rig.in_state(EndpointState::OPEN, 1); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN, 0) && rig.in_state(EndpointState::OPEN, 1); }));
 
         first.write("1 2\n3 4\n");
         second.write("AA>BB>");
 
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 4; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 4; }));
         for (const auto& value : rig.inbox.all()) {
             if (value.type == InputValue::Type::VECTOR) {
                 EXPECT_EQ(value.device_id, rig.ids[0]);
@@ -578,7 +578,7 @@ namespace {
         port.attach(first);
         StackRig rig;
         ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::lines()));
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
         const uint32_t id = rig.ids[0];
         ASSERT_EQ(rig.count_events(true), 1U);
 
@@ -588,25 +588,25 @@ namespace {
             Bytes { '?', '\n' }, [](P::Message) { return true; }, 10s,
             [&answer](SerialReply how, P::Message) { answer.set_value(how); }));
         first.write("12");
-        ASSERT_TRUE(eventually([&] { return first.received().size() >= 2; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return first.received().size() >= 2; }));
         std::this_thread::sleep_for(30ms);
 
         first.hang_up();
         port.detach();
 
-        ASSERT_TRUE(eventually([&] { return !rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return !rig.in_state(EndpointState::OPEN); }));
         ASSERT_EQ(future.wait_for(2s), std::future_status::ready);
         EXPECT_EQ(future.get(), SerialReply::LINK_LOST);
-        ASSERT_TRUE(eventually([&] { return rig.count_events(false) >= 1; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.count_events(false) >= 1; }));
 
         VirtualSerialDevice second;
         SKIP_WITHOUT_PTY(second)
         port.attach(second);
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
-        ASSERT_TRUE(eventually([&] { return rig.count_events(true) >= 2; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.count_events(true) >= 2; }));
         second.write("3\n");
 
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 1; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 1; }));
         EXPECT_EQ(rig.inbox.vectors(), (std::vector<Numbers> { { 3 } }));
         EXPECT_EQ(rig.ids[0], id);
         EXPECT_EQ(rig.backend->get_devices().front().id, id);
@@ -625,9 +625,9 @@ namespace {
         SKIP_WITHOUT_PTY(board)
         port.attach(board);
 
-        ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
         board.write("4\n");
-        ASSERT_TRUE(eventually([&] { return rig.inbox.size() >= 1; }));
+        ASSERT_TRUE(serial_stack_eventually([&] { return rig.inbox.size() >= 1; }));
         EXPECT_EQ(rig.inbox.vectors(), (std::vector<Numbers> { { 4 } }));
         EXPECT_EQ(rig.count_events(true), 1U);
     }
@@ -642,12 +642,12 @@ namespace {
             VirtualSerialDevice board;
             SKIP_WITHOUT_PTY(board)
             port.attach(board);
-            ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); })) << "round " << round;
+            ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); })) << "round " << round;
             board.start_telemetry(1ms, [](uint64_t i) { return std::to_string(i) + " " + std::to_string(i + 1) + "\n"; });
             std::this_thread::sleep_for(40ms);
             board.hang_up();
             port.detach();
-            ASSERT_TRUE(eventually([&] { return !rig.in_state(EndpointState::OPEN); })) << "round " << round;
+            ASSERT_TRUE(serial_stack_eventually([&] { return !rig.in_state(EndpointState::OPEN); })) << "round " << round;
         }
 
         for (const auto& vector : rig.inbox.vectors()) {
@@ -667,7 +667,7 @@ namespace {
             {
                 StackRig rig;
                 ASSERT_TRUE(rig.open_port(port.path(), SerialSpec::lines()));
-                ASSERT_TRUE(eventually([&] { return rig.in_state(EndpointState::OPEN); }));
+                ASSERT_TRUE(serial_stack_eventually([&] { return rig.in_state(EndpointState::OPEN); }));
                 board.start_telemetry(1ms, [](uint64_t i) { return std::to_string(i) + "\n"; });
                 std::this_thread::sleep_for(30ms);
             }

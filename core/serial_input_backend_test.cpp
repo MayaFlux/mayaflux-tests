@@ -21,7 +21,7 @@ namespace {
 
     using Bytes = std::vector<uint8_t>;
 
-    constexpr uint64_t k_endpoint = 42;
+    constexpr uint64_t k_serial_input_backend_endpoint = 42;
 
     SerialInputBackend::Config two_ports(FakeNetworkService& network)
     {
@@ -339,7 +339,7 @@ namespace {
         const auto view = rig.backend.add_view(port, bytes_between(";"));
 
         ASSERT_TRUE(rig.backend.open_device(view));
-        rig.network.deliver(k_endpoint, Bytes { '1', ';', '2', '\n' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { '1', ';', '2', '\n' });
 
         EXPECT_TRUE(rig.backend.is_device_open(view));
         EXPECT_TRUE(rig.backend.is_device_open(port));
@@ -361,7 +361,7 @@ namespace {
         ASSERT_TRUE(rig.backend.open_device(view));
 
         rig.backend.close_device(view);
-        rig.network.deliver(k_endpoint, Bytes { '1', ';', '\n' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { '1', ';', '\n' });
 
         EXPECT_FALSE(rig.backend.is_device_open(view));
         EXPECT_TRUE(rig.backend.is_device_open(port));
@@ -370,7 +370,7 @@ namespace {
 
         rig.values.clear();
         ASSERT_TRUE(rig.backend.open_device(view));
-        rig.network.deliver(k_endpoint, Bytes { '2', ';', '\n' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { '2', ';', '\n' });
         ASSERT_EQ(rig.values.size(), 2U);
         EXPECT_EQ(rig.values[1].device_id, view);
     }
@@ -386,7 +386,7 @@ namespace {
 
         rig.backend.close_device(port);
         ASSERT_TRUE(rig.backend.open_device(port));
-        rig.network.deliver(k_endpoint, Bytes { '5', ';', '\n' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { '5', ';', '\n' });
 
         ASSERT_EQ(rig.values.size(), 2U);
         EXPECT_EQ(rig.values[1].device_id, view);
@@ -420,12 +420,12 @@ namespace {
         ASSERT_NE(token, 0U);
         ASSERT_TRUE(rig.backend.open_device(port));
 
-        rig.network.deliver(k_endpoint, Bytes { 'a', ';' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { 'a', ';' });
         rig.backend.close_device(port);
         ASSERT_TRUE(rig.backend.open_device(port));
-        rig.network.deliver(k_endpoint, Bytes { 'b', ';' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { 'b', ';' });
         rig.backend.remove_reader(token);
-        rig.network.deliver(k_endpoint, Bytes { 'c', ';' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { 'c', ';' });
 
         EXPECT_EQ(seen, (std::vector<std::string> { "a", "b" }));
         EXPECT_EQ(rig.backend.get_devices().size(), 2U);
@@ -520,7 +520,7 @@ namespace {
 
         rig.backend.close_device(id);
 
-        EXPECT_EQ(rig.network.closed, (std::vector<uint64_t> { k_endpoint }));
+        EXPECT_EQ(rig.network.closed, (std::vector<uint64_t> { k_serial_input_backend_endpoint }));
         EXPECT_FALSE(rig.backend.is_device_open(id));
         EXPECT_NO_THROW(rig.backend.close_device(id));
         EXPECT_TRUE(rig.backend.open_device(id));
@@ -563,22 +563,22 @@ namespace {
         const auto id = rig.id_of("/dev/ttyMF_A");
         ASSERT_TRUE(rig.backend.open_device(id));
 
-        rig.network.deliver(k_endpoint, Bytes { '1', ' ', '2', '\n' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { '1', ' ', '2', '\n' });
         EXPECT_TRUE(rig.values.empty());
 
         rig.backend.start();
-        rig.network.deliver(k_endpoint, Bytes { '3', '\n' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { '3', '\n' });
         ASSERT_EQ(rig.values.size(), 1U);
         EXPECT_EQ(rig.values[0].as_vector(), (std::vector<double> { 3 }));
         EXPECT_EQ(rig.values[0].device_id, id);
         EXPECT_EQ(rig.values[0].source_type, InputType::SERIAL);
 
         rig.backend.stop();
-        rig.network.deliver(k_endpoint, Bytes { '4', '\n' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { '4', '\n' });
         EXPECT_EQ(rig.values.size(), 1U);
 
         rig.backend.start();
-        rig.network.deliver(k_endpoint, Bytes { '5', '\n' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { '5', '\n' });
         EXPECT_EQ(rig.values.size(), 2U);
     }
 
@@ -592,7 +592,7 @@ namespace {
         EXPECT_TRUE(rig.backend.set_device_spec(id, SerialSpec::delimited(">").bytes()));
         ASSERT_TRUE(rig.backend.open_device(id));
         EXPECT_FALSE(rig.backend.set_device_spec(id, SerialSpec::lines()));
-        rig.network.deliver(k_endpoint, Bytes { 'O', 'K', '>' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { 'O', 'K', '>' });
 
         ASSERT_EQ(rig.values.size(), 1U);
         EXPECT_EQ(rig.values[0].type, InputValue::Type::BYTES);
@@ -619,7 +619,7 @@ namespace {
         }
         ASSERT_TRUE(backend.open_device(id));
 
-        network.deliver(k_endpoint, Bytes { 'A', 'B', '>' });
+        network.deliver(k_serial_input_backend_endpoint, Bytes { 'A', 'B', '>' });
 
         ASSERT_EQ(values.size(), 1U);
         EXPECT_EQ(values[0].type, InputValue::Type::BYTES);
@@ -702,7 +702,7 @@ namespace {
             50ms,
             [&](SerialReply how, P::Message) { outcomes.push_back(how); }));
         EXPECT_EQ(rig.network.sent.back(), (Bytes { '?', '\n' }));
-        rig.network.deliver(k_endpoint, Bytes { 'o', 'k', '\n' });
+        rig.network.deliver(k_serial_input_backend_endpoint, Bytes { 'o', 'k', '\n' });
 
         EXPECT_EQ(outcomes, (std::vector<SerialReply> { SerialReply::REPLIED }));
     }
@@ -721,15 +721,15 @@ namespace {
         ASSERT_EQ(rig.events.size(), 1U);
         EXPECT_EQ(rig.events[0], std::make_pair(id, true));
 
-        rig.network.transition(k_endpoint, EndpointState::OPEN, EndpointState::RECONNECTING);
+        rig.network.transition(k_serial_input_backend_endpoint, EndpointState::OPEN, EndpointState::RECONNECTING);
         ASSERT_EQ(rig.events.size(), 2U);
         EXPECT_EQ(rig.events[1], std::make_pair(id, false));
         EXPECT_FALSE(rig.backend.get_devices().front().is_connected);
 
-        rig.network.transition(k_endpoint, EndpointState::RECONNECTING, EndpointState::ERROR);
+        rig.network.transition(k_serial_input_backend_endpoint, EndpointState::RECONNECTING, EndpointState::ERROR);
         EXPECT_EQ(rig.events.size(), 2U);
 
-        rig.network.transition(k_endpoint, EndpointState::ERROR, EndpointState::OPEN);
+        rig.network.transition(k_serial_input_backend_endpoint, EndpointState::ERROR, EndpointState::OPEN);
         ASSERT_EQ(rig.events.size(), 3U);
         EXPECT_EQ(rig.events[2], std::make_pair(id, true));
         EXPECT_TRUE(rig.backend.get_devices().front().is_connected);
@@ -750,7 +750,7 @@ namespace {
         });
         ASSERT_TRUE(rig.backend.open_device(id));
 
-        rig.network.transition(k_endpoint, EndpointState::OPEN, EndpointState::RECONNECTING);
+        rig.network.transition(k_serial_input_backend_endpoint, EndpointState::OPEN, EndpointState::RECONNECTING);
 
         EXPECT_FALSE(rig.backend.is_device_open(id));
         EXPECT_EQ(rig.network.closed.size(), 1U);
@@ -764,8 +764,8 @@ namespace {
         backend.start();
         ASSERT_TRUE(backend.open_device(backend.get_devices().front().id));
 
-        network.deliver(k_endpoint, Bytes { '1', '\n' });
-        network.transition(k_endpoint, EndpointState::OPEN, EndpointState::RECONNECTING);
+        network.deliver(k_serial_input_backend_endpoint, Bytes { '1', '\n' });
+        network.transition(k_serial_input_backend_endpoint, EndpointState::OPEN, EndpointState::RECONNECTING);
 
         EXPECT_TRUE(backend.is_running());
     }

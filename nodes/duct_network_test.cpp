@@ -20,25 +20,25 @@ using Nodes::Network::WallOperator;
 namespace {
 
     constexpr double kRate = 48000.0;
-    constexpr double kRadius = 0.0075;
-    constexpr double kLength = 0.6;
-    constexpr unsigned int kBlock = 512;
+    constexpr double kDuctNetworkRadius = 0.0075;
+    constexpr double kDuctNetworkLength = 0.6;
+    constexpr unsigned int kDuctNetworkBlock = 512;
 
     Acoustics::DuctSpec spec()
     {
-        return { .length = kLength, .sample_rate = kRate };
+        return { .length = kDuctNetworkLength, .sample_rate = kRate };
     }
 
     Acoustics::DuctGrid grid()
     {
-        return Acoustics::make_duct_grid(spec(), [](double) { return kRadius; }).value();
+        return Acoustics::make_duct_grid(spec(), [](double) { return kDuctNetworkRadius; }).value();
     }
 
-    std::vector<double> render(DuctNetwork& network, unsigned int blocks)
+    std::vector<double> duct_network_render(DuctNetwork& network, unsigned int blocks)
     {
         std::vector<double> out;
         for (unsigned int block = 0; block < blocks; ++block) {
-            network.process_batch(kBlock);
+            network.process_batch(kDuctNetworkBlock);
             const auto buffer = network.get_audio_buffer().value_or(std::vector<double> {});
             out.insert(out.end(), buffer.begin(), buffer.end());
         }
@@ -134,7 +134,7 @@ TEST(TerminationOperatorTest, TheReedReportsWhenTheCouplingStopsBeingUnique)
     EXPECT_DOUBLE_EQ(reed.query_state("unique").value(), 1.0);
 
     reed.set_parameter("opening", 4.0e-3);
-    reed.process(static_cast<float>(kBlock));
+    reed.process(static_cast<float>(kDuctNetworkBlock));
     EXPECT_DOUBLE_EQ(reed.query_state("unique").value(), 0.0);
 }
 
@@ -147,11 +147,11 @@ TEST(TerminationOperatorTest, RadiationGivesTheSamplesOfTheKinesisLoadInTheInwar
 
     const auto coefficients = Acoustics::make_radiation_coefficients(
         { .model = Acoustics::unflanged_radiation,
-            .radius = kRadius,
+            .radius = kDuctNetworkRadius,
             .sound_speed = 343.0,
             .air_density = 1.2,
             .time_step = 1.0 / kRate },
-        std::numbers::pi * kRadius * kRadius, duct.pressure_gain.back());
+        std::numbers::pi * kDuctNetworkRadius * kDuctNetworkRadius, duct.pressure_gain.back());
     ASSERT_TRUE(coefficients.has_value());
     Acoustics::RadiationState state;
 
@@ -239,7 +239,7 @@ TEST(TerminationOperatorTest, TheDynamicReedIsAlwaysUniqueAndItsNewParametersAre
     const Acoustics::DuctGrid duct = grid();
     ReedOperator reed;
     reed.set_parameter("opening", 4.0e-3);
-    reed.process(static_cast<float>(kBlock));
+    reed.process(static_cast<float>(kDuctNetworkBlock));
     reed.prepare(duct, spec(), DuctEnd::MOUTH);
     EXPECT_DOUBLE_EQ(reed.query_state("unique").value(), 0.0);
 
@@ -247,7 +247,7 @@ TEST(TerminationOperatorTest, TheDynamicReedIsAlwaysUniqueAndItsNewParametersAre
     reed.set_parameter("reed_damping", 2000.0);
     reed.set_parameter("noise", 0.05);
     reed.set_parameter("noise_cutoff", 1500.0);
-    reed.process(static_cast<float>(kBlock));
+    reed.process(static_cast<float>(kDuctNetworkBlock));
 
     EXPECT_DOUBLE_EQ(reed.query_state("noise_cutoff").value(), 1500.0);
     EXPECT_DOUBLE_EQ(reed.query_state("unique").value(), 1.0);
@@ -369,14 +369,14 @@ TEST(TerminationOperatorTest, TheLipNarrowsTheOpeningAndTheReedAreaAddsTheReedsO
 
 TEST(DuctNetworkTest, ABlownDuctWithADynamicReedSounds)
 {
-    DuctNetwork duct(kLength, kRadius);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
     duct.set({ .output = DuctNetwork::Output::PICKUP });
     duct.get_mouth()->set_parameter("pressure", 1800.0);
     duct.get_mouth()->set_parameter("resonance", 2500.0);
 
-    const auto sound = render(duct, 100);
+    const auto sound = duct_network_render(duct, 100);
 
-    const std::span<const double> tail = std::span<const double>(sound).last(size_t { 20 } * kBlock);
+    const std::span<const double> tail = std::span<const double>(sound).last(size_t { 20 } * kDuctNetworkBlock);
     EXPECT_GT(peak_to_peak(tail), 50.0);
     for (const double sample : sound) {
         ASSERT_TRUE(std::isfinite(sample));
@@ -385,7 +385,7 @@ TEST(DuctNetworkTest, ABlownDuctWithADynamicReedSounds)
 
 TEST(DuctNetworkTest, ADefaultDuctIsAReedAtTheMouthAndARadiatingBell)
 {
-    DuctNetwork duct(kLength, kRadius);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
 
     EXPECT_EQ(duct.get_node_count(), 84U);
     EXPECT_EQ(duct.get_topology(), Nodes::Network::Topology::CHAIN);
@@ -402,16 +402,16 @@ TEST(DuctNetworkTest, ADefaultDuctIsAReedAtTheMouthAndARadiatingBell)
 
 TEST(DuctNetworkTest, AMouthVolumeIsInstalledOrRefused)
 {
-    DuctNetwork duct(kLength, kRadius);
-    duct.process_batch(kBlock);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
+    duct.process_batch(kDuctNetworkBlock);
 
     EXPECT_FALSE(duct.set_mouth_volume(-1.0e-6));
     EXPECT_FALSE(duct.set_mouth_volume(std::numeric_limits<double>::infinity()));
     ASSERT_TRUE(duct.set_mouth_volume(2.0e-6));
-    duct.process_batch(kBlock);
+    duct.process_batch(kDuctNetworkBlock);
 
     EXPECT_EQ(duct.get_node_count(), 84U);
-    for (const double sample : render(duct, 4)) {
+    for (const double sample : duct_network_render(duct, 4)) {
         EXPECT_TRUE(std::isfinite(sample));
     }
 }
@@ -427,7 +427,7 @@ TEST(DuctNetworkTest, ALengthThatSlidesKeepsTheNoteSoundingWhileAResetRestartsIt
     };
 
     const auto blown = [] {
-        auto duct = std::make_unique<DuctNetwork>(kLength, kRadius);
+        auto duct = std::make_unique<DuctNetwork>(kDuctNetworkLength, kDuctNetworkRadius);
         duct->set({ .output = DuctNetwork::Output::PICKUP });
         duct->get_mouth()->set_parameter("pressure", 1800.0);
         duct->get_mouth()->set_parameter("resonance", 2500.0);
@@ -435,31 +435,31 @@ TEST(DuctNetworkTest, ALengthThatSlidesKeepsTheNoteSoundingWhileAResetRestartsIt
     };
 
     auto sliding = blown();
-    const auto settled = render(*sliding, 80);
-    const double before = rms(std::span<const double>(settled).last(size_t { 8 } * kBlock));
+    const auto settled = duct_network_render(*sliding, 80);
+    const double before = rms(std::span<const double>(settled).last(size_t { 8 } * kDuctNetworkBlock));
 
-    double length = kLength;
+    double length = kDuctNetworkLength;
     std::vector<double> slide;
     for (size_t step = 0; step < 40; ++step) {
         length -= 0.0005;
         ASSERT_TRUE(sliding->set_length(length));
-        const auto block = render(*sliding, 1);
+        const auto block = duct_network_render(*sliding, 1);
         slide.insert(slide.end(), block.begin(), block.end());
     }
-    const double during = rms(std::span<const double>(slide).last(size_t { 20 } * kBlock));
+    const double during = rms(std::span<const double>(slide).last(size_t { 20 } * kDuctNetworkBlock));
 
     auto restarted = blown();
-    static_cast<void>(render(*restarted, 80));
-    double restart_length = kLength;
+    static_cast<void>(duct_network_render(*restarted, 80));
+    double restart_length = kDuctNetworkLength;
     std::vector<double> restart_slide;
     for (size_t step = 0; step < 40; ++step) {
         restart_length -= 0.0005;
         ASSERT_TRUE(restarted->set_length(restart_length));
         restarted->reset();
-        const auto block = render(*restarted, 1);
+        const auto block = duct_network_render(*restarted, 1);
         restart_slide.insert(restart_slide.end(), block.begin(), block.end());
     }
-    const double restart_during = rms(std::span<const double>(restart_slide).last(size_t { 20 } * kBlock));
+    const double restart_during = rms(std::span<const double>(restart_slide).last(size_t { 20 } * kDuctNetworkBlock));
 
     ASSERT_GT(before, 0.0);
     EXPECT_GT(during, 0.5 * before);
@@ -471,15 +471,15 @@ TEST(DuctNetworkTest, ALengthThatSlidesKeepsTheNoteSoundingWhileAResetRestartsIt
 
 TEST(DuctNetworkTest, ChangingTheProfileOrTheMouthVolumeKeepsTheSoundToo)
 {
-    DuctNetwork duct(kLength, kRadius);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
     duct.set({ .output = DuctNetwork::Output::PICKUP });
     duct.get_mouth()->set_parameter("pressure", 1800.0);
     duct.get_mouth()->set_parameter("resonance", 2500.0);
-    static_cast<void>(render(duct, 80));
+    static_cast<void>(duct_network_render(duct, 80));
 
     ASSERT_TRUE(duct.set_radius(0.0076));
     ASSERT_TRUE(duct.set_mouth_volume(1.0e-7));
-    const auto after = render(duct, 4);
+    const auto after = duct_network_render(duct, 4);
 
     EXPECT_GT(peak_to_peak(after), 50.0);
 }
@@ -523,11 +523,11 @@ TEST(TerminationOperatorTest, RetargetingAReedKeepsItsStateWhilePreparingResetsI
 
 TEST(DuctNetworkTest, ADuctAtRestIsSilent)
 {
-    DuctNetwork duct(kLength, kRadius);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
 
-    const auto out = render(duct, 4);
+    const auto out = duct_network_render(duct, 4);
 
-    ASSERT_EQ(out.size(), size_t { 4 } * kBlock);
+    ASSERT_EQ(out.size(), size_t { 4 } * kDuctNetworkBlock);
     for (const double sample : out) {
         EXPECT_DOUBLE_EQ(sample, 0.0);
     }
@@ -538,7 +538,7 @@ TEST(DuctNetworkTest, ADuctAtRestIsSilent)
 
 TEST(DuctNetworkTest, TheNetworkGivesTheSamplesOfTheKinesisCallsItIsBuiltFrom)
 {
-    DuctNetwork duct(kLength, kRadius);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
     ASSERT_TRUE(duct.set_wall_losses(0.0, 0.0));
     duct.set({ .pickup = 0.5, .output = DuctNetwork::Output::PICKUP });
     duct.get_mouth()->set_parameter("smoothing", 0.0);
@@ -546,8 +546,8 @@ TEST(DuctNetworkTest, TheNetworkGivesTheSamplesOfTheKinesisCallsItIsBuiltFrom)
 
     const Acoustics::DuctGrid line = grid();
     const auto radiation = Acoustics::make_radiation_coefficients(
-        { .model = Acoustics::unflanged_radiation, .radius = kRadius, .time_step = 1.0 / kRate },
-        std::numbers::pi * kRadius * kRadius, line.pressure_gain.back());
+        { .model = Acoustics::unflanged_radiation, .radius = kDuctNetworkRadius, .time_step = 1.0 / kRate },
+        std::numbers::pi * kDuctNetworkRadius * kDuctNetworkRadius, line.pressure_gain.back());
     ASSERT_TRUE(radiation.has_value());
 
     const Acoustics::ReedChannel channel { .width = 0.012, .rest_opening = 4.0e-4, .closing_pressure = 3000.0, .air_density = 1.2 };
@@ -556,7 +556,7 @@ TEST(DuctNetworkTest, TheNetworkGivesTheSamplesOfTheKinesisCallsItIsBuiltFrom)
     std::vector<double> pressure(line.intervals + 1, 0.0);
     std::vector<double> velocity(line.intervals, 0.0);
     std::vector<double> expected;
-    for (unsigned int n = 0; n < 4 * kBlock; ++n) {
+    for (unsigned int n = 0; n < 4 * kDuctNetworkBlock; ++n) {
         Acoustics::advance_velocity(velocity, pressure, line.velocity_gain);
         const auto [mouth_pressure, flow, difference, status] = Acoustics::reed_mouth_step(
             channel, warm_start, line.pressure_gain.front(), 1500.0, pressure.front(), velocity.front());
@@ -567,7 +567,7 @@ TEST(DuctNetworkTest, TheNetworkGivesTheSamplesOfTheKinesisCallsItIsBuiltFrom)
         expected.push_back(Acoustics::sample_pressure(pressure, 0.5));
     }
 
-    const auto actual = render(duct, 4);
+    const auto actual = duct_network_render(duct, 4);
 
     ASSERT_EQ(actual.size(), expected.size());
     EXPECT_GT(peak_to_peak(actual), 1.0);
@@ -578,16 +578,16 @@ TEST(DuctNetworkTest, TheNetworkGivesTheSamplesOfTheKinesisCallsItIsBuiltFrom)
 
 TEST(DuctNetworkTest, RadiatedOutputIsTheRateOfChangeOfTheBellFlow)
 {
-    DuctNetwork radiated(kLength, kRadius);
-    DuctNetwork pickup(kLength, kRadius);
+    DuctNetwork radiated(kDuctNetworkLength, kDuctNetworkRadius);
+    DuctNetwork pickup(kDuctNetworkLength, kDuctNetworkRadius);
     for (DuctNetwork* duct : { &radiated, &pickup }) {
         duct->get_mouth()->set_parameter("smoothing", 0.0);
         duct->get_mouth()->set_parameter("pressure", 1500.0);
     }
     pickup.set({ .output = DuctNetwork::Output::PICKUP });
 
-    const auto from_flow = render(radiated, 2);
-    const auto from_pressure = render(pickup, 2);
+    const auto from_flow = duct_network_render(radiated, 2);
+    const auto from_pressure = duct_network_render(pickup, 2);
 
     EXPECT_GT(peak_to_peak(from_flow), 0.0);
     EXPECT_GT(peak_to_peak(from_pressure), peak_to_peak(from_flow));
@@ -595,23 +595,23 @@ TEST(DuctNetworkTest, RadiatedOutputIsTheRateOfChangeOfTheBellFlow)
 
 TEST(DuctNetworkTest, ABlownDuctSoundsAndAnUnblownOneDoesNot)
 {
-    DuctNetwork blown(kLength, kRadius);
+    DuctNetwork blown(kDuctNetworkLength, kDuctNetworkRadius);
     blown.set({ .output = DuctNetwork::Output::PICKUP });
     blown.get_mouth()->set_parameter("pressure", 1800.0);
-    DuctNetwork quiet(kLength, kRadius);
+    DuctNetwork quiet(kDuctNetworkLength, kDuctNetworkRadius);
     quiet.set({ .output = DuctNetwork::Output::PICKUP });
 
-    const auto sound = render(blown, 100);
-    const auto silence = render(quiet, 100);
+    const auto sound = duct_network_render(blown, 100);
+    const auto silence = duct_network_render(quiet, 100);
 
-    const std::span<const double> tail = std::span<const double>(sound).last(size_t { 20 } * kBlock);
+    const std::span<const double> tail = std::span<const double>(sound).last(size_t { 20 } * kDuctNetworkBlock);
     EXPECT_GT(peak_to_peak(tail), 100.0);
     EXPECT_DOUBLE_EQ(peak_to_peak(silence), 0.0);
 }
 
 TEST(DuctNetworkTest, AMappedNodeDrivesTheBlowingPressureThePickupAndTheScale)
 {
-    DuctNetwork duct(kLength, kRadius);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
     const auto breath = std::make_shared<Constant>(1500.0);
     const auto position = std::make_shared<Constant>(0.25);
     const auto scale = std::make_shared<Constant>(2.0);
@@ -622,7 +622,7 @@ TEST(DuctNetworkTest, AMappedNodeDrivesTheBlowingPressureThePickupAndTheScale)
     duct.map_parameter("pressure", breath);
     duct.map_parameter("pickup", position);
     duct.map_parameter("scale", scale);
-    duct.process_batch(kBlock);
+    duct.process_batch(kDuctNetworkBlock);
 
     EXPECT_DOUBLE_EQ(duct.get_mouth()->query_state("pressure").value(), 1500.0);
     EXPECT_DOUBLE_EQ(duct.get().pickup.value(), 0.25);
@@ -635,42 +635,42 @@ TEST(DuctNetworkTest, AMappedNodeDrivesTheBlowingPressureThePickupAndTheScale)
 
 TEST(DuctNetworkTest, AChangeOfLengthIsInstalledAtTheNextBlockOrRefused)
 {
-    DuctNetwork duct(kLength, kRadius);
-    duct.process_batch(kBlock);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
+    duct.process_batch(kDuctNetworkBlock);
     ASSERT_EQ(duct.get_node_count(), 84U);
 
     EXPECT_FALSE(duct.set_length(-1.0));
     EXPECT_FALSE(duct.set_length(0.001));
     EXPECT_FALSE(duct.set_radius(0.0));
-    duct.process_batch(kBlock);
+    duct.process_batch(kDuctNetworkBlock);
     EXPECT_EQ(duct.get_node_count(), 84U);
 
     ASSERT_TRUE(duct.set_length(0.3));
     EXPECT_EQ(duct.get_node_count(), 84U);
-    duct.process_batch(kBlock);
+    duct.process_batch(kDuctNetworkBlock);
     EXPECT_EQ(duct.get_node_count(), 42U);
     EXPECT_EQ(duct.get_metadata().at("intervals"), "41");
 }
 
 TEST(DuctNetworkTest, SeveralChangesBeforeABlockInstallTheLast)
 {
-    DuctNetwork duct(kLength, kRadius);
-    duct.process_batch(kBlock);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
+    duct.process_batch(kDuctNetworkBlock);
 
     ASSERT_TRUE(duct.set_length(0.3));
     ASSERT_TRUE(duct.set_length(0.9));
     ASSERT_TRUE(duct.set_profile([](double x) { return 0.005 + 0.01 * x; }));
-    duct.process_batch(kBlock);
+    duct.process_batch(kDuctNetworkBlock);
 
     EXPECT_EQ(duct.get_node_count(), 126U);
     ASSERT_TRUE(duct.set_profile(std::vector<double> { 0.01, 0.02 }));
-    duct.process_batch(kBlock);
+    duct.process_batch(kDuctNetworkBlock);
     EXPECT_EQ(duct.get_node_count(), 126U);
 }
 
 TEST(DuctNetworkTest, ATerminationCanBeReplacedAndOneThatCannotTerminateIsRefused)
 {
-    DuctNetwork duct(kLength, kRadius);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
 
     EXPECT_FALSE(duct.set_mouth(nullptr));
     EXPECT_FALSE(duct.set_mouth(std::make_shared<JunctionOperator>(JunctionOperator::FlowLaw {}, 1.0)));
@@ -684,7 +684,7 @@ TEST(DuctNetworkTest, ATerminationCanBeReplacedAndOneThatCannotTerminateIsRefuse
     EXPECT_EQ(duct.get_operator_chain()->find<JunctionOperator>(), source);
 
     duct.set({ .output = DuctNetwork::Output::PICKUP });
-    const auto out = render(duct, 8);
+    const auto out = duct_network_render(duct, 8);
     EXPECT_GT(peak_to_peak(out), 0.0);
     for (const double sample : out) {
         EXPECT_TRUE(std::isfinite(sample));
@@ -696,19 +696,19 @@ TEST(DuctNetworkTest, ATerminationCanBeReplacedAndOneThatCannotTerminateIsRefuse
 
 TEST(DuctNetworkTest, ADuctDrivenThroughAnOhmicSourceThenReleasedDoesNotGrow)
 {
-    DuctNetwork duct(kLength, kRadius);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
     ASSERT_TRUE(duct.set_bell(std::make_shared<WallOperator>()));
     const auto pulse = std::make_shared<JunctionOperator>(
         [](double d) -> Acoustics::FlowSample { return { 2.0e-6 * d, 2.0e-6 }; }, 1.0, 500.0);
     ASSERT_TRUE(duct.set_mouth(pulse));
     duct.set({ .output = DuctNetwork::Output::PICKUP });
 
-    render(duct, 4);
+    duct_network_render(duct, 4);
     pulse->set_parameter("driving_pressure", 0.0);
-    const auto after = render(duct, 40);
+    const auto after = duct_network_render(duct, 40);
 
-    const std::span<const double> early = std::span<const double>(after).first(kBlock);
-    const std::span<const double> late = std::span<const double>(after).last(kBlock);
+    const std::span<const double> early = std::span<const double>(after).first(kDuctNetworkBlock);
+    const std::span<const double> late = std::span<const double>(after).last(kDuctNetworkBlock);
     for (const double sample : after) {
         ASSERT_TRUE(std::isfinite(sample));
     }
@@ -718,9 +718,9 @@ TEST(DuctNetworkTest, ADuctDrivenThroughAnOhmicSourceThenReleasedDoesNotGrow)
 
 TEST(DuctNetworkTest, ThePressureFieldIsReadThroughTheNodeOutputsToo)
 {
-    DuctNetwork duct(kLength, kRadius);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
     duct.get_mouth()->set_parameter("pressure", 1800.0);
-    render(duct, 20);
+    duct_network_render(duct, 20);
 
     const std::vector<double> field = duct.pressure_field();
 
@@ -734,14 +734,14 @@ TEST(DuctNetworkTest, ThePressureFieldIsReadThroughTheNodeOutputsToo)
 
 TEST(DuctNetworkTest, ResetReturnsTheDuctToRest)
 {
-    DuctNetwork duct(kLength, kRadius);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
     duct.get_mouth()->set_parameter("pressure", 1800.0);
-    render(duct, 20);
+    duct_network_render(duct, 20);
     ASSERT_GT(peak_to_peak(duct.pressure_field()), 0.0);
 
     duct.get_mouth()->set_parameter("pressure", 0.0);
     duct.reset();
-    duct.process_batch(kBlock);
+    duct.process_batch(kDuctNetworkBlock);
 
     for (const double pressure : duct.pressure_field()) {
         EXPECT_DOUBLE_EQ(pressure, 0.0);
@@ -750,13 +750,13 @@ TEST(DuctNetworkTest, ResetReturnsTheDuctToRest)
 
 TEST(DuctNetworkTest, ADisabledDuctIsSilentAndKeepsItsState)
 {
-    DuctNetwork duct(kLength, kRadius);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
     duct.get_mouth()->set_parameter("pressure", 1800.0);
-    render(duct, 10);
+    duct_network_render(duct, 10);
     const std::vector<double> before = duct.pressure_field();
 
     duct.set_enabled(false);
-    const auto out = render(duct, 2);
+    const auto out = duct_network_render(duct, 2);
 
     for (const double sample : out) {
         EXPECT_DOUBLE_EQ(sample, 0.0);
@@ -766,9 +766,9 @@ TEST(DuctNetworkTest, ADisabledDuctIsSilentAndKeepsItsState)
 
 TEST(DuctNetworkTest, TheWallLossesDefaultToTheViscothermalFitAndCanBeSetOrRefused)
 {
-    DuctNetwork duct(kLength, kRadius);
+    DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
 
-    const auto [friction, viscosity] = Acoustics::viscothermal_rates(kRadius);
+    const auto [friction, viscosity] = Acoustics::viscothermal_rates(kDuctNetworkRadius);
     EXPECT_EQ(duct.get_metadata().at("friction"), std::to_string(friction) + " 1/s");
     EXPECT_EQ(duct.get_metadata().at("viscosity"), std::to_string(viscosity) + " m^2/s");
 
@@ -787,7 +787,7 @@ TEST(DuctNetworkTest, TheWallLossesDefaultToTheViscothermalFitAndCanBeSetOrRefus
 TEST(DuctNetworkTest, WallLossesLetASealedDuctRingDownWhereALosslessOneKeepsRinging)
 {
     const auto ring = [](bool lossless) {
-        DuctNetwork duct(kLength, kRadius);
+        DuctNetwork duct(kDuctNetworkLength, kDuctNetworkRadius);
         EXPECT_TRUE(duct.set_bell(std::make_shared<WallOperator>()));
         if (lossless) {
             EXPECT_TRUE(duct.set_wall_losses(0.0, 0.0));
@@ -798,13 +798,13 @@ TEST(DuctNetworkTest, WallLossesLetASealedDuctRingDownWhereALosslessOneKeepsRing
         EXPECT_TRUE(duct.set_mouth(pulse));
         duct.set({ .output = DuctNetwork::Output::PICKUP });
 
-        render(duct, 2);
+        duct_network_render(duct, 2);
         pulse->set_parameter("driving_pressure", 0.0);
-        const auto after = render(duct, 120);
+        const auto after = duct_network_render(duct, 120);
 
         return std::make_pair(
-            peak_to_peak(std::span<const double>(after).first(size_t { 4 } * kBlock)),
-            peak_to_peak(std::span<const double>(after).last(size_t { 4 } * kBlock)));
+            peak_to_peak(std::span<const double>(after).first(size_t { 4 } * kDuctNetworkBlock)),
+            peak_to_peak(std::span<const double>(after).last(size_t { 4 } * kDuctNetworkBlock)));
     };
 
     const auto [lossless_early, lossless_late] = ring(true);

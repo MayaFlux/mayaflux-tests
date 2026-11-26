@@ -24,7 +24,7 @@ namespace {
     using Core::UDSBackendInfo;
     using Stream = asio::local::stream_protocol;
 
-    constexpr uint64_t k_first_accepted_id = 100;
+    constexpr uint64_t k_uds_backend_first_accepted_id = 100;
 
     std::atomic<uint32_t> g_directory_counter { 0 };
 
@@ -129,19 +129,19 @@ namespace {
         bool m_had_previous { false };
     };
 
-    struct Received {
+    struct UdsBackendReceived {
         uint64_t id {};
         std::vector<uint8_t> bytes;
         std::string sender;
     };
 
-    struct StateEvent {
+    struct UdsBackendStateEvent {
         uint64_t id {};
         EndpointState previous {};
         EndpointState current {};
     };
 
-    UDSBackendInfo reconnecting(bool enabled, uint32_t interval_ms = 20)
+    UDSBackendInfo uds_backend_reconnecting(bool enabled, uint32_t interval_ms = 20)
     {
         UDSBackendInfo info;
         info.auto_reconnect = enabled;
@@ -151,7 +151,7 @@ namespace {
 
     class UdsRig {
     public:
-        explicit UdsRig(const UDSBackendInfo& config = reconnecting(false))
+        explicit UdsRig(const UDSBackendInfo& config = uds_backend_reconnecting(false))
             : backend(config, context)
         {
             backend.set_endpoint_id_allocator([this] { return next_accepted_id++; });
@@ -223,7 +223,7 @@ namespace {
 
         [[nodiscard]] bool saw(uint64_t id, EndpointState previous, EndpointState current) const
         {
-            return std::ranges::any_of(states, [&](const StateEvent& event) {
+            return std::ranges::any_of(states, [&](const UdsBackendStateEvent& event) {
                 return event.id == id && event.previous == previous && event.current == current;
             });
         }
@@ -231,7 +231,7 @@ namespace {
         [[nodiscard]] uint64_t accepted_id() const
         {
             for (const auto& event : states) {
-                if (event.id >= k_first_accepted_id && event.previous == EndpointState::CLOSED
+                if (event.id >= k_uds_backend_first_accepted_id && event.previous == EndpointState::CLOSED
                     && event.current == EndpointState::OPEN)
                     return event.id;
             }
@@ -278,13 +278,13 @@ namespace {
 
         asio::io_context context;
         UDSBackend backend;
-        uint64_t next_accepted_id { k_first_accepted_id };
-        std::vector<Received> received;
-        std::vector<StateEvent> states;
+        uint64_t next_accepted_id { k_uds_backend_first_accepted_id };
+        std::vector<UdsBackendReceived> received;
+        std::vector<UdsBackendStateEvent> states;
     };
 
-    struct RawPeer {
-        RawPeer(UdsRig& rig, const std::string& path)
+    struct UdsBackendRawPeer {
+        UdsBackendRawPeer(UdsRig& rig, const std::string& path)
             : socket(rig.context)
         {
             socket.connect(Stream::endpoint(path));
@@ -295,7 +295,7 @@ namespace {
         Stream::socket socket;
     };
 
-    std::vector<uint8_t> bytes_of(std::initializer_list<uint8_t> values)
+    std::vector<uint8_t> uds_backend_bytes_of(std::initializer_list<uint8_t> values)
     {
         return values;
     }
@@ -489,7 +489,7 @@ namespace {
 
         const uint64_t accepted = rig.connect_pair(directory.socket());
 
-        ASSERT_GE(accepted, k_first_accepted_id);
+        ASSERT_GE(accepted, k_uds_backend_first_accepted_id);
         EXPECT_EQ(rig.backend.get_endpoint_state(2), EndpointState::OPEN);
         EXPECT_EQ(rig.backend.get_endpoint_state(accepted), EndpointState::OPEN);
         EXPECT_TRUE(rig.saw(2, EndpointState::OPENING, EndpointState::OPEN));
@@ -520,7 +520,7 @@ namespace {
     TEST(UDSBackendTest, ConnectionToAMissingSocketWithoutReconnectReportsError)
     {
         SocketDirectory directory;
-        UdsRig rig(reconnecting(false));
+        UdsRig rig(uds_backend_reconnecting(false));
         ASSERT_TRUE(rig.up());
 
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket())), 2U);
@@ -532,7 +532,7 @@ namespace {
     TEST(UDSBackendTest, ConnectionToAMissingSocketWithReconnectRetriesUntilTheListenerAppears)
     {
         SocketDirectory directory;
-        UdsRig rig(reconnecting(true, 20));
+        UdsRig rig(uds_backend_reconnecting(true, 20));
         ASSERT_TRUE(rig.up());
 
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket())), 2U);
@@ -595,7 +595,7 @@ namespace {
         SocketDirectory directory;
         UdsRig rig;
         ASSERT_TRUE(rig.up());
-        const std::vector<uint8_t> data = bytes_of({ 1 });
+        const std::vector<uint8_t> data = uds_backend_bytes_of({ 1 });
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket())), 1U);
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket())), 2U);
 
@@ -611,7 +611,7 @@ namespace {
         ASSERT_TRUE(rig.up());
         const uint64_t accepted = rig.connect_pair(directory.socket());
         ASSERT_NE(accepted, 0U);
-        const std::vector<uint8_t> data = bytes_of({ 0xDE, 0xAD, 0xBE, 0xEF });
+        const std::vector<uint8_t> data = uds_backend_bytes_of({ 0xDE, 0xAD, 0xBE, 0xEF });
 
         ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
 
@@ -627,7 +627,7 @@ namespace {
         ASSERT_TRUE(rig.up());
         const uint64_t accepted = rig.connect_pair(directory.socket());
         ASSERT_NE(accepted, 0U);
-        const std::vector<uint8_t> data = bytes_of({ 7, 8, 9 });
+        const std::vector<uint8_t> data = uds_backend_bytes_of({ 7, 8, 9 });
 
         ASSERT_TRUE(rig.backend.send(accepted, data.data(), data.size()));
 
@@ -643,7 +643,7 @@ namespace {
         const uint64_t accepted = rig.connect_pair(directory.socket());
         ASSERT_NE(accepted, 0U);
         const std::vector<std::vector<uint8_t>> frames {
-            bytes_of({ 1 }), bytes_of({ 2, 2 }), bytes_of({ 3, 3, 3 }), bytes_of({ 4, 4, 4, 4 })
+            uds_backend_bytes_of({ 1 }), uds_backend_bytes_of({ 2, 2 }), uds_backend_bytes_of({ 3, 3, 3 }), uds_backend_bytes_of({ 4, 4, 4, 4 })
         };
 
         for (const auto& frame : frames)
@@ -690,7 +690,7 @@ namespace {
         UdsRig rig;
         ASSERT_TRUE(rig.up());
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket())), 1U);
-        RawPeer peer(rig, directory.socket());
+        UdsBackendRawPeer peer(rig, directory.socket());
         ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
         const uint64_t accepted = rig.accepted_id();
 
@@ -701,7 +701,7 @@ namespace {
         peer.write({ 2, 3 });
 
         ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 1; }));
-        EXPECT_EQ(rig.received.front().bytes, bytes_of({ 1, 2, 3 }));
+        EXPECT_EQ(rig.received.front().bytes, uds_backend_bytes_of({ 1, 2, 3 }));
     }
 
     TEST(UDSBackendTest, ZeroLengthFrameClosesTheConnection)
@@ -710,7 +710,7 @@ namespace {
         UdsRig rig;
         ASSERT_TRUE(rig.up());
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket())), 1U);
-        RawPeer peer(rig, directory.socket());
+        UdsBackendRawPeer peer(rig, directory.socket());
         ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
         const uint64_t accepted = rig.accepted_id();
 
@@ -730,15 +730,15 @@ namespace {
         UdsRig rig;
         ASSERT_TRUE(rig.up());
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE)), 1U);
-        RawPeer peer(rig, directory.socket());
+        UdsBackendRawPeer peer(rig, directory.socket());
         ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
         const uint64_t accepted = rig.accepted_id();
 
         peer.write({ 'h', 'i', '\n', 'y', 'o', '\r', '\n', '\n' });
 
         ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 3; }));
-        EXPECT_EQ(rig.received[0].bytes, bytes_of({ 'h', 'i' }));
-        EXPECT_EQ(rig.received[1].bytes, bytes_of({ 'y', 'o' }));
+        EXPECT_EQ(rig.received[0].bytes, uds_backend_bytes_of({ 'h', 'i' }));
+        EXPECT_EQ(rig.received[1].bytes, uds_backend_bytes_of({ 'y', 'o' }));
         EXPECT_TRUE(rig.received[2].bytes.empty());
     }
 
@@ -748,7 +748,7 @@ namespace {
         UdsRig rig;
         ASSERT_TRUE(rig.up());
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE)), 1U);
-        RawPeer peer(rig, directory.socket());
+        UdsBackendRawPeer peer(rig, directory.socket());
         ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
         const uint64_t accepted = rig.accepted_id();
 
@@ -757,7 +757,7 @@ namespace {
         peer.write({ 'c', '\n' });
 
         ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 1; }));
-        EXPECT_EQ(rig.received.front().bytes, bytes_of({ 'a', 'b', 'c' }));
+        EXPECT_EQ(rig.received.front().bytes, uds_backend_bytes_of({ 'a', 'b', 'c' }));
     }
 
     TEST(UDSBackendTest, AcceptedConnectionUsesItsListenersFraming)
@@ -766,7 +766,7 @@ namespace {
         UdsRig rig;
         ASSERT_TRUE(rig.up());
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE)), 1U);
-        RawPeer peer(rig, directory.socket());
+        UdsBackendRawPeer peer(rig, directory.socket());
         ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
         const uint64_t accepted = rig.accepted_id();
 
@@ -782,10 +782,10 @@ namespace {
         UdsRig rig;
         ASSERT_TRUE(rig.up());
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE)), 1U);
-        RawPeer peer(rig, directory.socket());
+        UdsBackendRawPeer peer(rig, directory.socket());
         ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
         const uint64_t accepted = rig.accepted_id();
-        const std::vector<uint8_t> text = bytes_of({ 'p', 'o', 'n', 'g' });
+        const std::vector<uint8_t> text = uds_backend_bytes_of({ 'p', 'o', 'n', 'g' });
 
         ASSERT_TRUE(rig.backend.send(accepted, text.data(), text.size()));
 
@@ -808,7 +808,7 @@ namespace {
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE)), 1U);
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket(), Core::FramingPolicy::LINE)), 2U);
         ASSERT_TRUE(rig.pump_until([&] { return rig.backend.get_endpoint_state(2) == EndpointState::OPEN; }));
-        const std::vector<uint8_t> text = bytes_of({ 'a', '\n', 'b' });
+        const std::vector<uint8_t> text = uds_backend_bytes_of({ 'a', '\n', 'b' });
 
         EXPECT_FALSE(rig.backend.send(2, text.data(), text.size()));
     }
@@ -824,8 +824,8 @@ namespace {
             return rig.backend.get_endpoint_state(2) == EndpointState::OPEN && rig.accepted_id() != 0;
         }));
         const uint64_t accepted = rig.accepted_id();
-        const std::vector<uint8_t> ping = bytes_of({ 'p', 'i', 'n', 'g' });
-        const std::vector<uint8_t> pong = bytes_of({ 'p', 'o', 'n', 'g' });
+        const std::vector<uint8_t> ping = uds_backend_bytes_of({ 'p', 'i', 'n', 'g' });
+        const std::vector<uint8_t> pong = uds_backend_bytes_of({ 'p', 'o', 'n', 'g' });
 
         ASSERT_TRUE(rig.backend.send(2, ping.data(), ping.size()));
         ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 1; }));
@@ -847,7 +847,7 @@ namespace {
             return rig.backend.get_endpoint_state(2) == EndpointState::OPEN && rig.accepted_id() != 0;
         }));
         const uint64_t accepted = rig.accepted_id();
-        const std::vector<uint8_t> data = bytes_of({ 1, 2, 3 });
+        const std::vector<uint8_t> data = uds_backend_bytes_of({ 1, 2, 3 });
 
         ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
 
@@ -964,7 +964,7 @@ namespace {
                 ++calls;
                 rig.backend.close_endpoint(id);
             });
-        const std::vector<uint8_t> data = bytes_of({ 1 });
+        const std::vector<uint8_t> data = uds_backend_bytes_of({ 1 });
 
         ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
 
@@ -989,12 +989,12 @@ namespace {
                     answer.assign(data, data + size);
                 }
             });
-        const std::vector<uint8_t> data = bytes_of({ 1 });
+        const std::vector<uint8_t> data = uds_backend_bytes_of({ 1 });
 
         ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
 
         ASSERT_TRUE(rig.pump_until([&] { return !answer.empty(); }));
-        EXPECT_EQ(answer, bytes_of({ 9, 8 }));
+        EXPECT_EQ(answer, uds_backend_bytes_of({ 9, 8 }));
     }
 
     TEST(UDSBackendTest, HandlerMayOpenAnotherEndpoint)
@@ -1010,7 +1010,7 @@ namespace {
             [&rig, &opened, second](uint64_t, const uint8_t*, size_t, std::string_view) {
                 opened = rig.backend.open_endpoint(UdsRig::listener(7, second));
             });
-        const std::vector<uint8_t> data = bytes_of({ 1 });
+        const std::vector<uint8_t> data = uds_backend_bytes_of({ 1 });
 
         ASSERT_TRUE(rig.backend.send(2, data.data(), data.size()));
 
@@ -1029,14 +1029,14 @@ namespace {
         UdsRig rig;
         ASSERT_TRUE(rig.up());
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE, 8)), 1U);
-        RawPeer peer(rig, directory.socket());
+        UdsBackendRawPeer peer(rig, directory.socket());
         ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
         const uint64_t accepted = rig.accepted_id();
 
         peer.write({ 't', 'o', 'o', ' ', 'l', 'o', 'n', 'g', ' ', 'b', 'y', ' ', 'f', 'a', 'r', '\n', 'o', 'k', '\n' });
 
         ASSERT_TRUE(rig.pump_until([&] { return rig.count_for(accepted) == 1; }));
-        EXPECT_EQ(rig.received.front().bytes, bytes_of({ 'o', 'k' }));
+        EXPECT_EQ(rig.received.front().bytes, uds_backend_bytes_of({ 'o', 'k' }));
         EXPECT_EQ(rig.backend.get_endpoint_state(accepted), EndpointState::OPEN);
     }
 
@@ -1046,7 +1046,7 @@ namespace {
         UdsRig rig;
         ASSERT_TRUE(rig.up());
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LENGTH_PREFIX, 8)), 1U);
-        RawPeer peer(rig, directory.socket());
+        UdsBackendRawPeer peer(rig, directory.socket());
         ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
         const uint64_t accepted = rig.accepted_id();
 
@@ -1064,8 +1064,8 @@ namespace {
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket())), 1U);
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::outbound(2, directory.socket(), Core::FramingPolicy::LENGTH_PREFIX, 4)), 2U);
         ASSERT_TRUE(rig.pump_until([&] { return rig.backend.get_endpoint_state(2) == EndpointState::OPEN; }));
-        const std::vector<uint8_t> fits = bytes_of({ 1, 2, 3, 4 });
-        const std::vector<uint8_t> too_big = bytes_of({ 1, 2, 3, 4, 5 });
+        const std::vector<uint8_t> fits = uds_backend_bytes_of({ 1, 2, 3, 4 });
+        const std::vector<uint8_t> too_big = uds_backend_bytes_of({ 1, 2, 3, 4, 5 });
 
         EXPECT_TRUE(rig.backend.send(2, fits.data(), fits.size()));
         EXPECT_FALSE(rig.backend.send(2, too_big.data(), too_big.size()));
@@ -1077,7 +1077,7 @@ namespace {
         UdsRig rig;
         ASSERT_TRUE(rig.up());
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::LINE, 8)), 1U);
-        RawPeer peer(rig, directory.socket());
+        UdsBackendRawPeer peer(rig, directory.socket());
         ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
         const uint64_t accepted = rig.accepted_id();
 
@@ -1097,7 +1097,7 @@ namespace {
         UdsRig rig;
         ASSERT_TRUE(rig.up());
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::NONE)), 1U);
-        RawPeer peer(rig, directory.socket());
+        UdsBackendRawPeer peer(rig, directory.socket());
         ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
         const uint64_t accepted = rig.accepted_id();
 
@@ -1105,7 +1105,7 @@ namespace {
         peer.write({ 9, '\n', 7 });
 
         ASSERT_TRUE(rig.pump_until([&] { return rig.concatenated(accepted).size() == 7; }));
-        EXPECT_EQ(rig.concatenated(accepted), bytes_of({ 0, 0, 0, 0, 9, '\n', 7 }));
+        EXPECT_EQ(rig.concatenated(accepted), uds_backend_bytes_of({ 0, 0, 0, 0, 9, '\n', 7 }));
         EXPECT_EQ(rig.backend.get_endpoint_state(accepted), EndpointState::OPEN);
     }
 
@@ -1115,10 +1115,10 @@ namespace {
         UdsRig rig;
         ASSERT_TRUE(rig.up());
         ASSERT_EQ(rig.backend.open_endpoint(UdsRig::listener(1, directory.socket(), Core::FramingPolicy::NONE)), 1U);
-        RawPeer peer(rig, directory.socket());
+        UdsBackendRawPeer peer(rig, directory.socket());
         ASSERT_TRUE(rig.pump_until([&] { return rig.accepted_id() != 0; }));
         const uint64_t accepted = rig.accepted_id();
-        const std::vector<uint8_t> data = bytes_of({ 1, '\n', 0, 255 });
+        const std::vector<uint8_t> data = uds_backend_bytes_of({ 1, '\n', 0, 255 });
 
         ASSERT_TRUE(rig.backend.send(accepted, data.data(), data.size()));
 
@@ -1156,8 +1156,8 @@ namespace {
             return rig.backend.get_endpoint_state(2) == EndpointState::OPEN && rig.accepted_id() != 0;
         }));
         const uint64_t accepted = rig.accepted_id();
-        const std::vector<uint8_t> request = bytes_of({ 4, 5, 6 });
-        const std::vector<uint8_t> reply = bytes_of({ 7, 8 });
+        const std::vector<uint8_t> request = uds_backend_bytes_of({ 4, 5, 6 });
+        const std::vector<uint8_t> reply = uds_backend_bytes_of({ 7, 8 });
 
         ASSERT_TRUE(rig.backend.send(2, request.data(), request.size()));
         ASSERT_TRUE(rig.pump_until([&] { return rig.concatenated(accepted).size() == request.size(); }));

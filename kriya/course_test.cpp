@@ -16,7 +16,7 @@ namespace {
     using Kriya::CourseSetting;
 
     /** Eight steps a second, so every step is an exact eighth of a second. */
-    constexpr double k_rate = 8.0;
+    constexpr double k_kriya_rate = 8.0;
     constexpr double k_step = 0.125;
 
     CourseSetting over(double in, double out, CourseEdge edge = CourseEdge::Once)
@@ -30,7 +30,7 @@ namespace {
 
     std::shared_ptr<Course> make(const CourseSetting& setting, bool paused = false)
     {
-        auto course = Course::create(k_rate, setting, paused);
+        auto course = Course::create(k_kriya_rate, setting, paused);
         if (!course) {
             throw std::runtime_error("course was rejected");
         }
@@ -72,9 +72,9 @@ namespace {
     {
         EXPECT_EQ(Course::create(0.0, over(0.0, 1.0)), nullptr);
         EXPECT_EQ(Course::create(std::numeric_limits<double>::quiet_NaN(), over(0.0, 1.0)), nullptr);
-        EXPECT_EQ(Course::create(k_rate, over(1.0, 1.0)), nullptr);
-        EXPECT_EQ(Course::create(k_rate, over(0.0, std::numeric_limits<double>::infinity())), nullptr);
-        EXPECT_NE(Course::create(k_rate, over(0.0, 1.0)), nullptr);
+        EXPECT_EQ(Course::create(k_kriya_rate, over(1.0, 1.0)), nullptr);
+        EXPECT_EQ(Course::create(k_kriya_rate, over(0.0, std::numeric_limits<double>::infinity())), nullptr);
+        EXPECT_NE(Course::create(k_kriya_rate, over(0.0, 1.0)), nullptr);
     }
 
     TEST(CourseTest, ARunningCourseStepsAndPublishesItsState)

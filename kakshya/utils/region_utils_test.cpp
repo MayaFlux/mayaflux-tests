@@ -25,7 +25,7 @@ namespace {
                 Region::time_point(350, "point2") });
     }
 
-    struct TranslateCase {
+    struct RegionUtilsTranslateCase {
         std::string_view name;
         Region region;
         std::vector<int64_t> offset;
@@ -33,14 +33,14 @@ namespace {
         Coordinates end;
     };
 
-    class RegionUtilsTranslateTest : public ::testing::TestWithParam<TranslateCase> { };
+    class RegionUtilsTranslateTest : public ::testing::TestWithParam<RegionUtilsTranslateCase> { };
 
     INSTANTIATE_TEST_SUITE_P(Translate, RegionUtilsTranslateTest,
         ::testing::Values(
-            TranslateCase { "Forward", Region::time_span(100, 200), { 50 }, { 150 }, { 250 } },
-            TranslateCase { "Backward", Region::time_span(100, 200), { -50 }, { 50 }, { 150 } },
-            TranslateCase { "MultiDimensional", Region::audio_span(100, 200, 1, 2), { 10, -1 }, { 110, 0 }, { 210, 1 } }),
-        [](const ::testing::TestParamInfo<TranslateCase>& info) { return std::string(info.param.name); });
+            RegionUtilsTranslateCase { "Forward", Region::time_span(100, 200), { 50 }, { 150 }, { 250 } },
+            RegionUtilsTranslateCase { "Backward", Region::time_span(100, 200), { -50 }, { 50 }, { 150 } },
+            RegionUtilsTranslateCase { "MultiDimensional", Region::audio_span(100, 200, 1, 2), { 10, -1 }, { 110, 0 }, { 210, 1 } }),
+        [](const ::testing::TestParamInfo<RegionUtilsTranslateCase>& info) { return std::string(info.param.name); });
 
     TEST_P(RegionUtilsTranslateTest, MatchesTheRegionMember)
     {
@@ -53,21 +53,21 @@ namespace {
         EXPECT_EQ(moved, c.region.translate(c.offset));
     }
 
-    struct ScaleCase {
+    struct RegionUtilsScaleCase {
         std::string_view name;
         std::vector<double> factors;
         Coordinates start;
         Coordinates end;
     };
 
-    class RegionUtilsScaleTest : public ::testing::TestWithParam<ScaleCase> { };
+    class RegionUtilsScaleTest : public ::testing::TestWithParam<RegionUtilsScaleCase> { };
 
     INSTANTIATE_TEST_SUITE_P(Scale, RegionUtilsScaleTest,
         ::testing::Values(
-            ScaleCase { "Doubled", { 2.0 }, { 50 }, { 250 } },
-            ScaleCase { "Halved", { 0.5 }, { 125 }, { 175 } },
-            ScaleCase { "Identity", { 1.0 }, { 100 }, { 200 } }),
-        [](const ::testing::TestParamInfo<ScaleCase>& info) { return std::string(info.param.name); });
+            RegionUtilsScaleCase { "Doubled", { 2.0 }, { 50 }, { 250 } },
+            RegionUtilsScaleCase { "Halved", { 0.5 }, { 125 }, { 175 } },
+            RegionUtilsScaleCase { "Identity", { 1.0 }, { 100 }, { 200 } }),
+        [](const ::testing::TestParamInfo<RegionUtilsScaleCase>& info) { return std::string(info.param.name); });
 
     TEST_P(RegionUtilsScaleTest, ScalesAboutTheCentre)
     {
@@ -79,21 +79,21 @@ namespace {
         EXPECT_EQ(scaled.end_coordinates, c.end);
     }
 
-    struct BoundsCase {
+    struct RegionUtilsBoundsCase {
         std::string_view name;
         RegionGroup group;
         Coordinates start;
         Coordinates end;
     };
 
-    class RegionUtilsBoundsTest : public ::testing::TestWithParam<BoundsCase> { };
+    class RegionUtilsBoundsTest : public ::testing::TestWithParam<RegionUtilsBoundsCase> { };
 
     INSTANTIATE_TEST_SUITE_P(Bounds, RegionUtilsBoundsTest,
         ::testing::Values(
-            BoundsCase { "MixedSpansAndPoints", utility_group(), { 100 }, { 400 } },
-            BoundsCase { "SinglePoint", RegionGroup("single", { Region::time_point(125, "point1") }), { 125 }, { 125 } },
-            BoundsCase { "Empty", RegionGroup("empty"), {}, {} }),
-        [](const ::testing::TestParamInfo<BoundsCase>& info) { return std::string(info.param.name); });
+            RegionUtilsBoundsCase { "MixedSpansAndPoints", utility_group(), { 100 }, { 400 } },
+            RegionUtilsBoundsCase { "SinglePoint", RegionGroup("single", { Region::time_point(125, "point1") }), { 125 }, { 125 } },
+            RegionUtilsBoundsCase { "Empty", RegionGroup("empty"), {}, {} }),
+        [](const ::testing::TestParamInfo<RegionUtilsBoundsCase>& info) { return std::string(info.param.name); });
 
     TEST_P(RegionUtilsBoundsTest, BoundingRegionSpansEveryMember)
     {

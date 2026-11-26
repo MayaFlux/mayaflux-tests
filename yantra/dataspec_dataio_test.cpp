@@ -150,17 +150,17 @@ namespace {
         EXPECT_EQ(found->size, size);
     }
 
-    enum class Construction { Copy, Move };
+    enum class DataspecDataioConstruction { Copy, Move };
 
-    class YantraDatumConstruction : public ::testing::TestWithParam<Construction> { };
+    class YantraDatumConstruction : public ::testing::TestWithParam<DataspecDataioConstruction> { };
 
     TEST_P(YantraDatumConstruction, OwnsSamplesAndInfersAfterTransfer)
     {
         Samples source { 2.0, -3.0, 7.0, 11.0 };
         const auto* allocation = source.data();
-        Datum<Samples> datum = GetParam() == Construction::Copy
+        Datum<Samples> datum = GetParam() == DataspecDataioConstruction::Copy
             ? Datum<Samples>(source) : Datum<Samples>(std::move(source));
-        if (GetParam() == Construction::Copy) {
+        if (GetParam() == DataspecDataioConstruction::Copy) {
             source[0] = 99.0;
             EXPECT_NE(datum.data.data(), allocation);
         } else {
@@ -178,7 +178,7 @@ namespace {
     TEST_P(YantraDatumConstruction, InfersChannelsRatherThanCountingChannelObjects)
     {
         Variants source { Samples { 1, 2, 3, 4 }, std::vector<float> { 5, 6, 7, 8 } };
-        DataIO datum = GetParam() == Construction::Copy
+        DataIO datum = GetParam() == DataspecDataioConstruction::Copy
             ? DataIO(source) : DataIO(std::move(source));
         ASSERT_EQ(datum.data.size(), 2);
         EXPECT_EQ(std::get<Samples>(datum.data[0]), (Samples { 1, 2, 3, 4 }));
@@ -194,7 +194,7 @@ namespace {
     {
         Container container = make_audio_container(Samples { 1, 2, 3, 4, 5, 6 });
         Kakshya::Region source({ 0, 0 }, { 5, 0 });
-        RegionIO datum = GetParam() == Construction::Copy
+        RegionIO datum = GetParam() == DataspecDataioConstruction::Copy
             ? RegionIO(source, container) : RegionIO(std::move(source), container);
         ASSERT_TRUE(datum.has_container());
         EXPECT_EQ(datum.get_container(), container);
@@ -209,7 +209,7 @@ namespace {
     {
         std::vector<Samples> source { { 3, -1, 5 }, {}, { 9 } };
         const auto* first = source[0].data();
-        auto batch = GetParam() == Construction::Copy
+        auto batch = GetParam() == DataspecDataioConstruction::Copy
             ? as_io_batch(source) : as_io_batch(std::move(source));
         ASSERT_EQ(batch.size(), 3);
         EXPECT_EQ(batch[0].data, (Samples { 3, -1, 5 }));
@@ -218,7 +218,7 @@ namespace {
         EXPECT_EQ(batch[0].get_total_elements(), 3);
         EXPECT_EQ(batch[1].get_total_elements(), 0);
         EXPECT_EQ(batch[2].get_total_elements(), 1);
-        if (GetParam() == Construction::Copy) {
+        if (GetParam() == DataspecDataioConstruction::Copy) {
             source[0][0] = 100;
             EXPECT_NE(batch[0].data.data(), first);
         } else {
@@ -236,9 +236,9 @@ namespace {
         Kakshya::RegionGroup group;
         group.regions.push_back(region);
         std::vector<Kakshya::RegionSegment> segments { Kakshya::RegionSegment(region) };
-        RegionGroupIO grouped = GetParam() == Construction::Copy
+        RegionGroupIO grouped = GetParam() == DataspecDataioConstruction::Copy
             ? RegionGroupIO(group, container) : RegionGroupIO(std::move(group), container);
-        SegmentIO segmented = GetParam() == Construction::Copy
+        SegmentIO segmented = GetParam() == DataspecDataioConstruction::Copy
             ? SegmentIO(segments, container) : SegmentIO(std::move(segments), container);
         expect_axis(grouped.dimensions, Role::TIME, 6);
         expect_axis(segmented.dimensions, Role::TIME, 6);
@@ -251,8 +251,8 @@ namespace {
     }
 
     INSTANTIATE_TEST_SUITE_P(Ownership, YantraDatumConstruction,
-        ::testing::Values(Construction::Copy, Construction::Move),
-        [](const auto& info) { return info.param == Construction::Copy ? "Copy" : "Move"; });
+        ::testing::Values(DataspecDataioConstruction::Copy, DataspecDataioConstruction::Move),
+        [](const auto& info) { return info.param == DataspecDataioConstruction::Copy ? "Copy" : "Move"; });
 
     struct VariantShape {
         std::string name;

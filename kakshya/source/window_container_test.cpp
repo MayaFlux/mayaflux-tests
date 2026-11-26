@@ -583,23 +583,23 @@ namespace {
         EXPECT_EQ(rig.container->get_memory_layout(), Kakshya::MemoryLayout::ROW_MAJOR);
     }
 
-    struct FormatCase {
+    struct WindowContainerFormatCase {
         SurfaceFormat surface;
         ImageFormat image;
         const char* name;
     };
 
-    class WindowContainerFormatTest : public ::testing::TestWithParam<FormatCase> { };
+    class WindowContainerFormatTest : public ::testing::TestWithParam<WindowContainerFormatCase> { };
 
     INSTANTIATE_TEST_SUITE_P(Surfaces, WindowContainerFormatTest,
         ::testing::Values(
-            FormatCase { SurfaceFormat::B8G8R8A8_SRGB, ImageFormat::BGRA8_SRGB, "Bgra8Srgb" },
-            FormatCase { SurfaceFormat::B8G8R8A8_UNORM, ImageFormat::BGRA8, "Bgra8Unorm" },
-            FormatCase { SurfaceFormat::R8G8B8A8_SRGB, ImageFormat::RGBA8_SRGB, "Rgba8Srgb" },
-            FormatCase { SurfaceFormat::R8G8B8A8_UNORM, ImageFormat::RGBA8, "Rgba8Unorm" },
-            FormatCase { SurfaceFormat::R16G16B16A16_SFLOAT, ImageFormat::RGBA16F, "Rgba16F" },
-            FormatCase { SurfaceFormat::R32G32B32A32_SFLOAT, ImageFormat::RGBA32F, "Rgba32F" }),
-        [](const ::testing::TestParamInfo<FormatCase>& info) { return std::string(info.param.name); });
+            WindowContainerFormatCase { SurfaceFormat::B8G8R8A8_SRGB, ImageFormat::BGRA8_SRGB, "Bgra8Srgb" },
+            WindowContainerFormatCase { SurfaceFormat::B8G8R8A8_UNORM, ImageFormat::BGRA8, "Bgra8Unorm" },
+            WindowContainerFormatCase { SurfaceFormat::R8G8B8A8_SRGB, ImageFormat::RGBA8_SRGB, "Rgba8Srgb" },
+            WindowContainerFormatCase { SurfaceFormat::R8G8B8A8_UNORM, ImageFormat::RGBA8, "Rgba8Unorm" },
+            WindowContainerFormatCase { SurfaceFormat::R16G16B16A16_SFLOAT, ImageFormat::RGBA16F, "Rgba16F" },
+            WindowContainerFormatCase { SurfaceFormat::R32G32B32A32_SFLOAT, ImageFormat::RGBA32F, "Rgba32F" }),
+        [](const ::testing::TestParamInfo<WindowContainerFormatCase>& info) { return std::string(info.param.name); });
 
     TEST_P(WindowContainerFormatTest, TheImageFormatFollowsTheLiveSwapchain)
     {

@@ -15,21 +15,21 @@ namespace {
     using Kakshya::OrganizationStrategy;
     using Kakshya::StreamSlice;
 
-    constexpr uint32_t k_rate = 1000;
+    constexpr uint32_t k_stream_slice_processor_rate = 1000;
     constexpr uint32_t k_channels = 2;
     constexpr uint64_t k_frames = 16;
-    constexpr uint32_t k_block = 4;
+    constexpr uint32_t k_stream_slice_processor_block = 4;
 
-    double sample(uint64_t frame, uint32_t channel)
+    double stream_slice_processor_sample(uint64_t frame, uint32_t channel)
     {
         return 1.0 + 10.0 * static_cast<double>(frame) + static_cast<double>(channel);
     }
 
-    std::vector<double> ramp(uint32_t channel, uint64_t first, uint64_t count, double scale = 1.0)
+    std::vector<double> stream_slice_processor_ramp(uint32_t channel, uint64_t first, uint64_t count, double scale = 1.0)
     {
         std::vector<double> values;
         for (uint64_t f = first; f < first + count; ++f) {
-            values.push_back(scale * sample(f, channel));
+            values.push_back(scale * stream_slice_processor_sample(f, channel));
         }
         return values;
     }
@@ -51,21 +51,21 @@ namespace {
 
     std::shared_ptr<DynamicSoundStream> make_stream(OrganizationStrategy organization)
     {
-        auto stream = std::make_shared<DynamicSoundStream>(k_rate, k_channels);
+        auto stream = std::make_shared<DynamicSoundStream>(k_stream_slice_processor_rate, k_channels);
         stream->get_structure().organization = organization;
 
         if (organization == OrganizationStrategy::INTERLEAVED) {
             std::vector<double> flat;
             for (uint64_t f = 0; f < k_frames; ++f) {
                 for (uint32_t c = 0; c < k_channels; ++c) {
-                    flat.push_back(sample(f, c));
+                    flat.push_back(stream_slice_processor_sample(f, c));
                 }
             }
             stream->write_frames(std::vector<std::span<const double>> { std::span<const double>(flat) }, 0);
         } else {
             std::vector<std::vector<double>> columns;
             for (uint32_t c = 0; c < k_channels; ++c) {
-                columns.push_back(ramp(c, 0, k_frames));
+                columns.push_back(stream_slice_processor_ramp(c, 0, k_frames));
             }
             std::vector<std::span<const double>> spans(columns.begin(), columns.end());
             stream->write_frames(std::move(spans), 0);
@@ -75,8 +75,8 @@ namespace {
 
     std::shared_ptr<AudioBuffer> make_buffer(uint32_t channel)
     {
-        auto buffer = std::make_shared<AudioBuffer>(channel, k_block);
-        buffer->resize(k_block);
+        auto buffer = std::make_shared<AudioBuffer>(channel, k_stream_slice_processor_block);
+        buffer->resize(k_stream_slice_processor_block);
         return buffer;
     }
 
@@ -163,7 +163,7 @@ namespace {
         processor->load(0, StreamSlice::from_stream(stream));
         std::ranges::fill(buffer->get_data(), 7.0);
 
-        EXPECT_EQ(play(), std::vector<double>(k_block, 0.0));
+        EXPECT_EQ(play(), std::vector<double>(k_stream_slice_processor_block, 0.0));
     }
 
     TEST_P(StreamSliceProcessorTest, BindingPlaysTheSliceFromItsFirstFrame)
@@ -173,8 +173,8 @@ namespace {
         processor->bind(0);
 
         EXPECT_TRUE(processor->any_active());
-        expect_near(play(), ramp(0, 4, k_block));
-        expect_near(play(), ramp(0, 8, k_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 4, k_stream_slice_processor_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 8, k_stream_slice_processor_block));
     }
 
     TEST_P(StreamSliceProcessorTest, AOneShotPlaysItsWholeRegionThenStopsAndReportsTheSlot)
@@ -186,12 +186,12 @@ namespace {
 
         play();
         EXPECT_TRUE(ended.empty());
-        expect_near(play(), ramp(0, 8, k_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 8, k_stream_slice_processor_block));
 
         EXPECT_EQ(ended, (std::vector<size_t> { 0 }));
         EXPECT_FALSE(processor->any_active());
         EXPECT_FALSE(processor->slice(0).active);
-        EXPECT_EQ(play(), std::vector<double>(k_block, 0.0));
+        EXPECT_EQ(play(), std::vector<double>(k_stream_slice_processor_block, 0.0));
     }
 
     TEST_P(StreamSliceProcessorTest, AOneShotPlaysItsLastFrameAndNothingBeyond)
@@ -202,7 +202,7 @@ namespace {
         play();
         const auto last = play();
 
-        expect_near(last, (std::vector<double> { sample(4, 0), sample(5, 0), 0.0, 0.0 }));
+        expect_near(last, (std::vector<double> { stream_slice_processor_sample(4, 0), stream_slice_processor_sample(5, 0), 0.0, 0.0 }));
         EXPECT_FALSE(processor->any_active());
     }
 
@@ -211,7 +211,7 @@ namespace {
         processor->load(0, StreamSlice::from_frame_range(stream, 3, 3));
         processor->bind(0);
 
-        expect_near(play(), (std::vector<double> { sample(3, 0), 0.0, 0.0, 0.0 }));
+        expect_near(play(), (std::vector<double> { stream_slice_processor_sample(3, 0), 0.0, 0.0, 0.0 }));
         EXPECT_FALSE(processor->any_active());
     }
 
@@ -223,7 +223,7 @@ namespace {
 
         processor->bind(0);
 
-        expect_near(play(), ramp(0, 2, k_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 2, k_stream_slice_processor_block));
     }
 
     TEST_P(StreamSliceProcessorTest, UnbindingSilencesTheSlot)
@@ -235,7 +235,7 @@ namespace {
         processor->unbind(0);
 
         EXPECT_FALSE(processor->any_active());
-        EXPECT_EQ(play(), std::vector<double>(k_block, 0.0));
+        EXPECT_EQ(play(), std::vector<double>(k_stream_slice_processor_block, 0.0));
     }
 
     TEST_P(StreamSliceProcessorTest, MissingSlotsAreIgnoredWhenBoundOrUnbound)
@@ -255,7 +255,7 @@ namespace {
 
         other.processing_function(second);
 
-        expect_near(second->get_data(), ramp(1, 0, k_block));
+        expect_near(second->get_data(), stream_slice_processor_ramp(1, 0, k_stream_slice_processor_block));
     }
 
     TEST_P(StreamSliceProcessorTest, ASourceChannelOverridesTheBuffersChannel)
@@ -265,7 +265,7 @@ namespace {
         processor->load(0, slice);
         processor->bind(0);
 
-        expect_near(play(), ramp(1, 0, k_block));
+        expect_near(play(), stream_slice_processor_ramp(1, 0, k_stream_slice_processor_block));
     }
 
     TEST_P(StreamSliceProcessorTest, ScaleMultipliesTheOutput)
@@ -275,7 +275,7 @@ namespace {
         processor->load(0, slice);
         processor->bind(0);
 
-        expect_near(play(), ramp(0, 0, k_block, 0.5));
+        expect_near(play(), stream_slice_processor_ramp(0, 0, k_stream_slice_processor_block, 0.5));
     }
 
     TEST_P(StreamSliceProcessorTest, ActiveSlotsAreMixedIntoTheBuffer)
@@ -285,7 +285,7 @@ namespace {
         processor->bind(0);
         processor->bind(1);
 
-        expect_near(play(), sum(ramp(0, 0, k_block), ramp(0, 8, k_block)));
+        expect_near(play(), sum(stream_slice_processor_ramp(0, 0, k_stream_slice_processor_block), stream_slice_processor_ramp(0, 8, k_stream_slice_processor_block)));
     }
 
     TEST_P(StreamSliceProcessorTest, OnlyBoundSlotsContributeToTheMix)
@@ -294,7 +294,7 @@ namespace {
         processor->load(1, StreamSlice::from_frame_range(stream, 8, 11));
         processor->bind(1);
 
-        expect_near(play(), ramp(0, 8, k_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 8, k_stream_slice_processor_block));
     }
 
     TEST_P(StreamSliceProcessorTest, EachSlotEndsOnItsOwnAndReportsItsIndex)
@@ -322,9 +322,9 @@ namespace {
         processor->load(0, slice);
         processor->bind(0);
 
-        expect_near(play(), ramp(0, 0, k_block));
-        expect_near(play(), ramp(0, 4, k_block));
-        expect_near(play(), ramp(0, 0, k_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 0, k_stream_slice_processor_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 4, k_stream_slice_processor_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 0, k_stream_slice_processor_block));
         EXPECT_TRUE(processor->any_active());
     }
 
@@ -335,12 +335,12 @@ namespace {
         processor->load(0, slice);
         processor->bind(0);
 
-        for (uint64_t block = 0; block < k_frames / k_block; ++block) {
-            expect_near(play(), ramp(0, block * k_block, k_block));
+        for (uint64_t block = 0; block < k_frames / k_stream_slice_processor_block; ++block) {
+            expect_near(play(), stream_slice_processor_ramp(0, block * k_stream_slice_processor_block, k_stream_slice_processor_block));
         }
 
         EXPECT_TRUE(processor->any_active());
-        expect_near(play(), ramp(0, 0, k_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 0, k_stream_slice_processor_block));
     }
 
     TEST_P(StreamSliceProcessorTest, ASliceEndingOnePastTheLastFrameStopsOnItsLastBlock)
@@ -350,7 +350,7 @@ namespace {
         processor->load(0, StreamSlice::from_frame_range(stream, 0, k_frames));
         processor->bind(0);
 
-        for (uint64_t block = 0; block < k_frames / k_block; ++block) {
+        for (uint64_t block = 0; block < k_frames / k_stream_slice_processor_block; ++block) {
             play();
         }
 
@@ -365,11 +365,11 @@ namespace {
         processor->load(0, slice);
         processor->bind(0);
 
-        for (uint64_t block = 0; block < k_frames / k_block; ++block) {
+        for (uint64_t block = 0; block < k_frames / k_stream_slice_processor_block; ++block) {
             play();
         }
 
-        expect_near(play(), ramp(0, 0, k_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 0, k_stream_slice_processor_block));
         EXPECT_TRUE(processor->any_active());
     }
 
@@ -378,11 +378,11 @@ namespace {
         processor->load(0, StreamSlice::from_stream(stream));
         processor->bind(0);
 
-        for (uint64_t block = 0; block + 1 < k_frames / k_block; ++block) {
+        for (uint64_t block = 0; block + 1 < k_frames / k_stream_slice_processor_block; ++block) {
             play();
         }
 
-        expect_near(play(), ramp(0, k_frames - k_block, k_block));
+        expect_near(play(), stream_slice_processor_ramp(0, k_frames - k_stream_slice_processor_block, k_stream_slice_processor_block));
     }
 
     TEST_P(StreamSliceProcessorTest, ALoopCountStopsALoopingSlice)
@@ -408,24 +408,24 @@ namespace {
     {
         processor->load(0, StreamSlice::from_stream(stream));
         processor->bind(0);
-        expect_near(play(), ramp(0, 0, k_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 0, k_stream_slice_processor_block));
 
         processor->slice(0).with_speed(2.0);
 
-        expect_near(play(), { sample(4, 0), sample(6, 0), sample(8, 0), sample(10, 0) });
-        expect_near(play(), { sample(12, 0), sample(14, 0), 0.0, 0.0 });
+        expect_near(play(), { stream_slice_processor_sample(4, 0), stream_slice_processor_sample(6, 0), stream_slice_processor_sample(8, 0), stream_slice_processor_sample(10, 0) });
+        expect_near(play(), { stream_slice_processor_sample(12, 0), stream_slice_processor_sample(14, 0), 0.0, 0.0 });
         EXPECT_FALSE(processor->any_active());
     }
 
     TEST_P(StreamSliceProcessorTest, ATimeMapDrivesThePlayback)
     {
         StreamSlice slice = StreamSlice::from_stream(stream);
-        slice.with_time_map(Kinesis::TimeMap { .fn = [](const double& t) { return t * k_rate; } });
+        slice.with_time_map(Kinesis::TimeMap { .fn = [](const double& t) { return t * k_stream_slice_processor_rate; } });
         processor->load(0, slice);
         processor->bind(0);
 
-        expect_near(play(), ramp(0, 0, k_block));
-        expect_near(play(), ramp(0, 4, k_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 0, k_stream_slice_processor_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 4, k_stream_slice_processor_block));
     }
 
     TEST_P(StreamSliceProcessorTest, LoadingASlotAgainReplacesItAndKeepsOneStreamSlot)
@@ -434,7 +434,7 @@ namespace {
         processor->load(0, StreamSlice::from_frame_range(stream, 8, 15));
         processor->bind(0);
 
-        expect_near(play(), ramp(0, 8, k_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 8, k_stream_slice_processor_block));
         EXPECT_EQ(stream->allocate_dynamic_slot(), 1U);
     }
 
@@ -464,8 +464,8 @@ namespace {
         play();
         other.processing_function(second_buffer);
 
-        expect_near(second_buffer->get_data(), ramp(0, 0, k_block));
-        expect_near(play(), ramp(0, 8, k_block));
+        expect_near(second_buffer->get_data(), stream_slice_processor_ramp(0, 0, k_stream_slice_processor_block));
+        expect_near(play(), stream_slice_processor_ramp(0, 8, k_stream_slice_processor_block));
     }
 
     TEST_P(StreamSliceProcessorTest, NullBuffersAreIgnored)

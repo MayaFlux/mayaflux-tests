@@ -40,7 +40,7 @@ namespace {
             && std::ranges::all_of(values, [=](double v) { return std::abs(v - expected) <= tolerance; });
     }
 
-    std::shared_ptr<Nodes::Node> constant(double value)
+    std::shared_ptr<Nodes::Node> relation_network_constant(double value)
     {
         auto source = std::make_shared<Polynomial>([value](double) { return value; });
         source->process_sample(0.0);
@@ -279,7 +279,7 @@ TEST(RelationAdvanceTest, SlotsAdvanceIndependently)
 {
     RelationNetwork network;
     network.add_slot({ .node = ramp(1.0) });
-    network.add_slot({ .node = constant(0.5) });
+    network.add_slot({ .node = relation_network_constant(0.5) });
     network.add<AdvanceOperator>();
 
     network.process_batch(FRAMES);
@@ -633,7 +633,7 @@ TEST(RelationChainTest, ANodeDrivenProductReachesTheAudioBuffer)
 {
     RelationNetwork network;
     network.add_slot({ .name = "carrier", .node = ramp(0.5) });
-    network.add_slot({ .name = "gain", .node = constant(0.25) });
+    network.add_slot({ .name = "gain", .node = relation_network_constant(0.25) });
     const uint32_t product = network.add_slot({ .name = "product" });
     network.add<AdvanceOperator>();
     network.add<DeriveOperator>(product, std::vector<size_t> { 0, 1 },
@@ -706,7 +706,7 @@ INSTANTIATE_TEST_SUITE_P(
     RelationSourceTest,
     ::testing::Values(
         SourceCase { "Constant", [] { return Source(0.25); }, 0.25 },
-        SourceCase { "Node", [] { return Source(constant(0.75)); }, 0.75 },
+        SourceCase { "Node", [] { return Source(relation_network_constant(0.75)); }, 0.75 },
         SourceCase { "EmptyNode", [] { return Source(std::shared_ptr<Polynomial> {}); }, 0.0 },
         SourceCase { "NetworkIndex", [] {
                         auto network = network_with({ 0.6 });

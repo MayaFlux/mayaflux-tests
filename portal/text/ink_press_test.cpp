@@ -24,9 +24,9 @@ namespace {
     using Portal::Text::StyleSpan;
     using Portal::Text::TypeFaceFoundry;
 
-    constexpr uint32_t k_pixel_size = 24;
-    const glm::vec4 k_red { 1.F, 0.F, 0.F, 1.F };
-    const glm::vec4 k_white { 1.F, 1.F, 1.F, 1.F };
+    constexpr uint32_t k_ink_press_pixel_size = 24;
+    const glm::vec4 k_ink_press_red { 1.F, 0.F, 0.F, 1.F };
+    const glm::vec4 k_ink_press_white { 1.F, 1.F, 1.F, 1.F };
 
     uint8_t to_byte(float v)
     {
@@ -112,7 +112,7 @@ namespace {
                 return;
             }
             auto& foundry = TypeFaceFoundry::instance();
-            ASSERT_TRUE(foundry.set_default_font(font_path, k_pixel_size, 512));
+            ASSERT_TRUE(foundry.set_default_font(font_path, k_ink_press_pixel_size, 512));
             atlas = foundry.get_default_glyph_atlas();
             ASSERT_NE(atlas, nullptr);
         }
@@ -151,9 +151,9 @@ namespace {
         const LayoutResult l = Portal::Text::lay_out("A", *atlas, 4.F, static_cast<float>(atlas->ascender()));
 
         std::vector<uint8_t> dst(static_cast<size_t>(w) * h * 4, 0);
-        Portal::Text::rasterize_quads(l.quads, *atlas, k_red, dst.data(), w, h);
+        Portal::Text::rasterize_quads(l.quads, *atlas, k_ink_press_red, dst.data(), w, h);
 
-        EXPECT_EQ(dst, coverage_reference(l.quads, *atlas, k_red, w, h));
+        EXPECT_EQ(dst, coverage_reference(l.quads, *atlas, k_ink_press_red, w, h));
         EXPECT_GT(ink_count(dst), 0U);
         for (size_t i = 0; i < dst.size(); i += 4) {
             if (dst[i + 3] != 0) {
@@ -193,7 +193,7 @@ namespace {
 
         for (const auto [pen_x, pen_y] : { std::array<float, 2> { -6.F, 12.F }, std::array<float, 2> { 13.F, 14.F } }) {
             const LayoutResult l = Portal::Text::lay_out("W", *atlas, pen_x, pen_y);
-            Portal::Text::rasterize_quads(l.quads, *atlas, k_white, storage.data() + guard, w, h);
+            Portal::Text::rasterize_quads(l.quads, *atlas, k_ink_press_white, storage.data() + guard, w, h);
         }
 
         EXPECT_TRUE(std::all_of(storage.begin(), storage.begin() + static_cast<std::ptrdiff_t>(guard),
@@ -207,10 +207,10 @@ namespace {
         constexpr uint32_t w = 48;
         constexpr uint32_t h = 48;
         const LayoutResult l = Portal::Text::lay_out("A", *atlas, 4.F, static_cast<float>(atlas->ascender()));
-        const std::vector<uint8_t> coverage = coverage_reference(l.quads, *atlas, k_white, w, h);
+        const std::vector<uint8_t> coverage = coverage_reference(l.quads, *atlas, k_ink_press_white, w, h);
 
         std::vector<uint8_t> dst = filled(w, h, { 0.F, 0.F, 1.F, 1.F });
-        Portal::Text::rasterize_quads(l.quads, *atlas, k_white, dst.data(), w, h);
+        Portal::Text::rasterize_quads(l.quads, *atlas, k_ink_press_white, dst.data(), w, h);
 
         size_t full = 0;
         for (uint32_t y = 0; y < h; ++y) {
@@ -262,10 +262,10 @@ namespace {
         ASSERT_NE(target, nullptr);
 
         const LayoutResult l = Portal::Text::lay_out("Q", *atlas, 2.F, static_cast<float>(atlas->ascender()));
-        Portal::Text::ink_quads(target, l.quads, k_red, atlas);
+        Portal::Text::ink_quads(target, l.quads, k_ink_press_red, atlas);
 
         std::vector<uint8_t> expected = filled(target->get_budget_width(), target->get_budget_height(), p.background);
-        Portal::Text::rasterize_quads(l.quads, *atlas, k_red, expected.data(),
+        Portal::Text::rasterize_quads(l.quads, *atlas, k_ink_press_red, expected.data(),
             target->get_budget_width(), target->get_budget_height());
         EXPECT_EQ(target->get_pixel_data(), expected);
         EXPECT_TRUE(target->is_texture_dirty());
@@ -274,7 +274,7 @@ namespace {
     TEST_F(InkPressTest, InkQuadsOnANullTargetIsHarmless)
     {
         const LayoutResult l = Portal::Text::lay_out("Q", *atlas);
-        EXPECT_NO_THROW(Portal::Text::ink_quads(nullptr, l.quads, k_red, atlas));
+        EXPECT_NO_THROW(Portal::Text::ink_quads(nullptr, l.quads, k_ink_press_red, atlas));
     }
 
     // ------------------------------------------------------------------
@@ -367,7 +367,7 @@ namespace {
     TEST_F(InkPressTest, PressAppliesSpanColoursAndFallsBackToTheBaseColour)
     {
         PressParams p = params(200, 100);
-        p.spans = { StyleSpan { .start = 0, .end = 1, .color = k_red } };
+        p.spans = { StyleSpan { .start = 0, .end = 1, .color = k_ink_press_red } };
         const auto buf = Portal::Text::press("ab", p);
         ASSERT_NE(buf, nullptr);
 
@@ -431,7 +431,7 @@ namespace {
         ASSERT_NE(target, nullptr);
         const uint32_t before = target->get_height();
 
-        EXPECT_TRUE(Portal::Text::repress(target, "a\nb\nc\nd", k_white, RedrawPolicy::Clip));
+        EXPECT_TRUE(Portal::Text::repress(target, "a\nb\nc\nd", k_ink_press_white, RedrawPolicy::Clip));
 
         EXPECT_EQ(target->get_height(), before);
         EXPECT_EQ(target->get_budget_height(), before);
@@ -445,7 +445,7 @@ namespace {
         const auto target = Portal::Text::press("a", p);
         ASSERT_NE(target, nullptr);
 
-        EXPECT_TRUE(Portal::Text::repress(target, "a\nb\nc\nd", k_white, RedrawPolicy::Fit));
+        EXPECT_TRUE(Portal::Text::repress(target, "a\nb\nc\nd", k_ink_press_white, RedrawPolicy::Fit));
 
         const uint32_t expected = std::min(content_height("a\nb\nc\nd", 200), 400U);
         EXPECT_EQ(target->get_height(), expected);
@@ -480,9 +480,9 @@ namespace {
         EXPECT_EQ(target->get_accumulated_text(), "abcd");
 
         std::vector<uint8_t> expected = filled(target->get_budget_width(), target->get_budget_height(), p.background);
-        Portal::Text::rasterize_quads(first.quads, *atlas, k_white, expected.data(),
+        Portal::Text::rasterize_quads(first.quads, *atlas, k_ink_press_white, expected.data(),
             target->get_budget_width(), target->get_budget_height());
-        Portal::Text::rasterize_quads(second.quads, *atlas, k_white, expected.data(),
+        Portal::Text::rasterize_quads(second.quads, *atlas, k_ink_press_white, expected.data(),
             target->get_budget_width(), target->get_budget_height());
         EXPECT_EQ(target->get_pixel_data(), expected);
         EXPECT_TRUE(target->is_texture_dirty());

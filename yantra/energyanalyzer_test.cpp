@@ -23,7 +23,7 @@ namespace {
 
     constexpr uint32_t k_window = 256;
     constexpr uint32_t k_hop = 128;
-    constexpr size_t k_samples = 1024;
+    constexpr size_t k_energyanalyzer_samples = 1024;
 
     EnergyAnalyzerConfig config_for(EnergyMethod method, uint32_t window = k_window, uint32_t hop = k_hop)
     {
@@ -32,18 +32,18 @@ namespace {
 
     std::vector<double> ramp()
     {
-        std::vector<double> data(k_samples);
+        std::vector<double> data(k_energyanalyzer_samples);
         for (size_t i = 0; i < data.size(); ++i) {
-            data[i] = static_cast<double>(i) / static_cast<double>(k_samples - 1);
+            data[i] = static_cast<double>(i) / static_cast<double>(k_energyanalyzer_samples - 1);
         }
         return data;
     }
 
     std::vector<double> sine(double amplitude, double cycles)
     {
-        std::vector<double> data(k_samples);
+        std::vector<double> data(k_energyanalyzer_samples);
         for (size_t i = 0; i < data.size(); ++i) {
-            data[i] = amplitude * std::sin(2.0 * M_PI * cycles * static_cast<double>(i) / static_cast<double>(k_samples));
+            data[i] = amplitude * std::sin(2.0 * M_PI * cycles * static_cast<double>(i) / static_cast<double>(k_energyanalyzer_samples));
         }
         return data;
     }
@@ -162,7 +162,7 @@ namespace {
 
         for (const auto& [start, end] : channel.window_positions) {
             EXPECT_LT(start, end);
-            EXPECT_LE(end, k_samples);
+            EXPECT_LE(end, k_energyanalyzer_samples);
         }
     }
 
@@ -224,7 +224,7 @@ namespace {
         const auto result = analyzer->analyze_energy(container);
 
         ASSERT_FALSE(result.channels.empty());
-        const size_t expected = (k_samples - GetParam().window) / GetParam().hop + 1;
+        const size_t expected = (k_energyanalyzer_samples - GetParam().window) / GetParam().hop + 1;
         EXPECT_EQ(result.channels[0].energy_values.size(), expected);
         EXPECT_EQ(result.config.window_size, GetParam().window);
         EXPECT_EQ(result.config.hop_size, GetParam().hop);
@@ -278,7 +278,7 @@ namespace {
 
     TEST_F(EnergyClassificationTest, QuarterwiseLevelsAreEachRepresented)
     {
-        std::vector<double> signal(k_samples);
+        std::vector<double> signal(k_energyanalyzer_samples);
         for (size_t i = 0; i < signal.size(); ++i) {
             signal[i] = i < 256 ? 0.005 : (i < 512 ? 0.03 : (i < 768 ? 0.07 : 0.3));
         }
@@ -323,7 +323,7 @@ namespace {
 
     TEST_F(EnergyChannelTest, EachChannelIsAnalyzedSeparately)
     {
-        auto container = make_audio_container(std::vector<std::vector<double>> { std::vector<double>(k_samples, 0.3), std::vector<double>(k_samples, 0.7) });
+        auto container = make_audio_container(std::vector<std::vector<double>> { std::vector<double>(k_energyanalyzer_samples, 0.3), std::vector<double>(k_energyanalyzer_samples, 0.7) });
 
         ContainerEnergyMatrix analyzer(config_for(EnergyMethod::RMS));
         const auto result = analyzer.analyze_energy(container);

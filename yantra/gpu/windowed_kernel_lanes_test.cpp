@@ -97,7 +97,7 @@ namespace {
         return config;
     }
 
-    std::vector<Kakshya::DataVariant> input_of(const std::vector<std::vector<double>>& channels)
+    std::vector<Kakshya::DataVariant> windowed_kernel_lanes_input_of(const std::vector<std::vector<double>>& channels)
     {
         std::vector<Kakshya::DataVariant> out;
         out.reserve(channels.size());
@@ -107,7 +107,7 @@ namespace {
         return out;
     }
 
-    std::vector<double> random_signal(size_t count, uint64_t seed)
+    std::vector<double> windowed_kernel_lanes_random_signal(size_t count, uint64_t seed)
     {
         std::mt19937_64 engine(seed);
         std::uniform_real_distribution<double> distribution(-1.0, 1.0);
@@ -169,11 +169,11 @@ namespace {
 
     TYPED_TEST(WindowedKernelLanesGpuTest, ALaneSumMatchesAHostSumAtEveryLaneCount)
     {
-        const auto signal = random_signal(6000, 1);
+        const auto signal = windowed_kernel_lanes_random_signal(6000, 1);
         for (const uint32_t lanes : { 2U, 16U, 64U, 128U }) {
             StandardWindowedKernelAnalyzer analyzer(make_config(k_lane_sum, 1, 1000, 300, lanes));
 
-            const auto channel = analyzer.analyze_windows(input_of({ signal })).channels[0];
+            const auto channel = analyzer.analyze_windows(windowed_kernel_lanes_input_of({ signal })).channels[0];
 
             const size_t windows = (signal.size() - 1000) / 300 + 1;
             ASSERT_EQ(channel.values.size(), windows) << "lanes " << lanes;
@@ -192,7 +192,7 @@ namespace {
         const auto signal = quantised_signal(5000, 2);
         StandardWindowedKernelAnalyzer analyzer(make_config(k_lane_extremes, 3, 257, 100, 32));
 
-        const auto channel = analyzer.analyze_windows(input_of({ signal })).channels[0];
+        const auto channel = analyzer.analyze_windows(windowed_kernel_lanes_input_of({ signal })).channels[0];
 
         const size_t windows = (signal.size() - 257) / 100 + 1;
         ASSERT_EQ(channel.values.size(), windows * 3);
@@ -230,7 +230,7 @@ namespace {
         }
         StandardWindowedKernelAnalyzer analyzer(config);
 
-        const auto channel = analyzer.analyze_windows(input_of({ signal })).channels[0];
+        const auto channel = analyzer.analyze_windows(windowed_kernel_lanes_input_of({ signal })).channels[0];
 
         ASSERT_EQ(channel.values.size(), 20U);
         for (size_t w = 0; w < 20; ++w) {
@@ -247,10 +247,10 @@ namespace {
 
     TYPED_TEST(WindowedKernelLanesGpuTest, ManyWindowsCrossTheChunkBoundaryWithOneWorkgroupEach)
     {
-        const auto signal = random_signal(40000, 4);
+        const auto signal = windowed_kernel_lanes_random_signal(40000, 4);
         StandardWindowedKernelAnalyzer analyzer(make_config(k_lane_sum, 1, 8, 1, 4));
 
-        const auto channel = analyzer.analyze_windows(input_of({ signal })).channels[0];
+        const auto channel = analyzer.analyze_windows(windowed_kernel_lanes_input_of({ signal })).channels[0];
 
         const size_t windows = signal.size() - 8 + 1;
         ASSERT_EQ(channel.values.size(), windows);
@@ -265,12 +265,12 @@ namespace {
 
     TYPED_TEST(WindowedKernelLanesGpuTest, TwoChannelsAreTheInputsOfOneKernelRun)
     {
-        const auto a = random_signal(3000, 5);
-        const auto b = random_signal(2800, 6);
+        const auto a = windowed_kernel_lanes_random_signal(3000, 5);
+        const auto b = windowed_kernel_lanes_random_signal(2800, 6);
         for (const auto& [kernel, lanes] : { std::pair<const char*, uint32_t> { k_serial_dot, 1U }, std::pair<const char*, uint32_t> { k_lane_dot, 16U } }) {
             StandardWindowedKernelAnalyzer analyzer(make_config(kernel, 1, 200, 100, lanes, 2));
 
-            const auto analysis = analyzer.analyze_windows(input_of({ a, b, random_signal(3000, 7) }));
+            const auto analysis = analyzer.analyze_windows(windowed_kernel_lanes_input_of({ a, b, windowed_kernel_lanes_random_signal(3000, 7) }));
 
             ASSERT_EQ(analysis.channels.size(), 1U) << "lanes " << lanes;
             const size_t windows = (b.size() - 200) / 100 + 1;
@@ -291,8 +291,8 @@ namespace {
         const auto config = windowed_kernel_config(k_lane_dot, shape);
         ASSERT_NE(config.shader_id, Portal::Graphics::INVALID_SHADER);
         Yantra::ShaderExecutionContext<> context(config, windowed_kernel_layout(shape), "WindowedKernel");
-        const auto a = floats_of(random_signal(2000, 8));
-        const auto b = floats_of(random_signal(900, 9));
+        const auto a = floats_of(windowed_kernel_lanes_random_signal(2000, 8));
+        const auto b = floats_of(windowed_kernel_lanes_random_signal(900, 9));
         constexpr uint32_t length = 64;
         constexpr uint32_t windows = 12;
         const std::array<WindowedInput, 2> inputs { WindowedInput { .samples = a, .stride = 100, .offset = 0 },
@@ -324,8 +324,8 @@ namespace {
         owner.set_recording(recording);
         consumer.set_recording(recording);
 
-        const auto a = floats_of(random_signal(2000, 10));
-        const auto b = floats_of(random_signal(900, 11));
+        const auto a = floats_of(windowed_kernel_lanes_random_signal(2000, 10));
+        const auto b = floats_of(windowed_kernel_lanes_random_signal(900, 11));
         owner.ensure_shared_buffer(0, 0, b.size(), GpuBufferBinding::ElementType::FLOAT32);
         owner.upload_shared_raw(0, 0, reinterpret_cast<const uint8_t*>(b.data()), b.size() * sizeof(float));
         consumer.import_shared(0, 1, owner, 0, 0, GpuBufferBinding::ElementType::FLOAT32);
@@ -370,7 +370,7 @@ namespace {
         StandardWindowedKernelAnalyzer analyzer(make_config(k_serial_dot, 1, 64, 32, 1, 2));
 
         try {
-            const auto analysis = analyzer.analyze_windows(input_of({ random_signal(500, 12) }));
+            const auto analysis = analyzer.analyze_windows(windowed_kernel_lanes_input_of({ windowed_kernel_lanes_random_signal(500, 12) }));
             EXPECT_TRUE(analysis.channels.empty() || analysis.channels[0].values.empty());
         } catch (const std::exception&) {
             SUCCEED();

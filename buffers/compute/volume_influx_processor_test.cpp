@@ -15,7 +15,7 @@ namespace {
     using Buffers::VolumeGridBuffer;
 
     constexpr const char* k_blob = "volume_influx_blob.comp.spv";
-    constexpr uint32_t k_cells = 64U;
+    constexpr uint32_t k_volume_influx_processor_cells = 64U;
 
     InfluxProcessor::Spot blob_spot()
     {
@@ -30,7 +30,7 @@ namespace {
 
     std::vector<float> blob_field(float base)
     {
-        std::vector<float> expected(k_cells);
+        std::vector<float> expected(k_volume_influx_processor_cells);
         for (size_t i = 0; i < expected.size(); ++i) {
             const float dx = static_cast<float>(i % 4U) - 1.0F;
             const float dy = static_cast<float>((i / 4U) % 4U) - 1.0F;

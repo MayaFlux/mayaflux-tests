@@ -16,7 +16,7 @@ using Kinesis::AABB2D;
 
 namespace {
 
-    void expect_near(const AABB2D& a, const AABB2D& b)
+    void surface_expect_near(const AABB2D& a, const AABB2D& b)
     {
         EXPECT_NEAR(a.min.x, b.min.x, 1e-6F);
         EXPECT_NEAR(a.min.y, b.min.y, 1e-6F);
@@ -124,36 +124,36 @@ TEST(FormaSurfaceConfigTest, ACloseHookForcesDetachSoItCanNeverLoseTheWindowRele
 
 TEST_F(FormaSurfaceTest, CornerRegionsSitInsideTheScreenByTheMargin)
 {
-    expect_near(surface.top_left(0.5F, 0.25F), AABB2D { .min = { -0.98F, 0.73F }, .max = { -0.48F, 0.98F } });
-    expect_near(surface.top_right(0.5F, 0.25F), AABB2D { .min = { 0.48F, 0.73F }, .max = { 0.98F, 0.98F } });
-    expect_near(surface.bottom_left(0.5F, 0.25F), AABB2D { .min = { -0.98F, -0.98F }, .max = { -0.48F, -0.73F } });
-    expect_near(surface.bottom_right(0.5F, 0.25F), AABB2D { .min = { 0.48F, -0.98F }, .max = { 0.98F, -0.73F } });
+    surface_expect_near(surface.top_left(0.5F, 0.25F), AABB2D { .min = { -0.98F, 0.73F }, .max = { -0.48F, 0.98F } });
+    surface_expect_near(surface.top_right(0.5F, 0.25F), AABB2D { .min = { 0.48F, 0.73F }, .max = { 0.98F, 0.98F } });
+    surface_expect_near(surface.bottom_left(0.5F, 0.25F), AABB2D { .min = { -0.98F, -0.98F }, .max = { -0.48F, -0.73F } });
+    surface_expect_near(surface.bottom_right(0.5F, 0.25F), AABB2D { .min = { 0.48F, -0.98F }, .max = { 0.98F, -0.73F } });
 }
 
 TEST_F(FormaSurfaceTest, CornerRegionsHonourAnExplicitMargin)
 {
-    expect_near(surface.top_left(0.5F, 0.25F, 0.1F), AABB2D { .min = { -0.9F, 0.65F }, .max = { -0.4F, 0.9F } });
-    expect_near(surface.bottom_right(0.5F, 0.25F, 0.1F), AABB2D { .min = { 0.4F, -0.9F }, .max = { 0.9F, -0.65F } });
+    surface_expect_near(surface.top_left(0.5F, 0.25F, 0.1F), AABB2D { .min = { -0.9F, 0.65F }, .max = { -0.4F, 0.9F } });
+    surface_expect_near(surface.bottom_right(0.5F, 0.25F, 0.1F), AABB2D { .min = { 0.4F, -0.9F }, .max = { 0.9F, -0.65F } });
 }
 
 TEST_F(FormaSurfaceTest, StripsSpanTheFullEdgeInsetByTheMargin)
 {
-    expect_near(surface.top_strip(0.2F), AABB2D { .min = { -1.F, 0.8F }, .max = { 1.F, 1.F } });
-    expect_near(surface.bottom_strip(0.2F), AABB2D { .min = { -1.F, -1.F }, .max = { 1.F, -0.8F } });
-    expect_near(surface.left_strip(0.3F), AABB2D { .min = { -1.F, -1.F }, .max = { -0.7F, 1.F } });
-    expect_near(surface.right_strip(0.3F), AABB2D { .min = { 0.7F, -1.F }, .max = { 1.F, 1.F } });
+    surface_expect_near(surface.top_strip(0.2F), AABB2D { .min = { -1.F, 0.8F }, .max = { 1.F, 1.F } });
+    surface_expect_near(surface.bottom_strip(0.2F), AABB2D { .min = { -1.F, -1.F }, .max = { 1.F, -0.8F } });
+    surface_expect_near(surface.left_strip(0.3F), AABB2D { .min = { -1.F, -1.F }, .max = { -0.7F, 1.F } });
+    surface_expect_near(surface.right_strip(0.3F), AABB2D { .min = { 0.7F, -1.F }, .max = { 1.F, 1.F } });
 }
 
 TEST_F(FormaSurfaceTest, StripsInsetFromTheEdgesByAMargin)
 {
-    expect_near(surface.top_strip(0.2F, 0.05F), AABB2D { .min = { -0.95F, 0.75F }, .max = { 0.95F, 0.95F } });
-    expect_near(surface.left_strip(0.3F, 0.05F), AABB2D { .min = { -0.95F, -0.95F }, .max = { -0.65F, 0.95F } });
+    surface_expect_near(surface.top_strip(0.2F, 0.05F), AABB2D { .min = { -0.95F, 0.75F }, .max = { 0.95F, 0.95F } });
+    surface_expect_near(surface.left_strip(0.3F, 0.05F), AABB2D { .min = { -0.95F, -0.95F }, .max = { -0.65F, 0.95F } });
 }
 
 TEST_F(FormaSurfaceTest, CentreRectAndFullCoverTheMiddleAndTheWholeSurface)
 {
-    expect_near(surface.center_rect(0.5F, 1.F), AABB2D { .min = { -0.25F, -0.5F }, .max = { 0.25F, 0.5F } });
-    expect_near(surface.full(), AABB2D { .min = { -1.F, -1.F }, .max = { 1.F, 1.F } });
+    surface_expect_near(surface.center_rect(0.5F, 1.F), AABB2D { .min = { -0.25F, -0.5F }, .max = { 0.25F, 0.5F } });
+    surface_expect_near(surface.full(), AABB2D { .min = { -1.F, -1.F }, .max = { 1.F, 1.F } });
 }
 
 TEST_F(FormaSurfaceTest, NamedRegionsAreHittableOnceUsedAsElementBounds)

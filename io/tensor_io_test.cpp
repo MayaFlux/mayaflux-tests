@@ -90,7 +90,7 @@ namespace {
         return { std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
     }
 
-    std::optional<TensorData> floats(std::vector<uint64_t> shape, std::string name)
+    std::optional<TensorData> tensor_io_floats(std::vector<uint64_t> shape, std::string name)
     {
         uint64_t count = 1;
         for (const auto extent : shape)
@@ -100,7 +100,7 @@ namespace {
         return TensorData::from_values<float>(values, std::move(shape), std::move(name));
     }
 
-    std::vector<float> floats_of(const TensorData& tensor)
+    std::vector<float> tensor_io_floats_of(const TensorData& tensor)
     {
         return tensor.to_vector<float>().value_or(std::vector<float> {});
     }
@@ -181,7 +181,7 @@ namespace {
     TEST_F(TensorSafetensorsTest, MetadataTravelsWithTheSet)
     {
         TensorSet set;
-        set.tensors.push_back(*floats({ 2 }, "w"));
+        set.tensors.push_back(*tensor_io_floats({ 2 }, "w"));
         set.metadata["format"] = "pt";
         set.metadata["author"] = "test";
 
@@ -203,7 +203,7 @@ namespace {
         std::vector<double> wide { 1.0, 2.0 };
         set.tensors.push_back(*TensorData::from_values<uint8_t>(narrow, {}, "a"));
         set.tensors.push_back(*TensorData::from_values<double>(wide, {}, "b"));
-        set.tensors.push_back(*floats({ 1 }, "c"));
+        set.tensors.push_back(*tensor_io_floats({ 1 }, "c"));
 
         const auto path = temp_path(".safetensors");
         ASSERT_TRUE(SafetensorsWriter {}.write(path, set));
@@ -229,7 +229,7 @@ namespace {
         layout.strides = { 1, 2 };
         auto strided = TensorData::allocate(layout);
         ASSERT_TRUE(strided.has_value());
-        const auto source = floats({ 2, 3 }, "w");
+        const auto source = tensor_io_floats({ 2, 3 }, "w");
         ASSERT_TRUE(TensorInsertion(*strided).assign(*source->access()));
 
         TensorSet set;
@@ -242,7 +242,7 @@ namespace {
         const auto back = reader.read("w");
         ASSERT_TRUE(back.has_value());
         EXPECT_TRUE(back->spec().strides.empty());
-        EXPECT_EQ(floats_of(*back), (std::vector<float> { 0, 1, 2, 3, 4, 5 }));
+        EXPECT_EQ(tensor_io_floats_of(*back), (std::vector<float> { 0, 1, 2, 3, 4, 5 }));
     }
 
     TEST_F(TensorSafetensorsTest, TheWriterRefusesWhatTheFormatCannotName)
@@ -266,14 +266,14 @@ namespace {
     TEST_F(TensorSafetensorsTest, TheWriterRefusesDuplicateAndUnnamedTensors)
     {
         TensorSet duplicate;
-        duplicate.tensors.push_back(*floats({ 1 }, "a"));
-        duplicate.tensors.push_back(*floats({ 1 }, "a"));
+        duplicate.tensors.push_back(*tensor_io_floats({ 1 }, "a"));
+        duplicate.tensors.push_back(*tensor_io_floats({ 1 }, "a"));
         SafetensorsWriter first;
         EXPECT_FALSE(first.write(temp_path(".safetensors"), duplicate));
         EXPECT_FALSE(first.get_last_error().empty());
 
         TensorSet unnamed;
-        unnamed.tensors.push_back(*floats({ 1 }, ""));
+        unnamed.tensors.push_back(*tensor_io_floats({ 1 }, ""));
         SafetensorsWriter second;
         EXPECT_FALSE(second.write(temp_path(".safetensors"), unnamed));
     }
@@ -285,8 +285,8 @@ namespace {
     TEST_F(TensorSafetensorsTest, OpeningListsTensorsWithoutReadingTheirData)
     {
         TensorSet set;
-        set.tensors.push_back(*floats({ 2, 3 }, "w"));
-        set.tensors.push_back(*floats({ 4 }, "b"));
+        set.tensors.push_back(*tensor_io_floats({ 2, 3 }, "w"));
+        set.tensors.push_back(*tensor_io_floats({ 4 }, "b"));
         const auto path = temp_path(".safetensors");
         ASSERT_TRUE(SafetensorsWriter {}.write(path, set));
 
@@ -304,9 +304,9 @@ namespace {
     TEST_F(TensorSafetensorsTest, ReadTensorsHonoursTheRequestedNamesAndOrder)
     {
         TensorSet set;
-        set.tensors.push_back(*floats({ 1 }, "a"));
-        set.tensors.push_back(*floats({ 2 }, "b"));
-        set.tensors.push_back(*floats({ 3 }, "c"));
+        set.tensors.push_back(*tensor_io_floats({ 1 }, "a"));
+        set.tensors.push_back(*tensor_io_floats({ 2 }, "b"));
+        set.tensors.push_back(*tensor_io_floats({ 3 }, "c"));
         const auto path = temp_path(".safetensors");
         ASSERT_TRUE(SafetensorsWriter {}.write(path, set));
 
@@ -335,7 +335,7 @@ namespace {
         EXPECT_EQ(specs[0].name, "y");
         const auto y = reader.read("y");
         ASSERT_TRUE(y.has_value());
-        EXPECT_EQ(floats_of(*y), (std::vector<float> { 1.5F }));
+        EXPECT_EQ(tensor_io_floats_of(*y), (std::vector<float> { 1.5F }));
     }
 
     TEST_F(TensorSafetensorsTest, ReadingBeforeOpeningOrMissingNamesReportsWhy)
@@ -546,7 +546,7 @@ namespace {
     TEST_F(TensorRegistryTest, AWriterAndReaderFromTheRegistryRoundTrip)
     {
         TensorSet set;
-        set.tensors.push_back(*floats({ 2, 2 }, "w"));
+        set.tensors.push_back(*tensor_io_floats({ 2, 2 }, "w"));
         const auto path = temp_path(".safetensors");
 
         auto writer = TensorFormatRegistry::instance().create_writer(path);
@@ -558,7 +558,7 @@ namespace {
         ASSERT_TRUE(reader->open(path));
         const auto back = reader->read_tensors();
         ASSERT_TRUE(back.has_value());
-        EXPECT_EQ(floats_of(back->tensors.at(0)), (std::vector<float> { 0, 1, 2, 3 }));
+        EXPECT_EQ(tensor_io_floats_of(back->tensors.at(0)), (std::vector<float> { 0, 1, 2, 3 }));
     }
 
     TEST_F(TensorRegistryTest, ANewFormatPlugsInWithoutChangingAnythingElse)
@@ -611,8 +611,8 @@ namespace {
 
         EXPECT_EQ(reader.format_name(), "raw");
         ASSERT_EQ(reader.describe().size(), 2U);
-        EXPECT_EQ(floats_of(*reader.read("a")), (std::vector<float> { 0, 1 }));
-        EXPECT_EQ(floats_of(*reader.read("b")), (std::vector<float> { 2, 3, 4, 5 }));
+        EXPECT_EQ(tensor_io_floats_of(*reader.read("a")), (std::vector<float> { 0, 1 }));
+        EXPECT_EQ(tensor_io_floats_of(*reader.read("b")), (std::vector<float> { 2, 3, 4, 5 }));
 
         const auto all = reader.read_tensors();
         ASSERT_TRUE(all.has_value());
@@ -625,8 +625,8 @@ namespace {
         RawTensorReader reader;
         ASSERT_TRUE(reader.set_layout({ raw_floats("tail", { 2 }, 16), raw_floats("head", { 2 }, 0) }));
         ASSERT_TRUE(reader.open(path));
-        EXPECT_EQ(floats_of(*reader.read("tail")), (std::vector<float> { 4, 5 }));
-        EXPECT_EQ(floats_of(*reader.read("head")), (std::vector<float> { 0, 1 }));
+        EXPECT_EQ(tensor_io_floats_of(*reader.read("tail")), (std::vector<float> { 4, 5 }));
+        EXPECT_EQ(tensor_io_floats_of(*reader.read("head")), (std::vector<float> { 0, 1 }));
     }
 
     TEST_F(TensorRawReaderTest, ALayoutLargerThanTheFileIsRefused)
@@ -692,7 +692,7 @@ namespace {
 
         const auto dense = TensorData::copy_of(*tensor->access());
         ASSERT_TRUE(dense.has_value());
-        EXPECT_EQ(floats_of(*dense), (std::vector<float> { 0, 2, 4, 1, 3, 5 }));
+        EXPECT_EQ(tensor_io_floats_of(*dense), (std::vector<float> { 0, 2, 4, 1, 3, 5 }));
     }
 
     TEST_F(TensorRawReaderTest, UnknownNamesAndUnopenedReadersReportWhy)

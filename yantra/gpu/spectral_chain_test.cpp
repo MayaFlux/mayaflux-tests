@@ -22,7 +22,7 @@ namespace {
     using Yantra::word_pair_map_stage;
     using Yantra::WordPairExecutionContext;
 
-    constexpr auto k_word = GpuBufferBinding::ElementType::VEC2_U32;
+    constexpr auto k_spectral_chain_word = GpuBufferBinding::ElementType::VEC2_U32;
 
     Yantra::SpectralAnalyzerConfig make_config()
     {
@@ -67,7 +67,7 @@ namespace {
 
         const auto buffer = analyzer.descriptor_buffer();
         ASSERT_NE(buffer.context, nullptr);
-        converter.import_shared(0, 0, *buffer.context, buffer.set, buffer.binding, k_word);
+        converter.import_shared(0, 0, *buffer.context, buffer.set, buffer.binding, k_spectral_chain_word);
 
         const size_t windows = analyzer.record(signal);
         ASSERT_EQ(windows, want.band_energies.size());

@@ -107,7 +107,7 @@ namespace {
         }
     };
 
-    void expect_channels(const DataIO& actual, const Channels& expected)
+    void computematrix_expect_channels(const DataIO& actual, const Channels& expected)
     {
         ASSERT_EQ(actual.data.size(), expected.size());
         for (size_t channel = 0; channel < expected.size(); ++channel) {
@@ -121,19 +121,19 @@ namespace {
         }
     }
 
-    struct ChannelCase {
+    struct ComputematrixChannelCase {
         const char* name;
         Channels input;
         Channels expected;
     };
 
-    const ChannelCase channel_cases[] {
+    const ComputematrixChannelCase computematrix_channel_cases[] {
         { "Mono", { { -3.0, 1.0, 4.0, 0.5 } }, { { -6.0, 2.0, 8.0, 1.0 } } },
         { "UnequalChannels", { { -2.0, 0.0, 3.0 }, { 5.0, -1.0 } }, { { -4.0, 0.0, 6.0 }, { 10.0, -2.0 } } },
         { "SingleSamples", { { 2.0 }, { -3.0 } }, { { 4.0 }, { -6.0 } } },
     };
 
-    using ExecutionParam = std::tuple<ExecutionPath, ChannelCase>;
+    using ExecutionParam = std::tuple<ExecutionPath, ComputematrixChannelCase>;
 
     class MatrixExecutionTest : public ::testing::TestWithParam<ExecutionParam> {
     protected:
@@ -162,7 +162,7 @@ namespace {
         ::testing::Combine(
             ::testing::Values(ExecutionPath::Direct, ExecutionPath::Named, ExecutionPath::Supplied,
                 ExecutionPath::Async, ExecutionPath::NamedAsync, ExecutionPath::Fluent),
-            ::testing::ValuesIn(channel_cases)),
+            ::testing::ValuesIn(computematrix_channel_cases)),
         [](const ::testing::TestParamInfo<ExecutionParam>& info) {
             return std::string(Reflect::enum_to_string(std::get<0>(info.param))) + "_" + std::get<1>(info.param).name;
         });
@@ -177,7 +177,7 @@ namespace {
         const auto result = execute(matrix, to_datum(data.input));
 
         ASSERT_TRUE(result.has_value());
-        expect_channels(*result, data.expected);
+        computematrix_expect_channels(*result, data.expected);
     }
 
     TEST_P(MatrixExecutionTest, BufferedExecutionLeavesInputUnchangedAndCanBeRepeated)
@@ -193,9 +193,9 @@ namespace {
 
         ASSERT_TRUE(first.has_value());
         ASSERT_TRUE(second.has_value());
-        expect_channels(*first, data.expected);
-        expect_channels(*second, data.expected);
-        expect_channels(input, data.input);
+        computematrix_expect_channels(*first, data.expected);
+        computematrix_expect_channels(*second, data.expected);
+        computematrix_expect_channels(input, data.input);
     }
 
     class MatrixLifetimeTest : public ::testing::TestWithParam<Lifetime> {

@@ -18,9 +18,9 @@ using SchedToken = Vruta::ProcessingToken;
 
 namespace {
 
-    constexpr unsigned int SAMPLE_RATE = 48000;
+    constexpr unsigned int TASKS_SAMPLE_RATE = 48000;
 
-    std::string milliseconds(double seconds)
+    std::string tasks_milliseconds(double seconds)
     {
         return "Ms" + std::to_string(static_cast<int>(std::lround(seconds * 1000.0)));
     }
@@ -32,7 +32,7 @@ class TasksFixture : public Base {
 protected:
     void SetUp() override
     {
-        scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
+        scheduler = std::make_shared<Vruta::TaskScheduler>(TASKS_SAMPLE_RATE);
         node_graph_manager = std::make_shared<Nodes::NodeGraphManager>();
         buffer_manager = std::make_shared<Buffers::BufferManager>();
         processing_token = Nodes::ProcessingToken::AUDIO_RATE;
@@ -129,7 +129,7 @@ INSTANTIATE_TEST_SUITE_P(
     Durations,
     TimerTest,
     ::testing::Values(0.004, 0.009, 0.02, 0.05),
-    [](const ::testing::TestParamInfo<double>& info) { return milliseconds(info.param); });
+    [](const ::testing::TestParamInfo<double>& info) { return tasks_milliseconds(info.param); });
 
 TEST_F(TasksTest, ZeroDurationTimerFiresOnTheFirstSample)
 {
@@ -212,7 +212,7 @@ INSTANTIATE_TEST_SUITE_P(
     Durations,
     TimedActionTest,
     ::testing::Values(0.005, 0.01, 0.03),
-    [](const ::testing::TestParamInfo<double>& info) { return milliseconds(info.param); });
+    [](const ::testing::TestParamInfo<double>& info) { return tasks_milliseconds(info.param); });
 
 //-----------------------------------------------------------------------------
 // TemporalActivation
@@ -346,7 +346,7 @@ INSTANTIATE_TEST_SUITE_P(
     Intervals,
     MetroTest,
     ::testing::Values(0.004, 0.01, 0.025),
-    [](const ::testing::TestParamInfo<double>& info) { return milliseconds(info.param); });
+    [](const ::testing::TestParamInfo<double>& info) { return tasks_milliseconds(info.param); });
 
 class MetroInvalidIntervalTest : public TasksParamTest<double> { };
 
@@ -355,7 +355,7 @@ TEST_P(MetroInvalidIntervalTest, RunsAtTheShortestInterval)
     int shortest = 0;
     int invalid = 0;
 
-    auto reference = Kriya::metro(1.0 / SAMPLE_RATE, [&shortest]() { ++shortest; });
+    auto reference = Kriya::metro(1.0 / TASKS_SAMPLE_RATE, [&shortest]() { ++shortest; });
     auto routine = Kriya::metro(GetParam(), [&invalid]() { ++invalid; });
     scheduler->add_task(reference);
     scheduler->add_task(routine);

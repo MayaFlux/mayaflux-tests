@@ -16,10 +16,10 @@ using Count = std::shared_ptr<std::atomic<int>>;
 
 namespace {
 
-    constexpr unsigned int SAMPLE_RATE = 48000;
+    constexpr unsigned int SCHEDULER_SAMPLE_RATE = 48000;
     constexpr unsigned int BUFFER_SIZE = 512;
 
-    Count make_count()
+    Count scheduler_make_count()
     {
         return std::make_shared<std::atomic<int>>(0);
     }
@@ -200,7 +200,7 @@ class SchedulerFixture : public Base {
 protected:
     void SetUp() override
     {
-        scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
+        scheduler = std::make_shared<Vruta::TaskScheduler>(SCHEDULER_SAMPLE_RATE);
     }
 
     void TearDown() override
@@ -272,10 +272,10 @@ INSTANTIATE_TEST_SUITE_P(
     ConversionTest,
     ::testing::Values(
         ConversionCase { "Zero", 0.0, 0, 0 },
-        ConversionCase { "Half", 0.5, SAMPLE_RATE / 2, 30 },
-        ConversionCase { "One", 1.0, SAMPLE_RATE, 60 },
-        ConversionCase { "TwoAndAHalf", 2.5, SAMPLE_RATE * 5 / 2, 150 },
-        ConversionCase { "SubFrame", 0.01, SAMPLE_RATE / 100, 0 }),
+        ConversionCase { "Half", 0.5, SCHEDULER_SAMPLE_RATE / 2, 30 },
+        ConversionCase { "One", 1.0, SCHEDULER_SAMPLE_RATE, 60 },
+        ConversionCase { "TwoAndAHalf", 2.5, SCHEDULER_SAMPLE_RATE * 5 / 2, 150 },
+        ConversionCase { "SubFrame", 0.01, SCHEDULER_SAMPLE_RATE / 100, 0 }),
     [](const ::testing::TestParamInfo<ConversionCase>& info) { return std::string(info.param.name); });
 
 class UnitsTest : public SchedulerParamTest<uint64_t> { };
@@ -292,7 +292,7 @@ TEST_P(UnitsTest, ProcessingAdvancesOnlyTheProcessedClock)
 
     EXPECT_EQ(scheduler->current_units(SchedToken::SAMPLE_ACCURATE), units);
     EXPECT_EQ(scheduler->current_units(SchedToken::FRAME_ACCURATE), 0U);
-    EXPECT_DOUBLE_EQ(sample_clock.current_time(), static_cast<double>(units) / SAMPLE_RATE);
+    EXPECT_DOUBLE_EQ(sample_clock.current_time(), static_cast<double>(units) / SCHEDULER_SAMPLE_RATE);
 
     scheduler->process_token(SchedToken::FRAME_ACCURATE, units);
 
@@ -307,13 +307,13 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(SchedulerTest, ReportsTheRatePerToken)
 {
-    EXPECT_EQ(scheduler->get_rate(SchedToken::SAMPLE_ACCURATE), SAMPLE_RATE);
+    EXPECT_EQ(scheduler->get_rate(SchedToken::SAMPLE_ACCURATE), SCHEDULER_SAMPLE_RATE);
     EXPECT_EQ(scheduler->get_rate(SchedToken::FRAME_ACCURATE), 60U);
     EXPECT_EQ(scheduler->get_rate(SchedToken::ON_DEMAND), 1U);
 
-    EXPECT_EQ(scheduler->get_clock(SchedToken::SAMPLE_ACCURATE).rate(), SAMPLE_RATE);
+    EXPECT_EQ(scheduler->get_clock(SchedToken::SAMPLE_ACCURATE).rate(), SCHEDULER_SAMPLE_RATE);
     EXPECT_EQ(scheduler->get_clock(SchedToken::FRAME_ACCURATE).rate(), 60U);
-    EXPECT_EQ(scheduler->get_typed_clock<Vruta::SampleClock>(SchedToken::SAMPLE_ACCURATE).sample_rate(), SAMPLE_RATE);
+    EXPECT_EQ(scheduler->get_typed_clock<Vruta::SampleClock>(SchedToken::SAMPLE_ACCURATE).sample_rate(), SCHEDULER_SAMPLE_RATE);
 }
 
 TEST_F(SchedulerTest, ClockResetReturnsToZero)
@@ -330,7 +330,7 @@ TEST_F(SchedulerTest, ClockResetReturnsToZero)
 
 TEST_F(SchedulerTest, ProcessAllTokensDrainsWithoutAdvancing)
 {
-    auto count = make_count();
+    auto count = scheduler_make_count();
     auto routine = make_counting(SchedToken::SAMPLE_ACCURATE, count);
 
     scheduler->add_task(routine, "drained");
@@ -356,7 +356,7 @@ TEST_P(RegistrationTest, TaskIsListedOnlyAfterTheQueueDrains)
         use_frame_driver();
     }
 
-    auto routine = make_counting(token, make_count());
+    auto routine = make_counting(token, scheduler_make_count());
     scheduler->add_task(routine, "reg");
 
     EXPECT_EQ(scheduler->get_task("reg"), nullptr);
@@ -374,8 +374,8 @@ TEST_P(RegistrationTest, InitializeRunsTheFirstStepAtOnce)
 {
     const SchedToken token = GetParam();
 
-    auto eager = make_count();
-    auto lazy = make_count();
+    auto eager = scheduler_make_count();
+    auto lazy = scheduler_make_count();
 
     scheduler->add_task(make_counting(token, eager), "eager", true);
     scheduler->add_task(make_counting(token, lazy), "lazy", false);
@@ -392,8 +392,8 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(SchedulerTest, AutomaticNamesAreUniqueAndNonEmpty)
 {
-    auto first = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
-    auto second = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
+    auto first = make_counting(SchedToken::SAMPLE_ACCURATE, scheduler_make_count());
+    auto second = make_counting(SchedToken::SAMPLE_ACCURATE, scheduler_make_count());
 
     scheduler->add_task(first);
     scheduler->add_task(second);
@@ -410,8 +410,8 @@ TEST_F(SchedulerTest, AutomaticNamesAreUniqueAndNonEmpty)
 
 TEST_F(SchedulerTest, ReplacementByNameTerminatesTheOldRoutine)
 {
-    auto first_count = make_count();
-    auto second_count = make_count();
+    auto first_count = scheduler_make_count();
+    auto second_count = scheduler_make_count();
     auto first = make_counting(SchedToken::SAMPLE_ACCURATE, first_count);
     auto second = make_counting(SchedToken::SAMPLE_ACCURATE, second_count);
 
@@ -477,7 +477,7 @@ TEST_P(CancelMatrixTest, RemovesTheRoutineOrIsHarmless)
         use_frame_driver();
     }
 
-    auto count = make_count();
+    auto count = scheduler_make_count();
     auto routine = moment == Moment::Finished ? make_finished(token) : make_counting(token, count);
 
     if (moment != Moment::NeverAdded) {
@@ -536,7 +536,7 @@ class CancelOrderTest : public SchedulerParamTest<Route> { };
 TEST_P(CancelOrderTest, CancelIssuedBeforeTheAddDoesNotRemoveIt)
 {
     const Route route = GetParam();
-    auto count = make_count();
+    auto count = scheduler_make_count();
     auto routine = make_counting(SchedToken::SAMPLE_ACCURATE, count);
 
     if (route == Route::ByName) {
@@ -556,8 +556,8 @@ TEST_P(CancelOrderTest, CancelIssuedBeforeTheAddDoesNotRemoveIt)
 TEST_P(CancelOrderTest, CancelRemovesOnlyItsTarget)
 {
     const Route route = GetParam();
-    auto doomed_count = make_count();
-    auto kept_count = make_count();
+    auto doomed_count = scheduler_make_count();
+    auto kept_count = scheduler_make_count();
     auto doomed = make_counting(SchedToken::SAMPLE_ACCURATE, doomed_count);
     auto kept = make_counting(SchedToken::SAMPLE_ACCURATE, kept_count);
 
@@ -581,7 +581,7 @@ TEST_P(CancelOrderTest, CancelRemovesOnlyItsTarget)
 TEST_P(CancelOrderTest, CancellingTwiceIsHarmless)
 {
     const Route route = GetParam();
-    auto routine = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
+    auto routine = make_counting(SchedToken::SAMPLE_ACCURATE, scheduler_make_count());
 
     scheduler->add_task(routine, "twice");
     scheduler->process_token(SchedToken::SAMPLE_ACCURATE, 2);
@@ -623,7 +623,7 @@ TEST_F(SchedulerTest, ConcurrentSubmissionsFromManyThreadsAreAllAppliedOnce)
         producers.emplace_back([this, thread, &finished] {
             for (size_t i = 0; i < PER_THREAD; ++i) {
                 scheduler->add_task(
-                    make_counting(SchedToken::SAMPLE_ACCURATE, make_count()),
+                    make_counting(SchedToken::SAMPLE_ACCURATE, scheduler_make_count()),
                     "t" + std::to_string(thread) + "_" + std::to_string(i));
             }
             finished.fetch_add(1);
@@ -647,10 +647,10 @@ TEST_F(SchedulerTest, ConcurrentSubmissionsFromManyThreadsAreAllAppliedOnce)
 
 TEST_F(SchedulerTest, ResubmissionFromReplacementCallbackWaitsForTheNextDrain)
 {
-    auto original = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
-    auto replacement = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
-    auto rearmed = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
-    auto fired = make_count();
+    auto original = make_counting(SchedToken::SAMPLE_ACCURATE, scheduler_make_count());
+    auto replacement = make_counting(SchedToken::SAMPLE_ACCURATE, scheduler_make_count());
+    auto rearmed = make_counting(SchedToken::SAMPLE_ACCURATE, scheduler_make_count());
+    auto fired = scheduler_make_count();
 
     original->on_complete([this, rearmed, fired] {
         if (fired->fetch_add(1) == 0) {
@@ -680,8 +680,8 @@ class RoutineCompletionTest : public SchedulerParamTest<SchedToken> { };
 TEST_P(RoutineCompletionTest, CompletionFiresAtFinalSuspendOnlyOnce)
 {
     const SchedToken token = GetParam();
-    auto steps = make_count();
-    auto completions = make_count();
+    auto steps = scheduler_make_count();
+    auto completions = scheduler_make_count();
     auto routine = make_single_step(token, steps);
     routine->on_complete([completions] { completions->fetch_add(1); });
 
@@ -709,8 +709,8 @@ TEST_P(RoutineCompletionTest, CompletionFiresAtFinalSuspendOnlyOnce)
 TEST_P(RoutineCompletionTest, CompletionFiresWhenCancellationIsApplied)
 {
     const SchedToken token = GetParam();
-    auto steps = make_count();
-    auto completions = make_count();
+    auto steps = scheduler_make_count();
+    auto completions = scheduler_make_count();
     auto routine = make_counting(token, steps);
     routine->on_complete([completions] { completions->fetch_add(1); });
 
@@ -741,8 +741,8 @@ TEST_P(RoutineCompletionTest, CompletionFiresWhenCancellationIsApplied)
 TEST_P(RoutineCompletionTest, CompletionDoesNotWaitForRetainedCancelledRoutine)
 {
     const SchedToken token = GetParam();
-    auto steps = make_count();
-    auto completions = make_count();
+    auto steps = scheduler_make_count();
+    auto completions = scheduler_make_count();
     auto routine = make_counting(token, steps);
     routine->on_complete([completions] { completions->fetch_add(1); });
 
@@ -777,7 +777,7 @@ TEST_P(RoutineCompletionTest, CompletionDoesNotWaitForRetainedCancelledRoutine)
 
 TEST_P(RoutineCompletionTest, CallbackAttachedAfterFinalSuspendRunsOnce)
 {
-    auto completions = make_count();
+    auto completions = scheduler_make_count();
     auto routine = make_finished(GetParam());
 
     ASSERT_FALSE(routine->is_active());
@@ -790,8 +790,8 @@ TEST_P(RoutineCompletionTest, CallbackAttachedAfterFinalSuspendRunsOnce)
 
 TEST_P(RoutineCompletionTest, CallbackAttachedAfterTerminationRunsOnce)
 {
-    auto completions = make_count();
-    auto routine = make_counting(GetParam(), make_count());
+    auto completions = scheduler_make_count();
+    auto routine = make_counting(GetParam(), scheduler_make_count());
 
     routine->set_should_terminate(true);
     routine->on_complete([completions] { completions->fetch_add(1); });
@@ -804,8 +804,8 @@ TEST_P(RoutineCompletionTest, CallbackAttachedAfterTerminationRunsOnce)
 
 TEST_P(RoutineCompletionTest, ThrowingCallbackIsInvokedOnce)
 {
-    auto completions = make_count();
-    auto routine = make_counting(GetParam(), make_count());
+    auto completions = scheduler_make_count();
+    auto routine = make_counting(GetParam(), scheduler_make_count());
     routine->on_complete([completions] {
         completions->fetch_add(1);
         throw std::runtime_error("completion callback");
@@ -818,8 +818,8 @@ TEST_P(RoutineCompletionTest, ThrowingCallbackIsInvokedOnce)
 
 TEST_P(RoutineCompletionTest, DiscardingUnterminatedRoutineDoesNotComplete)
 {
-    auto completions = make_count();
-    auto routine = make_counting(GetParam(), make_count());
+    auto completions = scheduler_make_count();
+    auto routine = make_counting(GetParam(), scheduler_make_count());
     routine->on_complete([completions] { completions->fetch_add(1); });
 
     routine.reset();
@@ -829,8 +829,8 @@ TEST_P(RoutineCompletionTest, DiscardingUnterminatedRoutineDoesNotComplete)
 TEST_P(RoutineCompletionTest, ConcurrentRegistrationAndTerminationNotifyOnce)
 {
     for (int attempt = 0; attempt < 100; ++attempt) {
-        auto completions = make_count();
-        auto routine = make_counting(GetParam(), make_count());
+        auto completions = scheduler_make_count();
+        auto routine = make_counting(GetParam(), scheduler_make_count());
         std::atomic<bool> start { false };
 
         std::thread register_callback([&] {
@@ -853,8 +853,8 @@ TEST_P(RoutineCompletionTest, ConcurrentRegistrationAndTerminationNotifyOnce)
 
 TEST_P(RoutineCompletionTest, CallbackMayReleaseItsLastRoutineReference)
 {
-    auto completions = make_count();
-    auto routine = make_counting(GetParam(), make_count());
+    auto completions = scheduler_make_count();
+    auto routine = make_counting(GetParam(), scheduler_make_count());
     std::weak_ptr<Vruta::Routine> weak = routine;
     routine->on_complete([&routine, completions] {
         completions->fetch_add(1);
@@ -869,8 +869,8 @@ TEST_P(RoutineCompletionTest, CallbackMayReleaseItsLastRoutineReference)
 
 TEST_P(RoutineCompletionTest, FinalSuspendCallbackMayReleaseItsLastRoutineReference)
 {
-    auto steps = make_count();
-    auto completions = make_count();
+    auto steps = scheduler_make_count();
+    auto completions = scheduler_make_count();
     auto routine = make_single_step(GetParam(), steps);
     std::weak_ptr<Vruta::Routine> weak = routine;
     routine->on_complete([&routine, completions] {
@@ -888,9 +888,9 @@ TEST_P(RoutineCompletionTest, FinalSuspendCallbackMayReleaseItsLastRoutineRefere
 TEST_P(RoutineCompletionTest, CallbackMayAddTaskDuringCancellationDrain)
 {
     const SchedToken token = GetParam();
-    auto original = make_counting(token, make_count());
-    auto replacement = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
-    auto completions = make_count();
+    auto original = make_counting(token, scheduler_make_count());
+    auto replacement = make_counting(SchedToken::SAMPLE_ACCURATE, scheduler_make_count());
+    auto completions = scheduler_make_count();
     original->on_complete([this, replacement, completions] {
         scheduler->add_task(replacement, "replacement");
         completions->fetch_add(1);
@@ -923,7 +923,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(SchedulerTest, FreeRoutineRunsOnItsOwnThreadUntilCancelled)
 {
-    auto count = make_count();
+    auto count = scheduler_make_count();
     auto routine = make_counting(SchedToken::CONDITIONAL, count);
 
     scheduler->add_task(routine, "free");
@@ -936,7 +936,7 @@ TEST_F(SchedulerTest, FreeRoutineRunsOnItsOwnThreadUntilCancelled)
 
 TEST_F(SchedulerTest, DISABLED_FreeRoutineCancelledByRoutineBeforeItIsRegistered)
 {
-    auto count = make_count();
+    auto count = scheduler_make_count();
     auto routine = make_counting(SchedToken::CONDITIONAL, count);
 
     scheduler->add_task(routine, "free");
@@ -958,7 +958,7 @@ TEST_P(PauseTest, PauseStopsResumingAndResumeContinues)
         use_frame_driver();
     }
 
-    auto count = make_count();
+    auto count = scheduler_make_count();
     scheduler->add_task(make_counting(token, count), "paused");
     step(token, 3);
 
@@ -982,8 +982,8 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(SchedulerTest, ResumeRestoresEachRoutinesOwnFlag)
 {
-    auto resumable = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
-    auto held = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
+    auto resumable = make_counting(SchedToken::SAMPLE_ACCURATE, scheduler_make_count());
+    auto held = make_counting(SchedToken::SAMPLE_ACCURATE, scheduler_make_count());
     held->set_auto_resume(false);
 
     scheduler->add_task(resumable, "resumable");
@@ -1015,8 +1015,8 @@ TEST_P(TerminateAllTest, EndsEveryRoutineAndClearsTheList)
         use_frame_driver();
     }
 
-    auto first_count = make_count();
-    auto second_count = make_count();
+    auto first_count = scheduler_make_count();
+    auto second_count = scheduler_make_count();
     auto first = make_counting(token, first_count);
     auto second = make_counting(token, second_count);
 
@@ -1039,9 +1039,9 @@ TEST_P(TerminateAllTest, EndsEveryRoutineAndClearsTheList)
 TEST_P(TerminateAllTest, ShutdownNotifiesEachCompletionOnce)
 {
     const auto& [token, registered] = GetParam();
-    auto first = make_counting(token, make_count());
-    auto second = make_counting(token, make_count());
-    auto completions = make_count();
+    auto first = make_counting(token, scheduler_make_count());
+    auto second = make_counting(token, scheduler_make_count());
+    auto completions = scheduler_make_count();
     first->on_complete([completions] { completions->fetch_add(1); });
     second->on_complete([completions] { completions->fetch_add(1); });
 
@@ -1088,15 +1088,15 @@ protected:
 TEST_P(TerminationBarrierTest, SubmissionsFromCompletionCallbacksAreRejected)
 {
     const SchedToken token = GetParam();
-    auto victim = make_counting(token, make_count());
-    auto trigger = make_counting(token, make_count());
-    auto intruder_steps = make_count();
+    auto victim = make_counting(token, scheduler_make_count());
+    auto trigger = make_counting(token, scheduler_make_count());
+    auto intruder_steps = scheduler_make_count();
     auto intruder = make_counting(token, intruder_steps);
-    auto fired = make_count();
-    auto cancel_accepted = make_count();
-    auto cancel_routine_accepted = make_count();
-    auto restart_accepted = make_count();
-    auto saw_terminating = make_count();
+    auto fired = scheduler_make_count();
+    auto cancel_accepted = scheduler_make_count();
+    auto cancel_routine_accepted = scheduler_make_count();
+    auto restart_accepted = scheduler_make_count();
+    auto saw_terminating = scheduler_make_count();
 
     trigger->on_complete([&, this] {
         scheduler->add_task(intruder, "intruder", true);
@@ -1131,10 +1131,10 @@ TEST_P(TerminationBarrierTest, SubmissionsFromCompletionCallbacksAreRejected)
 TEST_P(TerminationBarrierTest, RecursiveTerminationFromCallbackReturnsWithoutRepeating)
 {
     const SchedToken token = GetParam();
-    auto routine = make_counting(token, make_count());
-    auto other = make_counting(token, make_count());
-    auto completions = make_count();
-    auto other_completions = make_count();
+    auto routine = make_counting(token, scheduler_make_count());
+    auto other = make_counting(token, scheduler_make_count());
+    auto completions = scheduler_make_count();
+    auto other_completions = scheduler_make_count();
     routine->on_complete([this, completions] {
         scheduler->terminate_all_tasks();
         completions->fetch_add(1);
@@ -1155,8 +1155,8 @@ TEST_P(TerminationBarrierTest, RecursiveTerminationFromCallbackReturnsWithoutRep
 TEST_P(TerminationBarrierTest, RepeatedTerminationIsHarmlessAndSchedulerIsReusable)
 {
     const SchedToken token = GetParam();
-    auto first = make_counting(token, make_count());
-    auto completions = make_count();
+    auto first = make_counting(token, scheduler_make_count());
+    auto completions = scheduler_make_count();
     first->on_complete([completions] { completions->fetch_add(1); });
     seat(first, "first");
 
@@ -1166,7 +1166,7 @@ TEST_P(TerminationBarrierTest, RepeatedTerminationIsHarmlessAndSchedulerIsReusab
     EXPECT_EQ(completions->load(), 1);
     EXPECT_FALSE(scheduler->is_terminating());
 
-    auto later_steps = make_count();
+    auto later_steps = scheduler_make_count();
     auto later = make_counting(token, later_steps);
     seat(later, "later");
 
@@ -1186,9 +1186,9 @@ TEST_P(TerminationBarrierTest, RepeatedTerminationIsHarmlessAndSchedulerIsReusab
 TEST_P(TerminationBarrierTest, TerminationFromCallbackDuringOrdinaryDrainIsIgnored)
 {
     const SchedToken token = GetParam();
-    auto cancelled = make_counting(token, make_count());
-    auto bystander = make_counting(token, make_count());
-    auto fired = make_count();
+    auto cancelled = make_counting(token, scheduler_make_count());
+    auto bystander = make_counting(token, scheduler_make_count());
+    auto fired = scheduler_make_count();
     cancelled->on_complete([this, fired] {
         scheduler->terminate_all_tasks();
         fired->fetch_add(1);
@@ -1218,10 +1218,10 @@ TEST_P(TerminationBarrierTest, QueuedCancelAndReplacementAreResolvedBeforeCleari
         GTEST_SKIP() << "Conditional queue is drained concurrently by its worker";
     }
 
-    auto original = make_counting(token, make_count());
-    auto replacement = make_counting(token, make_count());
-    auto cancelled = make_counting(token, make_count());
-    auto completions = make_count();
+    auto original = make_counting(token, scheduler_make_count());
+    auto replacement = make_counting(token, scheduler_make_count());
+    auto cancelled = make_counting(token, scheduler_make_count());
+    auto completions = scheduler_make_count();
     original->on_complete([completions] { completions->fetch_add(1); });
     replacement->on_complete([completions] { completions->fetch_add(1); });
     cancelled->on_complete([completions] { completions->fetch_add(1); });
@@ -1244,9 +1244,9 @@ TEST_P(TerminationBarrierTest, QueuedCancelAndReplacementAreResolvedBeforeCleari
 
 TEST(SchedulerConditionalTermination, WorkerIsQuiescentOnceTerminationReturns)
 {
-    auto scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
-    auto steps = make_count();
-    auto completions = make_count();
+    auto scheduler = std::make_shared<Vruta::TaskScheduler>(SCHEDULER_SAMPLE_RATE);
+    auto steps = scheduler_make_count();
+    auto completions = scheduler_make_count();
     auto routine = make_counting(SchedToken::CONDITIONAL, steps);
     routine->on_complete([completions] { completions->fetch_add(1); });
 
@@ -1264,9 +1264,9 @@ TEST(SchedulerConditionalTermination, WorkerIsQuiescentOnceTerminationReturns)
 
 TEST(SchedulerConditionalTermination, CallbackOnWorkerThreadCannotDeadlockTermination)
 {
-    auto scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
-    auto routine = make_counting(SchedToken::CONDITIONAL, make_count());
-    auto reentered = make_count();
+    auto scheduler = std::make_shared<Vruta::TaskScheduler>(SCHEDULER_SAMPLE_RATE);
+    auto routine = make_counting(SchedToken::CONDITIONAL, scheduler_make_count());
+    auto reentered = scheduler_make_count();
     routine->on_complete([&scheduler, reentered] {
         scheduler->terminate_all_tasks();
         reentered->fetch_add(1);
@@ -1284,13 +1284,13 @@ TEST(SchedulerConditionalTermination, CallbackOnWorkerThreadCannotDeadlockTermin
 TEST(SchedulerTerminationRace, AcceptedSubmissionsAreTerminatedAndRejectedOnesNeverStart)
 {
     constexpr int ROUTINES = 200;
-    auto scheduler = std::make_shared<Vruta::TaskScheduler>(SAMPLE_RATE);
+    auto scheduler = std::make_shared<Vruta::TaskScheduler>(SCHEDULER_SAMPLE_RATE);
 
     std::vector<std::shared_ptr<Vruta::Routine>> routines;
     std::vector<Count> completions;
     for (int i = 0; i < ROUTINES; ++i) {
-        auto done = make_count();
-        auto routine = make_counting(SchedToken::SAMPLE_ACCURATE, make_count());
+        auto done = scheduler_make_count();
+        auto routine = make_counting(SchedToken::SAMPLE_ACCURATE, scheduler_make_count());
         routine->on_complete([done] { done->fetch_add(1); });
         routines.push_back(routine);
         completions.push_back(done);
@@ -1366,7 +1366,7 @@ TEST_P(ActivityTest, ActiveTasksFollowRegistrationAndCancel)
 
     EXPECT_FALSE(scheduler->has_active_tasks(token));
 
-    auto routine = make_counting(token, make_count());
+    auto routine = make_counting(token, scheduler_make_count());
     scheduler->add_task(routine, "activity");
     EXPECT_FALSE(scheduler->has_active_tasks(token));
 
@@ -1433,8 +1433,8 @@ TEST_F(SchedulerTest, CustomProcessorReceivesOnlyItsTokenTasks)
             seen_units = units;
         });
 
-    auto graphics_count = make_count();
-    auto sound_count = make_count();
+    auto graphics_count = scheduler_make_count();
+    auto sound_count = scheduler_make_count();
     auto graphics = make_counting(SchedToken::FRAME_ACCURATE, graphics_count);
     auto sound = make_counting(SchedToken::SAMPLE_ACCURATE, sound_count);
 
@@ -1454,7 +1454,7 @@ TEST_F(SchedulerTest, CustomProcessorReceivesOnlyItsTokenTasks)
 
 TEST_F(SchedulerTest, CustomProcessorReplacesDefaultProcessing)
 {
-    auto count = make_count();
+    auto count = scheduler_make_count();
     use_frame_driver();
 
     scheduler->add_task(make_counting(SchedToken::FRAME_ACCURATE, count), "driven");

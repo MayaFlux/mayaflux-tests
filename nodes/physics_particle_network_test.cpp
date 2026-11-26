@@ -29,9 +29,9 @@ namespace {
     using Nodes::Network::TopologyOperator;
     using BoundsMode = PhysicsOperator::BoundsMode;
 
-    constexpr float k_eps = 1e-4F;
+    constexpr float k_physics_particle_network_eps = 1e-4F;
 
-    std::vector<PointVertex> particles(uint32_t count, float spacing = 1.0F, float start = 0.0F)
+    std::vector<PointVertex> physics_particle_network_particles(uint32_t count, float spacing = 1.0F, float start = 0.0F)
     {
         std::vector<PointVertex> out;
         out.reserve(count);
@@ -67,9 +67,9 @@ namespace {
         return true;
     }
 
-    ::testing::AssertionResult near_vec(const glm::vec3& a, const glm::vec3& b)
+    ::testing::AssertionResult physics_particle_network_near_vec(const glm::vec3& a, const glm::vec3& b)
     {
-        if (std::abs(a.x - b.x) < k_eps && std::abs(a.y - b.y) < k_eps && std::abs(a.z - b.z) < k_eps) {
+        if (std::abs(a.x - b.x) < k_physics_particle_network_eps && std::abs(a.y - b.y) < k_physics_particle_network_eps && std::abs(a.z - b.z) < k_physics_particle_network_eps) {
             return ::testing::AssertionSuccess();
         }
         return ::testing::AssertionFailure() << "(" << a.x << ", " << a.y << ", " << a.z << ") != ("
@@ -93,19 +93,19 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, InitializeKeepsTheVerticesInOrderAndStartsAtRest)
     {
-        const auto input = particles(5, 2.0F);
+        const auto input = physics_particle_network_particles(5, 2.0F);
 
         op.initialize(input);
 
         EXPECT_TRUE(same_positions(op.extract_vertices(), input));
         for (size_t i = 0; i < 5; ++i) {
-            EXPECT_TRUE(near_vec(velocity(i), glm::vec3(0.0F))) << "particle " << i;
+            EXPECT_TRUE(physics_particle_network_near_vec(velocity(i), glm::vec3(0.0F))) << "particle " << i;
         }
     }
 
     TEST_F(PhysicsOperatorTest, EmptyInitializeKeepsWhatIsThere)
     {
-        op.initialize(particles(4));
+        op.initialize(physics_particle_network_particles(4));
 
         op.initialize({});
 
@@ -114,32 +114,32 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, ReinitializeDiscardsMotion)
     {
-        op.initialize(particles(2));
+        op.initialize(physics_particle_network_particles(2));
         op.apply_global_impulse({ 1.0F, 0.0F, 0.0F });
         op.process(0.1F);
 
-        op.initialize(particles(3));
+        op.initialize(physics_particle_network_particles(3));
 
         EXPECT_EQ(op.get_point_count(), 3U);
         for (size_t i = 0; i < 3; ++i) {
-            EXPECT_TRUE(near_vec(velocity(i), glm::vec3(0.0F))) << "particle " << i;
+            EXPECT_TRUE(physics_particle_network_near_vec(velocity(i), glm::vec3(0.0F))) << "particle " << i;
         }
     }
 
     TEST_F(PhysicsOperatorTest, CollectionsKeepGlobalOrderAndCount)
     {
-        op.initialize_collections({ particles(2), particles(3, 1.0F, 10.0F) });
+        op.initialize_collections({ physics_particle_network_particles(2), physics_particle_network_particles(3, 1.0F, 10.0F) });
 
         EXPECT_EQ(op.get_point_count(), 5U);
         EXPECT_EQ(op.query_state("collection_count"), 2.0);
         EXPECT_EQ(op.query_state("point_count"), 5.0);
-        EXPECT_NEAR(position(2).x, 10.0F, k_eps);
-        EXPECT_NEAR(position(4).x, 12.0F, k_eps);
+        EXPECT_NEAR(position(2).x, 10.0F, k_physics_particle_network_eps);
+        EXPECT_NEAR(position(4).x, 12.0F, k_physics_particle_network_eps);
     }
 
     TEST_F(PhysicsOperatorTest, EmptyCollectionIsIgnored)
     {
-        op.initialize(particles(2));
+        op.initialize(physics_particle_network_particles(2));
 
         op.add_collection({});
 
@@ -149,37 +149,37 @@ namespace {
     TEST_F(PhysicsOperatorTest, GravityIntegratesWithSemiImplicitEuler)
     {
         op.set({ .gravity = glm::vec3(0.0F, -10.0F, 0.0F) });
-        op.initialize(particles(1));
+        op.initialize(physics_particle_network_particles(1));
 
         op.process(0.1F);
-        EXPECT_TRUE(near_vec(velocity(0), { 0.0F, -1.0F, 0.0F }));
-        EXPECT_TRUE(near_vec(position(0), { 0.0F, -0.1F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(0), { 0.0F, -1.0F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(position(0), { 0.0F, -0.1F, 0.0F }));
 
         op.process(0.1F);
-        EXPECT_TRUE(near_vec(velocity(0), { 0.0F, -2.0F, 0.0F }));
-        EXPECT_TRUE(near_vec(position(0), { 0.0F, -0.3F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(0), { 0.0F, -2.0F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(position(0), { 0.0F, -0.3F, 0.0F }));
     }
 
     TEST_F(PhysicsOperatorTest, DragScalesVelocityEachStep)
     {
         op.set({ .drag = 0.5F });
-        op.initialize(particles(1));
+        op.initialize(physics_particle_network_particles(1));
         op.apply_impulse(0, { 1.0F, 0.0F, 0.0F });
 
         op.process(0.1F);
 
-        EXPECT_TRUE(near_vec(velocity(0), { 0.5F, 0.0F, 0.0F }));
-        EXPECT_NEAR(position(0).x, 0.05F, k_eps);
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(0), { 0.5F, 0.0F, 0.0F }));
+        EXPECT_NEAR(position(0).x, 0.05F, k_physics_particle_network_eps);
     }
 
     TEST_F(PhysicsOperatorTest, ForcedInternalDtOverridesTheCallersDt)
     {
         op.set({ .gravity = glm::vec3(0.0F, -10.0F, 0.0F), .internal_dt = 0.5F, .force_internal_dt = true });
-        op.initialize(particles(1));
+        op.initialize(physics_particle_network_particles(1));
 
         op.process(0.1F);
 
-        EXPECT_TRUE(near_vec(velocity(0), { 0.0F, -5.0F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(0), { 0.0F, -5.0F, 0.0F }));
         EXPECT_TRUE(op.uses_force_internal_dt());
     }
 
@@ -192,39 +192,39 @@ namespace {
     TEST_F(PhysicsOperatorTest, GravityDoesNotDependOnMass)
     {
         op.set({ .gravity = glm::vec3(0.0F, -10.0F, 0.0F) });
-        op.add_collection(particles(1), 1.0F);
-        op.add_collection(particles(1), 4.0F);
+        op.add_collection(physics_particle_network_particles(1), 1.0F);
+        op.add_collection(physics_particle_network_particles(1), 4.0F);
 
         op.process(0.1F);
 
-        EXPECT_TRUE(near_vec(velocity(0), velocity(1)));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(0), velocity(1)));
     }
 
     TEST_F(PhysicsOperatorTest, ForceFieldAccelerationFallsWithMass)
     {
-        op.add_collection(particles(1), 1.0F);
-        op.add_collection(particles(1), 2.0F);
+        op.add_collection(physics_particle_network_particles(1), 1.0F);
+        op.add_collection(physics_particle_network_particles(1), 2.0F);
         op.add_force_field(Kinesis::VectorField { .fn = [](const glm::vec3&) { return glm::vec3(0.0F, 2.0F, 0.0F); } });
 
         op.process(0.1F);
 
-        EXPECT_TRUE(near_vec(velocity(0), { 0.0F, 0.2F, 0.0F }));
-        EXPECT_TRUE(near_vec(velocity(1), { 0.0F, 0.1F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(0), { 0.0F, 0.2F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(1), { 0.0F, 0.1F, 0.0F }));
         EXPECT_EQ(op.force_field_count(), 1U);
     }
 
     TEST_F(PhysicsOperatorTest, ForceFieldsSumAndClear)
     {
-        op.initialize(particles(1));
+        op.initialize(physics_particle_network_particles(1));
         op.add_force_field(Kinesis::VectorField { .fn = [](const glm::vec3&) { return glm::vec3(1.0F, 0.0F, 0.0F); } });
         op.add_force_field(Kinesis::VectorField { .fn = [](const glm::vec3&) { return glm::vec3(0.0F, 1.0F, 0.0F); } });
         op.process(0.1F);
-        EXPECT_TRUE(near_vec(velocity(0), { 0.1F, 0.1F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(0), { 0.1F, 0.1F, 0.0F }));
 
         op.clear_force_fields();
         EXPECT_EQ(op.force_field_count(), 0U);
         op.process(0.1F);
-        EXPECT_TRUE(near_vec(velocity(0), { 0.1F, 0.1F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(0), { 0.1F, 0.1F, 0.0F }));
     }
 
     TEST_F(PhysicsOperatorTest, ForceFieldIsEvaluatedAtTheParticlePosition)
@@ -234,13 +234,13 @@ namespace {
 
         op.process(0.1F);
 
-        EXPECT_NEAR(velocity(0).y, 0.1F, k_eps);
-        EXPECT_NEAR(velocity(1).y, 0.3F, k_eps);
+        EXPECT_NEAR(velocity(0).y, 0.1F, k_physics_particle_network_eps);
+        EXPECT_NEAR(velocity(1).y, 0.3F, k_physics_particle_network_eps);
     }
 
     TEST_F(PhysicsOperatorTest, AttractionPullsTowardThePointAndStopsWhenCleared)
     {
-        op.initialize(particles(1, 1.0F, 5.0F));
+        op.initialize(physics_particle_network_particles(1, 1.0F, 5.0F));
         op.set({ .attraction_point = glm::vec3(0.0F, 0.0F, 0.0F) });
 
         op.process(0.1F);
@@ -251,14 +251,14 @@ namespace {
         op.clear_attraction_point();
         EXPECT_FALSE(op.has_attraction_point());
         op.process(0.1F);
-        EXPECT_TRUE(near_vec(velocity(0), pulled));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(0), pulled));
     }
 
     TEST_F(PhysicsOperatorTest, TurbulenceAddsMotionOnlyWhenEnabled)
     {
-        op.initialize(particles(4));
+        op.initialize(physics_particle_network_particles(4));
         op.process(0.1F);
-        EXPECT_NEAR(glm::length(velocity(0)), 0.0F, k_eps);
+        EXPECT_NEAR(glm::length(velocity(0)), 0.0F, k_physics_particle_network_eps);
 
         op.set({ .turbulence = 5.0F });
         op.process(0.1F);
@@ -272,24 +272,24 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, ImpulseDividesByMass)
     {
-        op.add_collection(particles(1), 1.0F);
-        op.add_collection(particles(1), 2.0F);
+        op.add_collection(physics_particle_network_particles(1), 1.0F);
+        op.add_collection(physics_particle_network_particles(1), 2.0F);
 
         op.apply_global_impulse({ 1.0F, 0.0F, 0.0F });
 
-        EXPECT_TRUE(near_vec(velocity(0), { 1.0F, 0.0F, 0.0F }));
-        EXPECT_TRUE(near_vec(velocity(1), { 0.5F, 0.0F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(0), { 1.0F, 0.0F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(1), { 0.5F, 0.0F, 0.0F }));
     }
 
     TEST_F(PhysicsOperatorTest, SingleImpulseUsesTheGlobalIndex)
     {
-        op.initialize_collections({ particles(2), particles(3) });
+        op.initialize_collections({ physics_particle_network_particles(2), physics_particle_network_particles(3) });
 
         op.apply_impulse(3, { 1.0F, 0.0F, 0.0F });
         op.apply_impulse(99, { 1.0F, 0.0F, 0.0F });
 
         for (size_t i = 0; i < 5; ++i) {
-            EXPECT_NEAR(velocity(i).x, i == 3 ? 1.0F : 0.0F, k_eps) << "particle " << i;
+            EXPECT_NEAR(velocity(i).x, i == 3 ? 1.0F : 0.0F, k_physics_particle_network_eps) << "particle " << i;
         }
         EXPECT_EQ(op.get_particle_velocity(3), 1.0);
         EXPECT_EQ(op.get_particle_velocity(0), 0.0);
@@ -298,13 +298,13 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, AverageVelocityIsTheMagnitudeOfTheMeanVelocity)
     {
-        op.initialize(particles(2));
+        op.initialize(physics_particle_network_particles(2));
         op.apply_impulse(0, { 1.0F, 0.0F, 0.0F });
         op.apply_impulse(1, { -1.0F, 0.0F, 0.0F });
-        EXPECT_NEAR(*op.query_state("avg_velocity"), 0.0, k_eps);
+        EXPECT_NEAR(*op.query_state("avg_velocity"), 0.0, k_physics_particle_network_eps);
 
         op.apply_impulse(1, { 2.0F, 0.0F, 0.0F });
-        EXPECT_NEAR(*op.query_state("avg_velocity"), 1.0, k_eps);
+        EXPECT_NEAR(*op.query_state("avg_velocity"), 1.0, k_physics_particle_network_eps);
         EXPECT_FALSE(op.query_state("no_such_state").has_value());
     }
 
@@ -333,9 +333,9 @@ namespace {
 
         const auto p = op.extract_vertices()[0].position;
         const auto v = op.extract_vertex_velocities()[0];
-        EXPECT_NEAR(p.y, GetParam().expected_y, k_eps);
-        EXPECT_NEAR(v.y, GetParam().expected_vy, k_eps);
-        EXPECT_NEAR(p.x, 0.5F, k_eps);
+        EXPECT_NEAR(p.y, GetParam().expected_y, k_physics_particle_network_eps);
+        EXPECT_NEAR(v.y, GetParam().expected_vy, k_physics_particle_network_eps);
+        EXPECT_NEAR(p.x, 0.5F, k_physics_particle_network_eps);
     }
 
     INSTANTIATE_TEST_SUITE_P(
@@ -396,7 +396,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, PointSizeParameterResizesExistingParticles)
     {
-        op.initialize(particles(3));
+        op.initialize(physics_particle_network_particles(3));
 
         op.set_parameter("point_size", 9.0);
 
@@ -419,8 +419,8 @@ namespace {
 
         op.process(0.1F);
 
-        EXPECT_TRUE(near_vec(velocity(0), glm::vec3(0.0F)));
-        EXPECT_TRUE(near_vec(velocity(1), glm::vec3(0.0F)));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(0), glm::vec3(0.0F)));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(1), glm::vec3(0.0F)));
     }
 
     TEST_F(PhysicsOperatorTest, SpatialInteractionAttractsAMidRangePairEqualAndOpposite)
@@ -432,7 +432,7 @@ namespace {
 
         EXPECT_GT(velocity(0).x, 0.0F);
         EXPECT_LT(velocity(1).x, 0.0F);
-        EXPECT_NEAR(velocity(0).x, -velocity(1).x, k_eps);
+        EXPECT_NEAR(velocity(0).x, -velocity(1).x, k_physics_particle_network_eps);
     }
 
     TEST_F(PhysicsOperatorTest, SpatialInteractionRepelsAVeryClosePair)
@@ -453,7 +453,7 @@ namespace {
 
         op.process(0.1F);
 
-        EXPECT_TRUE(near_vec(velocity(0), glm::vec3(0.0F)));
+        EXPECT_TRUE(physics_particle_network_near_vec(velocity(0), glm::vec3(0.0F)));
     }
 
     TEST(PhysicsOperatorPairTest, ACrossCollectionPairFeelsTheSameForceAsASameCollectionPair)
@@ -472,13 +472,13 @@ namespace {
         same.process(0.1F);
         cross.process(0.1F);
 
-        EXPECT_NEAR(cross.extract_vertex_velocities()[0].x, same.extract_vertex_velocities()[0].x, k_eps);
-        EXPECT_NEAR(cross.extract_vertex_velocities()[1].x, same.extract_vertex_velocities()[1].x, k_eps);
+        EXPECT_NEAR(cross.extract_vertex_velocities()[0].x, same.extract_vertex_velocities()[0].x, k_physics_particle_network_eps);
+        EXPECT_NEAR(cross.extract_vertex_velocities()[1].x, same.extract_vertex_velocities()[1].x, k_physics_particle_network_eps);
     }
 
     TEST_F(PhysicsOperatorTest, ClaimsAdoptBondsAndMoveMassToTheRoot)
     {
-        op.initialize(particles(4));
+        op.initialize(physics_particle_network_particles(4));
 
         const std::vector<uint32_t> claimed { 0, 0, 2, 2 };
         op.sync_bonds_from_claims(claimed);
@@ -493,7 +493,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, SyncingTheSameClaimsAgainChangesNothing)
     {
-        op.initialize(particles(4));
+        op.initialize(physics_particle_network_particles(4));
         const std::vector<uint32_t> claimed { 0, 0, 2, 2 };
         op.sync_bonds_from_claims(claimed);
 
@@ -505,7 +505,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, AccretedMassDefaultsToOneBeforeAnyClaim)
     {
-        op.initialize(particles(3));
+        op.initialize(physics_particle_network_particles(3));
 
         EXPECT_FLOAT_EQ(op.get_accreted_mass(1), 1.0F);
         EXPECT_FLOAT_EQ(op.get_accreted_mass(99), 1.0F);
@@ -515,7 +515,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, DisablingBondsClearsThemAndIgnoresClaims)
     {
-        op.initialize(particles(4));
+        op.initialize(physics_particle_network_particles(4));
         op.sync_bonds_from_claims(std::vector<uint32_t> { 0, 0, 2, 2 });
         ASSERT_EQ(op.bond_count(), 2U);
 
@@ -530,7 +530,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, ClearBondsRemovesBondsOnly)
     {
-        op.initialize(particles(4));
+        op.initialize(physics_particle_network_particles(4));
         op.sync_bonds_from_claims(std::vector<uint32_t> { 0, 0, 2, 2 });
 
         op.clear_bonds();
@@ -547,7 +547,7 @@ namespace {
         op.process(0.1F);
 
         EXPECT_LT(velocity(1).x, 0.0F);
-        EXPECT_NEAR(velocity(0).x, 0.0F, k_eps);
+        EXPECT_NEAR(velocity(0).x, 0.0F, k_physics_particle_network_eps);
     }
 
     TEST_F(PhysicsOperatorTest, BondRestLengthGrowsWithTheRootsAccretedMass)
@@ -570,11 +570,11 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, ReinitializeStartsWithoutBonds)
     {
-        op.initialize(particles(4));
+        op.initialize(physics_particle_network_particles(4));
         op.sync_bonds_from_claims(std::vector<uint32_t> { 0, 0, 2, 2 });
         ASSERT_EQ(op.bond_count(), 2U);
 
-        op.initialize(particles(4));
+        op.initialize(physics_particle_network_particles(4));
 
         EXPECT_EQ(op.bond_count(), 0U);
         EXPECT_FLOAT_EQ(op.get_total_mass(), 4.0F);
@@ -583,19 +583,19 @@ namespace {
     TEST_F(PhysicsOperatorTest, SeedsFromAnUpstreamOperatorWhenEmpty)
     {
         FieldOperator upstream;
-        upstream.initialize(particles(5, 2.0F));
+        upstream.initialize(physics_particle_network_particles(5, 2.0F));
 
         op.seed_from_upstream(&upstream);
 
-        EXPECT_TRUE(same_positions(op.extract_vertices(), particles(5, 2.0F)));
+        EXPECT_TRUE(same_positions(op.extract_vertices(), physics_particle_network_particles(5, 2.0F)));
     }
 
     TEST_F(PhysicsOperatorTest, SeedingIgnoresPopulatedOperatorsNullAndEmptyUpstreams)
     {
         FieldOperator upstream;
-        upstream.initialize(particles(5));
+        upstream.initialize(physics_particle_network_particles(5));
         FieldOperator empty;
-        op.initialize(particles(2));
+        op.initialize(physics_particle_network_particles(2));
 
         op.seed_from_upstream(&upstream);
         EXPECT_EQ(op.get_point_count(), 2U);
@@ -608,7 +608,7 @@ namespace {
 
     TEST_F(PhysicsOperatorTest, VertexAttributesReportMassAndAccretedMass)
     {
-        op.add_collection(particles(2), 3.0F);
+        op.add_collection(physics_particle_network_particles(2), 3.0F);
 
         const auto attributes = op.extract_vertex_attributes();
 
@@ -623,7 +623,7 @@ namespace {
         EXPECT_STREQ(op.get_vertex_type_name(), "PointVertex");
     }
 
-    std::shared_ptr<PointCloudNetwork> index_source(size_t count)
+    std::shared_ptr<PointCloudNetwork> physics_particle_network_index_source(size_t count)
     {
         auto source = std::make_shared<PointCloudNetwork>(count);
         source->initialize();
@@ -634,37 +634,37 @@ namespace {
     {
         PhysicsOperator op;
         op.set({ .gravity = glm::vec3(0.0F) });
-        op.initialize(particles(4));
+        op.initialize(physics_particle_network_particles(4));
 
-        op.apply_one_to_one("mass", index_source(4));
+        op.apply_one_to_one("mass", physics_particle_network_index_source(4));
         op.apply_global_impulse({ 1.0F, 0.0F, 0.0F });
 
         const auto v = op.extract_vertex_velocities();
-        EXPECT_NEAR(v[0].x, 10.0F, k_eps);
-        EXPECT_NEAR(v[1].x, 1.0F, k_eps);
-        EXPECT_NEAR(v[2].x, 0.5F, k_eps);
-        EXPECT_NEAR(v[3].x, 1.0F / 3.0F, k_eps);
+        EXPECT_NEAR(v[0].x, 10.0F, k_physics_particle_network_eps);
+        EXPECT_NEAR(v[1].x, 1.0F, k_physics_particle_network_eps);
+        EXPECT_NEAR(v[2].x, 0.5F, k_physics_particle_network_eps);
+        EXPECT_NEAR(v[3].x, 1.0F / 3.0F, k_physics_particle_network_eps);
     }
 
     TEST(PhysicsOperatorMappingTest, ColorMappingColorsEachParticle)
     {
         PhysicsOperator op;
-        op.initialize(particles(3));
+        op.initialize(physics_particle_network_particles(3));
 
-        op.apply_one_to_one("color", index_source(3));
+        op.apply_one_to_one("color", physics_particle_network_index_source(3));
 
         const auto v = op.extract_vertices();
-        EXPECT_TRUE(near_vec(v[0].color, { 0.0F, 0.5F, 1.0F }));
-        EXPECT_TRUE(near_vec(v[1].color, { 1.0F, 0.5F, 0.0F }));
-        EXPECT_TRUE(near_vec(v[2].color, { 1.0F, 0.5F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(v[0].color, { 0.0F, 0.5F, 1.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(v[1].color, { 1.0F, 0.5F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(v[2].color, { 1.0F, 0.5F, 0.0F }));
     }
 
     TEST(PhysicsOperatorMappingTest, SizeMappingScalesAndClampsParticleSize)
     {
         PhysicsOperator op;
-        op.initialize(particles(7));
+        op.initialize(physics_particle_network_particles(7));
 
-        op.apply_one_to_one("size", index_source(7));
+        op.apply_one_to_one("size", physics_particle_network_index_source(7));
 
         const auto v = op.extract_vertices();
         EXPECT_FLOAT_EQ(v[0].size, 1.0F);
@@ -676,29 +676,29 @@ namespace {
     {
         PhysicsOperator op;
         op.set({ .gravity = glm::vec3(0.0F) });
-        op.initialize(particles(4));
+        op.initialize(physics_particle_network_particles(4));
 
-        op.apply_one_to_one("color", index_source(2));
-        op.apply_one_to_one("mass", index_source(2));
+        op.apply_one_to_one("color", physics_particle_network_index_source(2));
+        op.apply_one_to_one("mass", physics_particle_network_index_source(2));
         op.apply_global_impulse({ 1.0F, 0.0F, 0.0F });
 
-        EXPECT_TRUE(near_vec(op.extract_vertices()[0].color, glm::vec4(glm::vec3(1.0F), 1.F)));
-        EXPECT_NEAR(op.extract_vertex_velocities()[0].x, 1.0F, k_eps);
+        EXPECT_TRUE(physics_particle_network_near_vec(op.extract_vertices()[0].color, glm::vec4(glm::vec3(1.0F), 1.F)));
+        EXPECT_NEAR(op.extract_vertex_velocities()[0].x, 1.0F, k_physics_particle_network_eps);
     }
 
     TEST(PhysicsOperatorMappingTest, ForceMappingAcceleratesEachParticleByItsSourceValue)
     {
         PhysicsOperator op;
         op.set({ .gravity = glm::vec3(0.0F), .drag = 0.0F, .bounds_mode = BoundsMode::NONE });
-        op.initialize(particles(3));
+        op.initialize(physics_particle_network_particles(3));
 
-        op.apply_one_to_one("force_x", index_source(3));
+        op.apply_one_to_one("force_x", physics_particle_network_index_source(3));
         op.process(0.1F);
 
         const auto v = op.extract_vertex_velocities();
-        EXPECT_NEAR(v[0].x, 0.0F, k_eps);
-        EXPECT_NEAR(v[1].x, 0.1F, k_eps);
-        EXPECT_NEAR(v[2].x, 0.2F, k_eps);
+        EXPECT_NEAR(v[0].x, 0.0F, k_physics_particle_network_eps);
+        EXPECT_NEAR(v[1].x, 0.1F, k_physics_particle_network_eps);
+        EXPECT_NEAR(v[2].x, 0.2F, k_physics_particle_network_eps);
     }
 
     ParticleNetwork make_swarm(size_t count = 8)
@@ -940,7 +940,7 @@ namespace {
         net.reset();
 
         EXPECT_EQ(net.get_node_count(), 8U);
-        EXPECT_NEAR(*net.as_operator<PhysicsOperator>()->query_state("avg_velocity"), 0.0, k_eps);
+        EXPECT_NEAR(*net.as_operator<PhysicsOperator>()->query_state("avg_velocity"), 0.0, k_physics_particle_network_eps);
     }
 
     TEST(ParticleNetworkTest, ResetClearsBondsFromAnEarlierClaim)
@@ -982,7 +982,7 @@ namespace {
 
         net.process_batch(1);
 
-        EXPECT_LE(physics->extract_vertices()[0].position.y, 1.0F + k_eps);
+        EXPECT_LE(physics->extract_vertices()[0].position.y, 1.0F + k_physics_particle_network_eps);
     }
 
     class ParticleOperatorSwapTest : public ::testing::TestWithParam<std::pair<bool, bool>> { };
@@ -1045,7 +1045,7 @@ namespace {
 
         net.process_batch(1);
 
-        EXPECT_LE(fresh->extract_vertices()[0].position.y, 1.0F + k_eps);
+        EXPECT_LE(fresh->extract_vertices()[0].position.y, 1.0F + k_physics_particle_network_eps);
     }
 
     class ParticleTopologyTest : public ::testing::TestWithParam<std::pair<Topology, bool>> { };
@@ -1163,12 +1163,12 @@ namespace {
         auto* physics = net.as_operator<PhysicsOperator>();
         physics->set({ .gravity = glm::vec3(0.0F), .drag = 0.0F });
 
-        static_cast<NodeNetwork&>(net).map_parameter("force_x", index_source(2));
+        static_cast<NodeNetwork&>(net).map_parameter("force_x", physics_particle_network_index_source(2));
         net.process_batch(1);
 
         const auto velocities = physics->extract_vertex_velocities();
         for (const auto& velocity : velocities) {
-            EXPECT_NEAR(velocity.x, 0.0F, k_eps);
+            EXPECT_NEAR(velocity.x, 0.0F, k_physics_particle_network_eps);
         }
     }
 
@@ -1196,7 +1196,7 @@ namespace {
         auto* physics = net.as_operator<PhysicsOperator>();
         physics->set({ .gravity = glm::vec3(0.0F) });
 
-        static_cast<NodeNetwork&>(net).map_parameter("mass", index_source(4));
+        static_cast<NodeNetwork&>(net).map_parameter("mass", physics_particle_network_index_source(4));
         net.process_batch(1);
         physics->apply_global_impulse({ 1.0F, 0.0F, 0.0F });
 
@@ -1210,12 +1210,12 @@ namespace {
         auto net = make_swarm(4);
         net.initialize();
 
-        static_cast<NodeNetwork&>(net).map_parameter("color", index_source(4));
+        static_cast<NodeNetwork&>(net).map_parameter("color", physics_particle_network_index_source(4));
         net.process_batch(1);
 
         const auto points = points_of(net);
-        EXPECT_TRUE(near_vec(points[0].color, { 0.0F, 0.5F, 1.0F }));
-        EXPECT_TRUE(near_vec(points[3].color, { 1.0F, 0.5F, 0.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(points[0].color, { 0.0F, 0.5F, 1.0F }));
+        EXPECT_TRUE(physics_particle_network_near_vec(points[3].color, { 1.0F, 0.5F, 0.0F }));
     }
 
     TEST(ParticleNetworkMappingTest, OneToOneForceMappingAcceleratesTheParticlesThroughTheNetwork)
@@ -1225,11 +1225,11 @@ namespace {
         auto* physics = net.as_operator<PhysicsOperator>();
         physics->set({ .gravity = glm::vec3(0.0F), .drag = 0.0F });
 
-        static_cast<NodeNetwork&>(net).map_parameter("force_x", index_source(3));
+        static_cast<NodeNetwork&>(net).map_parameter("force_x", physics_particle_network_index_source(3));
         net.process_batch(1);
 
         const auto v = physics->extract_vertex_velocities();
-        EXPECT_NEAR(v[0].x, 0.0F, k_eps);
+        EXPECT_NEAR(v[0].x, 0.0F, k_physics_particle_network_eps);
         EXPECT_GT(v[2].x, v[1].x);
         EXPECT_GT(v[1].x, 0.0F);
     }

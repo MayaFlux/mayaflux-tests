@@ -23,19 +23,19 @@ using Portal::Graphics::PrimitiveTopology;
 
 namespace {
 
-    constexpr uint32_t k_pixel_size = 24;
+    constexpr uint32_t k_textfield_pixel_size = 24;
     const AABB2D k_field { .min = { -0.9F, 0.1F }, .max = { 0.9F, 0.9F } };
     const glm::vec2 k_centre { 0.F, 0.5F };
     const glm::vec2 k_far_left_top { -0.89F, 0.85F };
     const glm::vec2 k_far_right_top { 0.89F, 0.85F };
 
 #ifdef MAYAFLUX_PLATFORM_MACOS
-    constexpr IO::Modifiers k_shortcut = IO::Modifiers::Super;
+    constexpr IO::Modifiers k_textfield_shortcut = IO::Modifiers::Super;
 #else
-    constexpr IO::Modifiers k_shortcut = IO::Modifiers::Ctrl;
+    constexpr IO::Modifiers k_textfield_shortcut = IO::Modifiers::Ctrl;
 #endif
 
-    std::shared_ptr<Buffers::FormaBuffer> make_buffer()
+    std::shared_ptr<Buffers::FormaBuffer> textfield_make_buffer()
     {
         return std::make_shared<Buffers::FormaBuffer>(4096, PrimitiveTopology::TRIANGLE_LIST);
     }
@@ -51,7 +51,7 @@ protected:
             return;
 
         auto& foundry = Portal::Text::TypeFaceFoundry::instance();
-        ASSERT_TRUE(foundry.set_default_font(font_path, k_pixel_size, 512));
+        ASSERT_TRUE(foundry.set_default_font(font_path, k_textfield_pixel_size, 512));
         atlas = foundry.get_default_glyph_atlas();
         ASSERT_NE(atlas, nullptr);
 
@@ -71,7 +71,7 @@ protected:
     Forma::TextField make_field(std::string text)
     {
         Forma::TextField field;
-        field.place(make_buffer(), surface, k_field, params, std::move(text));
+        field.place(textfield_make_buffer(), surface, k_field, params, std::move(text));
         return field;
     }
 
@@ -95,7 +95,7 @@ protected:
         window->key_up(key, IO::Modifiers::Shift);
     }
 
-    void chord(Keys key, IO::Modifiers mods = k_shortcut)
+    void chord(Keys key, IO::Modifiers mods = k_textfield_shortcut)
     {
         window->key_down(key, mods);
         window->key_up(key, mods);
@@ -137,7 +137,7 @@ TEST_F(FormaTextFieldTest, NullParametersFallBackToDefaults)
 {
     Forma::TextField field;
 
-    field.place(make_buffer(), surface, k_field, nullptr, "x");
+    field.place(textfield_make_buffer(), surface, k_field, nullptr, "x");
 
     EXPECT_NE(field.params, nullptr);
 }
@@ -914,7 +914,7 @@ TEST_F(FormaTextFieldTest, ShortcutsNeedExactlyTheShortcutModifier)
     window->set_clipboard("X");
 
     tap(Keys::V);
-    chord(Keys::V, k_shortcut | IO::Modifiers::Shift);
+    chord(Keys::V, k_textfield_shortcut | IO::Modifiers::Shift);
     chord(Keys::V, IO::Modifiers::Alt);
     window->poll();
 
@@ -961,7 +961,7 @@ class FormaTextFieldScrollTest : public FormaTextFieldTest {
 protected:
     Forma::Scrollable make_panel()
     {
-        return Forma::make_scrollable(make_buffer(), surface, k_field);
+        return Forma::make_scrollable(textfield_make_buffer(), surface, k_field);
     }
 };
 
@@ -970,7 +970,7 @@ TEST_F(FormaTextFieldScrollTest, TheFieldIsTrackedAndClippedToTheViewport)
     auto panel = make_panel();
     Forma::TextField field;
 
-    field.scrollable(make_buffer(), surface, panel, params, "scroll me", 3.F);
+    field.scrollable(textfield_make_buffer(), surface, panel, params, "scroll me", 3.F);
 
     ASSERT_NE(field.element_id, 0U);
     ASSERT_TRUE(layer->get(field.element_id)->clip.has_value());
@@ -983,7 +983,7 @@ TEST_F(FormaTextFieldScrollTest, TheTallFieldCannotBeHitOutsideTheViewport)
 {
     auto panel = make_panel();
     Forma::TextField field;
-    field.scrollable(make_buffer(), surface, panel, params, "scroll me", 3.F);
+    field.scrollable(textfield_make_buffer(), surface, panel, params, "scroll me", 3.F);
 
     EXPECT_EQ(layer->hit_test(k_centre), field.element_id);
     EXPECT_FALSE(layer->hit_test({ 0.F, -0.5F }).has_value());
@@ -993,7 +993,7 @@ TEST_F(FormaTextFieldScrollTest, WheelOverTheFieldScrollsThePanel)
 {
     auto panel = make_panel();
     Forma::TextField field;
-    field.scrollable(make_buffer(), surface, panel, params, "scroll me", 3.F);
+    field.scrollable(textfield_make_buffer(), surface, panel, params, "scroll me", 3.F);
 
     window->move_to_ndc(k_centre);
     window->scroll(0.0, 1.0);
@@ -1005,7 +1005,7 @@ TEST_F(FormaTextFieldScrollTest, FieldAndViewportAreOneGroupInBothDirections)
 {
     auto panel = make_panel();
     Forma::TextField field;
-    field.scrollable(make_buffer(), surface, panel, params, "scroll me", 3.F);
+    field.scrollable(textfield_make_buffer(), surface, panel, params, "scroll me", 3.F);
 
     const auto from_field = layer->related_ids(field.element_id);
     const auto from_viewport = layer->related_ids(panel.viewport_id);
@@ -1018,7 +1018,7 @@ TEST_F(FormaTextFieldScrollTest, HidingOrRemovingTheFieldTakesThePanelWithIt)
 {
     auto panel = make_panel();
     Forma::TextField field;
-    field.scrollable(make_buffer(), surface, panel, params, "scroll me", 3.F);
+    field.scrollable(textfield_make_buffer(), surface, panel, params, "scroll me", 3.F);
 
     ASSERT_TRUE(layer->set_visible(field.element_id, false));
     EXPECT_FALSE(layer->get(panel.viewport_id)->visible);
@@ -1031,7 +1031,7 @@ TEST_F(FormaTextFieldScrollTest, TypingStillEditsTheFieldAfterScrolling)
 {
     auto panel = make_panel();
     Forma::TextField field;
-    field.scrollable(make_buffer(), surface, panel, params, "ab", 3.F);
+    field.scrollable(textfield_make_buffer(), surface, panel, params, "ab", 3.F);
     window->move_to_ndc(k_centre);
     window->scroll(0.0, 1.0);
     click(k_far_right_top);
@@ -1054,7 +1054,7 @@ protected:
             return;
 
         auto& foundry = Portal::Text::TypeFaceFoundry::instance();
-        ASSERT_TRUE(foundry.set_default_font(font_path, k_pixel_size, 512));
+        ASSERT_TRUE(foundry.set_default_font(font_path, k_textfield_pixel_size, 512));
     }
 
     std::shared_ptr<ScriptedWindow> window = std::make_shared<ScriptedWindow>(200U, 100U);
@@ -1072,7 +1072,7 @@ TEST_F(FormaRowPixelDimsTest, TheHeightNeverDropsBelowTheGlyphPixelSize)
 {
     const glm::uvec2 dims = Forma::row_pixel_dims(window, -1.F, 1.F, 0.02F);
 
-    EXPECT_EQ(dims.y, k_pixel_size);
+    EXPECT_EQ(dims.y, k_textfield_pixel_size);
 }
 
 TEST_F(FormaRowPixelDimsTest, AZeroWidthRowStillHasOnePixel)

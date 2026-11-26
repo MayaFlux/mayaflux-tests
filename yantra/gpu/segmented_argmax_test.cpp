@@ -27,12 +27,12 @@ namespace {
     using Yantra::segmented_argmax_stage;
     using Yantra::WordPairExecutionContext;
 
-    struct Pass {
+    struct SegmentedArgmaxPass {
         std::unique_ptr<WordPairExecutionContext> context;
         Yantra::GpuComputeConfig config;
     };
 
-    Pass make_select(uint32_t workgroup, const std::shared_ptr<GpuDispatchRecorder>& recording = nullptr)
+    SegmentedArgmaxPass make_select(uint32_t workgroup, const std::shared_ptr<GpuDispatchRecorder>& recording = nullptr)
     {
         const auto spec = segmented_argmax_spec(workgroup);
         auto config = Yantra::config_from_spec(spec);
@@ -43,7 +43,7 @@ namespace {
         return { std::move(context), std::move(config) };
     }
 
-    std::vector<ArgMaxResult> select(Pass& pass, std::span<const double> values, const SegmentGeometry& geometry)
+    std::vector<ArgMaxResult> select(SegmentedArgmaxPass& pass, std::span<const double> values, const SegmentGeometry& geometry)
     {
         pass.context->record_stages({ segmented_argmax_stage(*pass.context, pass.config, values, geometry) });
         return read_argmax(*pass.context, geometry.count);
@@ -69,7 +69,7 @@ namespace {
         return (std::isnan(got) && std::isnan(want)) || std::bit_cast<uint64_t>(got) == std::bit_cast<uint64_t>(want);
     }
 
-    void expect_matches_host(Pass& pass, const std::vector<double>& values, const SegmentGeometry& geometry)
+    void expect_matches_host(SegmentedArgmaxPass& pass, const std::vector<double>& values, const SegmentGeometry& geometry)
     {
         const auto got = select(pass, values, geometry);
         ASSERT_EQ(got.size(), geometry.count);

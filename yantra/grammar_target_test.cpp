@@ -98,7 +98,7 @@ namespace {
         return builder.build();
     }
 
-    OperationRegistry registry()
+    OperationRegistry grammar_target_registry()
     {
         OperationRegistry result;
         result.catalog<CpuAdd>(Stage::Add);
@@ -108,7 +108,7 @@ namespace {
 
     std::shared_ptr<ComputationGrammar> grammar()
     {
-        return ComputationGrammar::Builder(std::make_shared<const OperationRegistry>(registry()))
+        return ComputationGrammar::Builder(std::make_shared<const OperationRegistry>(grammar_target_registry()))
             .rule(Stage::Add)
             .build();
     }
@@ -146,7 +146,7 @@ namespace {
 
     TEST(GrammarTargetTest, PinRestrictsAStageWhenTheGrammarIsBuilt)
     {
-        const auto registered = std::make_shared<const OperationRegistry>(registry());
+        const auto registered = std::make_shared<const OperationRegistry>(grammar_target_registry());
 
         const auto cpu_only = ComputationGrammar::Builder(registered).rule(Stage::Add).on(targets::cpu).build();
         EXPECT_EQ(cpu_only->process(large_input).data.front(), 1.0);
@@ -158,7 +158,7 @@ namespace {
 
     TEST(GrammarTargetTest, PinNoCandidateMeetsFailsAtBuild)
     {
-        const auto registered = std::make_shared<const OperationRegistry>(registry());
+        const auto registered = std::make_shared<const OperationRegistry>(grammar_target_registry());
         EXPECT_THROW(ComputationGrammar::Builder(registered).rule(Stage::Add).on(targets::onnx_gpu), std::invalid_argument);
     }
 

@@ -57,7 +57,7 @@ namespace {
     const glm::vec3 k_red { 1.F, 0.F, 0.F };
     const glm::vec3 k_green { 0.F, 1.F, 0.F };
     const glm::vec3 k_blue { 0.F, 0.F, 1.F };
-    const AABB2D k_plot { .min = { -0.5F, -0.25F }, .max = { 0.5F, 0.25F } };
+    const AABB2D k_series_builder_plot { .min = { -0.5F, -0.25F }, .max = { 0.5F, 0.25F } };
 
 }
 
@@ -522,15 +522,15 @@ TEST(FormaPlotFilledWaveformTest, SpecDeclaresATriangleStripAndItsCapacityArithm
 TEST(FormaPlotSeriesAdornmentTest, BoundsBackgroundLabelsAndLegendReachTheSpec)
 {
     const auto spec = Plot::Series {}
-                          .bounds(k_plot)
-                          .background(k_plot, k_red)
-                          .label("title", k_plot)
+                          .bounds(k_series_builder_plot)
+                          .background(k_series_builder_plot, k_red)
+                          .label("title", k_series_builder_plot)
                           .legend({ 0.1F, 0.2F }, { { "a", k_green } })
                           .as_waveform()
                           .done();
 
     ASSERT_TRUE(spec.plot_bounds.has_value());
-    EXPECT_EQ(spec.plot_bounds->min, k_plot.min);
+    EXPECT_EQ(spec.plot_bounds->min, k_series_builder_plot.min);
     ASSERT_EQ(spec.labels.size(), 1U);
     EXPECT_EQ(spec.labels[0].text, "title");
     ASSERT_TRUE(spec.legend.has_value());
@@ -552,7 +552,7 @@ TEST(FormaPlotSeriesAdornmentTest, NoBackgroundCallMeansNoBackgroundFunction)
 
 TEST(FormaPlotSeriesAdornmentTest, TheBackgroundFunctionDrawsTheSolidQuadInTheGivenColour)
 {
-    const auto spec = Plot::Series {}.background(k_plot, k_blue).as_scatter().done();
+    const auto spec = Plot::Series {}.background(k_series_builder_plot, k_blue).as_scatter().done();
     std::vector<uint8_t> out;
     Portal::Forma::Element element;
 
@@ -566,7 +566,7 @@ TEST(FormaPlotSeriesAdornmentTest, TheBackgroundFunctionDrawsTheSolidQuadInTheGi
 
 TEST(FormaPlotSeriesAdornmentTest, EveryEncodingCarriesTheSameAdornments)
 {
-    const Plot::Series series = Plot::Series {}.bounds(k_plot).label("t", k_plot).background(k_plot);
+    const Plot::Series series = Plot::Series {}.bounds(k_series_builder_plot).label("t", k_series_builder_plot).background(k_series_builder_plot);
 
     EXPECT_TRUE(series.as_waveform().done().plot_bounds.has_value());
     EXPECT_TRUE(series.as_scatter().done().plot_bounds.has_value());
@@ -590,7 +590,7 @@ TEST(FormaPlotSeriesTickTest, TicksNeedPlotBoundsToResolve)
 TEST(FormaPlotSeriesTickTest, XTicksTakeTheRangeOfTheXMapping)
 {
     const auto series = Plot::Series {}
-                            .bounds(k_plot)
+                            .bounds(k_series_builder_plot)
                             .x(Role::SPATIAL_X, fixed(0.F, 10.F))
                             .x_ticks(3);
 
@@ -602,13 +602,13 @@ TEST(FormaPlotSeriesTickTest, XTicksTakeTheRangeOfTheXMapping)
     EXPECT_EQ(ticks[0].count, 3U);
     EXPECT_EQ(ticks[0].edge, Plot::TickEdge::Bottom);
     EXPECT_EQ(ticks[0].name_prefix, "x_tick");
-    EXPECT_EQ(ticks[0].plot_bounds.min, k_plot.min);
+    EXPECT_EQ(ticks[0].plot_bounds.min, k_series_builder_plot.min);
 }
 
 TEST(FormaPlotSeriesTickTest, YTicksDefaultToTheLeftEdgeAndMergeEveryYMapping)
 {
     const auto series = Plot::Series {}
-                            .bounds(k_plot)
+                            .bounds(k_series_builder_plot)
                             .y(Role::SPATIAL_Y, fixed(0.F, 5.F))
                             .y(Role::FREQUENCY, fixed(-2.F, 3.F))
                             .y_ticks(4);
@@ -625,7 +625,7 @@ TEST(FormaPlotSeriesTickTest, YTicksDefaultToTheLeftEdgeAndMergeEveryYMapping)
 TEST(FormaPlotSeriesTickTest, AnExplicitRangeOverridesTheMapping)
 {
     const auto series = Plot::Series {}
-                            .bounds(k_plot)
+                            .bounds(k_series_builder_plot)
                             .x(Role::SPATIAL_X, fixed(0.F, 1.F))
                             .x_ticks(fixed(100.F, 200.F), 2);
 
@@ -639,7 +639,7 @@ TEST(FormaPlotSeriesTickTest, AnExplicitRangeOverridesTheMapping)
 TEST(FormaPlotSeriesTickTest, ExplicitEdgeTicksCarryTheirOwnSettings)
 {
     const auto series = Plot::Series {}
-                            .bounds(k_plot)
+                            .bounds(k_series_builder_plot)
                             .ticks(Plot::TickEdge::Top, fixed(1.F, 2.F), 4, 1);
 
     const auto ticks = series.resolved_tick_labels();
@@ -653,7 +653,7 @@ TEST(FormaPlotSeriesTickTest, ExplicitEdgeTicksCarryTheirOwnSettings)
 
 TEST(FormaPlotSeriesTickTest, ARequestForAnAxisWithNoMappingFallsBackToTheDefaultRange)
 {
-    const auto series = Plot::Series {}.bounds(k_plot).x_ticks(2);
+    const auto series = Plot::Series {}.bounds(k_series_builder_plot).x_ticks(2);
 
     const auto ticks = series.resolved_tick_labels();
 
@@ -665,7 +665,7 @@ TEST(FormaPlotSeriesTickTest, ARequestForAnAxisWithNoMappingFallsBackToTheDefaul
 TEST(FormaPlotSeriesTickTest, SeveralRequestsResolveInOrder)
 {
     const auto series = Plot::Series {}
-                            .bounds(k_plot)
+                            .bounds(k_series_builder_plot)
                             .x(Role::SPATIAL_X, fixed(0.F, 1.F))
                             .y(Role::SPATIAL_Y, fixed(0.F, 2.F))
                             .x_ticks(3)
@@ -684,7 +684,7 @@ TEST(FormaPlotSeriesTickTest, AMergedAxisKeepsAutoScalingAndThePredicateOfAnyMap
     AxisRange automatic;
     automatic.range(2.F, 6.F).scale_if([] { return true; });
     const auto series = Plot::Series {}
-                            .bounds(k_plot)
+                            .bounds(k_series_builder_plot)
                             .x(Role::SPATIAL_X, fixed(0.F, 4.F))
                             .x(Role::FREQUENCY, automatic)
                             .x_ticks(2);

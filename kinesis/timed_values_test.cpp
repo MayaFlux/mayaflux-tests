@@ -16,12 +16,12 @@ using Kinesis::ValueKind;
 
 namespace {
 
-    constexpr double k_inf = std::numeric_limits<double>::infinity();
-    constexpr double k_nan = std::numeric_limits<double>::quiet_NaN();
+    constexpr double k_timed_values_inf = std::numeric_limits<double>::infinity();
+    constexpr double k_timed_values_nan = std::numeric_limits<double>::quiet_NaN();
     constexpr float k_fnan = std::numeric_limits<float>::quiet_NaN();
     constexpr float k_finf = std::numeric_limits<float>::infinity();
 
-    TimeSampling must(std::optional<TimeSampling> sampling)
+    TimeSampling timed_values_must(std::optional<TimeSampling> sampling)
     {
         if (!sampling) {
             throw std::runtime_error("sampling was rejected");
@@ -41,7 +41,7 @@ namespace {
 
     TimedValues<float> ramp(KeyInterpolation mode = KeyInterpolation::Linear)
     {
-        return must_create<float>({ .times = must(TimeSampling::acyclic({ 0.0, 1.0, 3.0 })),
+        return must_create<float>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 1.0, 3.0 })),
             .values = { 0.0F, 10.0F, 30.0F },
             .default_mode = mode });
     }
@@ -52,9 +52,9 @@ namespace {
         return { 0.0F, 0.0F, std::sin(half), std::cos(half) };
     }
 
-    class Lcg {
+    class TimedValuesLcg {
     public:
-        explicit Lcg(uint64_t seed)
+        explicit TimedValuesLcg(uint64_t seed)
             : m_state(seed)
         {
         }
@@ -71,7 +71,7 @@ namespace {
 
     TEST(TimedValuesCreateTest, RejectsInputsThatCannotBeSampled)
     {
-        const auto times = must(TimeSampling::acyclic({ 0.0, 1.0, 3.0 }));
+        const auto times = timed_values_must(TimeSampling::acyclic({ 0.0, 1.0, 3.0 }));
 
         EXPECT_FALSE(TimedValues<float>::create({ .times = times, .values = {} }).has_value());
         EXPECT_FALSE(TimedValues<float>::create({ .times = times, .values = { 1.0F, 2.0F } }).has_value());
@@ -84,7 +84,7 @@ namespace {
 
     TEST(TimedValuesCreateTest, RejectsNonFiniteValuesAndTangents)
     {
-        const auto times = must(TimeSampling::uniform(1.0));
+        const auto times = timed_values_must(TimeSampling::uniform(1.0));
 
         EXPECT_FALSE(TimedValues<float>::create({ .times = times, .values = { 0.0F, k_fnan } }).has_value());
         EXPECT_FALSE(TimedValues<float>::create({ .times = times, .values = { k_finf, 0.0F } }).has_value());
@@ -99,7 +99,7 @@ namespace {
 
     TEST(TimedValuesCreateTest, CubicKeysNeedAFullSetOfTangents)
     {
-        const auto times = must(TimeSampling::uniform(1.0));
+        const auto times = timed_values_must(TimeSampling::uniform(1.0));
         const std::vector<float> values { 0.0F, 1.0F, 2.0F };
 
         EXPECT_FALSE(TimedValues<float>::create({ .times = times, .values = values, .default_mode = KeyInterpolation::CubicSpline }).has_value());
@@ -125,7 +125,7 @@ namespace {
 
     TEST(TimedValuesCreateTest, ATypeThatCannotBeBlendedAcceptsOnlyStepKeys)
     {
-        const auto times = must(TimeSampling::uniform(1.0));
+        const auto times = timed_values_must(TimeSampling::uniform(1.0));
 
         EXPECT_FALSE(TimedValues<std::string>::create({ .times = times, .values = { "a", "b" } }).has_value());
         EXPECT_FALSE(TimedValues<std::string>::create({ .times = times, .values = { "a", "b" },
@@ -138,14 +138,14 @@ namespace {
 
     TEST(TimedValuesCreateTest, RejectsASamplingThatCannotTimeTheLastKey)
     {
-        const auto overflowing = must(TimeSampling::uniform_rate({ 24000, 1001 }, std::numeric_limits<int64_t>::max() - 1));
+        const auto overflowing = timed_values_must(TimeSampling::uniform_rate({ 24000, 1001 }, std::numeric_limits<int64_t>::max() - 1));
 
         EXPECT_FALSE(TimedValues<float>::create({ .times = overflowing, .values = { 0.0F, 1.0F, 2.0F } }).has_value());
     }
 
     TEST(TimedValuesCreateTest, RotationsMustBeNonZeroFiniteVec4s)
     {
-        const auto times = must(TimeSampling::uniform(1.0));
+        const auto times = timed_values_must(TimeSampling::uniform(1.0));
 
         EXPECT_FALSE(TimedValues<glm::vec4>::create({ .times = times, .values = { glm::vec4(0.0F), glm::vec4(0, 0, 0, 1) }, .kind = ValueKind::Rotation }).has_value());
         EXPECT_FALSE(TimedValues<glm::vec4>::create({ .times = times, .values = { glm::vec4(1.0e30F), glm::vec4(0, 0, 0, 1) }, .kind = ValueKind::Rotation }).has_value());
@@ -157,7 +157,7 @@ namespace {
 
     TEST(TimedValuesCreateTest, RotationKeysAreStoredNormalised)
     {
-        const auto rotation = must_create<glm::vec4>({ .times = must(TimeSampling::uniform(1.0)),
+        const auto rotation = must_create<glm::vec4>({ .times = timed_values_must(TimeSampling::uniform(1.0)),
             .values = { glm::vec4(0, 0, 0, 4), glm::vec4(0, 3, 0, 4) },
             .kind = ValueKind::Rotation });
 
@@ -182,7 +182,7 @@ namespace {
 
     TEST(TimedValuesSampleTest, AKeyModeAppliesFromThatKeyToTheNext)
     {
-        const auto values = must_create<float>({ .times = must(TimeSampling::acyclic({ 0.0, 1.0, 3.0 })),
+        const auto values = must_create<float>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 1.0, 3.0 })),
             .values = { 0.0F, 10.0F, 30.0F },
             .modes = { KeyInterpolation::Step, KeyInterpolation::Linear, KeyInterpolation::Linear } });
 
@@ -196,9 +196,9 @@ namespace {
         const auto values = ramp();
 
         for (const auto policy : { OutOfRange::Absent, OutOfRange::Hold, OutOfRange::Repeat, OutOfRange::PingPong, OutOfRange::Extrapolate, OutOfRange::RepeatOffset }) {
-            EXPECT_FALSE(values.sample(k_nan, policy).has_value());
-            EXPECT_FALSE(values.sample(k_inf, policy).has_value());
-            EXPECT_FALSE(values.sample(-k_inf, policy).has_value());
+            EXPECT_FALSE(values.sample(k_timed_values_nan, policy).has_value());
+            EXPECT_FALSE(values.sample(k_timed_values_inf, policy).has_value());
+            EXPECT_FALSE(values.sample(-k_timed_values_inf, policy).has_value());
         }
     }
 
@@ -260,7 +260,7 @@ namespace {
 
     TEST(TimedValuesOutOfRangeTest, ExtrapolationStopsAtAStepSegment)
     {
-        const auto values = must_create<float>({ .times = must(TimeSampling::acyclic({ 0.0, 1.0, 3.0 })),
+        const auto values = must_create<float>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 1.0, 3.0 })),
             .values = { 5.0F, 10.0F, 30.0F },
             .modes = { KeyInterpolation::Step, KeyInterpolation::Step, KeyInterpolation::Linear } });
 
@@ -270,7 +270,7 @@ namespace {
 
     TEST(TimedValuesOutOfRangeTest, EveryPolicyOnASingleKeyReturnsThatKey)
     {
-        const auto single = must_create<float>({ .times = must(TimeSampling::uniform(1.0, 2.0)), .values = { 7.0F } });
+        const auto single = must_create<float>({ .times = timed_values_must(TimeSampling::uniform(1.0, 2.0)), .values = { 7.0F } });
 
         for (const auto policy : { OutOfRange::Hold, OutOfRange::Repeat, OutOfRange::PingPong, OutOfRange::Extrapolate, OutOfRange::RepeatOffset }) {
             EXPECT_EQ(*single.sample(-100.0, policy), 7.0F);
@@ -299,7 +299,7 @@ namespace {
 
     TEST(TimedValuesLimitTest, TheLeftLimitDiffersFromTheValueOnlyAfterAStepSegment)
     {
-        const auto values = must_create<float>({ .times = must(TimeSampling::acyclic({ 0.0, 1.0, 3.0 })),
+        const auto values = must_create<float>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 1.0, 3.0 })),
             .values = { 0.0F, 10.0F, 30.0F },
             .modes = { KeyInterpolation::Step, KeyInterpolation::Step, KeyInterpolation::Linear } });
 
@@ -314,7 +314,7 @@ namespace {
 
     TEST(TimedValuesCubicTest, ZeroTangentsGiveTheSmoothstepSegment)
     {
-        const auto values = must_create<float>({ .times = must(TimeSampling::acyclic({ 0.0, 1.0 })),
+        const auto values = must_create<float>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 1.0 })),
             .values = { 0.0F, 1.0F },
             .in_tangents = { 0.0F, 0.0F },
             .out_tangents = { 0.0F, 0.0F },
@@ -328,7 +328,7 @@ namespace {
 
     TEST(TimedValuesCubicTest, TangentsAreInValuePerSecondAndScaledByTheSegmentDuration)
     {
-        const auto values = must_create<float>({ .times = must(TimeSampling::acyclic({ 0.0, 2.0 })),
+        const auto values = must_create<float>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 2.0 })),
             .values = { 0.0F, 2.0F },
             .in_tangents = { 1.0F, 1.0F },
             .out_tangents = { 1.0F, 1.0F },
@@ -341,7 +341,7 @@ namespace {
 
     TEST(TimedValuesCubicTest, AMixedKeyListBlendsEachSegmentByItsOwnMode)
     {
-        const auto values = must_create<float>({ .times = must(TimeSampling::acyclic({ 0.0, 1.0, 2.0 })),
+        const auto values = must_create<float>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 1.0, 2.0 })),
             .values = { 0.0F, 1.0F, 2.0F },
             .modes = { KeyInterpolation::CubicSpline, KeyInterpolation::Linear, KeyInterpolation::Linear },
             .in_tangents = { 0.0F, 0.0F, 0.0F },
@@ -353,7 +353,7 @@ namespace {
 
     TEST(TimedValuesRotationTest, LinearKeysBlendAlongTheArcAndStayUnit)
     {
-        const auto rotation = must_create<glm::vec4>({ .times = must(TimeSampling::acyclic({ 0.0, 1.0 })),
+        const auto rotation = must_create<glm::vec4>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 1.0 })),
             .values = { glm::vec4(0, 0, 0, 1), about_z(90.0F) },
             .kind = ValueKind::Rotation });
 
@@ -368,7 +368,7 @@ namespace {
 
     TEST(TimedValuesRotationTest, ABlendTakesTheShortWayRoundTheOppositeSign)
     {
-        const auto rotation = must_create<glm::vec4>({ .times = must(TimeSampling::acyclic({ 0.0, 1.0 })),
+        const auto rotation = must_create<glm::vec4>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 1.0 })),
             .values = { glm::vec4(0, 0, 0, 1), glm::vec4(0, 0, 0, -1) },
             .kind = ValueKind::Rotation });
 
@@ -381,7 +381,7 @@ namespace {
 
     TEST(TimedValuesRotationTest, RotationsHoldWhereNumbersWouldExtrapolateOrAccumulate)
     {
-        const auto rotation = must_create<glm::vec4>({ .times = must(TimeSampling::acyclic({ 0.0, 1.0 })),
+        const auto rotation = must_create<glm::vec4>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 1.0 })),
             .values = { glm::vec4(0, 0, 0, 1), about_z(90.0F) },
             .kind = ValueKind::Rotation });
 
@@ -396,7 +396,7 @@ namespace {
 
     TEST(TimedValuesRotationTest, ACubicRotationSegmentIsRenormalised)
     {
-        const auto rotation = must_create<glm::vec4>({ .times = must(TimeSampling::acyclic({ 0.0, 1.0 })),
+        const auto rotation = must_create<glm::vec4>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 1.0 })),
             .values = { glm::vec4(0, 0, 0, 1), about_z(90.0F) },
             .in_tangents = { glm::vec4(0.0F), glm::vec4(0.0F) },
             .out_tangents = { glm::vec4(0.0F), glm::vec4(0.0F) },
@@ -410,11 +410,11 @@ namespace {
 
     TEST(TimedValuesTypesTest, VectorAndDoubleValuesBlendComponentWise)
     {
-        const auto vec3 = must_create<glm::vec3>({ .times = must(TimeSampling::acyclic({ 0.0, 2.0 })),
+        const auto vec3 = must_create<glm::vec3>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 2.0 })),
             .values = { glm::vec3(0, 10, -4), glm::vec3(2, 20, 4) } });
-        const auto vec2 = must_create<glm::vec2>({ .times = must(TimeSampling::acyclic({ 0.0, 2.0 })),
+        const auto vec2 = must_create<glm::vec2>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 2.0 })),
             .values = { glm::vec2(0, 1), glm::vec2(4, 3) } });
-        const auto scalar = must_create<double>({ .times = must(TimeSampling::acyclic({ 0.0, 2.0 })),
+        const auto scalar = must_create<double>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 2.0 })),
             .values = { 1.0, 2.0 } });
 
         EXPECT_EQ(*vec3.sample(1.0), glm::vec3(1, 15, 0));
@@ -426,7 +426,7 @@ namespace {
 
     TEST(TimedValuesTypesTest, HeldTypesStepAndIgnoreBlendingPolicies)
     {
-        const auto names = must_create<std::string>({ .times = must(TimeSampling::acyclic({ 0.0, 1.0, 2.0 })),
+        const auto names = must_create<std::string>({ .times = timed_values_must(TimeSampling::acyclic({ 0.0, 1.0, 2.0 })),
             .values = { "a", "b", "c" },
             .default_mode = KeyInterpolation::Step });
 
@@ -442,7 +442,7 @@ namespace {
 
     TEST(TimedValuesTypesTest, AnExactRateSamplesEveryKeyBackExactly)
     {
-        const auto sampling = must(TimeSampling::uniform_rate({ 24000, 1001 }));
+        const auto sampling = timed_values_must(TimeSampling::uniform_rate({ 24000, 1001 }));
         std::vector<float> frames(100000);
         std::iota(frames.begin(), frames.end(), 0.0F);
         const auto values = must_create<float>({ .times = sampling, .values = frames });
@@ -455,7 +455,7 @@ namespace {
 
     TEST(TimedValuesPropertyTest, MonotoneKeysGiveMonotoneSamplesOnRandomTimes)
     {
-        Lcg random(5);
+        TimedValuesLcg random(5);
         std::vector<double> times;
         std::vector<float> keys;
         double time = 0.0;
@@ -466,7 +466,7 @@ namespace {
             times.push_back(time);
             keys.push_back(key);
         }
-        const auto values = must_create<float>({ .times = must(TimeSampling::acyclic(times)), .values = keys });
+        const auto values = must_create<float>({ .times = timed_values_must(TimeSampling::acyclic(times)), .values = keys });
 
         std::vector<double> queries;
         for (int i = 0; i < 100000; ++i) {
@@ -486,7 +486,7 @@ namespace {
 
     TEST(TimedValuesPropertyTest, SamplesStayBetweenTheirNeighbouringKeysWhateverTheSegmentIs)
     {
-        Lcg random(11);
+        TimedValuesLcg random(11);
         std::vector<double> times;
         std::vector<float> keys;
         double time = -2.0;
@@ -495,7 +495,7 @@ namespace {
             times.push_back(time);
             keys.push_back(static_cast<float>((random.unit() - 0.5) * 100.0));
         }
-        const auto values = must_create<float>({ .times = must(TimeSampling::acyclic(times)), .values = keys });
+        const auto values = must_create<float>({ .times = timed_values_must(TimeSampling::acyclic(times)), .values = keys });
 
         for (int i = 0; i < 50000; ++i) {
             const double t = times.front() + random.unit() * (times.back() - times.front());
@@ -519,8 +519,8 @@ namespace {
         EXPECT_EQ(held(99.0), 30.0F);
         EXPECT_FLOAT_EQ(held(0.5), 5.0F);
         EXPECT_FLOAT_EQ(repeated(4.0), 10.0F);
-        EXPECT_EQ(held(k_nan), 0.0F);
-        EXPECT_EQ(repeated(k_inf), 0.0F);
+        EXPECT_EQ(held(k_timed_values_nan), 0.0F);
+        EXPECT_EQ(repeated(k_timed_values_inf), 0.0F);
         EXPECT_EQ(held.evaluate(1.0), 10.0F);
     }
 
@@ -542,12 +542,12 @@ namespace {
             const auto k = static_cast<float>(i);
             keys[i] = glm::vec3(k, k * 0.5F, -k);
         }
-        const auto values = must_create<glm::vec3>({ .times = must(TimeSampling::uniform_rate({ 24000, 1001 })),
+        const auto values = must_create<glm::vec3>({ .times = timed_values_must(TimeSampling::uniform_rate({ 24000, 1001 })),
             .values = keys,
             .default_mode = KeyInterpolation::Linear });
 
         auto run = [&values](uint64_t seed) {
-            Lcg random(seed);
+            TimedValuesLcg random(seed);
             double sum = 0.0;
             for (int i = 0; i < 20000; ++i) {
                 const double t = random.unit() * 100.0 - 5.0;
