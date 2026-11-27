@@ -726,6 +726,42 @@ TEST_F(VisionAnalyzerTest, RgbaSegmentationFindsOnlyTheRedSquare)
     EXPECT_NEAR(box.y * fs, 4.0F, 1.0F);
 }
 
+class VisionAnalyzerFormatTest : public Fixture, public ::testing::WithParamInterface<Kakshya::ImageFormat> { };
+
+INSTANTIATE_TEST_SUITE_P(SixteenBit, VisionAnalyzerFormatTest,
+    ::testing::Values(Kakshya::ImageFormat::R16, Kakshya::ImageFormat::DEPTH16), sixteen_bit_name);
+
+TEST_P(VisionAnalyzerFormatTest, CameraFrameIsReadInItsOwnFormat)
+{
+    if (!host_uploadable(GetParam()))
+        GTEST_SKIP() << "This device has no host image copy for the format";
+
+    constexpr uint32_t size = 32;
+    const auto camera = depth_camera(size, GetParam());
+    ASSERT_TRUE(camera);
+
+    KV::VisionQuery query;
+    query.intents = KV::VisionIntent::FindElements;
+    query.find_elements = KV::FindElementsParams {
+        .segmentation = {
+            .space = KV::SegmentationSpace::Rgba,
+            .method = depth_band(900.0F, 1100.0F),
+        },
+    };
+
+    VisionAnalyzer analyzer(analyzer_config(query));
+    const auto analysis = analyzer.analyze_vision(camera, 0);
+    ASSERT_TRUE(analysis.find_elements.has_value());
+    ASSERT_EQ(analysis.find_elements->boxes.size(), 1U);
+
+    const auto& box = analysis.find_elements->boxes.front();
+    const auto fs = static_cast<float>(size);
+    EXPECT_NEAR(box.x * fs, 8.0F, 1.0F);
+    EXPECT_NEAR(box.y * fs, 8.0F, 1.0F);
+    EXPECT_NEAR(box.w * fs, 8.0F, 1.0F);
+    EXPECT_NEAR(box.h * fs, 8.0F, 1.0F);
+}
+
 TEST_F(VisionAnalyzerTest, AdvanceCompletesOneLanePerCallAndFillsTheSameResultAsAnalyze)
 {
     constexpr uint32_t blob_size = 16;

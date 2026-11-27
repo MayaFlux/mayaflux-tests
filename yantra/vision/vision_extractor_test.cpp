@@ -748,6 +748,38 @@ TEST_F(VisionExtractorTest, OperationWithoutAnAnalysisFacetProducesNoExtraction)
     EXPECT_EQ(output.facets.get<VisionExtraction>(), nullptr);
 }
 
+class VisionExtractorFormatTest : public VisionExtractorTest, public ::testing::WithParamInterface<Kakshya::ImageFormat> { };
+
+INSTANTIATE_TEST_SUITE_P(SixteenBit, VisionExtractorFormatTest,
+    ::testing::Values(Kakshya::ImageFormat::R16, Kakshya::ImageFormat::DEPTH16), sixteen_bit_name);
+
+TEST_P(VisionExtractorFormatTest, OperationSamplesACameraFrameInItsOwnFormat)
+{
+    if (!host_uploadable(GetParam()))
+        GTEST_SKIP() << "This device has no host image copy for the format";
+
+    constexpr uint32_t size = 32;
+    const auto camera = depth_camera(size, GetParam());
+    ASSERT_TRUE(camera);
+
+    KV::VisionAnalysis analysis;
+    analysis.find_elements = KV::FindElementsAnalysis {
+        .boxes = { { .x = 9.0F / 32.0F, .y = 9.0F / 32.0F, .w = 6.0F / 32.0F, .h = 6.0F / 32.0F, .label_id = 1 } },
+    };
+
+    VisionExtractor extractor(extractor_config(VisionExtractMode::SampleRegions));
+
+    Yantra::ContainerIO input(camera);
+    input.facets.set(analysis);
+
+    const auto output = extractor.apply_operation(input);
+    const auto* extraction = output.facets.get<VisionExtraction>();
+    ASSERT_NE(extraction, nullptr);
+    ASSERT_TRUE(extraction->samples.has_value());
+    ASSERT_EQ(extraction->samples->size(), 1U);
+    EXPECT_NEAR(extraction->samples->front().mean.r * 65535.0F, 1000.0F, 0.5F);
+}
+
 TEST_F(VisionExtractorTest, OperationWithAnImageFacetCropsTheSuppliedFrame)
 {
     constexpr uint32_t size = 256;
