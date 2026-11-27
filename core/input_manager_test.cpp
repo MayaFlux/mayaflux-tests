@@ -433,7 +433,7 @@ namespace {
         EXPECT_EQ(service.opened.front().second, 9U);
     }
 
-    TEST(InputManagerTest, VendorProductBindingWithoutAMatchIsRefused)
+    TEST(InputManagerTest, VendorProductBindingWithoutAMatchIsKeptAndOpensNothing)
     {
         FakeInputService service;
         service.devices = {
@@ -444,7 +444,7 @@ namespace {
 
         manager.register_node(std::make_shared<RecordingNode>(), InputBinding::hid_by_vid_pid(0x1234, 0x5678));
 
-        EXPECT_EQ(manager.get_registered_node_count(), 0U);
+        EXPECT_EQ(manager.get_registered_node_count(), 1U);
         EXPECT_TRUE(service.opened.empty());
     }
 
@@ -459,7 +459,8 @@ namespace {
 
         manager.register_node(std::make_shared<RecordingNode>(), InputBinding::hid_by_vid_pid(0x1234, 0x5678));
 
-        EXPECT_EQ(manager.get_registered_node_count(), 0U);
+        EXPECT_EQ(manager.get_registered_node_count(), 1U);
+        EXPECT_TRUE(service.opened.empty());
     }
 
     // ------------------------------------------------------------------
@@ -491,6 +492,35 @@ namespace {
         ASSERT_TRUE(input_manager_eventually([&] { return node->count() == 2; }));
         EXPECT_EQ(node->values().back().device_id, 7U);
         ASSERT_EQ(service.opened.size(), 2U);
+        EXPECT_EQ(service.opened.back().second, 7U);
+    }
+
+    TEST(InputManagerDeviceTest, ANodeRegisteredBeforeItsDeviceBindsOnArrivalAndRebinds)
+    {
+        FakeInputService service;
+        InputManager manager;
+        auto node = std::make_shared<RecordingNode>();
+        auto sentinel = std::make_shared<RecordingNode>();
+        manager.start();
+        manager.register_node(node, InputBinding::hid_by_vid_pid(0x1234, 0x5678));
+        manager.register_node(sentinel, wildcard(InputType::HID));
+
+        manager.enqueue(InputValue::make_bytes({ 1 }, 5, InputType::HID));
+        ASSERT_TRUE(input_manager_eventually([&] { return sentinel->count() == 1; }));
+        EXPECT_EQ(node->count(), 0U);
+        EXPECT_TRUE(service.opened.empty());
+
+        manager.on_device_change(pad(5), true);
+        manager.enqueue(InputValue::make_bytes({ 2 }, 5, InputType::HID));
+        ASSERT_TRUE(input_manager_eventually([&] { return node->count() == 1; }));
+
+        manager.on_device_change(pad(5), false);
+        manager.on_device_change(pad(7), true);
+        manager.enqueue(InputValue::make_bytes({ 3 }, 7, InputType::HID));
+        ASSERT_TRUE(input_manager_eventually([&] { return node->count() == 2; }));
+
+        ASSERT_EQ(service.opened.size(), 2U);
+        EXPECT_EQ(service.opened.front().second, 5U);
         EXPECT_EQ(service.opened.back().second, 7U);
     }
 

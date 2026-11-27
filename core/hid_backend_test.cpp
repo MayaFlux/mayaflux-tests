@@ -3,6 +3,8 @@
 
 #include <chrono>
 
+#include <hidapi.h>
+
 #include "MayaFlux/Core/Backends/Input/HIDBackend.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hid_enumeration>() }))
@@ -11,6 +13,7 @@ namespace MayaFlux::Test {
 namespace {
 
     using Core::HIDBackend;
+    using Core::HIDBus;
     using Core::HIDDeviceFilter;
 
     constexpr uint16_t k_unused_vid = 0xFFFF;
@@ -94,6 +97,7 @@ namespace {
         uint16_t usage_page;
         uint16_t usage;
         bool expected;
+        HIDBus bus { HIDBus::UNKNOWN };
     };
 
     class HIDDeviceFilterTest : public ::testing::TestWithParam<FilterCase> { };
@@ -101,7 +105,7 @@ namespace {
     MAYAFLUX_TEST_WITH(TEST_P, HIDDeviceFilterTest, MatchesOnlyWhenEveryConstrainedFieldAgrees, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
     {
         const auto& param = GetParam();
-        EXPECT_EQ(param.filter.matches(param.vid, param.pid, param.usage_page, param.usage), param.expected);
+        EXPECT_EQ(param.filter.matches(param.vid, param.pid, param.usage_page, param.usage, param.bus), param.expected);
     }
 
     INSTANTIATE_TEST_SUITE_P(
@@ -122,8 +126,48 @@ namespace {
             FilterCase { "SpecializedRejectsGamepadUsage", HIDDeviceFilter::specialized(), 0x1, 0x2, 0x01, 0x05, false },
             FilterCase { "DeviceMatchesVendorAndProductOnAnyUsage", HIDDeviceFilter::device(0x1234, 0x5678), 0x1234, 0x5678, 0x0D, 0x42, true },
             FilterCase { "DeviceRejectsOtherVendor", HIDDeviceFilter::device(0x1234, 0x5678), 0x4321, 0x5678, 0x01, 0x06, false },
-            FilterCase { "DeviceRejectsOtherProduct", HIDDeviceFilter::device(0x1234, 0x5678), 0x1234, 0x8765, 0x01, 0x06, false }),
+            FilterCase { "DeviceRejectsOtherProduct", HIDDeviceFilter::device(0x1234, 0x5678), 0x1234, 0x8765, 0x01, 0x06, false },
+            FilterCase { "AnyMatchesBluetooth", HIDDeviceFilter::any(), 0x1234, 0x5678, 0x0D, 0x42, true, HIDBus::BLUETOOTH },
+            FilterCase { "ControllerMatchesBluetoothGamepad", HIDDeviceFilter::controller(), 0x1234, 0x5678, 0x01, 0x05, true, HIDBus::BLUETOOTH },
+            FilterCase { "BluetoothMatchesNonControllerUsage", HIDDeviceFilter::bluetooth(), 0x1234, 0x5678, 0x0D, 0x42, true, HIDBus::BLUETOOTH },
+            FilterCase { "BluetoothRejectsUsbWithSameUsage", HIDDeviceFilter::bluetooth(), 0x1234, 0x5678, 0x0D, 0x42, false, HIDBus::USB },
+            FilterCase { "BluetoothRejectsUnknownBus", HIDDeviceFilter::bluetooth(), 0x1234, 0x5678, 0x0D, 0x42, false }),
         [](const ::testing::TestParamInfo<FilterCase>& info) { return std::string(info.param.name); });
+
+    MAYAFLUX_TEST_WITH(TEST, HIDDeviceFilterTest, BusCriterionComposesWithVendorAndUsage, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        auto filter = HIDDeviceFilter::controller();
+        filter.vendor_id = 0x1234;
+        filter.bus = HIDBus::BLUETOOTH;
+
+        EXPECT_TRUE(filter.matches(0x1234, 0x5678, 0x01, 0x05, HIDBus::BLUETOOTH));
+        EXPECT_FALSE(filter.matches(0x4321, 0x5678, 0x01, 0x05, HIDBus::BLUETOOTH));
+        EXPECT_FALSE(filter.matches(0x1234, 0x5678, 0x01, 0x04, HIDBus::BLUETOOTH));
+        EXPECT_FALSE(filter.matches(0x1234, 0x5678, 0x01, 0x05, HIDBus::USB));
+    }
+
+    // ------------------------------------------------------------------
+    // Open failure hint
+    // ------------------------------------------------------------------
+
+#if defined(MAYAFLUX_PLATFORM_LINUX)
+    MAYAFLUX_TEST_WITH(TEST, HIDOpenHintTest, BluetoothRuleMatchesTheHidParentInUppercaseHex, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        const auto hint = Core::hid_open_failure_hint(0x05AC, 0x0BCD, "Permission denied", HIDBus::BLUETOOTH);
+
+        EXPECT_NE(hint.find("KERNELS==\"0005:05AC:0BCD.*\""), std::string::npos) << hint;
+        EXPECT_EQ(hint.find("idVendor"), std::string::npos) << hint;
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HIDOpenHintTest, OtherBusesMatchTheUsbAttributesInLowercaseHex, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        for (const auto bus : { HIDBus::USB, HIDBus::UNKNOWN }) {
+            const auto hint = Core::hid_open_failure_hint(0x05AC, 0x0BCD, "Permission denied", bus);
+
+            EXPECT_NE(hint.find("ATTRS{idVendor}==\"05ac\", ATTRS{idProduct}==\"0bcd\""), std::string::npos) << hint;
+        }
+    }
+#endif
 
     // ------------------------------------------------------------------
     // Identity and unopened state
@@ -319,6 +363,7 @@ namespace {
         REQUIRE_HID_DEVICE(backend);
 
         std::set<uint32_t> ids;
+        std::set<std::string> paths;
         for (const auto& device : backend.get_devices()) {
             EXPECT_TRUE(ids.insert(device.id).second) << device.id;
             EXPECT_FALSE(device.name.empty()) << device.id;
@@ -330,6 +375,7 @@ namespace {
             EXPECT_EQ(ext->backend_type, Core::InputType::HID);
             EXPECT_TRUE(ext->is_connected);
             EXPECT_FALSE(ext->path.empty());
+            EXPECT_TRUE(paths.insert(ext->path).second) << ext->path;
         }
     }
 
@@ -346,6 +392,33 @@ namespace {
         EXPECT_EQ(ids_by_path(backend), before);
     }
 
+    TEST(HIDBackendTest, UnfilteredEnumerationExposesEachHidapiPathOnce)
+    {
+        HIDBackend backend;
+        ASSERT_TRUE(backend.initialize());
+
+        std::set<std::string> expected;
+        hid_device_info* enumerated = hid_enumerate(0, 0);
+        for (const hid_device_info* info = enumerated; info; info = info->next) {
+            if (info->path)
+                expected.insert(info->path);
+        }
+        hid_free_enumeration(enumerated);
+        if (expected.empty())
+            GTEST_SKIP() << "No HID device is enumerable";
+
+        backend.refresh_devices();
+        std::set<std::string> actual;
+        for (const auto& device : backend.get_devices()) {
+            const auto ext = backend.get_device_info_ext(device.id);
+            ASSERT_TRUE(ext.has_value());
+            actual.insert(ext->path);
+        }
+
+        EXPECT_EQ(actual, expected);
+        EXPECT_EQ(backend.get_devices().size(), expected.size());
+    }
+
     // ------------------------------------------------------------------
     // Filters
     // ------------------------------------------------------------------
@@ -360,6 +433,31 @@ namespace {
 
         EXPECT_TRUE(backend.get_devices().empty());
         EXPECT_EQ(backend.refresh_devices(), 0U);
+    }
+
+    TEST(HIDBackendTest, BluetoothFilterSelectsOnlyBluetoothPaths)
+    {
+        HIDBackend::Config config;
+        config.filters.push_back(HIDDeviceFilter::bluetooth());
+        HIDBackend backend(config);
+        ASSERT_TRUE(backend.initialize());
+
+        std::set<std::string> expected;
+        hid_device_info* enumerated = hid_enumerate(0, 0);
+        for (const hid_device_info* info = enumerated; info; info = info->next) {
+            if (info->path && info->bus_type == HID_API_BUS_BLUETOOTH)
+                expected.insert(info->path);
+        }
+        hid_free_enumeration(enumerated);
+
+        std::set<std::string> actual;
+        for (const auto& device : backend.get_devices()) {
+            const auto ext = backend.get_device_info_ext(device.id);
+            ASSERT_TRUE(ext.has_value());
+            EXPECT_EQ(ext->bus, HIDBus::BLUETOOTH);
+            actual.insert(ext->path);
+        }
+        EXPECT_EQ(actual, expected);
     }
 
     TEST(HIDBackendTest, ConfiguredDeviceFilterKeepsOnlyThatVendorAndProduct)
@@ -463,6 +561,31 @@ namespace {
 
         EXPECT_GT(calls.load(), announced);
         EXPECT_EQ(seen.load(), 0U);
+    }
+
+    TEST(HIDBackendTest, DeviceCallbackMayReplaceItselfDuringNotification)
+    {
+        HIDBackend backend;
+        ASSERT_TRUE(backend.initialize());
+        REQUIRE_HID_DEVICE(backend);
+        const size_t devices = backend.get_devices().size();
+        size_t first_calls = 0;
+        size_t replacement_calls = 0;
+
+        backend.set_device_callback([&](const Core::InputDeviceInfo&, bool connected) {
+            EXPECT_FALSE(connected);
+            ++first_calls;
+            backend.set_device_callback([&](const Core::InputDeviceInfo&, bool replacement_connected) {
+                EXPECT_FALSE(replacement_connected);
+                ++replacement_calls;
+            });
+        });
+
+        backend.add_device_filter(unmatched_filter());
+        backend.refresh_devices();
+
+        EXPECT_EQ(first_calls, 1U);
+        EXPECT_EQ(replacement_calls, devices - 1);
     }
 
     // ------------------------------------------------------------------
@@ -624,6 +747,122 @@ namespace {
         backend.refresh_devices();
 
         EXPECT_FALSE(backend.is_device_open(*id));
+    }
+
+    // ------------------------------------------------------------------
+    // Poll and scan threads
+    // ------------------------------------------------------------------
+
+    struct ThreadCase {
+        const char* name;
+        bool auto_reconnect;
+    };
+
+    class HIDBackendStopTest : public ::testing::TestWithParam<ThreadCase> { };
+
+    TEST_P(HIDBackendStopTest, StopDoesNotWaitOutTheRescanInterval)
+    {
+        HIDBackend::Config config;
+        config.auto_reconnect = GetParam().auto_reconnect;
+        config.reconnect_interval_ms = 60000;
+        HIDBackend backend(config);
+        ASSERT_TRUE(backend.initialize());
+
+        for (int i = 0; i < 3; ++i) {
+            backend.start();
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+            const auto begin = std::chrono::steady_clock::now();
+            backend.stop();
+
+            EXPECT_LT(std::chrono::steady_clock::now() - begin, std::chrono::seconds(5)) << i;
+            EXPECT_FALSE(backend.is_running()) << i;
+        }
+    }
+
+    INSTANTIATE_TEST_SUITE_P(
+        HIDStop,
+        HIDBackendStopTest,
+        ::testing::Values(
+            ThreadCase { "WithAutoReconnect", true },
+            ThreadCase { "WithoutAutoReconnect", false }),
+        [](const ::testing::TestParamInfo<ThreadCase>& info) { return std::string(info.param.name); });
+
+    TEST(HIDBackendThreadTest, PeriodicRescanNotifiesFromAnotherThreadAfterARestart)
+    {
+        HIDBackend::Config config;
+        config.reconnect_interval_ms = 10;
+        HIDBackend backend(config);
+        ASSERT_TRUE(backend.initialize());
+        REQUIRE_HID_DEVICE(backend);
+
+        backend.start();
+        backend.stop();
+
+        Parallel::Notifier notified;
+        std::atomic<bool> on_caller_thread { false };
+        std::atomic<bool> connected { false };
+        const auto caller = std::this_thread::get_id();
+        backend.set_device_callback([&](const Core::InputDeviceInfo&, bool is_connected) {
+            on_caller_thread.store(std::this_thread::get_id() == caller);
+            connected.store(is_connected);
+            notified.notify();
+        });
+        backend.add_device_filter(unmatched_filter());
+
+        backend.start();
+        const bool arrived = notified.wait_for(std::chrono::seconds(5));
+        backend.stop();
+
+        ASSERT_TRUE(arrived);
+        EXPECT_FALSE(on_caller_thread.load());
+        EXPECT_FALSE(connected.load());
+        EXPECT_TRUE(backend.get_devices().empty());
+    }
+
+    TEST(HIDBackendThreadTest, WithoutAutoReconnectARunningBackendNeverRescans)
+    {
+        HIDBackend::Config config;
+        config.auto_reconnect = false;
+        config.reconnect_interval_ms = 10;
+        HIDBackend backend(config);
+        ASSERT_TRUE(backend.initialize());
+        REQUIRE_HID_DEVICE(backend);
+        const size_t devices = backend.get_devices().size();
+
+        std::atomic<size_t> calls { 0 };
+        backend.set_device_callback([&](const Core::InputDeviceInfo&, bool) { calls.fetch_add(1); });
+        backend.add_device_filter(unmatched_filter());
+
+        backend.start();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        backend.stop();
+
+        EXPECT_EQ(calls.load(), 0U);
+        EXPECT_EQ(backend.get_devices().size(), devices);
+    }
+
+    MAYAFLUX_TEST_WITH(TEST, HIDBackendThreadTest, OpeningAndClosingWhilePollingLeavesTheLastStateInForce, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::hid_enumeration, ::MayaFlux::Test::Meta::Capability::hid_open>() }))
+    {
+        HIDBackend backend;
+        ASSERT_TRUE(backend.initialize());
+        REQUIRE_HID_DEVICE(backend);
+        const auto id = openable_non_pointer(backend);
+        if (!id)
+            GTEST_SKIP() << "No openable HID device other than a pointer or keyboard";
+
+        backend.start();
+        for (int i = 0; i < 50; ++i) {
+            backend.close_device(*id);
+            EXPECT_FALSE(backend.is_device_open(*id)) << i;
+            ASSERT_TRUE(backend.open_device(*id)) << i;
+        }
+        backend.close_device(*id);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+        EXPECT_FALSE(backend.is_device_open(*id));
+        EXPECT_TRUE(backend.get_open_devices().empty());
+        backend.stop();
     }
 
 } // namespace

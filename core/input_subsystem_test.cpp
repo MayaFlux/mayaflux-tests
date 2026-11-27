@@ -2,6 +2,7 @@
 #include "../support/test_metadata.hpp"
 
 #include <chrono>
+#include <semaphore>
 #include <string_view>
 
 #include "MayaFlux/Core/Input/InputManager.hpp"
@@ -101,7 +102,8 @@ namespace {
         bool open_device(uint32_t device_id) override
         {
             m_counters->opened.push_back(device_id);
-            return std::ranges::any_of(m_devices, [device_id](const auto& d) { return d.id == device_id; });
+            return m_open_succeeds
+                && std::ranges::any_of(m_devices, [device_id](const auto& d) { return d.id == device_id; });
         }
 
         void close_device(uint32_t device_id) override { m_counters->closed.push_back(device_id); }
@@ -121,7 +123,7 @@ namespace {
         [[nodiscard]] bool is_device_open(uint32_t) const override { return false; }
         [[nodiscard]] std::vector<uint32_t> get_open_devices() const override { return {}; }
         void set_input_callback(Core::InputCallback callback) override { m_input = std::move(callback); }
-        void set_device_callback(Core::DeviceCallback) override { }
+        void set_device_callback(Core::DeviceCallback callback) override { m_device = std::move(callback); }
         [[nodiscard]] InputType get_type() const override { return m_type; }
         [[nodiscard]] std::string get_name() const override { return "Fake"; }
         [[nodiscard]] std::string get_version() const override { return "0"; }
@@ -132,14 +134,58 @@ namespace {
                 m_input(value);
         }
 
+        void emit_device(const InputDeviceInfo& info, bool connected)
+        {
+            if (m_device)
+                m_device(info, connected);
+        }
+
+        void set_open_succeeds(bool succeeds) { m_open_succeeds = succeeds; }
+
     private:
         InputType m_type;
         std::shared_ptr<BackendCounters> m_counters;
         std::vector<InputDeviceInfo> m_devices;
         bool m_initialize_succeeds;
+        bool m_open_succeeds { true };
         bool m_initialized { false };
         bool m_running { false };
         Core::InputCallback m_input;
+        Core::DeviceCallback m_device;
+    };
+
+    class BlockingOpenHidBackend : public FakeBackend {
+    public:
+        BlockingOpenHidBackend(std::shared_ptr<BackendCounters> counters,
+            std::vector<InputDeviceInfo> devices)
+            : FakeBackend(InputType::HID, std::move(counters), std::move(devices))
+        {
+        }
+
+        bool open_device(uint32_t device_id) override
+        {
+            open_entered.release();
+            release_open.acquire();
+            const bool opened = FakeBackend::open_device(device_id);
+            active.store(opened);
+            open_completed.store(true);
+            return opened;
+        }
+
+        void close_device(uint32_t device_id) override
+        {
+            closed_before_open_completed.store(!open_completed.load());
+            active.store(false);
+            FakeBackend::close_device(device_id);
+            close_entered.release();
+        }
+
+        std::binary_semaphore open_entered { 0 };
+        std::binary_semaphore release_open { 0 };
+        std::binary_semaphore close_entered { 0 };
+        std::atomic<bool> open_completed { false };
+        std::atomic<bool> closed_before_open_completed { false };
+        std::atomic<bool> active { false };
     };
 
     /**
@@ -322,6 +368,157 @@ namespace {
         EXPECT_FALSE(added);
         EXPECT_EQ(counters->initialize, 1);
         EXPECT_EQ(rig.subsystem.get_backend(InputType::CUSTOM), nullptr);
+    }
+
+    TEST(InputSubsystemTest, HidAutoOpenOpensDevicesDiscoveredAfterStartup)
+    {
+        Core::GlobalInputConfig config;
+        config.hid.auto_open = true;
+        InputSubsystemSubsystemRig rig(config);
+        rig.initialize();
+        auto counters = std::make_shared<BackendCounters>();
+        auto* backend = rig.add_fake(InputType::HID, counters, pad_devices());
+        ASSERT_NE(backend, nullptr);
+
+        backend->emit_device(pad_devices().front(), true);
+
+        ASSERT_EQ(counters->opened.size(), 1U);
+        EXPECT_EQ(counters->opened.front(), 1U);
+    }
+
+    TEST(InputSubsystemTest, DisabledHidAutoOpenLeavesLaterDevicesClosed)
+    {
+        InputSubsystemSubsystemRig rig;
+        rig.initialize();
+        auto counters = std::make_shared<BackendCounters>();
+        auto* backend = rig.add_fake(InputType::HID, counters, pad_devices());
+        ASSERT_NE(backend, nullptr);
+
+        backend->emit_device(pad_devices().front(), true);
+
+        EXPECT_TRUE(counters->opened.empty());
+    }
+
+    TEST(InputSubsystemTest, DisconnectionEventNeverTriggersHidAutoOpen)
+    {
+        Core::GlobalInputConfig config;
+        config.hid.auto_open = true;
+        InputSubsystemSubsystemRig rig(config);
+        rig.initialize();
+        auto counters = std::make_shared<BackendCounters>();
+        auto* backend = rig.add_fake(InputType::HID, counters, pad_devices());
+        ASSERT_NE(backend, nullptr);
+
+        backend->emit_device(pad_devices().front(), false);
+
+        EXPECT_TRUE(counters->opened.empty());
+    }
+
+    TEST(InputSubsystemTest, HidAutoOpenDoesNotOpenOtherBackendDevices)
+    {
+        Core::GlobalInputConfig config;
+        config.hid.auto_open = true;
+        InputSubsystemSubsystemRig rig(config);
+        rig.initialize();
+        auto counters = std::make_shared<BackendCounters>();
+        auto* backend = rig.add_fake(InputType::MIDI, counters, midi_devices());
+        ASSERT_NE(backend, nullptr);
+
+        backend->emit_device(midi_devices().front(), true);
+
+        EXPECT_TRUE(counters->opened.empty());
+    }
+
+    TEST(InputSubsystemTest, ExplicitHidCloseSuppressesSubsystemAutoOpenUntilExplicitOpen)
+    {
+        Core::GlobalInputConfig config;
+        config.hid.auto_open = true;
+        InputSubsystemSubsystemRig rig(config);
+        rig.initialize();
+        auto counters = std::make_shared<BackendCounters>();
+        auto* backend = rig.add_fake(InputType::HID, counters, pad_devices());
+        ASSERT_NE(backend, nullptr);
+
+        backend->emit_device(pad_devices().front(), true);
+        rig.subsystem.close_device(InputType::HID, 1);
+        backend->emit_device(pad_devices().front(), false);
+        backend->emit_device(pad_devices().front(), true);
+        EXPECT_EQ(counters->opened.size(), 1U);
+
+        ASSERT_TRUE(rig.subsystem.open_device(InputType::HID, 1));
+        backend->emit_device(pad_devices().front(), true);
+        EXPECT_EQ(counters->opened.size(), 3U);
+    }
+
+    TEST(InputSubsystemTest, FailedExplicitHidOpenKeepsAutoOpenSuppressed)
+    {
+        Core::GlobalInputConfig config;
+        config.hid.auto_open = true;
+        InputSubsystemSubsystemRig rig(config);
+        rig.initialize();
+        auto counters = std::make_shared<BackendCounters>();
+        auto* backend = rig.add_fake(InputType::HID, counters, pad_devices());
+        ASSERT_NE(backend, nullptr);
+
+        backend->emit_device(pad_devices().front(), true);
+        rig.subsystem.close_device(InputType::HID, 1);
+        backend->set_open_succeeds(false);
+        EXPECT_FALSE(rig.subsystem.open_device(InputType::HID, 1));
+        backend->set_open_succeeds(true);
+        backend->emit_device(pad_devices().front(), true);
+
+        EXPECT_EQ(counters->opened, (std::vector<uint32_t> { 1, 1 }));
+    }
+
+    TEST(InputSubsystemTest, ExplicitHidCloseDoesNotSuppressAnotherDevice)
+    {
+        Core::GlobalInputConfig config;
+        config.hid.auto_open = true;
+        InputSubsystemSubsystemRig rig(config);
+        rig.initialize();
+        auto counters = std::make_shared<BackendCounters>();
+        auto* backend = rig.add_fake(InputType::HID, counters, pad_devices());
+        ASSERT_NE(backend, nullptr);
+
+        rig.subsystem.close_device(InputType::HID, 1);
+        for (const auto& device : pad_devices()) {
+            backend->emit_device(device, true);
+        }
+
+        EXPECT_EQ(counters->opened, (std::vector<uint32_t> { 2 }));
+    }
+
+    TEST(InputSubsystemTest, ExplicitHidCloseWaitsForConcurrentAutoOpen)
+    {
+        Core::GlobalInputConfig config;
+        config.hid.auto_open = true;
+        InputSubsystemSubsystemRig rig(config);
+        rig.initialize();
+        auto counters = std::make_shared<BackendCounters>();
+        auto owned = std::make_unique<BlockingOpenHidBackend>(counters, pad_devices());
+        auto* backend = owned.get();
+        ASSERT_TRUE(rig.subsystem.add_backend(std::move(owned)));
+        const auto device = pad_devices().front();
+
+        std::thread discovery([&] { backend->emit_device(device, true); });
+        backend->open_entered.acquire();
+
+        std::binary_semaphore close_started { 0 };
+        std::thread closer([&] {
+            close_started.release();
+            rig.subsystem.close_device(InputType::HID, device.id);
+        });
+        close_started.acquire();
+        EXPECT_FALSE(backend->close_entered.try_acquire_for(50ms));
+
+        backend->release_open.release();
+        discovery.join();
+        closer.join();
+
+        EXPECT_FALSE(backend->closed_before_open_completed.load());
+        EXPECT_FALSE(backend->active.load());
+        EXPECT_EQ(counters->opened, (std::vector<uint32_t> { 1 }));
+        EXPECT_EQ(counters->closed, (std::vector<uint32_t> { 1 }));
     }
 
     // ------------------------------------------------------------------
