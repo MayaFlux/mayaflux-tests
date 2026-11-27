@@ -226,7 +226,7 @@ namespace {
         EXPECT_EQ(released, 1);
     }
 
-    TEST(HIDNodeTest, TheFirstReportDoesNotFireEdges)
+    TEST(HIDNodeTest, AControlHeldInTheFirstReportFiresPressOnce)
     {
         const auto layout = pad_layout();
         HIDNode node(HIDConfig::device());
@@ -234,8 +234,26 @@ namespace {
 
         node.on_press(HIDControl::button(1), [&](HIDContext&) { ++pressed; });
         node.process_input(frame_of(layout, pad_report(0, 0, 0, 0x01)));
+        node.process_input(frame_of(layout, pad_report(0, 0, 0, 0x01)));
+
+        EXPECT_EQ(pressed, 1);
+    }
+
+    TEST(HIDNodeTest, TheFirstReportFiresNoReleaseChangeOrHat)
+    {
+        const auto layout = pad_layout();
+        HIDNode node(HIDConfig::device());
+        int pressed = 0;
+        int others = 0;
+
+        node.on_press(HIDControl::button(1), [&](HIDContext&) { ++pressed; });
+        node.on_release(HIDControl::button(1), [&](HIDContext&) { ++others; });
+        node.on_change(k_x, [&](HIDContext&) { ++others; });
+        node.on_hat(k_hat, [&](HIDContext&) { ++others; });
+        node.process_input(frame_of(layout, pad_report(255, 255, 3, 0x00)));
 
         EXPECT_EQ(pressed, 0);
+        EXPECT_EQ(others, 0);
     }
 
     TEST(HIDNodeTest, ChangeFiresOnlyWhenTheOutputMoves)

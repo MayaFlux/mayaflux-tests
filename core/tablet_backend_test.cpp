@@ -725,5 +725,17 @@ namespace {
         backend.stop();
     }
 
+    MAYAFLUX_TEST_WITH(TEST, TabletBackendTest, GlobalConfigDefaultsMatchTheBackendDefaults, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    {
+        const Core::TabletBackendInfo info;
+        const Core::TabletBackend::Config config;
+
+        EXPECT_EQ(info.auto_reconnect, config.auto_reconnect);
+        EXPECT_EQ(info.reconnect_interval_ms, config.reconnect_interval_ms);
+        EXPECT_EQ(info.poll_timeout_ms, config.poll_timeout_ms);
+        EXPECT_EQ(info.read_buffer_size, config.read_buffer_size);
+        EXPECT_EQ(info.split_eraser, config.split_eraser);
+    }
+
 } // namespace
 } // namespace MayaFlux::Test

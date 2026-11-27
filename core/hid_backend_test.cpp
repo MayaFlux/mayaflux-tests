@@ -865,5 +865,23 @@ namespace {
         backend.stop();
     }
 
+    TEST(HIDBackendThreadTest, FiltersMayChangeWhileTheScanThreadReadsThem)
+    {
+        HIDBackend::Config config;
+        config.reconnect_interval_ms = 1;
+        HIDBackend backend(config);
+        ASSERT_TRUE(backend.initialize());
+        const size_t devices = backend.get_devices().size();
+
+        backend.start();
+        for (int i = 0; i < 200; ++i) {
+            backend.add_device_filter(unmatched_filter());
+            backend.clear_device_filters();
+        }
+        backend.stop();
+
+        EXPECT_EQ(backend.refresh_devices(), devices);
+    }
+
 } // namespace
 } // namespace MayaFlux::Test
