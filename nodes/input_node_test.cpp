@@ -261,6 +261,24 @@ namespace {
         EXPECT_EQ(last->device_id, 3U);
     }
 
+    TEST(InputNodeTest, HistoryKeepsTheNewestInputsHoweverManyArrive)
+    {
+        auto node = make_node();
+        const size_t keep = node->get_config().history_size;
+
+        for (int i = 0; i < 200; ++i)
+            feed(*node, static_cast<double>(i), 1);
+
+        const auto history = node->get_input_history();
+        ASSERT_EQ(history.size(), keep);
+        for (size_t i = 0; i < keep; ++i)
+            EXPECT_DOUBLE_EQ(history[i].as_scalar(), static_cast<double>(200 - keep + i)) << i;
+
+        const auto last = node->get_last_input();
+        ASSERT_TRUE(last.has_value());
+        EXPECT_DOUBLE_EQ(last->as_scalar(), 199.0);
+    }
+
     // ------------------------------------------------------------------
     // Callbacks
     // ------------------------------------------------------------------
