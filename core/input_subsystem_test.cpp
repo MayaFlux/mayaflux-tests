@@ -188,8 +188,44 @@ namespace {
         std::atomic<bool> active { false };
     };
 
+    class OpeningDuringStopHidBackend : public FakeBackend {
+    public:
+        OpeningDuringStopHidBackend(std::shared_ptr<BackendCounters> counters,
+            std::vector<InputDeviceInfo> devices)
+            : FakeBackend(InputType::HID, std::move(counters), std::move(devices))
+        {
+        }
+
+        ~OpeningDuringStopHidBackend() override { join(); }
+
+        void stop() override
+        {
+            if (open_from_stop) {
+                m_opener = std::thread([this] {
+                    open_from_stop();
+                    m_opened.release();
+                });
+                opened_while_stopping.push_back(m_opened.try_acquire_for(2s));
+            }
+            FakeBackend::stop();
+        }
+
+        void join()
+        {
+            if (m_opener.joinable())
+                m_opener.join();
+        }
+
+        std::function<void()> open_from_stop;
+        std::vector<bool> opened_while_stopping;
+
+    private:
+        std::binary_semaphore m_opened { 0 };
+        std::thread m_opener;
+    };
+
     /**
-     * @brief Owns an InputSubsystem together with the managers behind its processing handle.
+     *@brief Owns an InputSubsystem together with the managers behind its processing handle.
      */
     class InputSubsystemSubsystemRig {
     public:
@@ -585,6 +621,28 @@ namespace {
         rig.subsystem.start();
         rig.subsystem.resume();
         EXPECT_EQ(counters->start, 1);
+    }
+
+    TEST(InputSubsystemTest, PauseAndStopLetABackendThreadOpenADeviceWhileItIsJoined)
+    {
+        InputSubsystemSubsystemRig rig;
+        rig.initialize();
+        auto counters = std::make_shared<BackendCounters>();
+        auto owned = std::make_unique<OpeningDuringStopHidBackend>(counters, pad_devices());
+        auto* backend = owned.get();
+        ASSERT_TRUE(rig.subsystem.add_backend(std::move(owned)));
+        rig.subsystem.start();
+        backend->open_from_stop = [&rig] { rig.subsystem.open_device(InputType::HID, 1); };
+
+        rig.subsystem.pause();
+        backend->join();
+        rig.subsystem.resume();
+        rig.subsystem.stop();
+        backend->join();
+
+        EXPECT_EQ(backend->opened_while_stopping, (std::vector<bool> { true, true }));
+        EXPECT_EQ(counters->opened, (std::vector<uint32_t> { 1, 1 }));
+        backend->open_from_stop = nullptr;
     }
 
     TEST(InputSubsystemTest, StopStopsBackendsAndTheManager)
