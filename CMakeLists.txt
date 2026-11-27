@@ -195,6 +195,7 @@ if(MAYAFLUX_COVERAGE)
     endif()
 
     target_compile_options(MayaFluxLib PRIVATE --coverage)
+    target_compile_options(MayaFluxHeavy PRIVATE --coverage)
     target_link_options(MayaFluxLib PUBLIC --coverage)
 
     find_program(MAYAFLUX_GCOVR gcovr)
