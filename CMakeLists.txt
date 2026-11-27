@@ -161,6 +161,7 @@ foreach(test_group IN LISTS MAYAFLUX_TEST_GROUPS)
         TEST_PREFIX "${test_group}/"
         TEST_LIST ${test_list}
         DISCOVERY_MODE POST_BUILD
+        DISCOVERY_TIMEOUT 30
     )
 
     set(test_metadata_file
