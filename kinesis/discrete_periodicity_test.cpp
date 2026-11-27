@@ -125,7 +125,7 @@ namespace {
             const std::span<const double> view(data.data() + w * hop, window);
             const auto expected = Kinesis::estimate_period(view, 1.0, 25.0, 150.0);
             EXPECT_EQ(lags[w], static_cast<size_t>(expected.period));
-            EXPECT_EQ(strengths[w], expected.strength);
+            EXPECT_DOUBLE_EQ(strengths[w], expected.strength);
         }
     }
 
