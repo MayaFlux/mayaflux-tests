@@ -23,6 +23,21 @@
 #ifdef ERROR
 #undef ERROR
 #endif
+#ifdef PASSTHROUGH
+#undef PASSTHROUGH
+#endif
+#ifdef STRICT
+#undef STRICT
+#endif
+#ifdef IGNORE
+#undef IGNORE
+#endif
+#ifdef near
+#undef near
+#endif
+#ifdef far
+#undef far
+#endif
 #endif
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::writable_temp>() }))

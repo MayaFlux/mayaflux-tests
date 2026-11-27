@@ -20,7 +20,7 @@ namespace {
     constexpr uint32_t k_scancode_a = 0x1E;
 
     template <typename Predicate>
-    bool eventually(Predicate predicate, std::chrono::milliseconds timeout = 2s)
+    bool win32_window_eventually(Predicate predicate, std::chrono::milliseconds timeout = 2s)
     {
         const auto deadline = std::chrono::steady_clock::now() + timeout;
         while (std::chrono::steady_clock::now() < deadline) {
@@ -417,7 +417,7 @@ namespace {
         harness.poll();
         EXPECT_TRUE(harness.events_of(WindowEventType::KEY_REPEAT).empty());
 
-        ASSERT_TRUE(eventually([&] {
+        ASSERT_TRUE(win32_window_eventually([&] {
             harness.poll();
             return harness.events_of(WindowEventType::KEY_REPEAT).size() >= 2;
         }, 3s));
@@ -606,7 +606,7 @@ namespace {
             return matching;
         };
 
-        ASSERT_TRUE(eventually([&] {
+        ASSERT_TRUE(win32_window_eventually([&] {
             harness.poll();
             return !repeats_of_a().empty();
         }, 3s));
@@ -975,16 +975,16 @@ namespace {
 
         harness.window().set_input_config(cursor_config(Core::CursorMode::DISABLED));
         harness.send(WM_SETFOCUS);
-        ASSERT_TRUE(eventually([&] { return clip_matches_client(harness.hwnd()); }));
+        ASSERT_TRUE(win32_window_eventually([&] { return clip_matches_client(harness.hwnd()); }));
 
         harness.send(WM_KILLFOCUS);
-        EXPECT_TRUE(eventually([&] { return restore.is_baseline(); }));
+        EXPECT_TRUE(win32_window_eventually([&] { return restore.is_baseline(); }));
 
         harness.send(WM_SETFOCUS);
-        ASSERT_TRUE(eventually([&] { return clip_matches_client(harness.hwnd()); }));
+        ASSERT_TRUE(win32_window_eventually([&] { return clip_matches_client(harness.hwnd()); }));
 
         harness.window().set_input_config(cursor_config(Core::CursorMode::NORMAL));
-        EXPECT_TRUE(eventually([&] { return restore.is_baseline(); }));
+        EXPECT_TRUE(win32_window_eventually([&] { return restore.is_baseline(); }));
     }
 
     TEST(Win32WindowTest, AnUnfocusedWindowDoesNotConfineTheCursor)
@@ -1006,7 +1006,7 @@ namespace {
             WindowHarness harness;
             harness.window().set_input_config(cursor_config(Core::CursorMode::DISABLED));
             harness.send(WM_SETFOCUS);
-            ASSERT_TRUE(eventually([&] { return clip_matches_client(harness.hwnd()); }));
+            ASSERT_TRUE(win32_window_eventually([&] { return clip_matches_client(harness.hwnd()); }));
 
             harness.window().destroy();
         }
@@ -1023,7 +1023,7 @@ namespace {
 
         harness.window().set_input_config(cursor_config(Core::CursorMode::HIDDEN));
 
-        EXPECT_TRUE(eventually([&] { return set_cursor() == TRUE; }));
+        EXPECT_TRUE(win32_window_eventually([&] { return set_cursor() == TRUE; }));
     }
 
     TEST(Win32WindowTest, LockedMotionReportsAVirtualPositionFromTheClientCentre)
@@ -1032,7 +1032,7 @@ namespace {
         WindowHarness harness;
         harness.window().set_input_config(cursor_config(Core::CursorMode::DISABLED));
         harness.send(WM_SETFOCUS);
-        ASSERT_TRUE(eventually([&] { return clip_matches_client(harness.hwnd()); }));
+        ASSERT_TRUE(win32_window_eventually([&] { return clip_matches_client(harness.hwnd()); }));
 
         RECT client {};
         GetClientRect(harness.hwnd(), &client);
@@ -1066,10 +1066,10 @@ namespace {
 
         harness.window().set_input_config(cursor_config(Core::CursorMode::CAPTURED));
         harness.send(WM_SETFOCUS);
-        ASSERT_TRUE(eventually([&] { return registered_mouse_target() == harness.hwnd(); }));
+        ASSERT_TRUE(win32_window_eventually([&] { return registered_mouse_target() == harness.hwnd(); }));
 
         harness.send(WM_KILLFOCUS);
-        EXPECT_TRUE(eventually([&] { return registered_mouse_target() == before; }));
+        EXPECT_TRUE(win32_window_eventually([&] { return registered_mouse_target() == before; }));
     }
 
     // ------------------------------------------------------------------
@@ -1084,7 +1084,7 @@ namespace {
             got = std::move(text);
             ++calls;
         });
-        EXPECT_TRUE(eventually([&] {
+        EXPECT_TRUE(win32_window_eventually([&] {
             harness.poll();
             return calls > 0;
         }));
@@ -1184,7 +1184,7 @@ namespace {
         harness.window().request_clipboard_text([&](std::optional<std::string>) { ++calls; });
         EXPECT_EQ(calls, 0);
 
-        EXPECT_TRUE(eventually([&] {
+        EXPECT_TRUE(win32_window_eventually([&] {
             harness.poll();
             return calls > 0;
         }));
