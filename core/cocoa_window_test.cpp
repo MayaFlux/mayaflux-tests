@@ -27,7 +27,7 @@ namespace {
     using Core::WindowEventType;
 
     template <typename Predicate>
-    bool eventually(Predicate predicate, std::chrono::milliseconds timeout = 2s)
+    bool cocoa_window_eventually(Predicate predicate, std::chrono::milliseconds timeout = 2s)
     {
         const auto deadline = std::chrono::steady_clock::now() + timeout;
         while (std::chrono::steady_clock::now() < deadline) {
@@ -136,7 +136,7 @@ namespace {
         ASSERT_NE(retained, nullptr);
 
         harness.window().show();
-        ASSERT_TRUE(eventually([&] { return CocoaInput::is_visible(retained.get()); }));
+        ASSERT_TRUE(cocoa_window_eventually([&] { return CocoaInput::is_visible(retained.get()); }));
 
         harness.window().destroy();
         EXPECT_EQ(harness.window().get_native_handle(), nullptr);
@@ -174,7 +174,7 @@ namespace {
             ASSERT_NE(retained, nullptr);
 
             harness.window().show();
-            ASSERT_TRUE(eventually([&] { return CocoaInput::is_visible(retained.get()); }));
+            ASSERT_TRUE(cocoa_window_eventually([&] { return CocoaInput::is_visible(retained.get()); }));
         }
         EXPECT_FALSE(CocoaInput::is_visible(retained.get()));
         EXPECT_FALSE(CocoaInput::has_delegate(retained.get()));
@@ -259,11 +259,11 @@ namespace {
             }
         } guard { worker, stage };
 
-        ASSERT_TRUE(eventually([&] { return stage.load() >= 1; }, 5s));
+        ASSERT_TRUE(cocoa_window_eventually([&] { return stage.load() >= 1; }, 5s));
         EXPECT_NE(window->get_native_handle(), nullptr);
 
         stage.store(2);
-        ASSERT_TRUE(eventually([&] { return stage.load() == 3; }, 5s));
+        ASSERT_TRUE(cocoa_window_eventually([&] { return stage.load() == 3; }, 5s));
         EXPECT_EQ(window->get_native_handle(), nullptr);
     }
 
@@ -275,11 +275,11 @@ namespace {
 
         harness.window().show();
         EXPECT_TRUE(harness.window().get_state().is_visible);
-        EXPECT_TRUE(eventually([&] { return CocoaInput::is_visible(harness.native()); }));
+        EXPECT_TRUE(cocoa_window_eventually([&] { return CocoaInput::is_visible(harness.native()); }));
 
         harness.window().hide();
         EXPECT_FALSE(harness.window().get_state().is_visible);
-        EXPECT_TRUE(eventually([&] { return !CocoaInput::is_visible(harness.native()); }));
+        EXPECT_TRUE(cocoa_window_eventually([&] { return !CocoaInput::is_visible(harness.native()); }));
     }
 
     TEST(CocoaWindowTest, SetTitleUpdatesNativeTitleAndCreateInfo)
@@ -289,7 +289,7 @@ namespace {
         harness.window().set_title("Renamed Window");
 
         EXPECT_EQ(harness.window().get_create_info().title, "Renamed Window");
-        EXPECT_TRUE(eventually([&] { return CocoaInput::title(harness.native()) == "Renamed Window"; }));
+        EXPECT_TRUE(cocoa_window_eventually([&] { return CocoaInput::title(harness.native()) == "Renamed Window"; }));
     }
 
     TEST(CocoaWindowTest, SetSizeUpdatesStateAndEmitsPointAndPixelResizes)
@@ -298,7 +298,7 @@ namespace {
         WindowHarness harness;
         harness.window().set_size(400, 300);
 
-        ASSERT_TRUE(eventually([&] {
+        ASSERT_TRUE(cocoa_window_eventually([&] {
             return CocoaInput::content_size(harness.native()) == std::pair<double, double> { 400.0, 300.0 };
         }));
         harness.poll();
@@ -327,7 +327,7 @@ namespace {
         WindowHarness harness;
         harness.window().set_position(100, 120);
 
-        EXPECT_TRUE(eventually([&] {
+        EXPECT_TRUE(cocoa_window_eventually([&] {
             return CocoaInput::content_origin(harness.native()) == std::pair<double, double> { 100.0, 120.0 };
         }));
     }
@@ -424,7 +424,7 @@ namespace {
 
         CocoaInput::live_resize_began(harness.native());
         harness.window().set_size(380, 280);
-        ASSERT_TRUE(eventually([&] {
+        ASSERT_TRUE(cocoa_window_eventually([&] {
             return CocoaInput::content_size(harness.native()) == std::pair<double, double> { 380.0, 280.0 };
         }));
         harness.poll();
@@ -573,7 +573,7 @@ namespace {
         harness.poll();
         EXPECT_TRUE(harness.events_of(WindowEventType::KEY_REPEAT).empty());
 
-        ASSERT_TRUE(eventually([&] {
+        ASSERT_TRUE(cocoa_window_eventually([&] {
             harness.poll();
             return harness.events_of(WindowEventType::KEY_REPEAT).size() >= 2;
         },

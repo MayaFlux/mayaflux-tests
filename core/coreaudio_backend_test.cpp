@@ -16,7 +16,7 @@ namespace {
     using namespace std::chrono_literals;
 
     template <typename Predicate>
-    bool eventually(Predicate predicate, std::chrono::milliseconds timeout = 2s)
+    bool coreaudio_backend_eventually(Predicate predicate, std::chrono::milliseconds timeout = 2s)
     {
         const auto deadline = std::chrono::steady_clock::now() + timeout;
         while (std::chrono::steady_clock::now() < deadline) {
@@ -157,7 +157,7 @@ namespace {
 
         stream->open();
         stream->start();
-        EXPECT_TRUE(eventually([&] { return callback_count->load(std::memory_order_acquire) >= 2; }));
+        EXPECT_TRUE(coreaudio_backend_eventually([&] { return callback_count->load(std::memory_order_acquire) >= 2; }));
         EXPECT_FALSE(invalid_buffer->load(std::memory_order_acquire));
         EXPECT_TRUE(stream->is_open());
         EXPECT_TRUE(stream->is_running());
@@ -193,13 +193,13 @@ namespace {
 
         stream->open();
         stream->start();
-        ASSERT_TRUE(eventually([&] { return callback_count->load(std::memory_order_acquire) >= 2; }));
+        ASSERT_TRUE(coreaudio_backend_eventually([&] { return callback_count->load(std::memory_order_acquire) >= 2; }));
         stream->stop();
         EXPECT_FALSE(stream->is_running());
         EXPECT_TRUE(stream->is_open());
         const auto before_restart = callback_count->load(std::memory_order_acquire);
         stream->start();
-        ASSERT_TRUE(eventually([&] {
+        ASSERT_TRUE(coreaudio_backend_eventually([&] {
             return callback_count->load(std::memory_order_acquire) >= before_restart + 2;
         }));
 
@@ -208,7 +208,7 @@ namespace {
         EXPECT_TRUE(stream->is_open());
         const auto before_resume = callback_count->load(std::memory_order_acquire);
         stream->resume();
-        EXPECT_TRUE(eventually([&] {
+        EXPECT_TRUE(coreaudio_backend_eventually([&] {
             return callback_count->load(std::memory_order_acquire) >= before_resume + 2;
         }));
         EXPECT_TRUE(stream->is_running());
@@ -251,7 +251,7 @@ namespace {
 
         stream->open();
         stream->start();
-        EXPECT_TRUE(eventually([&] { return input_callbacks->load(std::memory_order_acquire) > 0; }));
+        EXPECT_TRUE(coreaudio_backend_eventually([&] { return input_callbacks->load(std::memory_order_acquire) > 0; }));
         EXPECT_GT(output_callbacks->load(std::memory_order_acquire), 0U);
         stream->stop();
         stream->close();
@@ -292,7 +292,7 @@ namespace {
 
         stream->open();
         stream->start();
-        EXPECT_TRUE(eventually([&] { return callback_count->load(std::memory_order_acquire) > 0; }));
+        EXPECT_TRUE(coreaudio_backend_eventually([&] { return callback_count->load(std::memory_order_acquire) > 0; }));
         stream->stop();
         stream->close();
     }
