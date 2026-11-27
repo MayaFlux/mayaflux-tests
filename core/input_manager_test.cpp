@@ -697,6 +697,34 @@ namespace {
             EXPECT_LT(values[i - 1].as_scalar(), values[i].as_scalar());
     }
 
+    TEST(InputManagerTest, ConcurrentProducersLoseNothingAndKeepTheirOwnOrder)
+    {
+        constexpr uint32_t producers = 4;
+        constexpr int per_producer = 1000;
+        FakeInputService service;
+        InputManager manager;
+        auto node = std::make_shared<RecordingNode>();
+        manager.register_node(node, wildcard(InputType::HID));
+        manager.start();
+
+        std::vector<std::thread> threads;
+        for (uint32_t device = 1; device <= producers; ++device) {
+            threads.emplace_back([&manager, device] {
+                for (int i = 0; i < per_producer; ++i)
+                    manager.enqueue(InputValue::make_scalar(static_cast<double>(i), device, InputType::HID));
+            });
+        }
+        for (auto& thread : threads)
+            thread.join();
+
+        ASSERT_TRUE(input_manager_eventually([&] { return node->count() == producers * per_producer; }));
+        EXPECT_EQ(manager.get_queue_depth(), 0U);
+
+        std::map<uint32_t, double> next;
+        for (const auto& value : node->values())
+            EXPECT_EQ(value.as_scalar(), next[value.device_id]++) << value.device_id;
+    }
+
     // ------------------------------------------------------------------
     // OSC bridge
     // ------------------------------------------------------------------

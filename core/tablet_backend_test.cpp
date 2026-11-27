@@ -662,5 +662,68 @@ namespace {
         EXPECT_TRUE(backend.is_device_open(id));
     }
 
+    // ------------------------------------------------------------------
+    // Threads and the shared HIDAPI session
+    // ------------------------------------------------------------------
+
+    TEST(TabletBackendThreadTest, StopDoesNotWaitOutTheRescanInterval)
+    {
+        for (const bool auto_reconnect : { true, false }) {
+            Core::TabletBackend::Config config;
+            config.auto_reconnect = auto_reconnect;
+            config.reconnect_interval_ms = 60000;
+            Core::TabletBackend backend(config);
+            ASSERT_TRUE(backend.initialize());
+
+            backend.start();
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            const auto begin = std::chrono::steady_clock::now();
+            backend.stop();
+
+            EXPECT_LT(std::chrono::steady_clock::now() - begin, std::chrono::seconds(5)) << auto_reconnect;
+        }
+    }
+
+    TEST(TabletBackendThreadTest, ShuttingDownOneHolderLeavesASharedSessionUsable)
+    {
+        Core::TabletBackend::Config config;
+        config.session = std::make_shared<Core::HIDSession>();
+        ASSERT_TRUE(config.session->valid());
+
+        Core::TabletBackend first(config);
+        Core::TabletBackend second(config);
+        ASSERT_TRUE(first.initialize());
+        ASSERT_TRUE(second.initialize());
+        const auto tools = second.get_devices().size();
+
+        first.shutdown();
+
+        EXPECT_EQ(second.refresh_devices(), tools);
+        second.shutdown();
+        EXPECT_EQ(config.session.use_count(), 3);
+    }
+
+    TEST(TabletBackendThreadTest, AClosedToolIsNotListedAsOpenOrReopenedByARescan)
+    {
+        Core::TabletBackend::Config config;
+        config.reconnect_interval_ms = 10;
+        Core::TabletBackend backend(config);
+        ASSERT_TRUE(backend.initialize());
+        if (backend.get_devices().empty())
+            GTEST_SKIP() << "No tablet device available";
+        const auto id = backend.get_devices().front().id;
+
+        backend.start();
+        backend.close_device(id);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        const auto open = backend.get_open_devices();
+        EXPECT_EQ(std::ranges::find(open, id), open.end());
+        EXPECT_FALSE(backend.is_device_open(id));
+        EXPECT_TRUE(backend.open_device(id));
+        EXPECT_TRUE(backend.is_device_open(id));
+        backend.stop();
+    }
+
 } // namespace
 } // namespace MayaFlux::Test
