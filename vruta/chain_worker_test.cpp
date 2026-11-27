@@ -142,22 +142,40 @@ TEST_F(WorkerChainTest, WhenRunsOnceTheConditionHolds)
 
 TEST_F(WorkerChainTest, ForeverWithZeroDelaysPacesItselfAtThePollInterval)
 {
-    std::atomic<int> count { 0 };
+    struct Observations {
+        std::array<std::chrono::steady_clock::time_point, 4> timestamps {};
+        std::atomic<size_t> count { 0 };
+    };
+
+    const auto observations = std::make_shared<Observations>();
+    scheduler->set_conditional_poll_interval(10ms);
+    const auto interval = scheduler->conditional_poll_interval();
 
     auto chain = make_chain("paced");
-    chain.then([&]() { count.fetch_add(1); }).forever().start();
+    chain.then([observations]() {
+             const auto index = observations->count.load(std::memory_order_relaxed);
+             if (index < observations->timestamps.size()) {
+                 observations->timestamps[index] = std::chrono::steady_clock::now();
+             }
+             observations->count.store(index + 1, std::memory_order_release);
+         })
+        .forever()
+        .start();
 
-    std::this_thread::sleep_for(100ms);
-    const int seen = count.load();
+    const bool progressed = eventually([&]() {
+        return observations->count.load(std::memory_order_acquire) >= observations->timestamps.size();
+    });
     chain.cancel();
 
-    EXPECT_GT(seen, 10);
-    EXPECT_LT(seen, 200);
+    ASSERT_TRUE(progressed);
+    for (size_t i = 1; i < observations->timestamps.size(); ++i) {
+        EXPECT_GE(observations->timestamps[i] - observations->timestamps[i - 1], interval);
+    }
 
     std::this_thread::sleep_for(50ms);
-    const int stopped = count.load();
+    const auto stopped = observations->count.load();
     std::this_thread::sleep_for(50ms);
-    EXPECT_EQ(count.load(), stopped);
+    EXPECT_EQ(observations->count.load(), stopped);
 }
 
 TEST_F(WorkerChainTest, UntilEndsTheChain)

@@ -44,7 +44,7 @@ namespace {
 #endif
     }
 
-    MAYAFLUX_TEST_WITH(TEST, PlatformCandidatesTest, HomebrewIncludeComesFirstWhenPresent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+    MAYAFLUX_TEST_WITH(TEST, PlatformCandidatesTest, HomebrewIncludeComesFirstWhenPresent, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::homebrew_paths, ::MayaFlux::Test::Meta::Capability::process_exec>() }))
     {
 #if defined(MAYAFLUX_PLATFORM_MACOS)
         const auto prefix = MayaFlux::Platform::homebrew_prefix();

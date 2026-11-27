@@ -131,7 +131,8 @@ namespace {
         std::string error;
         ASSERT_TRUE(templates.claim(make_element("template", 1, { { "id", "t" } }), error)) << error;
 
-        const auto value = Reflect::check_reference(make_element("instance", 6, { { "template", "t" } }),
+        const auto instance = make_element("instance", 6, { { "template", "t" } });
+        const auto value = Reflect::check_reference(instance,
             "template", [&](std::string_view known) { return templates.contains(known); }, error);
 
         ASSERT_TRUE(value) << error;

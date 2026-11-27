@@ -62,7 +62,7 @@ namespace {
         return out;
     }
 
-    TEST(IntervalScannerTest, EveryReferenceCaseMatchesTheOriginalTimestamps)
+    MAYAFLUX_TEST_WITH(TEST, IntervalScannerTest, EveryReferenceCaseMatchesTheOriginalTimestamps, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets>() }))
     {
         const auto cases = load_scanner_cases();
         if (cases.empty()) {
@@ -73,7 +73,7 @@ namespace {
         }
     }
 
-    TEST(IntervalScannerTest, ASplitStreamGivesTheSameIntervalsAsOneCall)
+    MAYAFLUX_TEST_WITH(TEST, IntervalScannerTest, ASplitStreamGivesTheSameIntervalsAsOneCall, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::repo_assets>() }))
     {
         const auto cases = load_scanner_cases();
         if (cases.empty()) {
