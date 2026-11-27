@@ -136,7 +136,7 @@ TEST_F(ApiCoreTest, UnblockWithoutEngineIsHarmless)
     EXPECT_FALSE(MayaFlux::is_initialized());
 }
 
-TEST_F(ApiCoreTest, UnblockDoesNotTearDownTheEngine)
+MAYAFLUX_TEST_WITH(TEST_F, ApiCoreTest, UnblockDoesNotTearDownTheEngine, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::audio_output, ::MayaFlux::Test::Meta::Capability::display, ::MayaFlux::Test::Meta::Capability::vulkan, ::MayaFlux::Test::Meta::Capability::vulkan_present>() }))
 {
     MayaFlux::Init(48000, 512, 2, 0);
     MayaFlux::Unblock();

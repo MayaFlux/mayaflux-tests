@@ -17,8 +17,9 @@ namespace {
         FixtureTree()
         {
             static std::atomic<uint64_t> sequence { 0 };
+            const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
             m_root = std::filesystem::temp_directory_path()
-                / ("mayaflux-host-environment-"
+                / ("mayaflux-host-environment-" + std::to_string(stamp) + "-"
                     + std::to_string(sequence.fetch_add(1)));
             std::filesystem::create_directories(m_root);
         }

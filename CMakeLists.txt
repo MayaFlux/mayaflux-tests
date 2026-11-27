@@ -46,6 +46,8 @@ list(SORT MAYAFLUX_TEST_GROUPS)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set(MAYAFLUX_TEST_COMPILE_OPTIONS_DEFAULT "-O0;-g1")
+elseif(MSVC)
+    set(MAYAFLUX_TEST_COMPILE_OPTIONS_DEFAULT "/Od")
 else()
     set(MAYAFLUX_TEST_COMPILE_OPTIONS_DEFAULT "")
 endif()
@@ -95,6 +97,12 @@ foreach(test_group IN LISTS MAYAFLUX_TEST_GROUPS)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
     target_compile_options(${test_target} PRIVATE ${MAYAFLUX_TEST_COMPILE_OPTIONS})
+
+    if(MSVC)
+        set_target_properties(${test_target} PROPERTIES
+            INTERPROCEDURAL_OPTIMIZATION OFF
+        )
+    endif()
 
     if(MAYAFLUX_TEST_UNITY)
         set_target_properties(${test_target} PROPERTIES
