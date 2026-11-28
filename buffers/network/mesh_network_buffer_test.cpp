@@ -1097,7 +1097,7 @@ namespace {
     {
         MeshNetworkBuffer::RenderConfig config;
         config.target_window = window;
-        config.fragment_shader = "mesh_network_lit_list.frag.spv";
+        config.fragment_shader = "mesh_network_lit.frag.spv";
         buffer->setup_rendering(config);
         const auto render = buffer->get_render_processor();
         ASSERT_NE(render, nullptr);

@@ -441,6 +441,43 @@ namespace {
         EXPECT_FALSE(plain->attenuation().has_value());
     }
 
+    TEST(NexusStateOrchestratorTest, AnAreaLightWithASizeBecomesARectangleUnderItsScale)
+    {
+        StateOrchestrator orchestrator { nullptr };
+
+        const auto panel = orchestrator.emitter_from(
+            Kakshya::MeshAssemblyLight { .kind = Kakshya::MeshAssemblyLightKind::Area,
+                .color = glm::vec3(4.0F), .size = { 1.0F, 0.5F } },
+            glm::scale(glm::mat4(1.0F), glm::vec3(2.0F)));
+        const auto sizeless = orchestrator.emitter_from(
+            Kakshya::MeshAssemblyLight { .kind = Kakshya::MeshAssemblyLightKind::Area }, glm::mat4(1.0F));
+
+        EXPECT_EQ(panel->shape(), Nexus::SourceShape::Rectangle);
+        EXPECT_EQ(panel->extent(), glm::vec2(2.0F, 1.0F));
+        EXPECT_FLOAT_EQ(panel->intensity(), 0.5F);
+        EXPECT_FALSE(sizeless->shape().has_value());
+    }
+
+    TEST(NexusStateOrchestratorTest, AnImportedLightReachesAsFarAsItsIntensityLasts)
+    {
+        StateOrchestrator orchestrator { nullptr };
+
+        const auto bright = orchestrator.emitter_from(
+            Kakshya::MeshAssemblyLight { .color = glm::vec3(100.0F, 25.0F, 0.0F) }, glm::mat4(1.0F));
+        const auto linear = orchestrator.emitter_from(
+            Kakshya::MeshAssemblyLight { .color = glm::vec3(1.0F), .attenuation = glm::vec3(0.0F, 2.0F, 0.0F) },
+            glm::mat4(1.0F));
+        const auto black = orchestrator.emitter_from(
+            Kakshya::MeshAssemblyLight { .color = glm::vec3(0.0F) }, glm::mat4(1.0F));
+        const auto sun = orchestrator.emitter_from(
+            Kakshya::MeshAssemblyLight { .kind = Kakshya::MeshAssemblyLightKind::Directional }, glm::mat4(1.0F));
+
+        EXPECT_FLOAT_EQ(bright->radius(), 100.0F);
+        EXPECT_FLOAT_EQ(linear->radius(), 50.0F);
+        EXPECT_FLOAT_EQ(black->radius(), 1.0F);
+        EXPECT_EQ(sun->shape(), Nexus::SourceShape::Directional);
+    }
+
     TEST(NexusStateOrchestratorTest, SavedBindingsComeBackThroughSaveAndLoad)
     {
         ScopedWorkingDir cwd;
