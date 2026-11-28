@@ -93,7 +93,7 @@ TEST(FormaMappedTest, ForceRedrawRegeneratesOnEverySync)
     EXPECT_EQ(calls, 3);
 }
 
-TEST(FormaMappedTest, SyncIsANoOpWithoutStateGeometryOrBuffer)
+TEST(FormaMappedTest, SyncIsANoOpWithoutStateOrGeometry)
 {
     FaderRig rig;
 
@@ -106,11 +106,17 @@ TEST(FormaMappedTest, SyncIsANoOpWithoutStateGeometryOrBuffer)
     no_geometry.geometry_fn = nullptr;
     no_geometry.sync();
     EXPECT_FALSE(no_geometry.element.bounds_hint.has_value());
+}
 
-    auto no_buffer = rig.mapped;
-    no_buffer.element.buffer = nullptr;
-    no_buffer.sync();
-    EXPECT_FALSE(no_buffer.element.bounds_hint.has_value());
+TEST(FormaMappedTest, SyncWithoutABufferStillRunsTheGeometry)
+{
+    FaderRig rig;
+    rig.mapped.element.buffer = nullptr;
+
+    rig.mapped.sync();
+
+    EXPECT_TRUE(rig.mapped.element.bounds_hint.has_value());
+    EXPECT_EQ(rig.mapped.last_version, rig.mapped.state->version);
 }
 
 TEST(FormaMappedTest, SyncWithALayerPublishesTheHandleBoundsAndContains)
