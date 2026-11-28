@@ -662,4 +662,70 @@ TEST_F(FormaApiTest, APlacedScrollPanelClipsInTheShaderAndAFlatOneWithTheScissor
     EXPECT_FLOAT_EQ(constant(4), 0.F);
 }
 
+// =============================================================================
+// Readout, momentary and range fader
+// =============================================================================
+
+TEST_F(FormaApiTest, AReadoutFormatsOnceAndAgainOnlyWhenTheStateChanges)
+{
+    auto surface = make_surface("readout");
+    auto source = std::make_shared<Forma::MappedState<float>>();
+    source->write(0.25F);
+    std::vector<float> formatted;
+    const uint32_t id = Forma::readout(surface, { .min = { -0.5F, -0.1F }, .max = { 0.5F, 0.1F } }, source,
+        [&formatted](float value) {
+            formatted.push_back(value);
+            return std::to_string(value);
+        });
+
+    ASSERT_NE(id, 0U);
+    frames.tick(3);
+    source->write(0.75F);
+    frames.tick(3);
+
+    EXPECT_EQ(formatted, (std::vector<float> { 0.25F, 0.75F }));
+    Forma::destroy(surface, id);
+}
+
+TEST_F(FormaApiTest, AMomentaryIsTrueOnlyWhileHeldOverIt)
+{
+    auto surface = make_surface("momentary");
+    auto form = Forma::Geometry::momentary({ .min = { -0.5F, -0.5F }, .max = { 0.5F, 0.5F } });
+    auto mapped = Forma::create_element<bool>(surface, form.geometry, false, form.topology);
+    form.wire(surface.ctx(), mapped.element.id, mapped.state);
+
+    window->move_to_ndc({ 0.F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    EXPECT_TRUE(mapped.state->value);
+    window->release(IO::MouseButtons::Left);
+    EXPECT_FALSE(mapped.state->value);
+
+    window->press(IO::MouseButtons::Left);
+    window->move_to_ndc({ 0.9F, 0.9F });
+    EXPECT_FALSE(mapped.state->value);
+    window->release(IO::MouseButtons::Left);
+}
+
+TEST_F(FormaApiTest, ARangeFaderTakesTheNearerHandleAndHandlesDoNotCross)
+{
+    auto surface = make_surface("range");
+    auto form = Forma::Geometry::range_fader({ .min = { -0.5F, -0.1F }, .max = { 0.5F, 0.1F } });
+    auto mapped = Forma::create_element<glm::vec2>(surface, form.geometry, glm::vec2(0.25F, 0.75F), form.topology);
+    form.wire(surface.ctx(), mapped.element.id, mapped.state);
+
+    window->move_to_ndc({ 0.4F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    window->release(IO::MouseButtons::Left);
+    EXPECT_NEAR(mapped.state->value.x, 0.25F, 1e-2F);
+    EXPECT_NEAR(mapped.state->value.y, 0.9F, 1e-2F);
+
+    window->move_to_ndc({ -0.3F, 0.F });
+    window->press(IO::MouseButtons::Left);
+    window->move_to_ndc({ 0.45F, 0.F });
+    window->release(IO::MouseButtons::Left);
+
+    EXPECT_NEAR(mapped.state->value.x, mapped.state->value.y, 1e-5F);
+    EXPECT_NEAR(mapped.state->value.y, 0.9F, 1e-2F);
+}
+
 }

@@ -2,6 +2,7 @@
 #include "../../support/test_metadata.hpp"
 
 #include "MayaFlux/Portal/Forma/Forma.hpp"
+#include "MayaFlux/Portal/Forma/Primitives/Scrollable.hpp"
 #include "MayaFlux/Portal/Forma/Primitives/Dropdown.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
@@ -282,6 +283,35 @@ TEST_F(FormaDropdownTest, ALongListShowsOnlyTheVisibleRowsAndClipsTheRest)
     click(row_centre(1));
     EXPECT_EQ(dropdown.selected->value, 1U);
     EXPECT_FALSE(dropdown.open->value);
+}
+
+// =============================================================================
+// Following and tracking
+// =============================================================================
+
+TEST_F(FormaDropdownTest, AnIndexWrittenFromOutsidePastTheEndIsClamped)
+{
+    auto dropdown = place_dropdown(4);
+
+    dropdown.selected->write(99);
+    frames.tick(2);
+
+    EXPECT_EQ(dropdown.selected->value, 3U);
+}
+
+TEST_F(FormaDropdownTest, TrackingMovesTheHeaderAndEveryRowWithThePanel)
+{
+    auto dropdown = place_dropdown(4);
+    const auto rows = rows_of(dropdown);
+    ASSERT_EQ(rows.size(), 4U);
+    const float row_top = surface->layer().get(rows.front())->bounds_hint->max.y;
+    auto panel = Forma::Scrollable {}.place(*surface, { .min = { -1.F, 0.5F }, .max = { 1.F, 1.F } });
+    dropdown.track(panel, surface->layer());
+
+    panel.scroll_by(surface->layer(), { 0.F, 0.2F });
+
+    EXPECT_NEAR(surface->layer().get(dropdown.header_id)->bounds_hint->min.y, 1.F, 1e-5F);
+    EXPECT_NEAR(surface->layer().get(rows.front())->bounds_hint->max.y, row_top + 0.2F, 1e-5F);
 }
 
 }

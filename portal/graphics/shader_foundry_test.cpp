@@ -317,6 +317,36 @@ void main() {
         EXPECT_NE(shader_foundry().load_shader("dilate.comp"), INVALID_SHADER);
     }
 
+    TEST_F(ShaderFoundryTest, AShaderTwoLoadersHoldSurvivesOneReleasingIt)
+    {
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
+        const ShaderID first = shader_foundry().load_shader("dilate.comp");
+        const ShaderID second = shader_foundry().load_shader("dilate.comp");
+        ASSERT_EQ(first, second);
+
+        shader_foundry().destroy_shader(first);
+
+        EXPECT_TRUE(shader_foundry().is_cached("dilate.comp"));
+        EXPECT_EQ(shader_foundry().load_shader("dilate.comp"), second);
+
+        shader_foundry().destroy_shader(second);
+        shader_foundry().destroy_shader(second);
+
+        EXPECT_FALSE(shader_foundry().is_cached("dilate.comp"));
+    }
+
+    TEST_F(ShaderFoundryTest, ReleasingAReloadedShaderLeavesTheNewOneCached)
+    {
+        ASSERT_TRUE(shader_foundry().initialize(backend()));
+        const ShaderID original = shader_foundry().load_shader("dilate.comp");
+        const ShaderID reloaded = shader_foundry().reload_shader("dilate.comp");
+        ASSERT_NE(reloaded, original);
+
+        shader_foundry().destroy_shader(original);
+
+        EXPECT_EQ(shader_foundry().load_shader("dilate.comp"), reloaded);
+    }
+
     TEST_F(ShaderFoundryTest, DestroyingAnUnknownShaderIsIgnored)
     {
         ASSERT_TRUE(shader_foundry().initialize(backend()));

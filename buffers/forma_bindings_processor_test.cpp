@@ -97,12 +97,12 @@ private:
     static inline bool s_foundry_ready {};
 };
 
-TEST_F(FormaBindingsProcessorDeviceTest, TheTargetsSharedShaderIsNeverKeptForDestruction)
+TEST_F(FormaBindingsProcessorDeviceTest, TheProcessorHoldsItsOwnShareOfTheTargetsShader)
 {
     bindings->bind_push_constant("gain", [] { return 1.F; }, 0);
     tick();
 
-    EXPECT_FALSE(bindings->is_shader_loaded());
+    EXPECT_TRUE(bindings->is_shader_loaded());
 }
 
 TEST_F(FormaBindingsProcessorDeviceTest, SetupProcessorsConfiguresTheGraphicsChain)

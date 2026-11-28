@@ -3,6 +3,7 @@
 
 #include "MayaFlux/Kinesis/ColorSpace.hpp"
 #include "MayaFlux/Portal/Forma/Forma.hpp"
+#include "MayaFlux/Portal/Forma/Primitives/Scrollable.hpp"
 #include "MayaFlux/Portal/Forma/Primitives/ColorPicker.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
@@ -194,6 +195,58 @@ TEST_F(FormaColorPickerTest, DestroyingThePickerRemovesItsElements)
     Forma::destroy(*surface, picker.picker_id);
 
     EXPECT_EQ(surface->layer().size(), 0U);
+}
+
+// =============================================================================
+// Following and tracking
+// =============================================================================
+
+TEST_F(FormaColorPickerTest, AColourWrittenFromOutsideMovesTheMarkers)
+{
+    auto picker = place_picker();
+    frames.tick();
+
+    picker.color->write({ 0.2F, 0.6F, 0.4F });
+    frames.tick(2);
+
+    expect_near(picker.hsv->value, Kinesis::rgb_to_hsv({ 0.2F, 0.6F, 0.4F }));
+}
+
+TEST_F(FormaColorPickerTest, APickedGreyKeepsItsHueThroughTheFollowingRoutine)
+{
+    auto picker = place_picker();
+    click(hue_point(0.7F));
+    const float hue = picker.hsv->value.x;
+    click(square_point(0.F, 0.5F));
+
+    frames.tick(2);
+
+    EXPECT_NEAR(picker.hsv->value.x, hue, 1e-5F);
+}
+
+TEST_F(FormaColorPickerTest, ATrackedPickerPicksWhereItIsDrawnAfterScrolling)
+{
+    auto panel = Forma::Scrollable {}.place(*surface, { .min = { -1.F, 0.6F }, .max = { 1.F, 1.F } });
+    auto picker = place_picker();
+    picker.track(panel, surface->layer());
+
+    panel.scroll_by(surface->layer(), { 0.F, 0.2F });
+    click(square_point(0.5F, 0.5F) + glm::vec2(0.F, 0.2F));
+
+    EXPECT_NEAR(picker.hsv->value.y, 0.5F, 1e-2F);
+    EXPECT_NEAR(picker.hsv->value.z, 0.5F, 1e-2F);
+}
+
+TEST_F(FormaColorPickerTest, TheWheelOverATrackedPickerScrollsThePanel)
+{
+    auto panel = Forma::Scrollable {}.place(*surface, { .min = { -1.F, 0.6F }, .max = { 1.F, 1.F } });
+    auto picker = place_picker();
+    picker.track(panel, surface->layer());
+
+    window->move_to_ndc(square_point(0.5F, 0.75F));
+    window->scroll(0.0, 1.0);
+
+    EXPECT_GT(panel.scroll->offset.y, 0.F);
 }
 
 }
