@@ -1,8 +1,10 @@
 #include "../../support/forma_rig.hpp"
 #include "../../support/test_metadata.hpp"
 
+#include "MayaFlux/Kakshya/NDData/MeshData.hpp"
 #include "MayaFlux/Kinesis/Spatial/HitTest.hpp"
 #include "MayaFlux/Portal/Forma/Internal/Atelier.hpp"
+#include "MayaFlux/Portal/Forma/LocalPoint.hpp"
 #include "MayaFlux/Portal/Forma/Plot/Plot.hpp"
 #include "MayaFlux/Portal/Forma/Primitives/Entry.hpp"
 #include "MayaFlux/Portal/Forma/Surface.hpp"
@@ -924,6 +926,42 @@ TEST_F(FormaRoutedInputFixture, AHostElementWithoutBoundsRoutesNothing)
     const uint32_t unbounded = host->add(Forma::Element {}).id();
 
     EXPECT_FALSE(offscreen->route_input_from(*host, unbounded));
+}
+
+TEST_F(FormaWindowlessFixture, AnImageSurfaceShownOnATurnedMeshReceivesThePointerWhereTheMeshShowsIt)
+{
+    const std::vector<Kakshya::Vertex> vertices {
+        { .position = { -1.F, -1.F, 0.F }, .uv = { 0.F, 1.F } },
+        { .position = { 1.F, -1.F, 0.F }, .uv = { 1.F, 1.F } },
+        { .position = { 1.F, 1.F, 0.F }, .uv = { 1.F, 0.F } },
+        { .position = { -1.F, 1.F, 0.F }, .uv = { 0.F, 0.F } }
+    };
+    auto built = Kakshya::MeshData::from_vertices(vertices, std::vector<uint32_t> { 0, 1, 2, 0, 2, 3 });
+    ASSERT_TRUE(built.has_value());
+    const auto mesh = std::make_shared<Kakshya::MeshData>(std::move(*built));
+
+    const auto view = [] {
+        return Kinesis::look_at_perspective({ 0.F, 0.F, 5.F }, { 0.F, 0.F, 0.F }, 1.5707964F, 1.F, 0.1F, 100.F);
+    };
+    const glm::mat4 turned(
+        glm::vec4(0.8F, 0.F, -0.6F, 0.F), glm::vec4(0.F, 1.F, 0.F, 0.F),
+        glm::vec4(0.6F, 0.F, 0.8F, 0.F), glm::vec4(0.F, 0.F, 0.F, 1.F));
+
+    const uint32_t shown = host->add(Forma::Element {}.with_bounds(host->full()).with_to_local(
+                                         Forma::mesh_to_local(view, [turned] { return turned; }, mesh, host->full())))
+                               .id();
+    const uint32_t inner = whole_offscreen();
+    ASSERT_TRUE(offscreen->route_input_from(*host, shown));
+    glm::vec2 pressed {};
+    offscreen->ctx().on_press(inner, MouseButtons::Left, [&](uint32_t, glm::vec2 ndc) { pressed = ndc; });
+
+    const auto camera = view();
+    const glm::vec4 clip = camera.projection * camera.view * turned * glm::vec4(0.5F, -0.25F, 0.F, 1.F);
+    window->move_to_ndc(glm::vec2(clip) / clip.w);
+    window->press(MouseButtons::Left);
+
+    EXPECT_NEAR(pressed.x, 0.5F, 0.02F);
+    EXPECT_NEAR(pressed.y, -0.25F, 0.04F);
 }
 
 } // namespace MayaFlux::Test

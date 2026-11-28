@@ -886,4 +886,107 @@ TEST(FormaLayerFindTest, FindFollowsRemovalAndALaterRename)
     EXPECT_EQ(layer.find("late"), late);
 }
 
+// =============================================================================
+// Mapped elements: ordering, local coordinates and distance
+// =============================================================================
+
+namespace {
+
+    std::function<std::optional<glm::vec3>(glm::vec2)> mapped_at(float depth)
+    {
+        return [depth](glm::vec2 screen) { return std::optional<glm::vec3>(glm::vec3(screen, depth)); };
+    }
+
+}
+
+TEST(FormaLayerPickTest, AFlatElementComesBeforeEveryMappedOneWhateverTheOrder)
+{
+    Layer layer;
+    const uint32_t flat = layer.add(whole());
+    const uint32_t near_one = layer.add(whole().with_to_local(mapped_at(0.F)));
+    const uint32_t nearer = layer.add(whole().with_to_local(mapped_at(-5.F)));
+
+    EXPECT_EQ(layer.hit_test(k_origin), flat);
+    EXPECT_EQ(layer.hit_test_all(k_origin), (std::vector<uint32_t> { flat, nearer, near_one }));
+}
+
+TEST(FormaLayerPickTest, MappedElementsOrderByDepthThenByTheLaterAdded)
+{
+    Layer layer;
+    const uint32_t close = layer.add(whole().with_to_local(mapped_at(2.F)));
+    const uint32_t distant = layer.add(whole().with_to_local(mapped_at(7.F)));
+    EXPECT_EQ(layer.hit_test(k_origin), close);
+
+    const uint32_t tied = layer.add(whole().with_to_local(mapped_at(2.F)));
+    EXPECT_EQ(layer.hit_test(k_origin), tied);
+    EXPECT_EQ(layer.hit_test_all(k_origin), (std::vector<uint32_t> { tied, close, distant }));
+}
+
+TEST(FormaLayerPickTest, ANonFiniteOrAbsentMappingIsAMiss)
+{
+    constexpr float nan = std::numeric_limits<float>::quiet_NaN();
+    constexpr float inf = std::numeric_limits<float>::infinity();
+
+    for (const glm::vec3 bad : { glm::vec3(nan, 0.F, 1.F), glm::vec3(0.F, inf, 1.F), glm::vec3(0.F, 0.F, nan) }) {
+        Layer layer;
+        const uint32_t id = layer.add(whole().with_to_local([bad](glm::vec2) { return std::optional<glm::vec3>(bad); }));
+
+        EXPECT_FALSE(layer.hit_test(k_origin).has_value());
+        EXPECT_FALSE(layer.local_point(id, k_origin).has_value());
+    }
+
+    Layer layer;
+    (void)layer.add(whole().with_to_local([](glm::vec2) { return std::optional<glm::vec3>(); }));
+    EXPECT_FALSE(layer.hit_test(k_origin).has_value());
+    EXPECT_TRUE(layer.hit_test_all(k_origin).empty());
+}
+
+TEST(FormaLayerPickTest, BoundsAndPredicateTestTheLocalPointNotTheScreenPoint)
+{
+    Layer layer;
+    const uint32_t id = layer.add(rect(0.5F, -1.F, 1.F, 1.F).with_to_local([](glm::vec2 screen) {
+        return std::optional<glm::vec3>(glm::vec3(screen.x + 0.75F, screen.y, 1.F));
+    }));
+
+    EXPECT_EQ(layer.hit_test(k_origin), id);
+    EXPECT_FALSE(layer.hit_test({ 0.75F, 0.F }).has_value());
+    EXPECT_EQ(layer.local_point(id, k_origin), glm::vec2(0.75F, 0.F));
+}
+
+TEST(FormaLayerPickTest, LocalPointIgnoresShapeAndStateButNotAnUnknownId)
+{
+    Layer layer;
+    const uint32_t id = layer.add(rect(0.5F, 0.5F, 1.F, 1.F).hidden().non_interactive());
+
+    EXPECT_EQ(layer.local_point(id, k_origin), k_origin);
+    EXPECT_FALSE(layer.local_point(id + 100, k_origin).has_value());
+}
+
+TEST(FormaLayerPickTest, HitDepthIsLowestForFlatTheDepthForMappedAndEmptyForAMiss)
+{
+    Layer layer;
+    (void)layer.add(rect(-1.F, -1.F, 0.F, 1.F));
+    (void)layer.add(rect(0.F, -1.F, 1.F, 1.F).with_to_local(mapped_at(3.5F)));
+
+    EXPECT_EQ(layer.hit_depth({ -0.5F, 0.F }), std::numeric_limits<float>::lowest());
+    EXPECT_EQ(layer.hit_depth({ 0.5F, 0.F }), 3.5F);
+    EXPECT_FALSE(layer.hit_depth({ 5.F, 0.F }).has_value());
+}
+
+TEST(FormaLayerPickTest, AViewSeenEdgeOnHitsNothingFlatButLeavesMappedElements)
+{
+    Layer layer;
+    const uint32_t flat = layer.add(whole());
+    const uint32_t own = layer.add(whole().with_to_local(mapped_at(1.F)));
+    Kinesis::ViewTransform edge_on;
+    edge_on.view[2][2] = 0.F;
+    edge_on.view[0][0] = 0.F;
+    edge_on.view[2][0] = 1.F;
+    edge_on.view[0][2] = 1.F;
+    layer.set_view(edge_on);
+
+    EXPECT_EQ(layer.hit_test({ 0.5F, 0.F }), own);
+    EXPECT_FALSE(layer.local_point(flat, { 0.5F, 0.F }).has_value());
+}
+
 }

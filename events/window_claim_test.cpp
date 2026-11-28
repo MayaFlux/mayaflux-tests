@@ -11,14 +11,16 @@ namespace {
     using IO::Keys;
     using IO::MouseButtons;
 
-    std::function<bool(double, double)> everywhere()
+    using Covers = std::function<std::optional<float>(double, double)>;
+
+    Covers everywhere(float distance = 0.F)
     {
-        return [](double, double) { return true; };
+        return [distance](double, double) { return std::optional<float>(distance); };
     }
 
-    std::function<bool(double, double)> left_of(double limit)
+    Covers left_of(double limit)
     {
-        return [limit](double x, double) { return x < limit; };
+        return [limit](double x, double) { return x < limit ? std::optional<float>(0.F) : std::nullopt; };
     }
 
 }
@@ -132,12 +134,36 @@ TEST_F(WindowClaimTest, KeysGoToTheHighestClaimThatWantsThatKey)
 TEST_F(WindowClaimTest, TheOwnerIsSettledBeforeAnyListenerRuns)
 {
     bool covers = true;
-    const uint32_t id = source.claim(0, [&covers](double, double) { return covers; });
+    const uint32_t id = source.claim(0, [&covers](double, double) {
+        return covers ? std::optional<float>(0.F) : std::nullopt;
+    });
     window.move_to_pixel(50.0, 50.0);
 
     covers = false;
 
     EXPECT_TRUE(source.owns_pointer(id));
+}
+
+TEST_F(WindowClaimTest, AmongEqualPrioritiesTheNearerWinsWhateverTheOrder)
+{
+    const uint32_t near_one = source.claim(0, everywhere(2.F));
+    const uint32_t far_one = source.claim(0, everywhere(9.F));
+
+    window.move_to_pixel(50.0, 50.0);
+
+    EXPECT_TRUE(source.owns_pointer(near_one));
+    EXPECT_FALSE(source.owns_pointer(far_one));
+}
+
+TEST_F(WindowClaimTest, PriorityIsSettledBeforeDistance)
+{
+    const uint32_t near_one = source.claim(0, everywhere(1.F));
+    const uint32_t ranked = source.claim(1, everywhere(100.F));
+
+    window.move_to_pixel(50.0, 50.0);
+
+    EXPECT_TRUE(source.owns_pointer(ranked));
+    EXPECT_FALSE(source.owns_pointer(near_one));
 }
 
 TEST_F(WindowClaimTest, NoClaimIdIsZeroAndZeroOwnsNothing)

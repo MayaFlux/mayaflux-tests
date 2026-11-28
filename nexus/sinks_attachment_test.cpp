@@ -1544,4 +1544,23 @@ namespace {
         EXPECT_FLOAT_EQ(intensity(0), 5.0F);
     }
 }
+
+    MAYAFLUX_TEST_WITH(TEST_F, NexusRenderSinkTest, TheSinkRendererTakesPinningAndKeepsTheBandItWasGiven, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::vulkan>() }))
+    {
+        auto config = render_config();
+        config.depth_test = Portal::Graphics::CompareOp::LESS_OR_EQUAL;
+        config.depth_write = false;
+        config.view_pinned = true;
+        config.draw_band = Portal::Graphics::DrawBand::FOREMOST;
+
+        Nexus::add_render_sink(sinks, manager, config);
+
+        ASSERT_EQ(sinks.size(), 1U);
+        EXPECT_TRUE(sinks.front().renderer->view_pinned());
+        const auto held = sinks.front().buf->get_render_config();
+        EXPECT_EQ(held.draw_band, Portal::Graphics::DrawBand::FOREMOST);
+        EXPECT_EQ(held.depth_test, Portal::Graphics::CompareOp::LESS_OR_EQUAL);
+        EXPECT_FALSE(held.depth_write);
+    }
+
 }

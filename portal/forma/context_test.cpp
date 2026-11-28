@@ -1530,4 +1530,144 @@ TEST_F(FormaContextTest, APointerSubscriptionCanRequireModifiers)
     EXPECT_EQ(with_ctrl, 1);
 }
 
+// =============================================================================
+// Local coordinates and distance between listeners
+// =============================================================================
+
+namespace {
+
+    std::function<std::optional<glm::vec3>(glm::vec2)> doubled_at(float depth)
+    {
+        return [depth](glm::vec2 screen) { return std::optional<glm::vec3>(glm::vec3(screen * 2.F, depth)); };
+    }
+
+    Forma::Element context_mapped_element(std::function<std::optional<glm::vec3>(glm::vec2)> to_local)
+    {
+        return Forma::Element {}.with_rect({ -4.F, -4.F }, { 4.F, 4.F }).with_to_local(std::move(to_local));
+    }
+
+}
+
+TEST_F(FormaContextTest, PressDragReleaseAndScrollDeliverTheElementsOwnCoordinates)
+{
+    const uint32_t id = layer->add(context_mapped_element(doubled_at(1.F)));
+    std::vector<glm::vec2> seen;
+    ctx->on_press(id, MouseButtons::Left, [&](uint32_t, glm::vec2 p) { seen.push_back(p); });
+    ctx->on_drag(id, MouseButtons::Left, [&](uint32_t, glm::vec2 p) { seen.push_back(p); });
+    ctx->on_release(id, MouseButtons::Left, [&](uint32_t, glm::vec2 p) { seen.push_back(p); });
+    ctx->on_scroll(id, [&](uint32_t, glm::vec2 p, double, double) { seen.push_back(p); });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+    window->move_to_ndc(k_right);
+    window->release(MouseButtons::Left);
+    window->scroll(0.0, 1.0);
+
+    ASSERT_EQ(seen.size(), 4U);
+    expect_near(seen[0], k_left * 2.F);
+    expect_near(seen[1], k_right * 2.F);
+    expect_near(seen[2], k_right * 2.F);
+    expect_near(seen[3], k_right * 2.F);
+}
+
+TEST_F(FormaContextTest, ADragPausesWhereTheElementDoesNotMapAndResumesWhereItDoes)
+{
+    const uint32_t id = layer->add(context_mapped_element([](glm::vec2 screen) -> std::optional<glm::vec3> {
+        if (screen.x > 0.F)
+            return std::nullopt;
+        return glm::vec3(screen, 1.F);
+    }));
+    std::vector<glm::vec2> drags;
+    ctx->on_drag(id, MouseButtons::Left, [&](uint32_t, glm::vec2 p) { drags.push_back(p); });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+    window->move_to_ndc(k_left);
+    window->move_to_ndc(k_right);
+    window->move_to_ndc(k_left);
+
+    ASSERT_EQ(drags.size(), 2U);
+    expect_near(drags[1], k_left);
+}
+
+TEST_F(FormaContextTest, OfTwoContextsTheNearerMappedElementWinsEvenWhenMadeFirst)
+{
+    const uint32_t near_id = layer->add(context_mapped_element(doubled_at(1.F)));
+    int near_presses = 0;
+    ctx->on_press(near_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++near_presses; });
+
+    auto second_layer = std::make_shared<Forma::Layer>();
+    Forma::Context second(second_layer, window, manager, "ctx_far");
+    const uint32_t far_id = second_layer->add(context_mapped_element(doubled_at(9.F)));
+    int far_presses = 0;
+    second.on_press(far_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++far_presses; });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+
+    EXPECT_EQ(near_presses, 1);
+    EXPECT_EQ(far_presses, 0);
+}
+
+TEST_F(FormaContextTest, AFlatElementBeatsAMappedOneOfAnotherContextMadeLater)
+{
+    const uint32_t flat_id = whole();
+    int flat_presses = 0;
+    ctx->on_press(flat_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++flat_presses; });
+
+    auto second_layer = std::make_shared<Forma::Layer>();
+    Forma::Context second(second_layer, window, manager, "ctx_mapped");
+    const uint32_t mapped_id = second_layer->add(context_mapped_element(doubled_at(0.F)));
+    int mapped_presses = 0;
+    second.on_press(mapped_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++mapped_presses; });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+
+    EXPECT_EQ(flat_presses, 1);
+    EXPECT_EQ(mapped_presses, 0);
+}
+
+TEST_F(FormaContextTest, AFocusedElementTakesOnlyTheKeysItListensForFromListenersBelow)
+{
+    auto& source = window->get_event_source();
+    const uint32_t below = source.claim(
+        -10, [](double, double) { return std::optional<float>(); }, [](Keys) { return true; });
+
+    const uint32_t id = whole();
+    int pressed = 0;
+    ctx->on_press(id, Keys::A, [&](uint32_t) { ++pressed; });
+    focus(id, k_left);
+
+    window->key_down(Keys::A);
+    EXPECT_EQ(pressed, 1);
+    EXPECT_FALSE(source.owns_key(below));
+
+    window->key_down(Keys::W);
+    EXPECT_TRUE(source.owns_key(below));
+
+    ctx->clear_focus();
+    window->key_down(Keys::A);
+    EXPECT_TRUE(source.owns_key(below));
+    EXPECT_EQ(pressed, 1);
+
+    source.unclaim(below);
+}
+
+TEST_F(FormaContextTest, AFocusedTextElementTakesEveryKey)
+{
+    auto& source = window->get_event_source();
+    const uint32_t below = source.claim(
+        -10, [](double, double) { return std::optional<float>(); }, [](Keys) { return true; });
+
+    const uint32_t id = whole();
+    ctx->on_text(id, [](uint32_t, uint32_t) { });
+    focus(id, k_left);
+
+    window->key_down(Keys::W);
+
+    EXPECT_FALSE(source.owns_key(below));
+    source.unclaim(below);
+}
+
 }

@@ -1,6 +1,7 @@
 #include "../../support/forma_rig.hpp"
 #include "../../support/test_metadata.hpp"
 
+#include "MayaFlux/Kinesis/Viewport/ViewTransform.hpp"
 #include "MayaFlux/Portal/Forma/Inspect/Inspector.hpp"
 #include "MayaFlux/Portal/Forma/Primitives/Geometry.hpp"
 #include "MayaFlux/Portal/Forma/Primitives/Scrollable.hpp"
@@ -536,6 +537,127 @@ TEST_F(FormaApiTest, DestroyingAScrollableTextFieldTearsDownTheViewportToo)
     Forma::destroy(surface, field.element_id);
 
     EXPECT_TRUE(surface.layer().empty());
+}
+
+// =============================================================================
+// Draw configuration of flat and placed Surfaces
+// =============================================================================
+
+namespace {
+
+    Kinesis::ViewTransform forma_api_camera()
+    {
+        return Kinesis::look_at_perspective({ 0.F, 0.F, 5.F }, { 0.F, 0.F, 0.F }, 1.5707964F, 1.F, 0.1F, 100.F);
+    }
+
+    std::function<glm::mat4()> forma_api_set_back(float z)
+    {
+        return [z] {
+            glm::mat4 model(1.F);
+            model[3] = glm::vec4(0.F, 0.F, z, 1.F);
+            return model;
+        };
+    }
+
+}
+
+TEST_F(FormaApiTest, AFormaBufferIsPinnedAndDrawsInTheOverlayBandUnlessItSaysOtherwise)
+{
+    using Portal::Graphics::DrawBand;
+    auto surface = make_surface("api-bands");
+
+    const auto plain = Forma::create_buffer(surface.render_config());
+    auto asked = surface.render_config();
+    asked.draw_band = DrawBand::BACKDROP;
+    const auto backdrop = Forma::create_buffer(std::move(asked));
+
+    EXPECT_EQ(plain->get_render_config().draw_band, DrawBand::OVERLAY);
+    EXPECT_EQ(backdrop->get_render_config().draw_band, DrawBand::BACKDROP);
+    EXPECT_TRUE(plain->get_render_processor()->view_pinned());
+}
+
+TEST_F(FormaApiTest, PlacingASurfaceMovesItsBatchToTheTranslucentBandAndRemovingItRestoresIt)
+{
+    using Portal::Graphics::CompareOp;
+    using Portal::Graphics::DrawBand;
+    auto surface = make_surface("api-placed");
+    Forma::Geometry::Form<float> form { forma_api_counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    auto child = Forma::create<float>(surface, std::move(form), 0.F);
+    const auto batch = surface.layer().batch();
+    const int64_t priority = batch->get_render_config().draw_priority;
+
+    surface.set_placement(forma_api_camera, forma_api_set_back(0.F));
+    (void)surface.layer().drawn_view();
+
+    auto placed = batch->get_render_config();
+    EXPECT_EQ(placed.draw_band, DrawBand::TRANSLUCENT);
+    EXPECT_EQ(placed.depth_test, CompareOp::LESS_OR_EQUAL);
+    EXPECT_FALSE(placed.depth_write);
+    EXPECT_EQ(placed.draw_priority, priority);
+    EXPECT_NE(batch->draw_rank(), 0);
+
+    surface.set_placement({}, {});
+
+    const auto flat = batch->get_render_config();
+    EXPECT_EQ(flat.draw_band, DrawBand::OVERLAY);
+    EXPECT_FALSE(flat.depth_test.has_value());
+    EXPECT_TRUE(flat.depth_write);
+    EXPECT_EQ(batch->draw_rank(), 0);
+}
+
+TEST_F(FormaApiTest, ABatchMadeAfterThePlacementIsPlacedFromTheStart)
+{
+    auto surface = make_surface("api-placed-late");
+    surface.set_placement(forma_api_camera, forma_api_set_back(0.F));
+
+    Forma::Geometry::Form<float> form { forma_api_counting_geometry(std::make_shared<int>(0), k_origin_hint) };
+    auto child = Forma::create<float>(surface, std::move(form), 0.F);
+
+    EXPECT_EQ(surface.layer().batch()->get_render_config().draw_band, Portal::Graphics::DrawBand::TRANSLUCENT);
+}
+
+TEST_F(FormaApiTest, TheFartherOfTwoPlacedSurfacesRanksBelowTheNearer)
+{
+    auto near_surface = make_surface("api-rank-near");
+    auto far_surface = make_surface("api-rank-far");
+    const auto near_batch = Forma::internal::atelier().surface_batch(near_surface);
+    const auto far_batch = Forma::internal::atelier().surface_batch(far_surface);
+    near_surface.set_placement(forma_api_camera, forma_api_set_back(1.F));
+    far_surface.set_placement(forma_api_camera, forma_api_set_back(-20.F));
+
+    (void)near_surface.layer().drawn_view();
+    (void)far_surface.layer().drawn_view();
+
+    EXPECT_LT(far_batch->draw_rank(), near_batch->draw_rank());
+}
+
+TEST_F(FormaApiTest, APlacedScrollPanelClipsInTheShaderAndAFlatOneWithTheScissor)
+{
+    const AABB2D viewport { .min = { -0.5F, -0.25F }, .max = { 0.5F, 0.75F } };
+    auto surface = make_surface("api-placed-scroll");
+    auto panel = Forma::Scrollable {}.place(surface, viewport);
+    const auto processor = panel.buf.buffer()->get_render_processor();
+    ASSERT_NE(processor, nullptr);
+    ASSERT_EQ(processor->get_scissor(), Kinesis::Scissor::from(viewport));
+
+    const auto constant = [&processor](uint32_t id) {
+        const auto& constants = processor->get_config().specialization_constants;
+        const auto found = constants.find(id);
+        return found == constants.end() ? 0.F : std::bit_cast<float>(found->second);
+    };
+
+    surface.set_placement(forma_api_camera, forma_api_set_back(0.F));
+
+    EXPECT_FALSE(processor->get_scissor().has_value());
+    EXPECT_FLOAT_EQ(constant(2), -0.5F);
+    EXPECT_FLOAT_EQ(constant(3), -0.25F);
+    EXPECT_FLOAT_EQ(constant(4), 0.5F);
+    EXPECT_FLOAT_EQ(constant(5), 0.75F);
+
+    surface.set_placement({}, {});
+
+    EXPECT_EQ(processor->get_scissor(), Kinesis::Scissor::from(viewport));
+    EXPECT_FLOAT_EQ(constant(4), 0.F);
 }
 
 }

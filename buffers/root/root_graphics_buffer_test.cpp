@@ -232,6 +232,54 @@ namespace {
         EXPECT_EQ(draws[3].buffer, children[2]);
     }
 
+    TEST(RootGraphicsBufferTest, BatchOrdersByBandThenRankThenPriority)
+    {
+        using Portal::Graphics::DrawBand;
+        struct Draw {
+            std::optional<DrawBand> band;
+            int64_t rank;
+            int64_t priority;
+        };
+
+        auto root = graphics_root();
+        const std::vector<Draw> draws_in {
+            { DrawBand::OVERLAY, 0, -100 },
+            { std::nullopt, 0, 100 },
+            { DrawBand::TRANSLUCENT, -2, 50 },
+            { DrawBand::TRANSLUCENT, -9, 90 },
+            { DrawBand::BACKDROP, 0, 1000 },
+            { DrawBand::TRANSLUCENT, -2, 10 },
+            { DrawBand::FOREMOST, -50, -1000 }
+        };
+        std::vector<std::shared_ptr<VKBuffer>> children;
+
+        for (size_t i = 0; i < draws_in.size(); ++i) {
+            auto child = vertex_buffer();
+            const auto pipeline = static_cast<Buffers::RenderPipelineID>(i + 1);
+            auto config = child->get_render_config();
+            config.draw_band = draws_in[i].band;
+            config.draw_priority = draws_in[i].priority;
+            child->set_render_config(config);
+            child->set_draw_rank(draws_in[i].rank);
+            child->set_pipeline_window(pipeline, nullptr);
+            child->set_default_processor(std::make_shared<GraphicsActionProcessor>(
+                [pipeline](const auto& buffer) {
+                    std::static_pointer_cast<VKBuffer>(buffer)->set_pipeline_command(pipeline, 41);
+                }));
+            root->add_child_buffer(child);
+            children.push_back(child);
+        }
+
+        root->process_default();
+
+        const auto& draws = root->get_renderable_buffers();
+        const std::vector<size_t> expected { 4, 1, 3, 5, 2, 0, 6 };
+        ASSERT_EQ(draws.size(), expected.size());
+        for (size_t i = 0; i < expected.size(); ++i) {
+            EXPECT_EQ(draws[i].buffer, children[expected[i]]) << "position " << i;
+        }
+    }
+
     TEST(RootGraphicsBufferTest, BatchCarriesDepthRequirementIntoTheDrawList)
     {
         auto root = graphics_root();

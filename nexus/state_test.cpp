@@ -14,6 +14,7 @@
 #include "MayaFlux/Nexus/Principals/Presence.hpp"
 #include "MayaFlux/Nexus/State/Decoder.hpp"
 #include "MayaFlux/Nexus/State/Encoder.hpp"
+#include "MayaFlux/Nexus/State/Schema.hpp"
 #include "MayaFlux/Transitive/IO/JSONSerializer.hpp"
 #include "MayaFlux/Vruta/EventManager.hpp"
 
@@ -1601,4 +1602,34 @@ namespace {
         EXPECT_EQ(again->following()->second, offset);
     }
 }
+
+TEST(NexusRenderSinkRecordTest, DrawConfigurationSurvivesARoundTrip)
+{
+    Nexus::State::RenderSinkRecord record;
+    record.depth_test = Portal::Graphics::CompareOp::LESS_OR_EQUAL;
+    record.depth_write = false;
+    record.view_pinned = true;
+    record.draw_band = Portal::Graphics::DrawBand::TRANSLUCENT;
+    record.draw_priority = 4;
+
+    IO::JSONSerializer serializer;
+    const auto read = serializer.decode<Nexus::State::RenderSinkRecord>(serializer.encode(record));
+
+    ASSERT_TRUE(read.has_value());
+    EXPECT_EQ(*read, record);
+}
+
+TEST(NexusRenderSinkRecordTest, ARecordSavedWithoutTheDrawMembersReadsWithTheirDefaults)
+{
+    IO::JSONSerializer serializer;
+    const auto read = serializer.decode<Nexus::State::RenderSinkRecord>(R"({ "draw_priority": 2 })");
+
+    ASSERT_TRUE(read.has_value());
+    EXPECT_FALSE(read->depth_test.has_value());
+    EXPECT_TRUE(read->depth_write);
+    EXPECT_FALSE(read->view_pinned);
+    EXPECT_FALSE(read->draw_band.has_value());
+    EXPECT_EQ(read->draw_priority, 2);
+}
+
 }
