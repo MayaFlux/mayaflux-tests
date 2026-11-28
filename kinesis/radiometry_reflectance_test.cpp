@@ -14,12 +14,12 @@ namespace {
     using Radiometry::direction_at;
     using Radiometry::integrate_hemisphere;
 
-    const glm::vec3 k_up(0.0F, 0.0F, 1.0F);
+    const glm::vec3 k_reflectance_up(0.0F, 0.0F, 1.0F);
 
     double albedo_of(const Kinesis::SurfaceResponse& surface, const glm::vec3& view)
     {
         return integrate_hemisphere([&](const glm::vec3& source) {
-            return Kinesis::surface_reflectance(surface, k_up, view, source).x * source.z;
+            return Kinesis::surface_reflectance(surface, k_reflectance_up, view, source).x * source.z;
         });
     }
 
@@ -98,7 +98,7 @@ TEST(RadiometryReflectanceTest, UnroughDiffuseIsLambert)
 {
     const glm::vec3 albedo(0.2F, 0.5F, 1.0F);
     const glm::vec3 value = Kinesis::oren_nayar_energy_preserving(
-        albedo, 0.0F, k_up, direction_at(0.7, 0.0), direction_at(0.2, 2.0));
+        albedo, 0.0F, k_reflectance_up, direction_at(0.7, 0.0), direction_at(0.2, 2.0));
     EXPECT_NEAR(value.x, albedo.x * std::numbers::inv_pi_v<float>, 1.0e-6F);
     EXPECT_NEAR(value.y, albedo.y * std::numbers::inv_pi_v<float>, 1.0e-6F);
     EXPECT_NEAR(value.z, albedo.z * std::numbers::inv_pi_v<float>, 1.0e-6F);
@@ -110,7 +110,7 @@ TEST(RadiometryReflectanceTest, WhiteRoughDiffuseReturnsAllItReceives)
         for (const double cos_view : { 0.05, 0.4, 1.0 }) {
             const glm::vec3 view = direction_at(cos_view, 0.3);
             const double total = integrate_hemisphere([&](const glm::vec3& source) {
-                return Kinesis::oren_nayar_energy_preserving(glm::vec3(1.0F), roughness, k_up, view, source).x
+                return Kinesis::oren_nayar_energy_preserving(glm::vec3(1.0F), roughness, k_reflectance_up, view, source).x
                     * source.z;
             });
             EXPECT_NEAR(total, 1.0, 5.0e-3) << roughness << ' ' << cos_view;
@@ -128,8 +128,8 @@ TEST(RadiometryReflectanceTest, SwappingViewAndSourceChangesNothing)
             6.2 * Kinesis::Stochastic::hashed_unit(i, 2));
         const glm::vec3 b = direction_at(0.02 + 0.98 * Kinesis::Stochastic::hashed_unit(i, 3),
             6.2 * Kinesis::Stochastic::hashed_unit(i, 4));
-        const glm::vec3 forward = Kinesis::surface_reflectance(surface, k_up, a, b);
-        const glm::vec3 backward = Kinesis::surface_reflectance(surface, k_up, b, a);
+        const glm::vec3 forward = Kinesis::surface_reflectance(surface, k_reflectance_up, a, b);
+        const glm::vec3 backward = Kinesis::surface_reflectance(surface, k_reflectance_up, b, a);
         ASSERT_NEAR(forward.x, backward.x, 1.0e-4F * std::max(1.0F, forward.x));
         ASSERT_NEAR(forward.z, backward.z, 1.0e-4F * std::max(1.0F, forward.z));
         ASSERT_TRUE(Radiometry::finite(forward));
@@ -142,9 +142,9 @@ TEST(RadiometryReflectanceTest, NothingLeavesBelowTheHorizon)
     const Kinesis::SurfaceResponse surface;
     const glm::vec3 above = direction_at(0.5, 0.0);
     const glm::vec3 below = direction_at(-0.5, 0.0);
-    EXPECT_EQ(Kinesis::surface_reflectance(surface, k_up, above, below), glm::vec3(0.0F));
-    EXPECT_EQ(Kinesis::surface_reflectance(surface, k_up, below, above), glm::vec3(0.0F));
-    EXPECT_EQ(Kinesis::surface_reflectance(surface, k_up, below, -below), glm::vec3(0.0F));
+    EXPECT_EQ(Kinesis::surface_reflectance(surface, k_reflectance_up, above, below), glm::vec3(0.0F));
+    EXPECT_EQ(Kinesis::surface_reflectance(surface, k_reflectance_up, below, above), glm::vec3(0.0F));
+    EXPECT_EQ(Kinesis::surface_reflectance(surface, k_reflectance_up, below, -below), glm::vec3(0.0F));
     EXPECT_EQ(Kinesis::surface_density(surface, above, below), 0.0F);
     EXPECT_EQ(Kinesis::surface_density(surface, below, above), 0.0F);
 }
@@ -200,7 +200,7 @@ TEST(RadiometryReflectanceTest, ImportanceSamplingAgreesWithQuadrature)
             Kinesis::Stochastic::hashed_unit(i, 22));
         const float density = Kinesis::surface_density(surface, view, source);
         if (density > 0.0F) {
-            sum += Kinesis::surface_reflectance(surface, k_up, view, source).x * source.z / density;
+            sum += Kinesis::surface_reflectance(surface, k_reflectance_up, view, source).x * source.z / density;
         }
     }
     EXPECT_NEAR(sum / count, albedo_of(surface, view), 1.0e-2);

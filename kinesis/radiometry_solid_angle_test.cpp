@@ -10,7 +10,7 @@ namespace MayaFlux::Test {
 
 namespace {
 
-    const glm::vec3 k_normal(0.0F, 0.0F, 1.0F);
+    const glm::vec3 k_polygon_normal(0.0F, 0.0F, 1.0F);
 
     /** Irradiance of a sphere by quadrature over the hemisphere. */
     double sphere_by_quadrature(const glm::vec3& center, float radius)
@@ -80,7 +80,7 @@ TEST(RadiometrySolidAngleTest, PolygonMatchesIntegrationOverItsArea)
     for (const glm::vec3 center : { glm::vec3(0.0F, 0.0F, 2.0F), glm::vec3(1.5F, -0.5F, 1.0F),
              glm::vec3(1.0F, 0.0F, 0.1F), glm::vec3(0.6F, 0.4F, -0.1F) }) {
         const auto corners = Kinesis::rectangle_corners(center, right, up, glm::vec2(1.0F));
-        EXPECT_NEAR(Kinesis::polygon_irradiance(corners, k_normal), square_by_area(center, right, up), 2.0e-3)
+        EXPECT_NEAR(Kinesis::polygon_irradiance(corners, k_polygon_normal), square_by_area(center, right, up), 2.0e-3)
             << center.x << ' ' << center.z;
     }
 }
@@ -89,15 +89,15 @@ TEST(RadiometrySolidAngleTest, PolygonIgnoresWindingAndRejectsWhatIsBelow)
 {
     auto corners = Kinesis::rectangle_corners({ 0.3F, 0.2F, 1.0F }, { 1.0F, 0.0F, 0.0F }, { 0.0F, 1.0F, 0.0F },
         glm::vec2(1.0F));
-    const float forward = Kinesis::polygon_irradiance(corners, k_normal);
+    const float forward = Kinesis::polygon_irradiance(corners, k_polygon_normal);
     std::ranges::reverse(corners);
-    EXPECT_FLOAT_EQ(Kinesis::polygon_irradiance(corners, k_normal), forward);
-    EXPECT_EQ(Kinesis::polygon_irradiance(corners, -k_normal), 0.0F);
-    EXPECT_EQ(Kinesis::polygon_irradiance(std::span<const glm::vec3>(corners).first(2), k_normal), 0.0F);
+    EXPECT_FLOAT_EQ(Kinesis::polygon_irradiance(corners, k_polygon_normal), forward);
+    EXPECT_EQ(Kinesis::polygon_irradiance(corners, -k_polygon_normal), 0.0F);
+    EXPECT_EQ(Kinesis::polygon_irradiance(std::span<const glm::vec3>(corners).first(2), k_polygon_normal), 0.0F);
 
     const std::array<glm::vec3, 4> collapsed { glm::vec3(0.0F, 0.0F, 1.0F), glm::vec3(0.0F, 0.0F, 1.0F),
         glm::vec3(0.0F, 0.0F, 1.0F), glm::vec3(0.0F, 0.0F, 1.0F) };
-    EXPECT_EQ(Kinesis::polygon_irradiance(collapsed, k_normal), 0.0F);
+    EXPECT_EQ(Kinesis::polygon_irradiance(collapsed, k_polygon_normal), 0.0F);
 }
 
 TEST(RadiometrySolidAngleTest, DiskOutlineMatchesTheDiskOnItsAxis)
@@ -106,7 +106,7 @@ TEST(RadiometrySolidAngleTest, DiskOutlineMatchesTheDiskOnItsAxis)
         const auto corners = Kinesis::disk_corners(
             { 0.0F, 0.0F, distance }, { 1.0F, 0.0F, 0.0F }, { 0.0F, 1.0F, 0.0F }, 1.0F);
         const float exact = std::numbers::pi_v<float> / (1.0F + distance * distance);
-        EXPECT_NEAR(Kinesis::polygon_irradiance(corners, k_normal), exact, 0.02F * exact) << distance;
+        EXPECT_NEAR(Kinesis::polygon_irradiance(corners, k_polygon_normal), exact, 0.02F * exact) << distance;
     }
 }
 

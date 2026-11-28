@@ -13,9 +13,9 @@ namespace {
 
     namespace St = Kinesis::Stochastic;
 
-    constexpr uint32_t k_count = 1U << 16U;
+    constexpr uint32_t k_stochastic_count = 1U << 16U;
 
-    glm::vec2 point(uint32_t i) { return St::hammersley_point(i, k_count); }
+    glm::vec2 stochastic_point(uint32_t i) { return St::hammersley_point(i, k_stochastic_count); }
 
 }
 
@@ -51,12 +51,12 @@ TEST(StochasticSequenceTest, HashDoesNotCollideAndSeedsDiffer)
 
     double sum = 0.0;
     uint32_t same = 0;
-    for (uint32_t i = 0; i < k_count; ++i) {
+    for (uint32_t i = 0; i < k_stochastic_count; ++i) {
         const float a = St::hashed_unit(i, 0);
         sum += a;
         same += a == St::hashed_unit(i, 1) ? 1U : 0U;
     }
-    EXPECT_NEAR(sum / k_count, 0.5, 5.0e-3);
+    EXPECT_NEAR(sum / k_stochastic_count, 0.5, 5.0e-3);
     EXPECT_LT(same, 4U);
 }
 
@@ -109,20 +109,20 @@ TEST(StochasticDirectionTest, MapsAreUniformInTheirOwnMeasure)
     glm::dvec3 cosine(0.0);
     glm::dvec3 barycentric(0.0);
     double disk_radius_sq = 0.0;
-    for (uint32_t i = 0; i < k_count; ++i) {
-        sphere += glm::dvec3(St::square_to_sphere(point(i)));
-        hemisphere += glm::dvec3(St::square_to_hemisphere(point(i)));
-        cosine += glm::dvec3(St::square_to_cosine_hemisphere(point(i)));
-        barycentric += glm::dvec3(St::square_to_barycentric(point(i)));
-        const glm::vec2 d = St::square_to_disk(point(i));
+    for (uint32_t i = 0; i < k_stochastic_count; ++i) {
+        sphere += glm::dvec3(St::square_to_sphere(stochastic_point(i)));
+        hemisphere += glm::dvec3(St::square_to_hemisphere(stochastic_point(i)));
+        cosine += glm::dvec3(St::square_to_cosine_hemisphere(stochastic_point(i)));
+        barycentric += glm::dvec3(St::square_to_barycentric(stochastic_point(i)));
+        const glm::vec2 d = St::square_to_disk(stochastic_point(i));
         disk_radius_sq += glm::dot(d, d);
     }
-    EXPECT_NEAR(glm::length(sphere) / k_count, 0.0, 2.0e-3);
-    EXPECT_NEAR(hemisphere.z / k_count, 0.5, 2.0e-3);
-    EXPECT_NEAR(cosine.z / k_count, 2.0 / 3.0, 2.0e-3);
-    EXPECT_NEAR(barycentric.x / k_count, 1.0 / 3.0, 2.0e-3);
-    EXPECT_NEAR(barycentric.y / k_count, 1.0 / 3.0, 2.0e-3);
-    EXPECT_NEAR(disk_radius_sq / k_count, 0.5, 2.0e-3);
+    EXPECT_NEAR(glm::length(sphere) / k_stochastic_count, 0.0, 2.0e-3);
+    EXPECT_NEAR(hemisphere.z / k_stochastic_count, 0.5, 2.0e-3);
+    EXPECT_NEAR(cosine.z / k_stochastic_count, 2.0 / 3.0, 2.0e-3);
+    EXPECT_NEAR(barycentric.x / k_stochastic_count, 1.0 / 3.0, 2.0e-3);
+    EXPECT_NEAR(barycentric.y / k_stochastic_count, 1.0 / 3.0, 2.0e-3);
+    EXPECT_NEAR(disk_radius_sq / k_stochastic_count, 0.5, 2.0e-3);
 }
 
 TEST(StochasticDirectionTest, DensitiesIntegrateToOne)
