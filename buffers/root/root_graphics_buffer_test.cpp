@@ -280,6 +280,21 @@ namespace {
         }
     }
 
+    TEST(RootGraphicsBufferTest, ARankSourceIsAskedWhenDrawsAreOrdered)
+    {
+        const auto buffer = vertex_buffer();
+        int64_t current = 5;
+        buffer->set_draw_rank_source([&current] { return current; });
+        EXPECT_EQ(buffer->draw_rank(), 5);
+
+        current = -7;
+        EXPECT_EQ(buffer->draw_rank(), -7);
+
+        buffer->set_draw_rank(2);
+        current = 100;
+        EXPECT_EQ(buffer->draw_rank(), 2);
+    }
+
     TEST(RootGraphicsBufferTest, BatchCarriesDepthRequirementIntoTheDrawList)
     {
         auto root = graphics_root();

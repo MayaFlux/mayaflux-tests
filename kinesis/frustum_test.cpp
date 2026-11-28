@@ -114,12 +114,27 @@ namespace {
         const Frustum frustum = Kinesis::frustum_from_fov(fov, 16.0 / 9.0, 0.1, 50.0);
 
         const glm::mat4 made = Kinesis::frustum_projection(frustum, 16.0F / 9.0F);
-        const glm::mat4 expected = glm::perspective(static_cast<float>(fov), 16.0F / 9.0F, 0.1F, 50.0F);
+        const glm::mat4 expected = glm::perspectiveRH_ZO(static_cast<float>(fov), 16.0F / 9.0F, 0.1F, 50.0F);
 
         for (int column = 0; column < 4; ++column) {
             for (int row = 0; row < 4; ++row) {
                 EXPECT_NEAR(made[column][row], expected[column][row], 1.0e-3F) << column << "," << row;
             }
+        }
+    }
+
+    TEST(FrustumTest, NearAndFarProjectToZeroAndOneForBothKindsOfLens)
+    {
+        Frustum frustum = Kinesis::frustum_from_fov(1.0, 1.5, 0.5, 40.0);
+
+        for (const bool orthographic : { false, true }) {
+            frustum.orthographic = orthographic;
+            const glm::mat4 projection = Kinesis::frustum_projection(frustum, 1.5F);
+            const glm::vec4 at_near = projection * glm::vec4(0.0F, 0.0F, -0.5F, 1.0F);
+            const glm::vec4 at_far = projection * glm::vec4(0.0F, 0.0F, -40.0F, 1.0F);
+
+            EXPECT_NEAR(at_near.z / at_near.w, 0.0F, k_tolerance);
+            EXPECT_NEAR(at_far.z / at_far.w, 1.0F, k_tolerance);
         }
     }
 

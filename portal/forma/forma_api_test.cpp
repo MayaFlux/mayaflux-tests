@@ -595,8 +595,10 @@ TEST_F(FormaApiTest, PlacingASurfaceMovesItsBatchToTheTranslucentBandAndRemoving
     EXPECT_FALSE(placed.depth_write);
     EXPECT_EQ(placed.draw_priority, priority);
     EXPECT_NE(batch->draw_rank(), 0);
+    EXPECT_TRUE(batch->get_render_processor()->depth_stamp());
 
     surface.set_placement({}, {});
+    EXPECT_FALSE(batch->get_render_processor()->depth_stamp());
 
     const auto flat = batch->get_render_config();
     EXPECT_EQ(flat.draw_band, DrawBand::OVERLAY);
