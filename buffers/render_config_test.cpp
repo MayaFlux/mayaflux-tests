@@ -120,4 +120,25 @@ TEST_F(RenderConfigCarryTest, PickImageRefusesABufferThatDoesNotRenderAndNeverHi
     EXPECT_FALSE(to_local({ 0.F, 0.F }).has_value());
 }
 
+TEST_F(RenderConfigCarryTest, PickImageTakesAnOccluderAndLetsItBecomePickable)
+{
+    Portal::Forma::PickImage picking(64, 64);
+    auto buffer = triangle();
+    ASSERT_NE(buffer, nullptr);
+    EXPECT_FALSE(picking.occlude(buffer));
+    EXPECT_FALSE(picking.occlude(nullptr));
+
+    buffer_manager->add_buffer(buffer, Buffers::ProcessingToken::GRAPHICS_BACKEND);
+    buffer->setup_rendering({ .target_window = window });
+    const auto view = [] { return Kinesis::ViewTransform {}; };
+    const Kinesis::AABB2D bounds { .min = glm::vec2(-1.F), .max = glm::vec2(1.F) };
+
+    EXPECT_TRUE(picking.occlude(buffer));
+    EXPECT_TRUE(picking.occlude(buffer));
+    EXPECT_FALSE(picking.to_local(buffer, view, bounds)({ 0.F, 0.F }).has_value());
+    EXPECT_TRUE(picking.add(buffer));
+    EXPECT_TRUE(picking.occlude(buffer));
+    EXPECT_NO_THROW(picking.remove(buffer));
+}
+
 }

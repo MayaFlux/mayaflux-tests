@@ -7,6 +7,8 @@
 #include "MayaFlux/Buffers/BufferManager.hpp"
 #include "MayaFlux/Buffers/BufferProcessingChain.hpp"
 #include "MayaFlux/Buffers/Forma/FormaBuffer.hpp"
+#include "MayaFlux/Buffers/Staging/AudioWriteProcessor.hpp"
+#include "MayaFlux/Buffers/Staging/DataWriteProcessor.hpp"
 #include "MayaFlux/Nodes/Conduit/Constant.hpp"
 #include "MayaFlux/Portal/Forma/Bridge.hpp"
 #include "MayaFlux/Portal/Forma/Layer.hpp"
@@ -242,6 +244,75 @@ MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, StopSyncLeavesOtherLayersRunning, (:
 
     EXPECT_EQ(*first_calls, 1);
     EXPECT_EQ(*second_calls, 2);
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, OneTaskRunsEverySyncOfALayerInOrder, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+{
+    std::vector<uint32_t> order;
+    for (const uint32_t id : { 1U, 2U, 3U })
+        rig.bridge.spawn_sync(layer, id, [&order, id] { order.push_back(id); });
+    rig.frames.tick(3);
+    const size_t one_layer = rig.frames.scheduler->get_task_names().size();
+    rig.bridge.spawn_sync(layer, 4U, [] { });
+    rig.frames.tick(3);
+
+    EXPECT_EQ(rig.frames.scheduler->get_task_names().size(), one_layer);
+    ASSERT_GE(order.size(), 3U);
+    EXPECT_EQ(std::vector<uint32_t>(order.begin(), order.begin() + 3), (std::vector<uint32_t> { 1U, 2U, 3U }));
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, ASyncMayUnbindItselfAndALaterOne, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+{
+    int first = 0;
+    int second = 0;
+    int third = 0;
+    rig.bridge.spawn_sync(layer, 1U, [&] {
+        ++first;
+        rig.bridge.unbind(rig.ref(2U));
+        rig.bridge.unbind(rig.ref(1U));
+    });
+    rig.bridge.spawn_sync(layer, 2U, [&] { ++second; });
+    rig.bridge.spawn_sync(layer, 3U, [&] { ++third; });
+
+    rig.frames.tick(3);
+
+    EXPECT_EQ(first, 1);
+    EXPECT_EQ(second, 0);
+    EXPECT_GE(third, 2);
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, ASyncMayAddAnotherWhichStartsTheNextFrame, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+{
+    int passes = 0;
+    int first_added_pass = 0;
+    rig.bridge.spawn_sync(layer, 1U, [&] {
+        if (++passes > 1)
+            return;
+        rig.bridge.spawn_sync(layer, 2U, [&] {
+            if (first_added_pass == 0)
+                first_added_pass = passes;
+        });
+    });
+
+    rig.frames.tick(4);
+
+    EXPECT_EQ(first_added_pass, 2);
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, ASyncMayStopItsLayer, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+{
+    int first = 0;
+    int second = 0;
+    rig.bridge.spawn_sync(layer, 1U, [&] {
+        ++first;
+        rig.bridge.stop_sync(layer);
+    });
+    rig.bridge.spawn_sync(layer, 2U, [&] { ++second; });
+
+    rig.frames.tick(3);
+
+    EXPECT_EQ(first, 1);
+    EXPECT_EQ(second, 0);
 }
 
 MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, StopSyncOnALayerWithNoTasksIsHarmless, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
@@ -788,6 +859,36 @@ TEST_F(FormaBridgeDeviceTest, UnbindRemovesTheStagedPushConstantAndStopsFollowin
     tick(buffer);
 
     EXPECT_FALSE(staged_push(buffer, 8).has_value());
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, AnAudioWriteProcessorReceivesTheValueEachFrameUntilUnbound, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+{
+    auto state = rig.add<float>(20, 0.5F);
+    auto processor = std::make_shared<Buffers::AudioWriteProcessor>();
+    ASSERT_FALSE(processor->has_pending());
+    rig.frames.tick();
+    const size_t before = rig.frames.scheduler->get_task_names().size();
+
+    rig.bridge.write(rig.ref(20), processor);
+    rig.frames.tick(2);
+    EXPECT_TRUE(processor->has_pending());
+    EXPECT_EQ(rig.frames.scheduler->get_task_names().size(), before + 1);
+
+    rig.bridge.unbind(rig.ref(20));
+    rig.frames.tick(2);
+    EXPECT_EQ(rig.frames.scheduler->get_task_names().size(), before);
+}
+
+MAYAFLUX_TEST_WITH(TEST_F, FormaBridgeTest, ADataWriteProcessorReceivesTheValue, (::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::contract, ::MayaFlux::Test::Meta::requirements<>() }))
+{
+    auto state = rig.add<float>(21, 0.25F);
+    auto processor = std::make_shared<Buffers::DataWriteProcessor>();
+    ASSERT_FALSE(processor->has_pending());
+
+    rig.bridge.write(rig.ref(21), processor);
+    rig.frames.tick(2);
+
+    EXPECT_TRUE(processor->has_pending());
 }
 
 }

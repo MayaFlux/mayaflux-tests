@@ -16,6 +16,7 @@
 #include "MayaFlux/Kriya/Awaiters/GetPromise.hpp"
 #include "MayaFlux/Nodes/Conduit/Constant.hpp"
 #include "MayaFlux/Nodes/Generators/Sine.hpp"
+#include "MayaFlux/Nodes/Network/ModalNetwork.hpp"
 #include "MayaFlux/Nodes/NodeGraphManager.hpp"
 #include "MayaFlux/Portal/Forma/Context.hpp"
 #include "MayaFlux/Portal/Forma/Inspect/Inspector.hpp"
@@ -493,6 +494,45 @@ TEST_F(FormaInspectorTest, TheEventManagerResultListsEveryEventAndIsReused)
     EXPECT_EQ(first.children.size(), baseline + 2);
     for (const auto& child : first.children)
         EXPECT_EQ(child.group.rows.size(), 1U);
+}
+
+TEST_F(FormaInspectorTest, ANetworkShowsItsThreeRows)
+{
+    auto network = std::make_shared<Nodes::Network::ModalNetwork>(4, 220.0);
+
+    const auto result = inspector.node_network(network, surface, cursor);
+
+    ASSERT_EQ(result.group.rows.size(), 3U);
+    EXPECT_TRUE(result.children.empty());
+    for (const auto& row : result.group.rows)
+        EXPECT_TRUE(contains(layer->related_ids(result.group.header.header_id), row.element_id));
+}
+
+TEST_F(FormaInspectorTest, ABufferManagerWithInputsListsOneBufferForEachInputChannel)
+{
+    auto with_inputs = std::make_shared<Buffers::BufferManager>(2, 2);
+    Forma::Inspector local { nodes, with_inputs, frames.scheduler, events };
+
+    auto& result = local.buffer_manager(surface, cursor);
+
+    ASSERT_FALSE(result.children.empty());
+    const auto& inputs = result.children.back();
+    EXPECT_TRUE(inputs.group.rows.empty());
+    EXPECT_EQ(inputs.children.size(), 2U);
+    EXPECT_TRUE(contains(layer->related_ids(result.group.header.header_id), inputs.group.header.header_id));
+
+    local.destroy(result);
+    auto* service = Registry::BackendRegistry::instance()
+                        .get_service<Registry::Service::BufferService>();
+    const auto buffers = with_inputs->get_graphics_buffers(Buffers::ProcessingToken::GRAPHICS_BACKEND);
+    for (const auto& buffer : buffers) {
+        with_inputs->remove_buffer(buffer, Buffers::ProcessingToken::GRAPHICS_BACKEND);
+        if (auto render = buffer->get_render_processor(); render && buffer->get_processing_chain())
+            buffer->get_processing_chain()->remove_processor_anywhere(render, buffer);
+        buffer->set_default_processor(nullptr);
+        if (service && buffer->is_initialized())
+            service->destroy_buffer(buffer);
+    }
 }
 
 }

@@ -6,6 +6,8 @@
 #include "MayaFlux/Portal/Forma/Internal/TextRow.hpp"
 #include "MayaFlux/Portal/Forma/Internal/TextSlice.hpp"
 #include "MayaFlux/Portal/Forma/Primitives/TextField.hpp"
+#include "MayaFlux/Portal/Text/FontFace.hpp"
+#include "MayaFlux/Portal/Text/GlyphAtlas.hpp"
 
 MAYAFLUX_TEST_FILE((::MayaFlux::Test::Meta::Annotation { ::MayaFlux::Test::Meta::Kind::integration, ::MayaFlux::Test::Meta::requirements<::MayaFlux::Test::Meta::Capability::system_font, ::MayaFlux::Test::Meta::Capability::vulkan>() }))
 
@@ -77,14 +79,38 @@ TEST_F(FormaTextSliceTest, WithTextDrawsOneQuadPerGlyphAndBindsTheAtlasImage)
     EXPECT_EQ(atlas_image.generation(), 1U);
 }
 
-TEST_F(FormaTextSliceTest, ABatchUsesTheBatchShaderAndDeclaresOneTextSlot)
+TEST_F(FormaTextSliceTest, ABatchUsesTheBatchShaderAndDeclaresItsTextSlots)
 {
     auto batch = Forma::internal::atelier().create_batch(*surface);
 
     const auto config = batch->get_render_config();
     EXPECT_EQ(config.fragment_shader, "forma_plot.frag.spv");
-    ASSERT_EQ(config.additional_textures.size(), 1U);
+    ASSERT_EQ(config.additional_textures.size(), Forma::internal::k_text_slots);
     EXPECT_EQ(config.additional_textures.front().name, "text");
+    for (const auto& slot : config.additional_textures)
+        EXPECT_TRUE(slot.name.starts_with("text"));
+}
+
+TEST_F(FormaTextSliceTest, EveryAtlasKeepsOneSlotAndTheDefaultHoldsTheFirst)
+{
+    auto* fallback = Portal::Text::TypeFaceFoundry::instance().get_default_glyph_atlas();
+    ASSERT_NE(fallback, nullptr);
+    auto& atelier = Forma::internal::atelier();
+    Portal::Text::FontFace face;
+    const auto& path = system_font_path();
+    ASSERT_TRUE(path.has_value());
+    ASSERT_TRUE(face.load(*path));
+    Portal::Text::GlyphAtlas first(face, 24, 128);
+    Portal::Text::GlyphAtlas second(face, 32, 128);
+
+    EXPECT_EQ(atelier.atlas_slot(*fallback), 0U);
+    const uint32_t first_slot = atelier.atlas_slot(first);
+    const uint32_t second_slot = atelier.atlas_slot(second);
+
+    EXPECT_NE(first_slot, 0U);
+    EXPECT_NE(second_slot, 0U);
+    EXPECT_NE(first_slot, second_slot);
+    EXPECT_EQ(atelier.atlas_slot(first), first_slot);
 }
 
 TEST_F(FormaTextSliceTest, ABatchBindsTheDefaultAtlasImageAndTextKeepsIt)

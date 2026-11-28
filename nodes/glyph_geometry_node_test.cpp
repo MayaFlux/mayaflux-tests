@@ -252,6 +252,23 @@ namespace {
         EXPECT_EQ(glm::vec2(after.front().position), glm::vec2(before.front().position) + glm::vec2(40.F, 25.F));
     }
 
+    TEST_F(GlyphGeometryNodeTest, SetCenterPlacesTheBlockAroundThePointUntilThePenMoves)
+    {
+        GlyphGeometryNode node(face, k_pixel_size, "I");
+        const auto advance = static_cast<float>(node.outlines().front().advance_x);
+
+        node.set_center(glm::vec2(100.F, 200.F));
+        node.rebuild_outlines();
+
+        EXPECT_FLOAT_EQ(node.pen_offsets().front().x, 100.F - advance * 0.5F);
+        EXPECT_FLOAT_EQ(node.pen_offsets().front().y, 200.F + static_cast<float>(k_pixel_size) * 0.5F);
+
+        node.set_pen(40.F, 25.F);
+        node.rebuild_outlines();
+
+        EXPECT_EQ(node.pen_offsets().front(), glm::vec2(40.F, 25.F));
+    }
+
     TEST_F(GlyphGeometryNodeTest, ComputeFrameOnACleanNodeLeavesNothingToUpload)
     {
         GlyphGeometryNode node(face, k_pixel_size, "I");

@@ -174,4 +174,21 @@ TEST_F(WindowClaimTest, NoClaimIdIsZeroAndZeroOwnsNothing)
     EXPECT_NE(source.claim(0, everywhere()), 0U);
 }
 
+TEST_F(WindowClaimTest, AListenerAsksWhetherAClaimAtLeastAsHighHasThePointer)
+{
+    EXPECT_FALSE(source.pointer_claimed());
+
+    (void)source.claim(-1000, everywhere());
+    (void)source.claim(0, left_of(100.0));
+
+    window.move_to_pixel(50.0, 50.0);
+    EXPECT_TRUE(source.pointer_claimed());
+    EXPECT_TRUE(source.pointer_claimed(0));
+    EXPECT_FALSE(source.pointer_claimed(1));
+
+    window.move_to_pixel(150.0, 50.0);
+    EXPECT_TRUE(source.pointer_claimed());
+    EXPECT_FALSE(source.pointer_claimed(0));
+}
+
 }
