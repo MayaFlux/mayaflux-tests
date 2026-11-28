@@ -152,17 +152,36 @@ namespace {
 
     TEST(NexusInfluenceBlockTest, LayoutMatchesTheShaderBlock)
     {
-        EXPECT_EQ(sizeof(InfluenceBlock), 80U);
+        EXPECT_EQ(sizeof(InfluenceBlock), 96U);
         EXPECT_EQ(alignof(InfluenceBlock), 16U);
         EXPECT_EQ(offsetof(InfluenceBlock, position), 0U);
         EXPECT_EQ(offsetof(InfluenceBlock, intensity), 12U);
         EXPECT_EQ(offsetof(InfluenceBlock, color), 16U);
         EXPECT_EQ(offsetof(InfluenceBlock, radius), 28U);
         EXPECT_EQ(offsetof(InfluenceBlock, size), 32U);
+        EXPECT_EQ(offsetof(InfluenceBlock, shape), 36U);
+        EXPECT_EQ(offsetof(InfluenceBlock, extent), 40U);
         EXPECT_EQ(offsetof(InfluenceBlock, direction), 48U);
         EXPECT_EQ(offsetof(InfluenceBlock, cone_inner), 60U);
         EXPECT_EQ(offsetof(InfluenceBlock, attenuation), 64U);
         EXPECT_EQ(offsetof(InfluenceBlock, cone_outer), 76U);
+        EXPECT_EQ(offsetof(InfluenceBlock, right), 80U);
+    }
+
+    TEST(NexusInfluenceBlockTest, ShapeAndExtentTurnWithTheOrientation)
+    {
+        InfluenceContext ctx;
+        ctx.shape = Nexus::SourceShape::Tube;
+        ctx.extent = glm::vec2(0.1F, 2.0F);
+        ctx.orientation = glm::angleAxis(glm::half_pi<float>(), glm::vec3(0.0F, 1.0F, 0.0F));
+
+        const InfluenceBlock block = InfluenceBlock::from(ctx);
+
+        EXPECT_EQ(block.shape, static_cast<uint32_t>(Nexus::SourceShape::Tube));
+        EXPECT_EQ(block.extent, glm::vec2(0.1F, 2.0F));
+        EXPECT_NEAR(block.right.z, -1.0F, 1.0e-6F);
+        EXPECT_NEAR(block.direction.x, -1.0F, 1.0e-6F);
+        EXPECT_EQ(InfluenceBlock::from(InfluenceContext {}).shape, 0U);
     }
 
     TEST(NexusInfluenceBlockTest, WithoutAConeOrAttenuationTheBlockFallsByTheInverseSquare)

@@ -101,7 +101,7 @@ namespace {
 
         const std::vector<std::string> expected { "position", "orientation", "EmitterControls.intensity",
             "EmitterControls.radius", "EmitterControls.color", "EmitterControls.size", "EmitterControls.cone",
-            "EmitterControls.attenuation" };
+            "EmitterControls.attenuation", "EmitterControls.shape", "EmitterControls.extent" };
         EXPECT_EQ(names, expected);
     }
 
