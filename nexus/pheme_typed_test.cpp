@@ -165,12 +165,13 @@ namespace {
         EXPECT_EQ(offsetof(InfluenceBlock, cone_outer), 76U);
     }
 
-    TEST(NexusInfluenceBlockTest, WithoutAConeOrAttenuationTheBlockChangesNothing)
+    TEST(NexusInfluenceBlockTest, WithoutAConeOrAttenuationTheBlockFallsByTheInverseSquare)
     {
         const InfluenceBlock block = InfluenceBlock::from(InfluenceContext {});
 
         EXPECT_EQ(block.direction, glm::vec3(0.0F, 0.0F, -1.0F));
-        EXPECT_EQ(block.attenuation, glm::vec3(1.0F, 0.0F, 0.0F));
+        EXPECT_EQ(block.attenuation, glm::vec3(0.0F, 0.0F, 1.0F));
+        EXPECT_EQ(InfluenceBlock {}.attenuation, block.attenuation);
         EXPECT_FLOAT_EQ(block.cone_outer, 0.0F);
     }
 
