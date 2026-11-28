@@ -240,4 +240,64 @@ TEST(ViewpointOperationsTest, AnEmptyWindowChangesNothing)
         Kinesis::scale_viewpoint_window(view, 0.5F, { 0.5F, 0.5F }, k_aspect)));
 }
 
+TEST(ViewpointOperationsTest, TranslatingMovesAlongTheViewpointsOwnAxesWhateverItsPlacementScale)
+{
+    for (Viewpoint view : lenses()) {
+        view.first = view.first * glm::scale(glm::mat4(1.F), glm::vec3(3.F));
+        const glm::vec3 right = glm::normalize(glm::vec3(view.first[0]));
+        const glm::vec3 up = glm::normalize(glm::vec3(view.first[1]));
+
+        const Viewpoint moved = Kinesis::translate_viewpoint(view, { 0.5F, -1.F, 2.F });
+
+        expect_close(eye_of(moved) - eye_of(view), right * 0.5F - up - forward_of_view(view) * 2.F);
+        expect_close(forward_of_view(moved), forward_of_view(view));
+        expect_same_lens(view, moved);
+    }
+}
+
+TEST(ViewpointOperationsTest, AligningPutsTheCentreAheadAtItsFormerDistanceAndLevel)
+{
+    for (const Viewpoint& view : lenses()) {
+        const float distance = glm::distance(eye_of(view), k_target);
+
+        const Viewpoint aligned = Kinesis::align_viewpoint(view, k_target, { -4.F, 0.F, 0.F });
+
+        expect_close(forward_of_view(aligned), { -1.F, 0.F, 0.F });
+        expect_close(eye_of(aligned), k_target + glm::vec3(distance, 0.F, 0.F));
+        expect_close(glm::vec3(aligned.first[1]), { 0.F, 1.F, 0.F });
+        expect_same_lens(view, aligned);
+    }
+}
+
+TEST(ViewpointOperationsTest, AligningStraightDownTheAxisFromAheadPutsTheFarSideAtTheTop)
+{
+    const Viewpoint ahead { glm::translate(glm::mat4(1.F), { 0.F, 0.F, 5.F }), Frustum {} };
+
+    const Viewpoint top = Kinesis::align_viewpoint(ahead, glm::vec3(0.F), { 0.F, -1.F, 0.F });
+
+    expect_close(eye_of(top), { 0.F, 5.F, 0.F });
+    expect_close(glm::vec3(top.first[0]), { 1.F, 0.F, 0.F });
+    expect_close(glm::vec3(top.first[1]), { 0.F, 0.F, -1.F });
+}
+
+TEST(ViewpointOperationsTest, AligningWithTheRightDirectionOnTheAxisStaysOrthonormal)
+{
+    const Viewpoint rolled {
+        glm::rotate(glm::mat4(1.F), glm::half_pi<float>(), glm::vec3(0.F, 0.F, 1.F)), Frustum {}
+    };
+
+    const Viewpoint top = Kinesis::align_viewpoint(rolled, { 0.F, 0.F, -2.F }, { 0.F, -1.F, 0.F });
+
+    const glm::mat3 basis(top.first);
+    EXPECT_NEAR(glm::determinant(basis), 1.F, 1e-4F);
+    expect_close(forward_of_view(top), { 0.F, -1.F, 0.F });
+}
+
+TEST(ViewpointOperationsTest, AligningToNoDirectionChangesNothing)
+{
+    const Viewpoint view = lenses().front();
+
+    EXPECT_TRUE(Kinesis::same_viewpoint(view, Kinesis::align_viewpoint(view, k_target, glm::vec3(0.F))));
+}
+
 }

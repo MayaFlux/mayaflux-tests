@@ -569,7 +569,7 @@ TEST_F(FormaContextTest, APressAndAHeldHandlerOnTheSameKeyEachSeeThePress)
     EXPECT_EQ(held, 1);
 }
 
-TEST_F(FormaContextTest, TwoContextsOnOneWindowBothReceiveAPress)
+TEST_F(FormaContextTest, OfTwoOverlappingContextsOnlyTheLaterOneReceivesAPress)
 {
     const uint32_t first_id = whole();
     int first_presses = 0;
@@ -585,8 +585,105 @@ TEST_F(FormaContextTest, TwoContextsOnOneWindowBothReceiveAPress)
     window->press(MouseButtons::Left);
     window->release(MouseButtons::Left);
 
+    EXPECT_EQ(first_presses, 0);
+    EXPECT_EQ(second_presses, 1);
+}
+
+TEST_F(FormaContextTest, InputPriorityOutranksTheOrderContextsWereMadeIn)
+{
+    const uint32_t first_id = whole();
+    int first_presses = 0;
+    ctx->on_press(first_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++first_presses; });
+
+    auto second_layer = std::make_shared<Forma::Layer>();
+    Forma::Context second(second_layer, window, manager, "ctx_second");
+    const uint32_t second_id = second_layer->add(Forma::Element {}.with_rect({ -1.F, -1.F }, { 1.F, 1.F }));
+    int second_presses = 0;
+    second.on_press(second_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++second_presses; });
+    ctx->set_input_priority(1);
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+    window->release(MouseButtons::Left);
+
+    EXPECT_EQ(first_presses, 1);
+    EXPECT_EQ(second_presses, 0);
+}
+
+TEST_F(FormaContextTest, ContextsThatDoNotOverlapEachKeepTheirOwnPartOfTheWindow)
+{
+    const uint32_t first_id = left_half();
+    int first_presses = 0;
+    ctx->on_press(first_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++first_presses; });
+
+    auto second_layer = std::make_shared<Forma::Layer>();
+    Forma::Context second(second_layer, window, manager, "ctx_second");
+    const uint32_t second_id = second_layer->add(Forma::Element {}.with_rect({ 0.1F, -1.F }, { 1.F, 1.F }));
+    int second_presses = 0;
+    second.on_press(second_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++second_presses; });
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+    window->release(MouseButtons::Left);
+    EXPECT_EQ(ctx->focused(), first_id);
+
+    window->move_to_ndc(k_right);
+    window->press(MouseButtons::Left);
+    window->release(MouseButtons::Left);
+
     EXPECT_EQ(first_presses, 1);
     EXPECT_EQ(second_presses, 1);
+    EXPECT_FALSE(ctx->focused().has_value());
+    EXPECT_EQ(second.focused(), second_id);
+}
+
+TEST_F(FormaContextTest, ADragStaysWithItsContextAcrossAnotherThatOutranksIt)
+{
+    const uint32_t first_id = left_half();
+    int drags = 0;
+    ctx->on_drag(first_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++drags; });
+
+    auto second_layer = std::make_shared<Forma::Layer>();
+    Forma::Context second(second_layer, window, manager, "ctx_second");
+    const uint32_t second_id = second_layer->add(Forma::Element {}.with_rect({ 0.1F, -1.F }, { 1.F, 1.F }));
+    int entered = 0;
+    int stolen = 0;
+    second.on_enter(second_id, [&](uint32_t) { ++entered; });
+    second.on_drag(second_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++stolen; });
+    second.set_input_priority(5);
+
+    window->move_to_ndc(k_left);
+    window->press(MouseButtons::Left);
+    window->move_to_ndc(k_right);
+
+    EXPECT_EQ(drags, 1);
+    EXPECT_EQ(stolen, 0);
+    EXPECT_EQ(entered, 0);
+
+    window->release(MouseButtons::Left);
+    window->move_to_ndc(k_right);
+
+    EXPECT_EQ(entered, 1);
+}
+
+TEST_F(FormaContextTest, ADestroyedContextGivesUpItsClaim)
+{
+    const uint32_t first_id = whole();
+    int first_presses = 0;
+    ctx->on_press(first_id, MouseButtons::Left, [&](uint32_t, glm::vec2) { ++first_presses; });
+
+    {
+        auto second_layer = std::make_shared<Forma::Layer>();
+        Forma::Context second(second_layer, window, manager, "ctx_second");
+        (void)second_layer->add(Forma::Element {}.with_rect({ -1.F, -1.F }, { 1.F, 1.F }));
+        window->move_to_ndc(k_left);
+        window->press(MouseButtons::Left);
+    }
+
+    window->release(MouseButtons::Left);
+    window->press(MouseButtons::Left);
+
+    EXPECT_EQ(first_presses, 1);
 }
 
 TEST_F(FormaContextTest, KeyStepMovesTheStateByDeltaAndClamps)
