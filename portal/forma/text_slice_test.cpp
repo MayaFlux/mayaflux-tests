@@ -91,6 +91,37 @@ TEST_F(FormaTextSliceTest, ABatchUsesTheBatchShaderAndDeclaresItsTextSlots)
         EXPECT_TRUE(slot.name.starts_with("text"));
 }
 
+TEST_F(FormaTextSliceTest, AFullSetOfSlotsGivesUpOneNoTextDrawsFrom)
+{
+    auto& atelier = Forma::internal::atelier();
+    Portal::Text::FontFace face;
+    const auto& path = system_font_path();
+    ASSERT_TRUE(path.has_value());
+    ASSERT_TRUE(face.load(*path));
+    Portal::Text::GlyphAtlas first(face, 20, 128);
+    Portal::Text::GlyphAtlas second(face, 24, 128);
+    Portal::Text::GlyphAtlas third(face, 28, 128);
+    Portal::Text::GlyphAtlas fourth(face, 32, 128);
+    auto batch = atelier.create_batch(*surface);
+    const auto drawn_with = [&](Portal::Text::GlyphAtlas& atlas) {
+        Forma::Element element;
+        element.with_buffer(Forma::FormaTarget::slice_of(batch, PrimitiveTopology::TRIANGLE_LIST));
+        element.with_text("a", Portal::Text::PressParams { .atlas = &atlas, .render_bounds = { 64, 64 } },
+            { .min = glm::vec2(-1.F), .max = glm::vec2(1.F) });
+        return element;
+    };
+    auto one = drawn_with(first);
+    auto two = drawn_with(second);
+    auto three = drawn_with(third);
+
+    EXPECT_EQ(atelier.atlas_slot(fourth), 0U);
+
+    const uint32_t held = atelier.atlas_slot(second);
+    two.buffer.retire();
+
+    EXPECT_EQ(atelier.atlas_slot(fourth), held);
+}
+
 TEST_F(FormaTextSliceTest, EveryAtlasKeepsOneSlotAndTheDefaultHoldsTheFirst)
 {
     auto* fallback = Portal::Text::TypeFaceFoundry::instance().get_default_glyph_atlas();

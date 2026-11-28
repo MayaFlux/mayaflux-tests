@@ -40,6 +40,17 @@ namespace {
         EXPECT_FLOAT_EQ(coverage_weight(7), -8.F);
     }
 
+    TEST(GlyphMeshTest, CoverageWeightKeepsItsSlotWhateverAlphaItCarries)
+    {
+        for (const float alpha : { 0.F, 0.25F, 1.F, 7.F }) {
+            const float weight = coverage_weight(2, alpha);
+            EXPECT_EQ(static_cast<int>(-weight + 0.5F) - 1, 2);
+        }
+        EXPECT_FLOAT_EQ(coverage_weight(2, 1.F), -3.F);
+        EXPECT_FLOAT_EQ(coverage_weight(2, 0.F), -3.49F);
+        EXPECT_FLOAT_EQ(coverage_weight(2, -1.F), coverage_weight(2, 0.F));
+    }
+
     TEST(GlyphMeshTest, FitMapsTheSourceCornersOntoTheRegionWithYFlipped)
     {
         const auto map = GlyphMap::fit({ .min = { -1.F, -1.F }, .max = { 1.F, 1.F } }, { 200.F, 100.F });
